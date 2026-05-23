@@ -1,0 +1,95 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.misc,fit,calc,backgrounds,matrix,decorations.pathreplacing}
+
+\geometry{margin=0.78in}
+\hypersetup{
+  hypertexnames=false,
+  colorlinks=true,
+  linkcolor=blue!55!black,
+  urlcolor=blue!55!black,
+  citecolor=blue!55!black,
+  pdftitle={OJTFlow Project Proposal},
+  pdfauthor={Nguyen Tran Nhat Trung; Nguyen Tran Minh Khoi; Tran Ha Son}
+}
+
+\definecolor{sfblue}{HTML}{1F4E79}
+\definecolor{sfcyan}{HTML}{147C8C}
+\definecolor{sfgreen}{HTML}{2F855A}
+\definecolor{sforange}{HTML}{B7791F}
+\definecolor{sfred}{HTML}{B83232}
+\definecolor{sfpurple}{HTML}{5A4FCF}
+\definecolor{sfgray}{HTML}{F4F7FB}
+\definecolor{sfdark}{HTML}{1A202C}
+
+\setlist[itemize]{leftmargin=1.4em, itemsep=0.2em, topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.5em, itemsep=0.2em, topsep=0.3em}
+\renewcommand{\arraystretch}{1.17}
+\setlength{\parskip}{0.55em}
+\setlength{\parindent}{0pt}
+
+\titleformat{\section}{\Large\bfseries\color{sfblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{sfdark}}{\thesubsection}{0.65em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{sfdark}}{\thesubsubsection}{0.65em}{}
+
+\pagestyle{fancy}
+\setlength{\headheight}{14pt}
+\fancyhf{}
+\lhead{\textcolor{sfblue}{OJTFlow}}
+\rhead{\textcolor{sfdark}{Project Proposal}}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\projectname}{OJTFlow}
+\newcommand{\docdate}{May 13, 2026}
+\newcommand{\rolelabel}[1]{\textbf{\textcolor{sfblue}{#1}}}
+\newcommand{\metric}[1]{\textbf{\textcolor{sfgreen}{#1}}}
+\newcommand{\risk}[1]{\textbf{\textcolor{sfred}{#1}}}
+
+\begin{document}
+
+\pagenumbering{gobble}
+\input{sections/00_title}
+\pagenumbering{roman}
+\input{sections/00_abstract}
+\newpage
+\tableofcontents
+\newpage
+\pagenumbering{arabic}
+
+\input{sections/01_project_statement}
+\input{sections/02_executive_summary}
+\input{sections/03_research_basis}
+\input{sections/04_problem_opportunity}
+\input{sections/05_solution_architecture}
+\input{sections/06_agents_contracts}
+\input{sections/07_rag_mcp_model}
+\input{sections/08_security_governance}
+\input{sections/09_medical_explainability}
+\input{sections/10_datasets_stack_mlops}
+\input{sections/10b_multimodal_japan_market}
+\input{sections/10a_12_week_implementation_plan}
+\input{sections/09_api_stack}
+\input{sections/10_evaluation_roadmap}
+\input{sections/11_outcomes_risks}
+\input{sections/12_references}
+
+\end{document}

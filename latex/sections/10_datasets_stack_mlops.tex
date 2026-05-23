@@ -1,0 +1,369 @@
+\section{Datasets, AI Methods, Database Stack, CI/CD, and MLOps}
+
+OJTFlow should be positioned as an advanced medical and healthcare AI platform, but the proposal must distinguish between safe prototype work and regulated clinical deployment. The recommended strategy is to use synthetic and public standards-based datasets for development, credentialed healthcare datasets for research evaluation, and protected clinical data only under formal governance.
+
+\subsection{Research and Industrial Positioning}
+
+OJTFlow should be impressive from two angles at the same time. From a research perspective, it explores advanced retrieval, Graph-NER, self-supervised representation learning, graph learning, explainable foundation AI, and medically grounded evaluation. From an industrial perspective, it is built like a real deployable platform with CI/CD, GitOps, MLOps, observability, audit trails, data governance, and clinical safety gates.
+
+\begin{tabularx}{\textwidth}{p{0.24\textwidth}X X}
+\toprule
+\textbf{Perspective} & \textbf{Research contribution} & \textbf{Industrial deliverable} \\
+\midrule
+Medical data integration & FHIR/OMOP/JP Core schema matching, Graph-NER entity linking, OCR-to-structure extraction, cross-format representation learning. & Reliable conversion and validation for JSON, YAML, CSV, FHIR, Bulk FHIR, OMOP-aligned tables, scanned documents, and DICOM metadata. \\
+Advanced retrieval & HyDE, reranking, hierarchical retrieval, GraphRAG, Graph-NER, GNN reranking. & Evidence-grounded RAG service with Qdrant/Milvus, OpenSearch, graph DB, source attribution, and retrieval SLAs. \\
+AI modeling & Classical ML, deep tabular models, clinical NLP, medical OCR, medical computer vision, foundation AI, SSL embedding adaptation. & Versioned model registry, serving platform, evaluation gates, drift monitoring, rollback. \\
+Explainability & Faithfulness checks, uncertainty, counterfactual explanations, attribution for auxiliary models. & Clinician-facing explanation report, audit trail, supported-claim map, intended-use statement. \\
+Governance & Bias, robustness, privacy, calibration, external validation, reporting checklist alignment. & HIPAA-aware data handling, PHI masking, RBAC, model cards, data cards, release approvals. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Healthcare Dataset Strategy}
+
+\begin{longtable}{p{0.16\textwidth}p{0.26\textwidth}p{0.28\textwidth}p{0.14\textwidth}}
+\toprule
+\textbf{Dataset / standard} & \textbf{Why it fits OJTFlow} & \textbf{Primary use} & \textbf{Governance level} \\
+\midrule
+Synthea & Open-source synthetic patient generator that exports healthcare records in standards such as FHIR and CSV \cite{synthea}. & Safe demo data, CI tests, FHIR-to-CSV/JSON/YAML conversion, synthetic patient journeys. & Low risk; ideal for public demos. \\
+\addlinespace
+HL7 FHIR R4 & Standard for healthcare data exchange with resources such as Patient, Observation, MedicationRequest, and Bundle; supports JSON and other representations \cite{fhirR4}. & Healthcare schema registry, resource validation, provenance, interoperability demos. & Standard reference. \\
+\addlinespace
+Bulk FHIR / NDJSON & Bulk Data Access supports population-level export using structured files and is aligned with FHIR R4 \cite{bulkFHIR}. & Batch ingestion, population data validation, large-file conversion workflows. & Standard reference. \\
+\addlinespace
+JP Core / Japan FHIR guidance & Japan-oriented FHIR implementation guidance for domestic patient data access and interoperability \cite{jpCore}. & Japan-market schema registry, local profile validation, Japanese interoperability roadmap, hospital mapping demos. & Standard reference. \\
+\addlinespace
+OMOP CDM & OHDSI OMOP standardizes observational healthcare data and vocabularies for analytics across institutions \cite{omopCDM}. & ETL target schema, clinical data warehouse mapping, vocabulary-grounded retrieval. & Standard reference. \\
+\addlinespace
+MIMIC-IV & Deidentified EHR dataset with hospital and ICU data, available through PhysioNet credentialing \cite{mimiciv}. & Research evaluation for schema inference, table joins, ICU data quality, clinical event timelines. & Credentialed research only. \\
+\addlinespace
+eICU-CRD & Multi-center critical care database available through PhysioNet credentialed access \cite{eicu}. & External validation across hospitals; robustness and distribution-shift testing. & Credentialed research only. \\
+\addlinespace
+n2c2 / i2b2 clinical NLP & Deidentified clinical notes and shared-task datasets with data-use agreements \cite{n2c2}. & NER, de-identification, clinical entity extraction, note-to-structured-data research. & DUA required. \\
+\addlinespace
+Synthetic scanned forms & Generated Japanese/English referral letters, lab forms, consent documents, medication sheets, tables, and checkboxes with known ground truth. & OCR, document layout extraction, field extraction, human-review workflow, source-box provenance. & Low risk if synthetic; hospital templates require permission. \\
+\addlinespace
+MIMIC-CXR / CheXpert & Chest X-ray datasets with reports/labels for multimodal medical AI research \cite{mimiccxr,chexpert}. & Imaging report retrieval, VLM explanation, report-image alignment, evidence-grounded radiology document demos. & Research only; policy dependent. \\
+\addlinespace
+Public segmentation datasets & Medical image segmentation datasets and benchmarks used with SAM/MedSAM, nnU-Net, TotalSegmentator, and MONAI workflows \cite{medsam2024,nnunet,totalSegmentator,monaiLabel}. & Promptable segmentation, annotation acceleration, segmentation evaluation, uncertainty overlays, evidence artifact generation. & Research only; dataset license dependent. \\
+\addlinespace
+Public detection/tracking datasets & Public lesion, nodule, anatomy, instrument, endoscopy, ultrasound, or video datasets where licensing permits; nnDetection can provide self-configuring detection baselines \cite{nndetection}. & Object detection/tracking proof of concept, FROC/mAP/IDF1 evaluation, model monitoring design. & Research only; no diagnostic claim. \\
+\addlinespace
+MedQA / MedMCQA / PubMedQA & Medical exam and biomedical QA datasets for evaluating medical reasoning and evidence-grounded answering \cite{jin2020medqa,pal2022medmcqa,jin2019pubmedqa}. & Foundation-model evaluation, retrieval quality, hallucination testing, answer faithfulness. & Benchmark use; not patient data. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Dataset-to-Purpose Mapping}
+
+\begin{itemize}
+  \item \rolelabel{CI and public demo:} Synthea + FHIR examples + handcrafted malformed CSV/JSON/YAML cases.
+  \item \rolelabel{Healthcare interoperability:} FHIR R4, Bulk FHIR, OMOP CDM, JP Core/Japan FHIR guidance, and local hospital schema aliases.
+  \item \rolelabel{Structured clinical research:} MIMIC-IV and eICU after credentialing and training requirements are satisfied.
+  \item \rolelabel{Clinical NLP and de-identification:} n2c2/i2b2 after DUA approval.
+  \item \rolelabel{Foundation AI evaluation:} MedQA, MedMCQA, PubMedQA, and curated guideline QA.
+  \item \rolelabel{Clinical OCR and document AI:} synthetic Japanese/English forms, public document layouts, generated lab reports, referral letters, consent forms, and checkbox/table extraction tasks.
+  \item \rolelabel{Multimodal imaging track:} MIMIC-CXR, CheXpert, public segmentation datasets, public detection/tracking datasets, DICOM samples, and report-image alignment tasks.
+\end{itemize}
+
+\subsection{Medical Constraints and Requirements}
+
+Medical AI has stricter constraints than ordinary productivity AI. OJTFlow should explicitly design for these requirements:
+
+\begin{longtable}{p{0.22\textwidth}p{0.35\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Constraint} & \textbf{Why it matters} & \textbf{OJTFlow control} \\
+\midrule
+PHI and privacy & HIPAA de-identification recognizes Expert Determination and Safe Harbor methods \cite{hipaaDeid}. & Use synthetic data by default, PHI detectors, masking, access control, no raw PHI in logs, and approved data-use boundaries. \\
+\addlinespace
+Japan privacy and medical information governance & APPI treats medical history as special care-required personal information, and MHLW publishes medical information system safety management guidance \cite{japanAPPI,mhlwMedicalInfoSecurity}. & Add Japan-market consent/data-use records, project-level tenant isolation, audit retention, encryption, access approvals, and medical information security checklist mapping. \\
+\addlinespace
+SaMD boundary & IMDRF defines Software as a Medical Device as software intended for medical purposes without being part of hardware \cite{imdrfSamd}. & MVP is data support and validation, not autonomous diagnosis or treatment. Any clinical decision support scope must be explicitly classified. \\
+\addlinespace
+Japan SaMD/program medical device boundary & PMDA provides Software as a Medical Device information and program medical device consultation pathways \cite{pmdaSaMD}. & Japan pilots should explicitly label intended use, avoid diagnostic claims, and prepare a separate regulatory path for any clinical decision support function. \\
+\addlinespace
+Good ML practice & FDA, Health Canada, and MHRA GMLP principles emphasize multidisciplinary expertise, representative data, independent test sets, clinically relevant performance, human factors, and monitoring \cite{fdaGMLP}. & Add dataset governance, external validation, subgroup analysis, HITL, monitoring, and documented model cards. \\
+\addlinespace
+Change control & FDA PCCP guidance addresses planned modifications for AI-enabled device software functions \cite{fdaPCCP}. & Version prompts, models, embeddings, schemas, retrieval indexes, and evaluation gates; deploy only approved changes. \\
+\addlinespace
+Healthcare trustworthiness & FUTURE-AI frames trustworthy healthcare AI around fairness, universality, traceability, usability, robustness, and explainability \cite{futureAI}. & Make these six principles explicit acceptance criteria for medical workflows. \\
+\addlinespace
+Reporting standards & TRIPOD+AI, CONSORT-AI, DECIDE-AI, and CLAIM target transparent reporting for prediction models, clinical trials, early clinical AI, and imaging AI \cite{tripodAI,consortAI,vasey2022decide,claimAI}. & Use reporting checklists for evaluation reports, not just software docs. \\
+\addlinespace
+Bias and distribution shift & Medical datasets can encode site, demographic, device, and workflow bias. & Subgroup metrics, external validation on eICU/MIMIC split, drift monitoring, and fairness reports. \\
+\addlinespace
+Clinical accountability & Incorrect outputs can affect patient safety and clinician trust. & Human review, abstention, audit trails, intended-use labeling, and no hidden autonomous actions. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Clinical AI Acceptance Gates}
+
+\begin{longtable}{p{0.22\textwidth}p{0.36\textwidth}p{0.33\textwidth}}
+\toprule
+\textbf{Gate} & \textbf{Research criterion} & \textbf{Industrial criterion} \\
+\midrule
+Data readiness & Dataset is representative for the intended use, externally validated where possible, and measured for subgroup coverage. & Dataset card, license/DUA, PHI status, schema version, provenance, access control, retention policy. \\
+\addlinespace
+Model readiness & Baselines compared against ML, DL, and foundation AI variants; calibration and uncertainty measured. & MLflow registration, reproducible pipeline, model card, approval record, rollback plan. \\
+\addlinespace
+Retrieval readiness & Hybrid baseline compared with advanced retrieval; Graph-NER and GraphRAG improve recall or faithfulness. & Versioned vector collections, graph snapshots, source freshness checks, retrieval latency SLO. \\
+\addlinespace
+Explainability readiness & Claims are evidence-supported; uncertainty and limitations are visible to clinicians. & Explanation template, audit trace, supported-claim map, clinician review workflow. \\
+\addlinespace
+Safety readiness & Failure modes, bias, drift, privacy, and misuse risks are tested. & Risk register, security scan, red-team tests, monitoring dashboards, incident response plan. \\
+\addlinespace
+Release readiness & Evaluation aligns with relevant reporting frameworks such as TRIPOD+AI, DECIDE-AI, CONSORT-AI, CLAIM, or FUTURE-AI. & CI/CD green, GitOps sync, signed image, SBOM, release notes, human approval. \\
+\bottomrule
+\end{longtable}
+
+\subsection{AI Method Portfolio: ML, Deep Learning, and Foundation AI}
+
+OJTFlow should not be a single-model project. The strongest architecture combines classical ML, deep learning, and foundation AI, each assigned to the job it handles best.
+
+\begin{longtable}{p{0.20\textwidth}p{0.34\textwidth}p{0.35\textwidth}}
+\toprule
+\textbf{AI layer} & \textbf{Methods} & \textbf{OJTFlow use cases} \\
+\midrule
+Classical machine learning & Logistic regression, gradient boosted trees, random forests, isolation forests, one-class SVM, calibrated classifiers. & Data-quality risk scoring, anomaly detection, schema candidate ranking, PII/sensitivity risk scoring, transparent baselines. \\
+\addlinespace
+Deep learning for tables & TabNet, FT-Transformer, TabTransformer, autoencoders, contrastive tabular SSL, graph neural networks. & Column type inference, row/table embeddings, missingness patterns, schema-field matching, relational EHR graph learning. \\
+\addlinespace
+Clinical NLP & BioClinicalBERT-style encoders, sentence transformers, NER, entity linking, de-identification models. & Medical entity extraction, PHI detection, concept normalization, note-to-structured-data research, retrieval embeddings. \\
+\addlinespace
+Clinical OCR and document AI & OCR, layout extraction, table recognition, checkbox extraction, document VLMs, key-value extraction, and source-box provenance. & Japanese/English scanned forms, referral letters, lab reports, consent documents, and document-to-FHIR/OMOP mapping. \\
+\addlinespace
+Medical computer vision & SAM, MedSAM, SAM 2, MedSAM-2, nnU-Net, TotalSegmentator, MONAI, nnDetection, YOLO/DETR-style detection, and video tracking. & DICOM image segmentation, lesion/object detection, medical video tracking, annotation acceleration, visual evidence overlays, and research-grade evaluation. \\
+\addlinespace
+Graph-NER & Biomedical NER, relation extraction, concept normalization, weak supervision, graph link prediction. & Converts notes, CSV headers, FHIR paths, and OMOP fields into a clinical knowledge graph for retrieval, validation, and explanation. \\
+\addlinespace
+Graph machine learning & Node embeddings, link prediction, GNN reranking, graph anomaly detection. & FHIR/OMOP entity graph, field aliases, transformation lineage, GraphRAG evidence navigation. \\
+\addlinespace
+Foundation AI & LLMs, medical-tuned LLMs, embedding models, rerankers, VLMs for future imaging/report workflows. & Intent interpretation, workflow planning, explanation generation, evidence-grounded QA, multimodal future research. \\
+\addlinespace
+Neuro-symbolic layer & Deterministic validators, JSON Schema, FHIR profiles, OMOP constraints, rule engines, ontology/vocabulary checks. & Guardrails around all ML/DL/foundation-model outputs. This is required for medical reliability. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Advanced Data and Retrieval Storage Stack}
+
+The ``hardcore'' version of OJTFlow should use heterogeneous stores because healthcare AI needs transactional data, vector retrieval, graph relationships, full-text search, object storage, and audit logs.
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figures/platform_stack}}
+  \caption{Advanced OJTFlow platform stack for healthcare data, AI, retrieval, MLOps, and GitOps deployment.}
+  \label{fig:platform-stack}
+\end{figure}
+
+\begin{longtable}{p{0.22\textwidth}p{0.31\textwidth}p{0.36\textwidth}}
+\toprule
+\textbf{Store / platform} & \textbf{Recommended technology} & \textbf{Purpose} \\
+\midrule
+Relational source of truth & PostgreSQL & Workflows, users, permissions, approvals, schemas, audit metadata, validation reports. \\
+\addlinespace
+Vector database & Qdrant or Milvus & Qdrant provides vector search with payload filtering and hybrid retrieval features \cite{qdrant}; Milvus is an open-source vector database built for GenAI scale and high-speed similarity search \cite{milvus}. \\
+\addlinespace
+Hybrid search & OpenSearch / Elasticsearch plus Qdrant or Milvus & Exact medical terminology, code lookup, BM25, dense retrieval, sparse retrieval, and reranking. \\
+\addlinespace
+Graph database & Neo4j, Memgraph, or PostgreSQL graph tables & FHIR/OMOP entity graph, schema lineage, field aliases, approval graph, GraphRAG communities. \\
+\addlinespace
+Healthcare standard store & GCP Cloud Healthcare API & Managed FHIR, HL7v2, and DICOM stores for clinical standards, imaging metadata, de-identification workflows, and BigQuery/Vertex integration \cite{gcpHealthcare}. \\
+\addlinespace
+Clinical document AI & GCP Document AI Enterprise Document OCR plus optional private OCR engines & Text, layout, table, checkbox, and field extraction from scanned clinical documents with page/bounding-box provenance \cite{gcpDocumentAI}. \\
+\addlinespace
+Lakehouse & S3/MinIO + Apache Iceberg or Delta Lake + Parquet & Versioned large datasets, raw/bronze/silver/gold zones, reproducible training and evaluation snapshots. \\
+\addlinespace
+Feature store & Feast & Point-in-time-correct features, online/offline feature serving, governed context for ML and agents \cite{feast}. \\
+\addlinespace
+Model registry & MLflow & Experiment tracking, model registry, metrics, artifacts, model lineage, and promotion gates \cite{mlflowRegistry}. \\
+\addlinespace
+Data versioning & DVC or lakeFS & Dataset and artifact versioning, reproducible experiments, large-file governance \cite{dvc}. \\
+\addlinespace
+Observability store & Prometheus, Grafana, OpenTelemetry, Evidently & Metrics, traces, logs, drift detection, data quality, RAG evaluation, LLM monitoring \cite{opentelemetry,prometheus,evidently}. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Full CI/CD, GitOps, and MLOps Pipeline}
+
+\begin{longtable}{p{0.20\textwidth}p{0.34\textwidth}p{0.35\textwidth}}
+\toprule
+\textbf{Pipeline layer} & \textbf{Technology} & \textbf{Quality gate} \\
+\midrule
+Source control and CI & GitHub Actions for automated workflows \cite{githubActions}. & Lint, type checks, unit tests, integration tests, security scans, container builds. \\
+\addlinespace
+Infrastructure as code & Terraform + Helm. & Reproducible cloud/Kubernetes infrastructure, reviewable environment changes. \\
+\addlinespace
+Container and supply chain security & Docker/BuildKit, SBOM generation, Trivy or Grype, Cosign signing, SLSA-style provenance. & No critical vulnerabilities, signed images, dependency and license review. \\
+\addlinespace
+GitOps CD & Argo CD, a declarative GitOps continuous delivery tool for Kubernetes \cite{argoCD}. & Deployment only from Git, environment promotion, rollback, drift detection. \\
+\addlinespace
+ML pipelines & Kubeflow Pipelines declare ML workflows and run them on Kubernetes \cite{kubeflowPipelines}. & Reproducible training/evaluation, cached steps, artifact lineage. \\
+\addlinespace
+Experiment tracking & MLflow Tracking + Registry. & Promote models only after metric, fairness, calibration, latency, and safety gates pass. \\
+\addlinespace
+Model serving & KServe for standardized Kubernetes inference \cite{kserve}; vLLM for high-throughput LLM serving \cite{vllm}; Ray Serve for multi-model composition \cite{rayServe}. & Canary releases, shadow deployment, load tests, rollback, model/version pinning. \\
+\addlinespace
+Retrieval index CI & Scheduled embedding/index builds, Qdrant/Milvus collection versioning, relevance tests. & Recall@k, nDCG@10, source coverage, stale-source detection. \\
+\addlinespace
+MLOps monitoring & Evidently, Prometheus, Grafana, OpenTelemetry. & Data drift, embedding drift, retrieval drift, latency, cost, hallucination, unsupported-claim rate. \\
+\addlinespace
+Clinical release gate & Human review board, model card, data card, risk report, intended-use statement. & No production promotion without documented clinical and governance approval. \\
+\bottomrule
+\end{longtable}
+
+\subsection{GCP-First Ops and MLOps Stack}
+
+The recommended production platform for OJTFlow is Google Cloud Platform (GCP). The open-source stack remains important for portability and research reproducibility, but the industrial deployment path should be GCP-first because Google Cloud provides managed services for healthcare data, Kubernetes, CI/CD, model lifecycle, vector search, security, observability, and analytics.
+
+\begin{longtable}{p{0.22\textwidth}p{0.34\textwidth}p{0.35\textwidth}}
+\toprule
+\textbf{GCP layer} & \textbf{Recommended services} & \textbf{OJTFlow role} \\
+\midrule
+Healthcare data plane & Cloud Healthcare API for FHIR, HL7v2, DICOM, and healthcare de-identification \cite{gcpHealthcare}. & Managed healthcare ingestion and storage for clinical standards; connect FHIR stores to validation, retrieval, and audit workflows. \\
+\addlinespace
+Document and imaging AI plane & Document AI Enterprise Document OCR, Cloud Storage, Cloud Healthcare API DICOM stores, Vertex/GKE batch jobs, and GPU node pools \cite{gcpDocumentAI,gcpHealthcare}. & OCR scanned Japanese/English clinical documents, store image studies, run segmentation/detection/tracking experiments, and persist visual evidence artifacts. \\
+\addlinespace
+Data lakehouse and analytics & Cloud Storage, BigQuery, BigLake, Dataflow, Pub/Sub. BigQuery supports warehouse analytics and federated/external data access \cite{bigquery}; Cloud Healthcare API integrates with BigQuery and Vertex AI \cite{gcpHealthcare}. & Store raw/bronze/silver/gold datasets, run cohort analytics, build evaluation sets, stream ingestion events, and support population-scale validation. \\
+\addlinespace
+Kubernetes runtime & Google Kubernetes Engine (GKE), including AI/ML workloads on GKE and managed observability \cite{gke}. & Run FastAPI, LangGraph workers, MCP servers, Qdrant/Milvus, graph DB, OpenSearch, KServe, Ray Serve, and GPU workloads. \\
+\addlinespace
+Serverless runtime & Cloud Run. & Deploy lightweight APIs, webhooks, review services, and small MCP gateways when Kubernetes is unnecessary. \\
+\addlinespace
+Build and artifact supply chain & GitHub Actions as the primary CI orchestrator, with Cloud Build as an optional GCP-native builder; Artifact Registry for images and packages; SBOM generation, vulnerability scanning, signed images. GitHub Actions supports CI/CD automation \cite{githubActions}; Workload Identity Federation avoids long-lived service account keys when GitHub authenticates to GCP \cite{workloadIdentityFederation,githubOIDCGCP}. & Pull-request checks, reproducible containers, model-serving images, Helm chart storage, signed release artifacts, secure GitHub-to-GCP authentication. \\
+\addlinespace
+Continuous delivery & GitHub Actions triggers Cloud Deploy releases and Argo CD syncs Kubernetes desired state on GKE. Cloud Deploy supports delivery pipelines to GKE targets \cite{cloudDeployGKE}. & Progressive delivery to dev/staging/prod, promotion approvals, rollback, drift detection, Kubernetes sync. \\
+\addlinespace
+ML pipelines & Vertex AI Pipelines, Kubeflow Pipelines SDK, custom training jobs \cite{vertexPipelines}. & Reproducible training and evaluation for ML, DL, SSL embeddings, rerankers, Graph-NER, and GNN experiments. \\
+\addlinespace
+Model registry and serving & Vertex AI Model Registry, Vertex AI Endpoints, KServe on GKE, vLLM on GPU nodes. & Register, approve, deploy, canary, and rollback classical ML, deep learning, embedding, reranker, and foundation-model adapters. \\
+\addlinespace
+Feature and embedding operations & Vertex AI Feature Store, Feast on GKE, Vertex AI Vector Search, Qdrant/Milvus on GKE. Vertex AI Vector Search supports RAG-capable generative AI architectures \cite{vertexVectorSearch}. & Serve point-in-time features, dense/sparse embeddings, vector indexes, schema retrieval, GraphRAG context, and medical search. \\
+\addlinespace
+Security and privacy & IAM, Workload Identity Federation, Secret Manager, Cloud KMS, VPC Service Controls, Security Command Center. Secret Manager stores sensitive credentials \cite{secretManager}; VPC Service Controls reduces data exfiltration risk for services such as Cloud Storage and BigQuery \cite{vpcServiceControls}. & PHI protection, service isolation, key management, secret rotation, least privilege, threat detection, audit readiness. \\
+\addlinespace
+Observability and reliability & Cloud Logging, Cloud Monitoring, Cloud Trace, Managed Service for Prometheus, OpenTelemetry, Grafana, Evidently. & Distributed traces for agents and MCP calls, model latency, retrieval quality, data drift, embedding drift, unsupported-claim rate, SLO dashboards. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{GCP Reference Deployment}
+
+\begin{enumerate}
+  \item \textbf{Landing zone:} separate GCP projects for dev, staging, production, and restricted healthcare research; enforce IAM, VPC Service Controls, Cloud KMS, audit logs, and Security Command Center.
+  \item \textbf{Healthcare ingestion:} store standards-based clinical data in Cloud Healthcare API FHIR, HL7v2, and DICOM stores; export analytic snapshots to BigQuery and Cloud Storage.
+  \item \textbf{Data platform:} use Cloud Storage + BigLake/BigQuery for lakehouse analytics; use Dataflow and Pub/Sub for streaming validation and indexing.
+  \item \textbf{Research platform:} run Vertex AI Pipelines for ML/DL/foundation-AI experiments; track results in MLflow or Vertex metadata; version datasets with DVC/lakeFS or Cloud Storage generation metadata.
+  \item \textbf{Retrieval platform:} deploy Qdrant or Milvus on GKE for controllable research experiments; use Vertex AI Vector Search as the managed production path when operational simplicity is preferred.
+  \item \textbf{Serving platform:} serve APIs and agents on GKE; use KServe/Ray Serve/vLLM for model endpoints; use Cloud Run for small review, webhook, and admin services.
+  \item \textbf{CI/CD:} use GitHub Actions as the primary CI orchestrator; authenticate to GCP through Workload Identity Federation; store images and Helm charts in Artifact Registry; promote with Cloud Deploy and Argo CD.
+  \item \textbf{Monitoring:} route logs, metrics, and traces to Cloud Operations; add Evidently jobs for drift and RAG quality; alert on clinical safety, security, latency, and data-quality SLOs.
+\end{enumerate}
+
+\subsubsection{GitHub Actions + GCP CI/CD and MLOps Blueprint}
+
+\begin{longtable}{p{0.23\textwidth}p{0.34\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Workflow} & \textbf{GitHub Actions jobs} & \textbf{GCP integration} \\
+\midrule
+Pull request quality gate & Lint, type check, unit tests, API contract tests, LaTeX/documentation build, schema tests, security checks. & No GCP write access; optional read-only validation against mocked FHIR/OMOP schemas and synthetic Synthea fixtures. \\
+\addlinespace
+Secure build & Build Docker images, generate SBOM, run vulnerability scan, sign images, publish provenance. & Authenticate with Workload Identity Federation; push signed images and Helm charts to Artifact Registry. \\
+\addlinespace
+Data and retrieval validation & Validate FHIR/OMOP/JP Core schemas, run PHI tests, rebuild small synthetic retrieval index, run OCR fixture checks, evaluate Recall@k and nDCG@10. & Use Cloud Storage test buckets, BigQuery staging datasets, Qdrant/Milvus staging collection, Document AI test processors, or Vertex AI Vector Search staging index. \\
+\addlinespace
+ML/DL experiment trigger & Launch classical ML, deep learning, SSL embedding, reranker, Graph-NER, OCR, segmentation, detection, tracking, and GNN evaluation jobs from workflow dispatch or scheduled runs. & Trigger Vertex AI Pipelines or Kubeflow Pipelines on GKE; log metrics to MLflow/Vertex metadata; store artifacts in Cloud Storage. \\
+\addlinespace
+Staging deploy & Deploy API, agents, MCP servers, retrieval services, model endpoints, and review UI to staging. & GitHub Actions creates Cloud Deploy release or commits a GitOps manifest change; Argo CD syncs to GKE; Cloud Run deploys lightweight services. \\
+\addlinespace
+Clinical release gate & Require manual approval, model card, data card, risk report, retrieval report, OCR/vision report when applicable, and explainability report. & Promotion to production target in Cloud Deploy; signed image digest only; approval logs stored in PostgreSQL/BigQuery/Audit Logs. \\
+\addlinespace
+Production monitoring & Scheduled drift tests, RAG quality tests, hallucination/unsupported-claim checks, latency and cost checks. & Cloud Monitoring, Cloud Logging, Managed Service for Prometheus, OpenTelemetry traces, Evidently reports, Security Command Center findings. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Monitorability and Observability by Design}
+
+OJTFlow must be monitorable at every layer: infrastructure, application, agent workflow, retrieval, model behavior, clinical safety, privacy, and human review. In healthcare, monitoring is not only an operations concern; it is a safety and governance requirement.
+
+\begin{longtable}{p{0.22\textwidth}p{0.35\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Monitoring layer} & \textbf{Signals to collect} & \textbf{GCP / stack implementation} \\
+\midrule
+Infrastructure & CPU, memory, GPU, disk, network, pod health, autoscaling events, queue depth. & GKE metrics, Cloud Monitoring, Managed Service for Prometheus, Grafana dashboards. \\
+\addlinespace
+API and workflow & Request latency, error rate, workflow duration, agent step duration, MCP tool latency, retries, timeout rate. & OpenTelemetry traces, Cloud Trace, Cloud Logging, Prometheus metrics, structured workflow IDs. \\
+\addlinespace
+Data quality & Schema violation rate, missingness, unit mismatch, malformed rows, PHI detector hits, FHIR/OMOP/JP Core validation failures, OCR extraction confidence. & Great Expectations/Pandera jobs, BigQuery quality tables, Evidently reports, Document AI metadata, alert policies. \\
+\addlinespace
+Retrieval and RAG & Recall@k, nDCG@10, empty retrieval rate, stale source rate, source diversity, reranker score distribution, unsupported-claim rate. & Retrieval evaluation jobs, Qdrant/Milvus metrics, Vertex AI Vector Search logs, BigQuery evaluation history. \\
+\addlinespace
+Graph-NER & Entity precision/recall samples, concept-normalization confidence, relation extraction confidence, reviewer correction rate. & Graph quality dashboards, sampled human review, graph diff reports, entity drift alerts. \\
+\addlinespace
+Model behavior & Prediction confidence, calibration, abstention rate, hallucination flags, toxicity/safety flags, prompt injection detections, model version. & MLflow/Vertex metadata, Evidently, custom LLM evaluation jobs, OpenTelemetry span attributes. \\
+\addlinespace
+OCR and medical vision & OCR CER/WER, field F1, table-cell F1, segmentation Dice/HD95, detection FROC/mAP, tracking IDF1/HOTA, reviewer correction rate, device/protocol drift. & Document AI logs, MLflow/Vertex metadata, GPU job metrics, DICOM metadata drift checks, sampled visual QA dashboards. \\
+\addlinespace
+Clinical safety & Clinician override rate, unsafe-action blocks, low-confidence escalations, unsupported medical claims, delayed review items. & Clinical safety dashboard, alerting to review queue, audit log in PostgreSQL/BigQuery. \\
+\addlinespace
+Security and privacy & Access denials, unusual data export, secret access, PHI exposure attempts, VPC Service Controls violations, vulnerability findings. & Cloud Audit Logs, Security Command Center, Secret Manager audit logs, VPC Service Controls logs. \\
+\addlinespace
+Cost and capacity & Token cost, GPU utilization, vector DB storage, BigQuery query cost, model endpoint spend, per-workflow cost. & Cloud Billing export to BigQuery, dashboards, budget alerts, per-workflow cost tags. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Core SLOs and Alerts}
+
+\begin{tabularx}{\textwidth}{p{0.28\textwidth}X p{0.25\textwidth}}
+\toprule
+\textbf{SLO} & \textbf{Target} & \textbf{Alert trigger} \\
+\midrule
+Simple conversion latency & p95 under 3 seconds. & p95 exceeds target for 15 minutes. \\
+Complex medical workflow latency & p95 under 30 seconds for demo-sized datasets. & p95 exceeds target or queue delay grows. \\
+Validation coverage & 100\% of returned transformed outputs pass deterministic validation. & Any output bypasses validation. \\
+Evidence support & >= 95\% of clinical explanation claims are source-supported in reviewed samples. & Unsupported-claim rate exceeds threshold. \\
+PHI protection & No raw PHI in logs, prompts, or exported artifacts. & Any PHI detector hit in restricted sink. \\
+Human review safety & 100\% of medically consequential or low-confidence actions require review. & Any review gate bypass event. \\
+Retrieval health & Empty retrieval rate below threshold and source staleness within policy. & Empty/stale retrieval spikes. \\
+OCR/vision quality & OCR field extraction, segmentation, detection, and tracking metrics stay within approved pilot thresholds. & Quality drop, device/protocol drift, or reviewer corrections exceed threshold. \\
+Drift monitoring & Data, embedding, and retrieval drift jobs complete on schedule. & Missed job or drift severity high. \\
+\bottomrule
+\end{tabularx}
+
+\subsubsection{Runbooks and Incident Response}
+
+\begin{itemize}
+  \item Every alert should link to a runbook with owner, severity, immediate mitigation, rollback path, and evidence to collect.
+  \item Clinical safety incidents should freeze model/index promotion, preserve audit logs, and require human review before resuming.
+  \item Retrieval incidents should roll back to the last known-good vector collection, graph snapshot, and prompt version.
+  \item Model incidents should support endpoint rollback, traffic shadowing, canary disablement, and model registry demotion.
+  \item Privacy incidents should trigger access revocation, log quarantine, PHI exposure assessment, and compliance escalation.
+\end{itemize}
+
+\subsection{MLOps Lifecycle for Medical AI}
+
+\begin{enumerate}
+  \item \textbf{Data intake:} register dataset license, PHI status, de-identification method, schema, provenance, and permitted use.
+  \item \textbf{Data validation:} run Great Expectations or Pandera checks, FHIR/OMOP validation, PHI scans, and dataset drift baselines.
+  \item \textbf{Feature and embedding build:} generate tabular features, clinical entities, graph edges, dense embeddings, sparse indexes, and source metadata.
+  \item \textbf{Training and adaptation:} train classical ML baselines, DL/table models, SSL embedding adapters, rerankers, and optional GNN modules.
+  \item \textbf{Evaluation:} measure accuracy, calibration, AUROC/AUPRC where relevant, subgroup fairness, external validation, retrieval relevance, explanation faithfulness, and clinical safety tests.
+  \item \textbf{Registration:} store datasets, code commit, model weights, prompts, schemas, vector index version, graph snapshot, metrics, and approvals.
+  \item \textbf{Deployment:} deploy via GitOps to staging, canary, shadow, then production only after human approval.
+  \item \textbf{Monitoring:} continuously track input drift, output drift, embedding drift, retrieval quality, unsupported claims, latency, cost, security events, and human override rate.
+  \item \textbf{Change control:} update models, prompts, schemas, and indexes only through versioned pull requests and approved release gates.
+\end{enumerate}
+
+\subsection{Recommended Advanced Stack}
+
+\begin{tabularx}{\textwidth}{p{0.25\textwidth}X}
+\toprule
+\textbf{Layer} & \textbf{Recommended stack} \\
+\midrule
+API and agents & FastAPI, Pydantic, LangGraph, MCP Python SDK / FastMCP, Celery or Ray for workers. \\
+Healthcare standards & HL7 FHIR R4, Bulk FHIR NDJSON, OMOP CDM, JSON Schema, Pydantic models, terminology mapping. \\
+ML/DL & scikit-learn, XGBoost/LightGBM, PyTorch, PyTorch Lightning, Hugging Face Transformers, sentence-transformers, PyTorch Geometric. \\
+Foundation AI serving & vLLM for local/open models, cloud LLM gateway fallback, KServe/Ray Serve for composed inference. \\
+Retrieval & Qdrant or Milvus, OpenSearch, rerankers, GraphRAG, Neo4j/Memgraph, optional GNN reranking. \\
+Data platform & PostgreSQL, S3/MinIO, Iceberg/Delta, Parquet, DVC/lakeFS, Feast. \\
+MLOps & MLflow, Kubeflow Pipelines, Evidently, Prometheus, Grafana, OpenTelemetry. \\
+CI/CD and platform & GitHub Actions + GCP: Workload Identity Federation, Artifact Registry, Cloud Build optional, Cloud Deploy, GKE, Cloud Run, Terraform, Helm, Argo CD, Cosign, SBOM, vulnerability scanning. \\
+Security and governance & OIDC/RBAC, secrets manager, audit logs, encryption, PHI masking, policy-as-code, model cards, data cards, risk registers. \\
+\bottomrule
+\end{tabularx}

@@ -1,0 +1,71 @@
+\section{Technical Stack and API Design}
+
+\subsection{Recommended Stack}
+
+\begin{longtable}{p{0.20\textwidth}p{0.31\textwidth}p{0.40\textwidth}}
+\toprule
+\textbf{Category} & \textbf{Recommended stack} & \textbf{Reason} \\
+\midrule
+Backend API & Python + FastAPI & FastAPI is a modern, high-performance Python web framework based on standard type hints \cite{fastapiDocs}. \\
+Validation & Pydantic + JSON Schema & Pydantic can generate JSON Schema compliant with JSON Schema Draft 2020-12 and OpenAPI 3.1 \cite{pydanticJsonSchema}. \\
+Data conversion & Python \texttt{json}, \texttt{csv}, PyYAML, optional Pandas & Deterministic parsing and conversion for MVP formats. \\
+Agent orchestration & LangGraph preferred; AutoGen as alternative & LangGraph provides durable execution and human-in-the-loop patterns; AutoGen is a strong research-backed multi-agent option. \\
+RAG/vector store & pgvector for deployment; FAISS for lightweight local MVP & pgvector stores vectors inside PostgreSQL and supports exact and approximate nearest-neighbor search \cite{pgvector}. \\
+MCP & MCP Python SDK / FastMCP & Official SDK supports servers and clients that expose resources, prompts, tools, stdio, SSE, and Streamable HTTP \cite{mcpPythonSdk}. \\
+Storage & SQLite for MVP; PostgreSQL for deployment & SQLite is fast to start; PostgreSQL supports durable deployment and pgvector. \\
+Messaging/events & SSE first; Redis optional & SSE is simple for progress streams; Redis can support asynchronous workers later. \\
+Frontend & Streamlit for fastest demo or React/Next.js for product UI & Choose based on available time and review expectations. \\
+Deployment & Docker Compose & Compose defines and runs multi-container applications consistently from one YAML file \cite{dockerCompose}. \\
+Observability & Structured logs; OpenTelemetry later & Needed for debugging agent decisions, tool calls, and workflow state. \\
+\bottomrule
+\end{longtable}
+
+\subsection{API Endpoints}
+
+\begin{tabularx}{\textwidth}{p{0.36\textwidth}p{0.11\textwidth}X}
+\toprule
+\textbf{Endpoint} & \textbf{Method} & \textbf{Purpose} \\
+\midrule
+\texttt{/api/v1/workflows} & POST & Start a multi-agent workflow with instruction, input data/file, and options. \\
+\texttt{/api/v1/workflows/\{id\}} & GET & Fetch workflow status, events, output, explanation, and audit summary. \\
+\texttt{/api/v1/workflows/\{id\}/events} & GET/SSE & Stream live agent progress. \\
+\texttt{/api/v1/convert} & POST & Direct conversion endpoint for simple JSON/YAML/CSV tasks. \\
+\texttt{/api/v1/validate} & POST & Validate data against inferred or provided schema. \\
+\texttt{/api/v1/explain} & POST & Generate a grounded human-readable explanation. \\
+\texttt{/api/v1/review/\{id\}} & POST & Submit approval, edited plan, rejection, or clarification. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Example Workflow Request}
+
+\begin{verbatim}
+POST /api/v1/workflows
+
+{
+  "instruction": "Clean this CSV, convert it to JSON, and explain anomalies.",
+  "input_format": "csv",
+  "target_format": "json",
+  "data": "date,region,sales\n2026-01-01,APAC,1000\n...",
+  "options": {
+    "require_human_review": true,
+    "schema_name": "sales_report_v1",
+    "output_orientation": "records"
+  }
+}
+\end{verbatim}
+
+\subsection{Example Workflow Response}
+
+\begin{verbatim}
+{
+  "workflow_id": "wf_001",
+  "status": "needs_human_review",
+  "summary": "CSV parsed successfully. Three validation issues were found.",
+  "proposed_action": {
+    "normalize_dates": true,
+    "fill_missing_region": "Unknown",
+    "drop_malformed_rows": 1
+  },
+  "approval_url": "/api/v1/review/wf_001"
+}
+\end{verbatim}

@@ -1,0 +1,281 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,backgrounds,decorations.pathreplacing}
+
+\geometry{margin=0.78in}
+\hypersetup{
+  hypertexnames=false,
+  colorlinks=true,
+  linkcolor=blue!55!black,
+  urlcolor=blue!55!black,
+  pdftitle={OJTFlow Project Proposal},
+  pdfauthor={Nguyen Tran Nhat Trung; Nguyen Tran Minh Khoi; Tran Ha Son}
+}
+
+\definecolor{sfblue}{HTML}{1F4E79}
+\definecolor{sfcyan}{HTML}{147C8C}
+\definecolor{sfgreen}{HTML}{2F855A}
+\definecolor{sforange}{HTML}{B7791F}
+\definecolor{sfred}{HTML}{B83232}
+\definecolor{sfpurple}{HTML}{5A4FCF}
+\definecolor{sfgray}{HTML}{F4F7FB}
+\definecolor{sfdark}{HTML}{1A202C}
+
+\setlist[itemize]{leftmargin=1.3em, itemsep=0.15em, topsep=0.25em}
+\setlist[enumerate]{leftmargin=1.4em, itemsep=0.15em, topsep=0.25em}
+\renewcommand{\arraystretch}{1.14}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+
+\titleformat{\section}{\Large\bfseries\color{sfblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{sfdark}}{\thesubsection}{0.65em}{}
+
+\pagestyle{fancy}
+\setlength{\headheight}{14pt}
+\fancyhf{}
+\lhead{\textcolor{sfblue}{OJTFlow}}
+\rhead{\textcolor{sfdark}{Project Proposal}}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\projectname}{OJTFlow}
+\newcommand{\docdate}{May 14, 2026}
+\newcommand{\tagline}[1]{\textbf{\textcolor{sfblue}{#1}}}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{0.75in}
+  {\Huge\bfseries\color{sfblue} \projectname \par}
+  \vspace{0.18in}
+  {\Large\bfseries Project Proposal for Medical and Healthcare AI Workflow Platform\par}
+  \vspace{0.12in}
+  {\large RAG, Graph-NER, Medical Vision, Foundation Model, Explainability, and MLOps\par}
+
+  \vspace{0.5in}
+  \begin{tikzpicture}
+    \node[draw=sfblue, ultra thick, rounded corners=6pt, fill=sfgray, inner sep=15pt, text width=0.82\textwidth, align=center] {
+      \large \textbf{Executive Snapshot}\\[4pt]
+      \normalsize \projectname{} is a governed, Japan-focus medical AI platform that converts, validates, retrieves, explains, and audits healthcare data across structured files, FHIR/OMOP workflows, scanned clinical documents, DICOM images, and medical video. It combines deterministic validation, OCR, Graph-NER, self-supervised embedding adaptation, advanced RAG, SAM/MedSAM-style segmentation, object detection/tracking, clinician review, GCP-based MLOps, and full observability.
+    };
+  \end{tikzpicture}
+
+  \vfill
+  \begin{tabular}{>{\bfseries}r p{0.64\textwidth}}
+    Prepared for: & Management / Project Approval Review\\
+    Prepared by: & Nguyen Tran Nhat Trung; Nguyen Tran Minh Khoi; Tran Ha Son\\
+    Document type: & Short project proposal\\
+    Date: & \docdate\\
+    Team / Duration: & 3 members / 4-week MVP plan, extensible to production roadmap\\
+  \end{tabular}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Objectives and Problem Solving}
+
+\subsection{Project Objective}
+
+The objective of \projectname{} is to build a medical and healthcare AI workflow platform for the Japanese healthcare market. The system helps users process healthcare data safely and explainably across structured records, scanned documents, and medical images/video. It will support conversion, validation, schema matching, OCR, DICOM metadata handling, medical entity extraction, retrieval, segmentation, detection/tracking, explanation, audit, and human review for formats and standards such as JSON, YAML, CSV, FHIR, Bulk FHIR, JP Core/FHIR, OMOP, clinical forms, and DICOM.
+
+\subsection{Research and Industrial Value}
+
+\begin{tabularx}{\textwidth}{p{0.25\textwidth}X X}
+\toprule
+\textbf{Perspective} & \textbf{Research value} & \textbf{Industrial value} \\
+\midrule
+Medical AI & Combines Graph-NER, advanced RAG, OCR, SAM/MedSAM-style segmentation, detection/tracking, ML/DL/foundation AI, and explainability for healthcare workflows. & Supports practical healthcare data validation, document extraction, image annotation, review, and audit without claiming autonomous diagnosis. \\
+Self-supervised learning & Uses contrastive/representation learning to adapt embeddings from unlabeled schemas, FHIR/OMOP examples, validation traces, entity pairs, and retrieval feedback. & Reduces labeling cost and improves schema matching, medical entity linking, retrieval recall, and robustness across site-specific data. \\
+MLOps & Evaluates model, retrieval, graph, and explanation quality as versioned artifacts. & Uses GitHub Actions + GCP deployment, monitoring, security gates, logs, dashboards, and rollback-ready design. \\
+Japan market & Applies MHLW Medical DX direction, APPI-sensitive data handling, PMDA/SaMD boundary awareness, JP Core/FHIR, and Japanese terminology aliases. & Fits Japanese hospital adoption needs: evidence, approval records, conservative release gates, auditability, and clinician-in-the-loop operation. \\
+Real application & Uses FHIR/OMOP/Synthea-style data, synthetic Japanese forms, DICOM samples, and public medical imaging datasets. & Can grow toward hospital data integration, regulated governance, multimodal AI pilots, and production monitoring. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Problem to Solve}
+
+\begin{tabularx}{\textwidth}{p{0.28\textwidth}X}
+\toprule
+\textbf{Current problem} & \textbf{OJTFlow solution} \\
+\midrule
+Healthcare data is fragmented across files, APIs, EHR exports, FHIR resources, OMOP tables, and spreadsheets. & Provide one governed workflow layer for parsing, validating, converting, retrieving, and explaining healthcare data. \\
+Medical knowledge is also locked in paper/scanned forms, referral letters, image reports, DICOM studies, and video workflows. & Add OCR/layout extraction, source bounding boxes, DICOM metadata, segmentation masks, detection boxes, tracking traces, and visual evidence review. \\
+Manual data conversion is error-prone and difficult to audit. & Use deterministic tools, schema validators, FHIR/OMOP constraints, versioned workflows, and audit logs. \\
+Foundation models can hallucinate or produce invalid structured output. & Use LLMs for intent and explanation, but require validators, evidence retrieval, human review, and tool-based execution. \\
+Medical AI needs interpretability, privacy, monitoring, and accountability. & Add evidence-grounded explanations, OCR boxes, visual overlays, PHI protection, clinician review, model/retrieval/vision monitoring, and GCP auditability. \\
+Japanese healthcare adoption requires trust, localization, and compliance readiness. & Include APPI/MHLW/PMDA-aware governance, JP Core/FHIR mapping, Japanese terminology aliases, approval logs, and data-residency/tenant-isolation design. \\
+Clinical datasets contain sensitive, biased, incomplete, or site-specific data. & Use synthetic data for demos, credentialed datasets for research, subgroup evaluation, drift monitoring, and strict governance. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Expected Outcomes for 4-Week MVP}
+
+\begin{itemize}
+  \item A working MVP that converts, validates, and explains healthcare data using safe synthetic demo data.
+  \item OCR and document-understanding design/prototype for synthetic Japanese/English clinical forms with bounding-box provenance.
+  \item DICOM and medical vision extension design, including SAM/MedSAM-style segmentation and detection/tracking evaluation plan.
+  \item Medical Graph-NER prototype for entity extraction, normalization, and schema linking.
+  \item Advanced retrieval prototype with hybrid search, graph context, reranking-ready design, source attribution, and retrieval metrics.
+  \item Self-supervised embedding prototype that compares baseline embeddings against adapted representations using contrastive pairs, schema/entity neighborhoods, Recall@k, nDCG, and entity-linking quality.
+  \item Explainable AI reports with evidence, uncertainty, limitations, review status, and supported-claim mapping.
+  \item GitHub Actions + GCP deployment blueprint with CI checks, container build plan, Cloud Healthcare API / Document AI target path, monitorability, MLOps registry design, and security gates.
+  \item Japan-market readiness checklist covering APPI-sensitive data, MHLW medical information security expectations, PMDA/SaMD boundary, JP Core/FHIR direction, and clinician approval workflow.
+\end{itemize}
+
+\section{Implementation Plan (Master Schedule)}
+
+\begin{longtable}{p{0.15\textwidth}p{0.15\textwidth}p{0.44\textwidth}p{0.16\textwidth}}
+\toprule
+\textbf{Phase} & \textbf{Timeline} & \textbf{Main work} & \textbf{Output} \\
+\midrule
+Phase 1 & Week 1 & Finalize Japan-market medical scope, synthetic datasets, FHIR/OMOP/JP Core schema targets, OCR/DICOM/vision boundaries, architecture, security rules, and evaluation criteria. Build core parser/converter API skeleton. & Approved plan + API skeleton. \\
+\addlinespace
+Phase 2 & Week 2 & Implement deterministic parsing, JSON/YAML/CSV conversion, schema validation, workflow state, MCP tool contracts, basic agent orchestration, and unit tests. & Core workflow MVP. \\
+\addlinespace
+Phase 3 & Week 3 & Build retrieval prototype, medical knowledge base, Graph-NER prototype, self-supervised embedding adaptation, OCR field extraction design, entity normalization, graph context, explanation report, and retrieval/entity metrics. & AI + Graph-NER + SSL + OCR demo. \\
+\addlinespace
+Phase 4 & Week 4 & Add SAM/MedSAM-style segmentation proof-of-concept design, detection/tracking evaluation plan, GitHub Actions + GCP deployment blueprint, monitoring dashboards, audit logs, PHI/APPI checks, model/retrieval/OCR/vision versioning plan, final tests, documentation, and demo. & Submission-ready MVP. \\
+\bottomrule
+\end{longtable}
+
+\subsection{MVP Demonstration Scenario}
+
+The recommended demo uses synthetic healthcare data from Synthea/FHIR examples plus a synthetic Japanese-style clinical form. A user uploads a messy CSV/FHIR-derived file and asks OJTFlow to validate it, map it to a known healthcare schema, extract medical entities, convert the output, explain anomalies, and show the audit trail. A second mini-demo shows OCR extraction from a form with source boxes and a design path for DICOM segmentation evidence. The 4-week MVP will demonstrate the real application path end to end: data validation, self-supervised representation adaptation, entity extraction, evidence retrieval, OCR provenance, explanation, CI/CD readiness, Japan-market governance, and monitoring. Advanced components such as production-scale GraphRAG, BYOL-style embedding training, GNN reranking, full clinical deployment, and regulated diagnostic vision models remain designed extension points.
+
+\section{Architecture and Workflow}
+
+\subsection{Architecture Overview}
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figures/architecture}}
+  \caption{Architecture overview for OJTFlow. The model reasons and explains, while MCP-backed deterministic services parse, validate, transform, retrieve, review, and audit.}
+\end{figure}
+
+\subsection{Advanced Retrieval Workflow}
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figures/advanced_retrieval}}
+  \caption{Advanced retrieval workflow for OJTFlow. Hybrid search, optional HyDE, trusted retrieval stores, entity graph context, optional GNN reranking, and rerankers produce an evidence package with sources and scores.}
+\end{figure}
+
+\subsection{Workflow}
+
+\begin{enumerate}
+  \item User submits healthcare data and natural language instruction.
+  \item Parser/OCR/DICOM Agent detects format and creates a structured, document, or image/video profile.
+  \item Schema Agent validates against JSON Schema, FHIR profiles, JP Core/FHIR, OMOP rules, or project schemas.
+  \item Graph-NER Agent extracts medical entities, normalizes codes, and builds graph relations.
+  \item Retrieval Agent searches schemas, clinical dictionaries, examples, rules, and graph context.
+  \item Multimodal AI Agent links OCR boxes and stores segmentation, detection, tracking, and visual evidence artifacts.
+  \item Transformation Agent performs deterministic conversion or cleaning.
+  \item Explanation Agent produces evidence-grounded summary with uncertainty and limitations.
+  \item Human/Clinician Review Agent asks for approval when risk, ambiguity, PHI/APPI-sensitive data, visual overclaim, or medical consequence is detected.
+  \item Monitoring and audit services record workflow, metrics, sources, decisions, and output hashes.
+\end{enumerate}
+
+\section{Technology (Tech Stack)}
+
+\begin{longtable}{p{0.24\textwidth}p{0.68\textwidth}}
+\toprule
+\textbf{Layer} & \textbf{Recommended technology} \\
+\midrule
+Backend/API & Python, FastAPI, Pydantic, SQLAlchemy, REST/SSE endpoints. \\
+Agent orchestration & LangGraph-style workflows, MCP Python SDK / FastMCP, role-specific agents. \\
+Medical standards & HL7 FHIR R4, Bulk FHIR NDJSON, JP Core/FHIR direction, OMOP CDM, JSON Schema, medical terminology mapping, DICOM metadata. \\
+ML/DL & scikit-learn, XGBoost/LightGBM, PyTorch, PyTorch Lightning, Hugging Face Transformers, sentence-transformers, PyTorch Geometric. \\
+OCR/document AI & GCP Document AI target path, optional local OCR, layout extraction, table/checkbox extraction, source bounding boxes, Japanese/English form support. \\
+Medical vision & SAM, MedSAM, SAM 2 / MedSAM-2 design path, nnU-Net baseline, MONAI/MONAI Label, TotalSegmentator, YOLO/DETR-style detection, tracking metrics. \\
+Self-supervised learning & Contrastive learning, InfoNCE/SimCSE-style objectives, TSDAE, BYOL-style representation learning, domain-adaptive pretraining, PEFT/LoRA, embedding evaluation. \\
+Foundation AI & Cloud LLM gateway, local/open LLM serving with vLLM, rerankers, embedding models, future VLM support. \\
+Advanced retrieval & Hybrid search, Qdrant/Milvus, Vertex AI Vector Search, OpenSearch, GraphRAG, rerankers, Graph-NER, optional GNN reranking. \\
+Data platform & PostgreSQL, Cloud Storage, BigQuery/BigLake, Parquet, MinIO/S3-compatible storage for local development, Cloud Healthcare API target path for FHIR/HL7v2/DICOM. \\
+MLOps & MLflow, Vertex AI Pipelines or Kubeflow Pipelines, Feast, DVC/lakeFS, model registry, data/model cards. \\
+CI/CD and cloud & GitHub Actions, GCP Workload Identity Federation, Artifact Registry, Cloud Deploy, GKE, Cloud Run, Terraform, Helm, Argo CD. \\
+Monitoring & OpenTelemetry, Cloud Logging, Cloud Monitoring, Cloud Trace, Managed Prometheus, Grafana, Evidently, Security Command Center. \\
+Security & IAM/RBAC, Secret Manager, Cloud KMS, VPC Service Controls, PHI/APPI-sensitive data handling, audit logs, vulnerability scanning, signed images, clinician approval records. \\
+\bottomrule
+\end{longtable}
+
+\subsection{4-Week Practical Stack Decision}
+
+For the 4-week MVP, the team will implement a lightweight but production-shaped subset: FastAPI, Pydantic, PostgreSQL/SQLite, local Qdrant or Milvus-compatible vector layer, synthetic FHIR/Synthea data, synthetic Japanese/English form samples, OCR provenance fields, DICOM/vision evidence schema, GitHub Actions, Docker, and GCP deployment design. The proposal still includes Cloud Healthcare API, Document AI, Vertex AI, Kubeflow, GKE, Cloud Run, BigQuery, Cloud Monitoring, and Artifact Registry as the target industrial path so the MVP is small but architecturally aligned with real deployment.
+
+\section{Personnel Assignment (Roles \& Responsibilities)}
+
+\textit{The plan below uses unnamed member slots because final personal assignment has not been fixed yet. Each slot can be mapped to one team member before execution without changing the 4-week delivery plan. The submit version keeps this plan short; the full proposal contains the detailed 12-week breakdown.}
+
+{\small
+\setlength{\tabcolsep}{3pt}
+\begin{longtable}{p{0.17\textwidth}p{0.28\textwidth}p{0.34\textwidth}p{0.09\textwidth}}
+\toprule
+\textbf{Member slot} & \textbf{Primary ownership} & \textbf{4-week focus} & \textbf{Output} \\
+\midrule
+Member Slot 1 & Lead / Backend / Architecture & Week 1 architecture and API contracts; Week 2 parser, validation, OCR/DICOM evidence schema, MCP tool wrappers; Week 3 integration, review gates, lineage; Week 4 final demo workflow and API cleanup. & Core MVP \\
+Member Slot 2 & AI / Retrieval / Graph-NER / Multimodal AI & Week 1 AI research/evaluation design; Week 2 LLM gateway, Graph-NER, vector ingestion; Week 3 SSL embeddings, HyDE, reranker, GraphRAG context, OCR prototype; Week 4 SAM/MedSAM-style vision design, metrics, and explanation report. & AI demo \\
+Member Slot 3 & GCP / MLOps / QA / Japan Governance & Week 1 CI/GCP/security/Japan governance plan; Week 2 tests, Docker, GCP blueprint; Week 3 monitoring, PHI/APPI checks, MLflow/versioning; Week 4 runbook, QA, proposal/slides, submission package. & Ops package \\
+\bottomrule
+\end{longtable}
+}
+
+\section{Details of Each Module in the Architecture}
+
+\begin{longtable}{p{0.24\textwidth}p{0.38\textwidth}p{0.28\textwidth}}
+\toprule
+\textbf{Module} & \textbf{Function} & \textbf{Output} \\
+\midrule
+User Interaction Module & Web UI/API for upload, instruction, review, progress, and output download. & Request, review decision, final report. \\
+Orchestrator Module & Classifies task, plans workflow, routes agents, manages state, handles errors and review gates. & Workflow plan and state. \\
+Input Parser / OCR / DICOM Module & Detects JSON/YAML/CSV/FHIR-like data, scanned forms, and DICOM metadata; parses content; profiles rows/fields/types/pages/images. & Parsed data, document/image profile, source metadata. \\
+Schema Validation Module & Validates against JSON Schema, Pydantic, FHIR profiles, JP Core/FHIR direction, OMOP mappings, and custom schemas. & Validation report and severity list. \\
+Graph-NER Module & Extracts entities, normalizes to medical codes and schemas, extracts relations. & Medical entity graph and confidence scores. \\
+Self-Supervised Representation Module & Builds positive/negative pairs from schemas, entities, validation issues, code mappings, and retrieved evidence; adapts embedding models using contrastive or denoising objectives. & Versioned embedding model, representation report, retrieval/entity-linking gains. \\
+Advanced Retrieval Module & Performs hybrid retrieval, HyDE, reranking, hierarchical retrieval, GraphRAG, and source attribution. & Evidence package and source IDs. \\
+Multimodal Medical AI Module & Applies OCR/layout extraction, SAM/MedSAM-style segmentation design, detection/tracking evaluation plan, masks/boxes/frame IDs, and visual uncertainty handling. & OCR fields, visual evidence artifacts, mask/box/track report. \\
+Transformation Module & Converts and cleans data through deterministic tools, never uncontrolled model generation. & Converted output, diff, metadata. \\
+Foundation AI Module & Interprets intent, proposes plans, summarizes evidence, explains validation and transformation results. & Natural language explanation and structured plan. \\
+Explainability Module & Produces supported-claim map, uncertainty, limitations, evidence trace, OCR boxes, image overlays, and clinician review prompts. & Medical explanation report. \\
+Human Review Module & Requires approval for PHI/APPI-sensitive data, low confidence, destructive cleaning, visual overclaim, medical consequence, or external calls. & Approval/edit/reject decision. \\
+Security and Governance Module & Handles RBAC, PHI masking, APPI/MHLW/PMDA-aware policy checks, audit logs, sensitive-data controls, and release gates. & Governance record and safety flags. \\
+MLOps Module & Tracks models, prompts, embeddings, schemas, datasets, OCR processors, vision checkpoints, evaluations, retrieval indexes, and deployment versions. & Model/data cards, registry plan, metrics. \\
+CI/CD Module & Runs GitHub Actions checks, secure build plan, tests, container image path, Artifact Registry plan, and GCP deployment blueprint. & Reproducible deployment path. \\
+Monitoring Module & Collects traces, logs, metrics, drift, retrieval health, unsupported claims, PHI alerts, cost, and SLOs. & Dashboards, alerts, runbooks. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Final MVP Success Criteria}
+
+\begin{itemize}
+  \item Demonstrates a healthcare data workflow from upload to validated output.
+  \item Demonstrates OCR/document evidence or design-level prototype with source bounding boxes.
+  \item Includes DICOM/medical vision extension plan with SAM/MedSAM segmentation and detection/tracking metrics.
+  \item Shows medical entity extraction and schema linking.
+  \item Shows self-supervised embedding adaptation with measurable retrieval or entity-linking improvement.
+  \item Shows evidence-grounded explanation and human review.
+  \item Runs through a CI/CD and deployment-ready architecture on GitHub Actions + GCP.
+  \item Provides Japan-market governance evidence for APPI-sensitive data, MHLW security expectations, PMDA/SaMD boundary awareness, and JP Core/FHIR alignment.
+  \item Provides monitoring dashboards and audit evidence for workflow, model, retrieval, OCR, vision, and clinical safety.
+\end{itemize}
+
+\end{document}

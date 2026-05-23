@@ -1,0 +1,99 @@
+\begin{tikzpicture}[
+  font=\tiny,
+  >=Latex,
+  block/.style={draw, rounded corners=4pt, minimum height=0.70cm, align=center, inner sep=4pt},
+  topblock/.style={block, text width=2.85cm},
+  agent/.style={block, text width=2.12cm},
+  storage/.style={draw, cylinder, shape border rotate=90, aspect=0.25, minimum height=0.84cm, minimum width=1.05cm, align=center, inner sep=3pt},
+  arrow/.style={-{Latex[length=1.55mm,width=1.05mm]}, line width=0.55pt, shorten >=1.4pt, shorten <=1.4pt},
+  bus/.style={line width=0.55pt, line cap=round},
+  secondary/.style={-{Latex[length=1.45mm,width=1.0mm]}, line width=0.55pt, densely dotted, shorten >=1.4pt, shorten <=1.4pt},
+  group/.style={draw, rounded corners=8pt, inner sep=0.24cm}
+]
+
+% Control layer
+\node[topblock, fill=sfblue!9, draw=sfblue] (user) at (0,0) {User Interaction\\Web UI / Chat / REST};
+\node[topblock, fill=sfblue!12, draw=sfblue] (orch) at (0,-1.30) {Orchestrator\\Intent, Plan, Route, State};
+\node[topblock, fill=sfcyan!9, draw=sfcyan] (rag) at (-6.25,-1.30) {RAG Retrieval Agent\\Schema + Context Search};
+\node[topblock, fill=sforange!12, draw=sforange] (review) at (6.25,-1.30) {Safety + Human Review\\Consent, Policy, Audit};
+
+% Reasoning layer
+\node[topblock, fill=sfpurple!10, draw=sfpurple, text width=3.05cm] (model) at (0,-2.95) {Foundation Model Gateway\\Cloud or Local LLM};
+
+% Agent layer
+\node[agent, fill=sfgray, draw=sfdark] (parser) at (-5.60,-4.95) {Input Parser\\Format Detection};
+\node[agent, fill=sfgray, draw=sfdark] (schema) at (-2.80,-4.95) {Schema Agent\\Inference + Match};
+\node[agent, fill=sfgray, draw=sfdark] (valid) at (0,-4.95) {Validation Agent\\Rules + Issues};
+\node[agent, fill=sfgray, draw=sfdark] (trans) at (2.80,-4.95) {Transform Agent\\Convert + Clean};
+\node[agent, fill=sfgray, draw=sfdark] (explain) at (5.60,-4.95) {Explanation Agent\\Summary + Caveats};
+
+% Tool layer
+\node[topblock, fill=sfpurple!8, draw=sfpurple, text width=3.15cm] (mcp) at (0,-6.85) {MCP Tool Layer\\Tools / Resources / Prompts};
+
+% Storage layer
+\node[storage, fill=sfcyan!8, draw=sfcyan] (kb) at (-4.50,-8.55) {Knowledge\\Base};
+\node[storage, fill=sfgreen!8, draw=sfgreen] (schemas) at (-1.50,-8.55) {Schema\\Registry};
+\node[storage, fill=sfblue!8, draw=sfblue] (datasets) at (1.50,-8.55) {Dataset\\Store};
+\node[storage, fill=sforange!10, draw=sforange] (audit) at (4.50,-8.55) {Audit\\Log};
+
+% Routing coordinates keep arrowheads away from block borders and text.
+\coordinate (dispatchL) at (-5.60,-3.95);
+\coordinate (dispatchC) at (0,-3.95);
+\coordinate (dispatchR) at (5.60,-3.95);
+\coordinate (callL) at (-5.60,-5.78);
+\coordinate (callC) at (0,-5.78);
+\coordinate (callR) at (5.60,-5.78);
+\coordinate (storeL) at (-4.50,-7.72);
+\coordinate (storeC) at (0,-7.72);
+\coordinate (storeR) at (4.50,-7.72);
+\coordinate (ragSideA) at (-6.25,-2.22);
+\coordinate (ragSideB) at (-7.05,-2.22);
+\coordinate (ragSideC) at (-7.05,-8.55);
+\coordinate (reviewSideA) at (6.25,-2.22);
+\coordinate (reviewSideB) at (7.05,-2.22);
+\coordinate (reviewSideC) at (7.05,-8.55);
+
+% Background groups
+\begin{scope}[on background layer]
+  \node[group, draw=sfblue!35, fill=sfblue!3,
+    fit=(user)(orch)(rag)(review), inner xsep=0.36cm, inner ysep=0.24cm] (controlGroup) {};
+  \node[group, draw=sfpurple!35, fill=sfpurple!3,
+    fit=(model), inner xsep=0.26cm, inner ysep=0.20cm] (modelGroup) {};
+  \node[group, draw=sfdark!25, fill=sfdark!2,
+    fit=(dispatchL)(dispatchR)(parser)(schema)(valid)(trans)(explain)(callL)(callR), inner xsep=0.26cm, inner ysep=0.20cm] (agentGroup) {};
+  \node[group, draw=sfpurple!35, fill=sfpurple!3,
+    fit=(mcp)(storeL)(storeR)(kb)(schemas)(datasets)(audit), inner xsep=0.30cm, inner ysep=0.24cm] (toolGroup) {};
+\end{scope}
+
+% Control and reasoning flow.
+\draw[arrow, sfblue] (user.south) -- (orch.north);
+\draw[arrow, sfcyan] (orch.west) -- (rag.east);
+\draw[arrow, sforange] (orch.east) -- (review.west);
+\draw[<->, line width=0.55pt, sfblue, shorten >=1.4pt, shorten <=1.4pt] (orch.south) -- (model.north);
+
+% Model dispatch to every deterministic agent.
+\draw[arrow, sfdark] (model.south) -- node[right, fill=white, inner sep=1pt] {dispatch} (dispatchC);
+\draw[bus, sfdark] (dispatchL) -- (dispatchR);
+\foreach \x/\dest in {-5.60/parser,-2.80/schema,0/valid,2.80/trans,5.60/explain} {
+  \draw[arrow, sfdark] (\x,-3.95) -- (\dest.north);
+}
+
+% Agent tool calls converge cleanly before entering the MCP layer.
+\foreach \src/\x in {parser/-5.60,schema/-2.80,valid/0,trans/2.80,explain/5.60} {
+  \draw[arrow, sfpurple] (\src.south) -- (\x,-5.78);
+}
+\draw[bus, sfpurple] (callL) -- (callR);
+\draw[arrow, sfpurple] (callC) -- node[right, fill=white, inner sep=1pt] {tool calls} (mcp.north);
+
+% MCP persistence and retrieval fan out to each backing store.
+\draw[arrow, sfpurple] (mcp.south) -- node[right, fill=white, inner sep=1pt] {persist / retrieve} (storeC);
+\draw[bus, sfpurple] (storeL) -- (storeR);
+\foreach \x/\dest in {-4.50/kb,-1.50/schemas,1.50/datasets,4.50/audit} {
+  \draw[arrow, sfpurple] (\x,-7.72) -- (\dest.north);
+}
+
+% Side evidence and governance paths.
+\draw[secondary, sfcyan, rounded corners=3pt] (rag.south) -- (ragSideA) -- (ragSideB) -- (ragSideC) -- (kb.west);
+\draw[secondary, sforange, rounded corners=3pt] (review.south) -- (reviewSideA) -- (reviewSideB) -- (reviewSideC) -- (audit.east);
+
+\end{tikzpicture}

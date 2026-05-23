@@ -1,0 +1,42 @@
+\section{Problem Statement and Opportunity}
+
+\subsection{The Practical Problem}
+
+Modern teams exchange structured data through APIs, spreadsheets, configuration files, dashboards, ETL jobs, notebooks, and AI tools. JSON, YAML, and CSV are everywhere, but everyday workflows remain surprisingly fragile:
+
+\begin{itemize}
+  \item A user may not know whether a file is valid, what schema it follows, or how to safely convert it.
+  \item Developers often need repeatable conversion logic, not a one-off answer from a chatbot.
+  \item Non-technical users need explanations of fields, rows, anomalies, and business meaning.
+  \item LLM-only systems can produce plausible but invalid JSON, invent fields, or ignore schema constraints.
+  \item Real workflows require logs, versioned schemas, approvals, access control, and traceability.
+\end{itemize}
+
+The gap is not simply ``format conversion.'' The gap is collaborative structured-data operations: people need a system that can understand an instruction, inspect the data, retrieve the right schema context, perform the transformation exactly, explain the result, and prove what happened.
+
+\subsection{Opportunity for the OJT Project}
+
+\projectname{} is a strong OJT project because it demonstrates several high-value engineering capabilities in a compact product:
+
+\begin{itemize}
+  \item \textbf{Backend engineering:} FastAPI endpoints, typed request/response models, storage, and deployment.
+  \item \textbf{AI integration:} foundation model gateway, prompt contracts, retrieval, and explanation generation.
+  \item \textbf{Agent orchestration:} multi-step workflows, shared state, role-specific agents, and progress events.
+  \item \textbf{Protocol design:} MCP tool/resource/prompt servers for modular capabilities.
+  \item \textbf{Reliability:} schema validation, deterministic conversion, round-trip checks, tests, and audit logs.
+  \item \textbf{Governance:} prompt-injection defenses, sensitive-data checks, human review, and risk documentation.
+\end{itemize}
+
+\subsection{Target Users}
+
+\begin{tabularx}{\textwidth}{p{0.22\textwidth}X}
+\toprule
+\textbf{User group} & \textbf{Value proposition} \\
+\midrule
+Analysts & Convert and explain files without manually writing scripts for every schema variation. \\
+Developers & Validate API payloads, generate transformation reports, and expose repeatable workflows through APIs. \\
+Project reviewers & See a complete AI system that combines models, agents, tools, RAG, security, and deployment. \\
+Future enterprise teams & Extend the same architecture to databases, drives, workflow systems, and domain-specific schema registries. \\
+\bottomrule
+\end{tabularx}
+

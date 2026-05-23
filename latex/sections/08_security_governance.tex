@@ -1,0 +1,63 @@
+\section{Security, Governance, and Human-in-the-Loop Controls}
+
+Because \projectname{} accepts user-provided data and can invoke tools, security must be designed into the workflow rather than added at the end. The MVP should follow least privilege, typed tool input, validation after model output, and explicit approval for risky operations.
+
+\subsection{Key Risks and Mitigations}
+
+\begin{longtable}{p{0.22\textwidth}p{0.35\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Risk} & \textbf{Why it matters} & \textbf{Mitigation} \\
+\midrule
+\risk{Prompt injection} & User data or retrieved documents may contain hidden instructions that attempt to control the model. & Separate instructions from data, mark retrieved context as untrusted, sanitize output, use policy prompts, and validate all tool calls. \\
+\addlinespace
+\risk{Sensitive information disclosure} & Datasets may include personal, confidential, or proprietary fields. & PII detection, masking options, access controls, approval before export, and careful logging policies. \\
+\addlinespace
+\risk{Japan medical privacy non-compliance} & Japan-market pilots may involve medical history, scanned documents, or DICOM metadata that fall under APPI-sensitive handling and MHLW medical information security expectations \cite{japanAPPI,mhlwMedicalInfoSecurity}. & APPI-aware consent/data-use records, least privilege, tenant isolation, no raw sensitive data in logs, encryption, audit export, and review before external transfer. \\
+\addlinespace
+\risk{Visual evidence overclaim} & Segmentation masks, detection boxes, and tracking overlays can look authoritative even when they are only research outputs. & Label outputs as assistive evidence, display uncertainty, require clinician review, store source image/frame IDs, and avoid diagnostic claims without a separate SaMD path. \\
+\addlinespace
+\risk{Improper output handling} & Model outputs may be passed into tools or files without validation. & Require schema-validated JSON plans; never execute generated code; validate converted data before returning it. \\
+\addlinespace
+\risk{Excessive agency} & Agents with broad tool access can perform unintended actions. & Role-scoped tools, read-only defaults, approval gates, and deny-by-default external calls. \\
+\addlinespace
+\risk{RAG poisoning} & Untrusted documents can influence retrieved context and model behavior. & Separate trusted and untrusted indexes, use trust metadata, and reject low-confidence context. \\
+\addlinespace
+\risk{MCP tool misuse} & MCP can expose powerful tool and resource access. & Whitelist tools per agent, validate arguments with Pydantic, log calls, and require consent for write/export operations. \\
+\addlinespace
+\risk{Schema drift} & The output may follow an old or incorrect schema. & Version schemas, filter retrieval by schema version, and validate outputs against the current schema. \\
+\addlinespace
+\risk{Cost and latency} & Agentic workflows can create too many model or retrieval calls. & Cap model calls, cache schema profiles, use deterministic tools, and provide simple direct endpoints. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Human Review Triggers}
+
+Human review should be triggered whenever the system proposes an operation that can change meaning, disclose data, or affect external systems.
+
+\begin{tabularx}{\textwidth}{p{0.25\textwidth}X p{0.28\textwidth}}
+\toprule
+\textbf{Trigger} & \textbf{Review prompt} & \textbf{Allowed decisions} \\
+\midrule
+Low schema confidence & The system found multiple possible schemas. Which one should be used? & Approve selected schema, edit, reject, clarify. \\
+Data cleaning changes & The system proposes filling missing values, normalizing dates, or dropping malformed rows. & Approve, edit cleaning rule, reject. \\
+Sensitive fields detected & Possible PII or confidential fields were found. Should they be masked before explanation or export? & Mask, keep with approval, reject export. \\
+External tool/API call & The workflow wants to call an external tool or remote MCP server. & Approve or reject. \\
+Large or costly operation & The task may exceed runtime or cost limits. & Approve, reduce scope, cancel. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Audit Requirements}
+
+Each completed workflow should store enough evidence for review:
+
+\begin{itemize}
+  \item Workflow ID, user/session ID, timestamp, action, and tool name.
+  \item Input hash and output hash, not unnecessary raw sensitive data in logs.
+  \item Validation report, transformation diff, retrieved context IDs, and schema version.
+  \item Human approval decisions, edits, or rejection reasons.
+  \item Final status and any safety flags.
+\end{itemize}
+
+\subsection{Governance Principle}
+
+The system should never hide uncertainty. If schema confidence is low, retrieved context is weak, sensitive data is present, or a cleaning action changes semantics, the user should see that explicitly and be asked to decide.

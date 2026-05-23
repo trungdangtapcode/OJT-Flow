@@ -1,0 +1,57 @@
+\begin{tikzpicture}[
+  font=\tiny,
+  >=Latex,
+  box/.style={draw, rounded corners=4pt, minimum height=0.62cm, align=center, inner sep=3pt},
+  stage/.style={box, text width=2.15cm},
+  store/.style={draw, cylinder, shape border rotate=90, aspect=0.24, minimum height=0.78cm, minimum width=1.10cm, align=center, inner sep=2.8pt},
+  gnnbox/.style={box, text width=2.30cm, minimum height=0.92cm},
+  arrow/.style={-{Latex[length=1.55mm,width=1.05mm]}, line width=0.55pt, shorten >=2.0pt, shorten <=2.0pt},
+  bus/.style={line width=0.55pt, line cap=round},
+  note/.style={font=\tiny, text=sfdark!70, align=center}
+]
+
+% Top retrieval pipeline
+\node[stage, fill=sfblue!8, draw=sfblue] (query) at (0,0) {User task +\\dataset profile};
+\node[stage, fill=sfgray, draw=sfdark] (rewrite) at (3.05,0) {Query analysis\\format, fields, intent};
+\node[stage, fill=sfcyan!8, draw=sfcyan] (hyde) at (6.10,0) {Optional HyDE\\hypothetical query};
+\node[stage, fill=sfgreen!8, draw=sfgreen] (first) at (9.20,0) {Hybrid first-stage\\BM25 + vectors};
+\node[stage, fill=sfpurple!8, draw=sfpurple] (rerank) at (12.35,0) {Rerank\\cross-encoder /\\late interaction};
+\node[stage, fill=sforange!10, draw=sforange] (pack) at (15.45,0) {Evidence package\\sources + scores};
+
+% Trusted retrieval stores
+\node[store, fill=sfblue!8, draw=sfblue] (lexical) at (6.15,-2.65) {Lexical\\Index};
+\node[store, fill=sfcyan!8, draw=sfcyan] (vector) at (7.85,-2.65) {Vector\\Index};
+\node[store, fill=sfgreen!8, draw=sfgreen] (hier) at (9.55,-2.65) {Hierarchy\\Tree};
+\node[store, fill=sfpurple!8, draw=sfpurple] (graph) at (11.25,-2.65) {Entity\\Graph};
+\node[gnnbox, fill=sfgray, draw=sfdark] (gnn) at (13.85,-2.65) {Optional GNN\\reranking over\\schema/entity\\neighborhoods};
+
+\coordinate (inputBusL) at (6.15,-1.42);
+\coordinate (inputBusR) at (11.25,-1.42);
+\coordinate (inputBusC) at (9.20,-1.42);
+\coordinate (graphRoute) at (12.45,-1.42);
+
+% Main path
+\draw[arrow, sfblue] (query) -- (rewrite);
+\draw[arrow, sfdark] (rewrite) -- (hyde);
+\draw[arrow, sfcyan] (hyde) -- (first);
+\draw[arrow, sfgreen] (first) -- (rerank);
+\draw[arrow, sfpurple] (rerank) -- (pack);
+
+% Store contribution to hybrid retrieval
+\draw[arrow, sfblue] (lexical.north) -- (6.15,-1.42);
+\draw[arrow, sfcyan] (vector.north) -- (7.85,-1.42);
+\draw[arrow, sfgreen] (hier.north) -- (9.55,-1.42);
+\draw[arrow, sfpurple] (graph.north) -- (11.25,-1.42);
+\draw[bus, sfdark!55] (inputBusL) -- (inputBusR);
+\draw[arrow, sfgreen] (inputBusC) -- (first.south);
+
+% Optional graph-aware reranking path
+\draw[arrow, sfdark] (graph.east) -- (gnn.west);
+\draw[arrow, sfdark] (gnn.north) -- ++(0,0.70) -| (rerank.south);
+
+% Store provenance note, separated from the GNN box.
+\draw[decorate, decoration={brace, amplitude=4pt}, line width=0.5pt, sfdark!65]
+  ($(lexical.south west)+(-0.12,-0.34)$) -- ($(graph.south east)+(0.12,-0.34)$);
+\node[note] at (8.70,-3.95) {Trusted retrieval stores with metadata, schema versions,\\and source chunk IDs};
+
+\end{tikzpicture}

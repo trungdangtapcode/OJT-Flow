@@ -1,0 +1,31 @@
+\begin{tikzpicture}[
+  font=\small,
+  >=Latex,
+  wfstep/.style={draw, rounded corners=4pt, minimum height=0.8cm, text width=2.25cm, align=center, inner sep=5pt},
+  gate/.style={draw, diamond, aspect=2.0, text width=1.55cm, align=center, inner sep=2pt},
+  arrow/.style={-{Latex[length=2mm]}, thick}
+]
+
+\node[wfstep, fill=sfblue!8, draw=sfblue] (submit) {User submits CSV + instruction};
+\node[wfstep, fill=sfgray, draw=sfdark, right=0.55cm of submit] (parse) {Parse and profile data};
+\node[wfstep, fill=sfcyan!8, draw=sfcyan, right=0.55cm of parse] (retrieve) {Retrieve schema, rules, examples};
+\node[wfstep, fill=sfgray, draw=sfdark, right=0.55cm of retrieve] (validate) {Validate fields, rows, types};
+\node[gate, fill=sforange!12, draw=sforange, below=0.85cm of validate] (gate) {Risky or ambiguous?};
+\node[wfstep, fill=sforange!12, draw=sforange, left=0.85cm of gate] (review) {Ask human to approve, edit, or reject};
+\node[wfstep, fill=sfgreen!9, draw=sfgreen, right=0.85cm of gate] (transform) {Run approved deterministic conversion};
+\node[wfstep, fill=sfpurple!9, draw=sfpurple, right=0.55cm of transform] (explain) {Generate grounded explanation};
+\node[wfstep, fill=sfblue!8, draw=sfblue, right=0.55cm of explain] (return) {Return output, report, audit trail};
+
+\draw[arrow, sfblue] (submit) -- (parse);
+\draw[arrow, sfdark] (parse) -- (retrieve);
+\draw[arrow, sfcyan] (retrieve) -- (validate);
+\draw[arrow, sfdark] (validate) -- (gate);
+\draw[arrow, sforange] (gate) -- node[above] {yes} (review);
+\draw[arrow, sforange] (review) -- (transform);
+\draw[arrow, sfgreen] (gate) -- node[above] {no} (transform);
+\draw[arrow, sfgreen] (transform) -- (explain);
+\draw[arrow, sfpurple] (explain) -- (return);
+
+\node[draw=sfred, rounded corners=3pt, fill=sfred!7, text width=2.7cm, align=center, below=0.65cm of review] (block) {Reject unsafe action, preserve original data};
+\draw[arrow, sfred] (review) -- (block);
+\end{tikzpicture}

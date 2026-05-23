@@ -1,0 +1,104 @@
+\section{12-Week Implementation Plan and Personnel Work Breakdown}
+
+This full proposal uses a 12-week plan to show how the 4-week MVP can become a serious research and industrial prototype. The plan keeps the team assignment flexible by using unnamed member slots. Final names can be mapped to these slots later without changing the delivery structure.
+
+\subsection{Planning Assumptions}
+
+\begin{itemize}
+  \item The team has three members and keeps one weekly integration checkpoint.
+  \item The project starts with synthetic and public healthcare standards data, synthetic/Japanese-style document samples, and public imaging examples, then prepares the governance path for credentialed datasets.
+  \item The technical scope covers deterministic data tools, Graph-NER, advanced retrieval, self-supervised representation learning, explainable foundation AI, OCR, DICOM workflows, medical segmentation, object detection/tracking, GCP-first MLOps, CI/CD, monitoring, and auditability.
+  \item Japan-market readiness is part of the scope: JP Core/FHIR direction, APPI/MHLW/PMDA-aware governance, Japanese terminology aliases, and approval-oriented pilot evidence.
+  \item Clinical deployment is not claimed in 12 weeks; the goal is a medically governed prototype with evidence, risk controls, and a production-shaped cloud/MLOps path.
+\end{itemize}
+
+\subsection{Member Slot Ownership}
+
+\begin{longtable}{p{0.20\textwidth}p{0.36\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Member slot} & \textbf{Primary ownership} & \textbf{Success responsibility} \\
+\midrule
+Member Slot 1 & Backend, architecture, deterministic tools, API contracts, workflow state, schema validation, DICOM/OCR metadata contracts, MCP tool layer, human review, and final integration. & Make OJTFlow usable as a reliable workflow platform, not only a model demo. \\
+\addlinespace
+Member Slot 2 & AI research, agent orchestration, LLM gateway, Graph-NER, self-supervised embeddings, advanced retrieval, reranking, GraphRAG context, OCR/document AI, SAM/MedSAM-style segmentation, detection/tracking design, and explanation quality. & Make the prototype impressive from a research perspective while keeping model outputs evidence-grounded. \\
+\addlinespace
+Member Slot 3 & GitHub Actions, GCP architecture, containers, MLOps, monitoring, audit logs, PHI/privacy gates, APPI/MHLW/PMDA checklist, security checks, QA, documentation, and release package. & Make the system credible from an industrial deployment and governance perspective for Japan-market pilots. \\
+\bottomrule
+\end{longtable}
+
+\subsection{12-Week Master Schedule}
+
+\begin{longtable}{p{0.10\textwidth}p{0.26\textwidth}p{0.36\textwidth}p{0.18\textwidth}}
+\toprule
+\textbf{Week} & \textbf{Theme} & \textbf{Main milestone} & \textbf{Acceptance evidence} \\
+\midrule
+1 & Scope, governance, and architecture & Approve MVP boundaries, healthcare use case, synthetic dataset strategy, module contracts, and evaluation gates. & Architecture document, backlog, risk register. \\
+2 & Core backend and data profile & Build API skeleton, parser/profiler, validation issue model, and demo data intake. & Passing parser tests and API smoke test. \\
+3 & Deterministic conversion and schema validation & Implement JSON/YAML/CSV/FHIR-like conversion, schema validation, and audit metadata. & Conversion test suite and validation report. \\
+4 & Agent workflow and MCP tool layer & Integrate orchestrator, tool contracts, workflow state, and review trigger design. & End-to-end agent workflow trace. \\
+5 & Graph-NER and medical knowledge base & Create entity schema, extractor baseline, terminology mapping, and graph storage prototype. & Entity/relation sample report. \\
+6 & Advanced retrieval baseline & Build hybrid BM25 + vector retrieval, Qdrant/Milvus collection, source metadata, HyDE experiment, and retrieval benchmark. & Recall@k, nDCG@10, source coverage. \\
+7 & Self-supervised representation learning & Generate weak pairs, run contrastive, TSDAE, SimCSE, or BYOL-style adaptation design, compare against baseline embeddings. & SSL experiment report and promotion decision. \\
+8 & Reranking, GraphRAG, and explainability & Add reranker interface, graph/hierarchy context, evidence package, supported-claim map, caveats, uncertainty, and multimodal evidence object schema. & Explanation examples and faithfulness review. \\
+9 & OCR, DICOM, and Japan-market design & Add OCR/document workflow, DICOM metadata contract, JP Core/FHIR mapping plan, Japanese terminology aliases, and APPI/MHLW/PMDA governance checklist. & OCR/DICOM design, Japan readiness checklist. \\
+10 & Medical vision and GCP MLOps integration & Prototype segmentation with SAM/MedSAM or nnU-Net, define detection/tracking experiment, build GitHub Actions/GCP deployment blueprint, and register model/evaluation artifacts. & Vision demo artifact, CI logs, registry plan. \\
+11 & Monitoring, security, and evaluation hardening & Run integrated evaluation, failure-mode testing, red-team prompts, multimodal quality checks, drift analysis plan, dashboards, and runbooks. & Evaluation report, dashboards, safety evidence. \\
+12 & Final integration and executive demo & Stabilize demo, finalize proposal package, technical report, Japan-market narrative, presentation, roadmap, and post-MVP research/production plan. & Final demo, report, slides, reproducible package. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Detailed Weekly Work Plan by Member Slot}
+
+{\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.18}
+\begin{longtable}{p{0.055\textwidth}p{0.17\textwidth}p{0.235\textwidth}p{0.235\textwidth}p{0.235\textwidth}}
+\toprule
+\textbf{Week} & \textbf{Team milestone} & \textbf{Member Slot 1: Backend / Architecture} & \textbf{Member Slot 2: AI / Retrieval / Graph-NER} & \textbf{Member Slot 3: GCP / MLOps / QA} \\
+\midrule
+1 & Project foundation & Define system boundaries, module map, API surfaces, data-flow diagram, workflow states, error taxonomy, and deterministic-tool contract style. Prepare initial FastAPI/Pydantic structure and demo endpoint stubs. & Define research questions, baseline models, Graph-NER entity/relation schema, retrieval metrics, SSL embedding hypotheses, foundation-model gateway options, and clinical explanation targets. & Define GitHub branching/check policy, GCP landing-zone assumptions, PHI handling checklist, audit requirements, CI baseline, Docker convention, risk register, and weekly delivery tracker. \\
+\addlinespace
+2 & Data intake and profiling & Implement file upload/intake, JSON/YAML/CSV parser, FHIR-like bundle detector, data profiler, column/type inference, validation issue object, workflow run IDs, and basic API tests. & Build synthetic/Synthea/FHIR example corpus, initial medical dictionary, schema/document chunking rules, embedding baseline script, and first entity extraction baseline over headers and sample text. & Add lint/test GitHub Actions, Docker build skeleton, test fixture structure, dependency scanning plan, Cloud Storage/BigQuery staging design, and QA checklist for data parsing failures. \\
+\addlinespace
+3 & Validation and deterministic conversion & Implement conversion tools, schema validation path, FHIR/OMOP mapping stubs, transformation diff output, deterministic retry/error handling, audit hash fields, and unit/integration tests. & Build LLM prompt templates for intent classification and explanation, baseline retrieval query set, candidate entity normalizer, and initial comparison of lexical versus dense retrieval on schemas. & Add contract tests, container build checks, artifact naming rules, GCP Workload Identity Federation design, Artifact Registry path, and initial security scan workflow. \\
+\addlinespace
+4 & Agent orchestration and MCP contracts & Implement orchestrator state machine, parser, schema, validation, and transformation agent interfaces, MCP-compatible tool wrappers, human-review gate API, and end-to-end workflow trace. & Integrate LLM gateway with tool-only execution, design routing prompts, produce agent test cases, connect retrieval baseline to explanation agent, and define hallucination/unsupported-claim checks. & Build CI matrix for backend/tests/docs, draft Cloud Run versus GKE deployment decision, create logging schema for workflow/agent/tool events, and define audit-log retention fields. \\
+\addlinespace
+5 & Graph-NER and medical graph & Add graph data model endpoints, entity/relation persistence hooks, schema-linking API, and backend support for graph evidence lookup. & Implement Graph-NER prototype for problems, medications, labs, procedures, PHI, FHIR paths, OMOP fields, relations, and confidence scores; connect normalized entities to graph nodes. & Add graph-store deployment options, data/versioning policy for graph snapshots, test cases for PHI/entity extraction, and dashboard requirements for entity confidence and reviewer corrections. \\
+\addlinespace
+6 & Advanced retrieval baseline & Add retrieval service interface, metadata filters, source chunk IDs, evidence package schema, retrieval trace in workflow output, and fallback behavior for empty retrieval. & Implement BM25 + vector hybrid retrieval using Qdrant/Milvus-compatible collections, HyDE query rewrite experiment, retrieval benchmark, Recall@k/nDCG/MRR metrics, and source attribution. & Add retrieval-index build workflow, collection naming/versioning rules, Cloud Storage artifact path, latency/cost measurement, and staging deployment design for vector services on GKE or managed alternatives. \\
+\addlinespace
+7 & Self-supervised representation learning & Add backend support for embedding model versions, evaluation artifacts, and feature flags for baseline versus adapted embeddings. & Generate positive/negative pairs from schemas, entity neighborhoods, validation traces, code mappings, and retrieved evidence; run contrastive, TSDAE, SimCSE-style, or BYOL-style adaptation plan; compare embedding clusters and retrieval gains. & Add MLflow/Vertex metadata plan, dataset/model card templates, experiment reproducibility checklist, GPU/runtime estimate, and promotion gate requiring measurable improvement over baseline. \\
+\addlinespace
+8 & Reranking, GraphRAG, and explanation & Integrate evidence package into final API output, add explanation report fields, caveat/uncertainty schema, multimodal evidence object schema, source-linked output sections, and review-state transitions. & Implement reranker interface, late-interaction or cross-encoder rerank option, hierarchy/tree context, GraphRAG neighborhood retrieval, optional GNN reranking design, and faithfulness/supported-claim scoring. & Add monitoring signals for retrieval relevance, empty results, stale sources, unsupported claims, prompt injection, model version, graph snapshot, and evidence artifact completeness. \\
+\addlinespace
+9 & OCR, DICOM, and Japan readiness & Add OCR document contracts, page/box provenance fields, DICOM metadata model, JP Core/FHIR mapping placeholders, Japanese terminology alias table, and review-state hooks for extracted fields. & Prototype OCR extraction on synthetic/Japanese-style forms, connect OCR text to Graph-NER/RAG, define DICOM-image evidence object, and prepare Japan-market research notes. & Add APPI/MHLW/PMDA checklist, Document AI/GCP Healthcare architecture, tenant/data-residency assumptions, audit-log fields, and cloud storage policy for documents and DICOM samples. \\
+\addlinespace
+10 & Medical vision and GCP MLOps & Add mask/box/frame evidence schema, segmentation artifact storage, visual-review API fields, and integration-test fixtures for image outputs. & Run SAM/MedSAM or nnU-Net public-data segmentation demo, define detection/tracking experiment, report Dice/IoU or FROC/IDF1 plan, and connect masks/boxes to explanation artifacts. & Implement or document GitHub Actions to GCP through Workload Identity Federation, Artifact Registry, Cloud Deploy or Argo CD, GKE/Cloud Run target, Terraform/Helm skeleton, SBOM, vulnerability scan, image signing, and MLflow/Vertex/Kubeflow metadata plan. \\
+\addlinespace
+11 & Evaluation, monitoring, and hardening & Run full end-to-end tests, fix integration defects, harden failure handling, verify deterministic transformations, review OCR/image evidence paths, and prepare API/demo freeze. & Produce final metrics for Graph-NER, retrieval, SSL embeddings, OCR, segmentation/detection/tracking where available, explanation faithfulness, and foundation-model safety; document limitations and post-MVP gaps. & Build observability package: Cloud Logging, Cloud Monitoring, Cloud Trace, Managed Prometheus, Grafana/Evidently plan, PHI alerts, OCR/vision quality alerts, cost dashboard, SLOs, incident response, and release approval checklist. \\
+\addlinespace
+12 & Final demo and submission & Finalize integrated demo, architecture narrative, backend docs, module descriptions, Japan-market operating narrative, and technical handoff notes. & Finalize research report, model/retrieval/OCR/vision comparison tables, explanation examples, Graph-NER outputs, and future work for GNN reranking, multimodal medical AI, and production-scale GraphRAG. & Finalize GCP/MLOps package, runbook, audit/monitoring screenshots or mockups, APPI/MHLW/PMDA notes, cost/security notes, final slides, executive summary, and submission package. \\
+\bottomrule
+\end{longtable}
+}
+
+\subsection{Phase Gates and Promotion Criteria}
+
+\begin{longtable}{p{0.20\textwidth}p{0.36\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Gate} & \textbf{Required evidence} & \textbf{Decision} \\
+\midrule
+MVP gate, Week 4 & End-to-end workflow trace, deterministic validation, human-review trigger, and basic explanation. & Continue to research tracks only after the core workflow is stable. \\
+\addlinespace
+Retrieval gate, Week 6 & Hybrid retrieval benchmark with Recall@k, nDCG@10, MRR, source coverage, and latency. & Enable HyDE, reranker, GraphRAG, or GNN only if they improve measured quality or explainability. \\
+\addlinespace
+Representation gate, Week 7 & Baseline versus adapted embeddings on retrieval, entity linking, cluster purity, and nearest-neighbor review. & Promote SSL embedding only if it improves target metrics without collapse or drift. \\
+\addlinespace
+Multimodal gate, Weeks 9--10 & OCR confidence/field extraction report, DICOM metadata trace, segmentation artifact, visual explanation example, and Japan governance checklist. & Promote multimodal demo only as assistive review/annotation unless regulatory scope is separately approved. \\
+\addlinespace
+Clinical safety gate, Week 11 & PHI checks, unsupported-claim checks, review gates, audit logs, APPI/MHLW/PMDA notes, monitoring, and runbooks. & No final demo flow can bypass safety or governance controls. \\
+\addlinespace
+Final readiness gate, Week 12 & Reproducible package, CI evidence, evaluation report, model/data cards, OCR/vision evidence where applicable, risk register, and demo script. & Submit as a research-backed, production-shaped prototype with explicit post-MVP roadmap. \\
+\bottomrule
+\end{longtable}

@@ -1,0 +1,43 @@
+\begin{titlepage}
+  \centering
+  \vspace*{0.55in}
+
+  {\Huge\bfseries\color{sfblue} \projectname \par}
+  \vspace{0.25in}
+  {\Large\bfseries A Governed Multi-Agent Platform for Medical and Healthcare Data Collaboration\par}
+  \vspace{0.08in}
+  {\large Foundation Models, RAG, MCP Tools, and Human-in-the-Loop Control\par}
+
+  \vspace{0.55in}
+  \begin{tikzpicture}
+    \node[draw=sfblue, ultra thick, rounded corners=6pt, fill=sfgray, inner sep=16pt, text width=0.78\textwidth, align=center] {
+      \Large \textbf{Proposal Thesis}\\[4pt]
+      \normalsize \projectname{} turns JSON, YAML, CSV, and healthcare structured-data workflows into explainable, auditable, agent-assisted data operations. The system uses foundation models for intent, reasoning, and explanation, while deterministic tools, retrieval evidence, validation reports, and clinician-facing transparency controls preserve correctness and interpretability.
+    };
+  \end{tikzpicture}
+
+  \vfill
+
+  \begin{tabular}{>{\bfseries}r p{0.62\textwidth}}
+    Document type: & Comprehensive project proposal and implementation plan\\
+    Prepared for: & HuReDee-IoYou AI OJT Program / Project Team Review\\
+    Prepared by: & Nguyen Tran Nhat Trung; Nguyen Tran Minh Khoi; Tran Ha Son\\
+    Version: & Research-backed LaTeX proposal v1.0\\
+    Date: & \docdate\\
+    Proposed MVP duration: & 8 weeks\\
+  \end{tabular}
+
+  \vspace{0.65in}
+
+  \begin{tikzpicture}[node distance=0.55cm]
+    \node[draw=sfblue, fill=sfblue!8, rounded corners=5pt, minimum width=2.6cm, minimum height=0.9cm] (fm) {Foundation Model};
+    \node[draw=sfcyan, fill=sfcyan!8, rounded corners=5pt, minimum width=2.2cm, minimum height=0.9cm, right=of fm] (rag) {RAG};
+    \node[draw=sfpurple, fill=sfpurple!8, rounded corners=5pt, minimum width=2.2cm, minimum height=0.9cm, right=of rag] (mcp) {MCP};
+    \node[draw=sfgreen, fill=sfgreen!8, rounded corners=5pt, minimum width=2.6cm, minimum height=0.9cm, right=of mcp] (agents) {Agents};
+    \node[draw=sforange, fill=sforange!10, rounded corners=5pt, minimum width=2.8cm, minimum height=0.9cm, right=of agents] (hitl) {Clinical Review};
+    \draw[-{Latex[length=2mm]}, thick, sfblue] (fm) -- (rag);
+    \draw[-{Latex[length=2mm]}, thick, sfcyan] (rag) -- (mcp);
+    \draw[-{Latex[length=2mm]}, thick, sfpurple] (mcp) -- (agents);
+    \draw[-{Latex[length=2mm]}, thick, sfgreen] (agents) -- (hitl);
+  \end{tikzpicture}
+\end{titlepage}

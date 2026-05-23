@@ -1,0 +1,22 @@
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+OJTFlow is a proposed medical and healthcare AI platform for governed structured-data collaboration, multimodal medical data processing, natural language interaction, and evidence-grounded explanation. The system is designed to help teams transform, validate, retrieve, explain, and audit healthcare data across JSON, YAML, CSV, FHIR, Bulk FHIR, OMOP-aligned tables, scanned clinical documents, DICOM images, and medical video workflows. It combines deterministic data engineering with classical machine learning, deep learning, foundation AI, advanced retrieval, Graph-NER, OCR, medical image segmentation, object detection/tracking, self-supervised representation learning, and clinician-in-the-loop governance.
+
+The central thesis is that healthcare AI systems should not rely on a foundation model alone. OJTFlow uses foundation models for intent understanding, planning, summarization, visual prompting, and explanation, while deterministic validators, schema tools, FHIR/OMOP/JP Core constraints, retrieval evidence, DICOM/OCR metadata, audit logs, and human review preserve correctness and accountability. The proposal extends conventional RAG with hybrid retrieval, HyDE, reranking, hierarchical retrieval, GraphRAG, Graph-NER, optional GNN reranking, and self-supervised embedding adaptation. It also includes healthcare-grade explainability: supported-claim mapping, source provenance, uncertainty, abstention, limitations, image overlays, OCR bounding boxes, segmentation masks, tracking traces, and clinical review checkpoints.
+
+The project is positioned from both research and industrial perspectives for the Japanese healthcare market. As research, it explores advanced retrieval, medical entity graphs, representation learning, explainable foundation AI, promptable medical segmentation, clinical document intelligence, and medical imaging evaluation. As industry architecture, it specifies a deployable GCP-first MLOps and CI/CD stack using GitHub Actions, Workload Identity Federation, Artifact Registry, Cloud Deploy or Argo CD, GKE, Cloud Run, Terraform, Helm, MLflow, Kubeflow Pipelines, Feast, KServe, vLLM, Ray Serve, Qdrant or Milvus, OpenSearch, graph databases, Cloud Healthcare API, Document AI, OpenTelemetry, Cloud Monitoring, Prometheus, Grafana, and Evidently. Medical constraints are treated as first-class requirements, including APPI/Japan privacy expectations, MHLW medical information security guidance, PMDA/SaMD boundary awareness, PHI protection, de-identification, Good Machine Learning Practice, change control, bias monitoring, external validation, auditability, and reporting alignment with FUTURE-AI, TRIPOD+AI, CONSORT-AI, DECIDE-AI, and CLAIM.
+
+\subsection*{Proposal Snapshot}
+
+\begin{tabularx}{\textwidth}{p{0.24\textwidth}X}
+\toprule
+\textbf{Project} & OJTFlow: Medical and healthcare AI workflow platform. \\
+\textbf{Core purpose} & Convert, validate, retrieve, explain, and audit structured healthcare data, clinical documents, DICOM imaging, and medical video with natural language control. \\
+\textbf{AI approach} & Classical ML + deep learning + foundation AI + Graph-NER + OCR + SAM/MedSAM-style segmentation + detection/tracking + advanced RAG + self-supervised representation learning. \\
+\textbf{Healthcare focus} & Japan-ready medical DX, JP Core/FHIR, Bulk FHIR, OMOP, scanned forms, DICOM, Synthea, MIMIC-IV, eICU, n2c2/i2b2, MedQA, PubMedQA, MIMIC-CXR, CheXpert, public segmentation/detection datasets. \\
+\textbf{Safety principle} & No autonomous diagnosis or treatment in the MVP; all medically consequential actions require human or clinician review. \\
+\textbf{Industrial stack} & FastAPI, LangGraph, MCP, PostgreSQL, Qdrant/Milvus, OpenSearch, graph DB, GCP Healthcare API, Document AI, MLflow, Kubeflow, Feast, KServe, vLLM, GKE/Cloud Run, GitHub Actions, Cloud Deploy/Argo CD. \\
+\textbf{Expected output} & A deployable prototype, evaluation suite, audit trail, medical explanation report, and MLOps-ready architecture. \\
+\bottomrule
+\end{tabularx}

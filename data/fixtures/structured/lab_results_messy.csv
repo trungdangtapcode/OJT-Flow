@@ -1,0 +1,5 @@
+date,patient_id,lab_name,value,unit
+2026-01-01,P001,HbA1c,7.4,%
+2026/01/02,P002,HbA1c,,
+bad-date,P003,Glucose,120,mg/dL
+

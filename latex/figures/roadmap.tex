@@ -1,0 +1,29 @@
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >=Latex,
+  week/.style={draw=sfdark!35, fill=sfgray, minimum width=0.78cm, minimum height=0.42cm, align=center, inner sep=1.5pt},
+  phase/.style={draw, rounded corners=4pt, minimum height=0.55cm, align=center, inner sep=3pt},
+  line/.style={line width=0.8pt}
+]
+
+\foreach \w in {1,...,12} {
+  \node[week] (w\w) at ({(\w-1)*0.82},0) {W\w};
+}
+
+\node[phase, fill=sfblue!8, draw=sfblue, minimum width=0.78cm] at (0,-0.82) {Scope\\Design};
+\node[phase, fill=sfcyan!8, draw=sfcyan, minimum width=2.35cm] at (1.64,-1.38) {Core Data\\Workflow};
+\node[phase, fill=sfgreen!8, draw=sfgreen, minimum width=1.55cm] at (4.10,-1.94) {Graph-NER\\Retrieval};
+\node[phase, fill=sfpurple!8, draw=sfpurple, minimum width=1.55cm] at (5.74,-2.50) {SSL +\\GraphRAG};
+\node[phase, fill=sforange!12, draw=sforange, minimum width=1.55cm] at (7.38,-3.06) {GCP\\MLOps};
+\node[phase, fill=sfred!8, draw=sfred, minimum width=1.55cm] at (9.02,-3.62) {Evaluate\\Submit};
+
+\draw[line, sfblue] (0,-0.22) -- (0,-0.55);
+\draw[line, sfcyan] (0.82,-0.22) -- (0.82,-0.55) -- (2.46,-0.55) -- (2.46,-0.22);
+\draw[line, sfgreen] (3.28,-0.22) -- (3.28,-1.11) -- (4.10,-1.11) -- (4.10,-0.22);
+\draw[line, sfpurple] (4.92,-0.22) -- (4.92,-1.67) -- (5.74,-1.67) -- (5.74,-0.22);
+\draw[line, sforange] (6.56,-0.22) -- (6.56,-2.23) -- (7.38,-2.23) -- (7.38,-0.22);
+\draw[line, sfred] (8.20,-0.22) -- (8.20,-2.79) -- (9.02,-2.79) -- (9.02,-0.22);
+
+\node[align=left, text width=9.8cm, anchor=west] at (0,-4.45) {\textbf{Final milestone:} governed healthcare AI workflow prototype with deterministic validation, Graph-NER, advanced retrieval, self-supervised embedding evidence, explainable outputs, GitHub Actions + GCP MLOps path, monitoring, audit, and executive demo.};
+
+\end{tikzpicture}

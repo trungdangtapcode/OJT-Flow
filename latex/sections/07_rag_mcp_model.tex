@@ -1,0 +1,286 @@
+\section{RAG, MCP, and Foundation Model Strategy}
+
+\subsection{RAG Design}
+
+RAG should ground \projectname{} in project-specific knowledge that the model does not reliably know from training. In this proposal, retrieval is not only for answering documentation questions. It is used to improve schema matching, transformation planning, error explanation, and user-facing summaries.
+
+\subsubsection{Knowledge Sources}
+
+\begin{tabularx}{\textwidth}{p{0.24\textwidth}X X}
+\toprule
+\textbf{Source} & \textbf{Examples} & \textbf{How it helps} \\
+\midrule
+Schema documentation & JSON Schema files, Pydantic models, CSV column definitions. & Improves schema matching and validation explanations. \\
+Transformation examples & Approved before/after conversions, YAML templates, CSV-to-JSON mappings. & Guides planning and explanation without inventing mapping rules. \\
+Project documentation & Architecture notes, API docs, demo scripts, OJT requirements. & Enables project-specific help and traceable documentation. \\
+Error library & Known parsing errors, malformed examples, repair guidance. & Improves remediation suggestions and validation messages. \\
+Data dictionaries & Field meanings, units, business terms, enumerations. & Makes explanations useful to non-technical users. \\
+Audit history & Past accepted transformations and approvals. & Supports consistency for repeated workflows. \\
+\bottomrule
+\end{tabularx}
+
+\subsubsection{Retrieval Pipeline}
+
+\begin{enumerate}
+  \item Ingest trusted schemas, examples, rules, and documentation.
+  \item Chunk content by semantic boundaries and preserve metadata: source, version, schema name, fields, trust level, and date.
+  \item Generate embeddings for text and schema descriptions.
+  \item Store vectors in pgvector for PostgreSQL deployment or FAISS for lightweight local MVP.
+  \item Build runtime retrieval queries from instruction, detected fields, target format, and validation issues.
+  \item Retrieve top-k contexts with metadata filters; optionally rerank.
+  \item Pass only necessary retrieved context to the model.
+  \item Record retrieved source IDs in the workflow trace.
+\end{enumerate}
+
+\subsubsection{RAG Quality Controls}
+
+\begin{itemize}
+  \item Separate trusted project knowledge from untrusted user-provided data.
+  \item Use metadata filters to avoid mixing unrelated schemas.
+  \item Track schema versions and retrieval source IDs.
+  \item Require low-confidence warnings when retrieval quality is weak.
+  \item Validate every model-suggested transformation with deterministic tools.
+\end{itemize}
+
+\subsection{Advanced Retrieval Strategy}
+
+To make \projectname{} stand out technically, retrieval should be designed as a layered system rather than a single vector-search call. The MVP should ship a practical baseline, while the architecture leaves room for stronger retrieval modules when the evaluation set proves they improve relevance, faithfulness, or schema matching.
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figures/advanced_retrieval}}
+  \caption{Advanced retrieval ladder for OJTFlow. Each level can be enabled independently and measured against the same retrieval benchmark.}
+  \label{fig:advanced-retrieval}
+\end{figure}
+
+\subsubsection{Recommended Retrieval Ladder}
+
+\begin{longtable}{p{0.18\textwidth}p{0.30\textwidth}p{0.24\textwidth}p{0.13\textwidth}}
+\toprule
+\textbf{Method} & \textbf{Role in OJTFlow} & \textbf{When to use} & \textbf{MVP status} \\
+\midrule
+Hybrid lexical + dense retrieval & Combine BM25-style keyword matching for exact field/schema names with dense vector search for semantic matches. BEIR results support BM25 as a robust baseline and show reranking/late-interaction methods can improve zero-shot retrieval at higher cost \cite{thakur2021beir}. & Default retrieval for schema docs, examples, rules, and data dictionaries. & Required. \\
+\addlinespace
+Metadata-aware filtering & Filter by source type, schema version, trust level, data format, domain, and project module before ranking. & Prevents unrelated schemas and untrusted user content from contaminating model context. & Required. \\
+\addlinespace
+HyDE query expansion & Generate a hypothetical schema explanation, transformation note, or error report, embed it, then retrieve nearest trusted documents \cite{gao2022hyde}. & Useful when the user asks vague natural language questions that do not share terms with schema docs. & Optional MVP+ module. \\
+\addlinespace
+Reranking & Rerank first-stage top-k results with a stronger relevance model. ColBERT-style late interaction offers fine-grained token-level matching \cite{khattab2020colbert}. & Use for top 20--50 candidates where precision matters more than latency. & Demo module. \\
+\addlinespace
+Hierarchical retrieval & Retrieve at document, section, schema, table, field, example, and chunk levels. RAPTOR-style summary trees can support long documentation and multi-step questions \cite{sarthi2024raptor}. & Use when a question needs both high-level project context and low-level field evidence. & Stretch. \\
+\addlinespace
+Entity extraction & Extract canonical entities such as schema, field, dataset, business term, validation issue, transformation rule, agent, tool, and approval. Link aliases such as \texttt{customer\_id}, \texttt{custId}, and \texttt{Customer ID}. & Essential for GraphRAG and for matching messy CSV columns to approved schemas. & Stretch. \\
+\addlinespace
+GraphRAG & Build a graph index over entities, relationships, source chunks, and community summaries. Microsoft GraphRAG distinguishes local entity-focused search from global community-summary search \cite{edge2024graphrag,microsoftGraphRagDocs}. & Use for multi-hop questions such as ``which schema and cleaning rule should apply to this dataset?'' or ``what are the common transformation risks across sales reports?'' & Stretch / research track. \\
+\addlinespace
+Lightweight graph retrieval & Use a smaller graph-enhanced retrieval index when full GraphRAG indexing is too expensive. LightRAG proposes graph structures inside indexing and retrieval for simpler, faster RAG \cite{guo2024lightrag}. & Use when the team wants graph benefits without heavy community-report generation. & Stretch. \\
+\addlinespace
+GNN-based reranking & Apply graph neural retrieval to rank schema/entity neighborhoods for difficult multi-hop reasoning. GNN-RAG combines graph neural networks with LLM reasoning over knowledge graphs \cite{mavromatis2024gnnrag}. & Research extension after the graph has enough labeled examples or synthetic evaluation queries. & Future research. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{OJTFlow Knowledge Graph Design}
+
+The graph should be schema-guided, not open-ended. Unconstrained entity extraction often creates duplicate or noisy nodes; this project should define allowed node and edge types before ingestion.
+
+\begin{tabularx}{\textwidth}{p{0.20\textwidth}X}
+\toprule
+\textbf{Graph element} & \textbf{Examples} \\
+\midrule
+Node types & \texttt{Dataset}, \texttt{Schema}, \texttt{Field}, \texttt{BusinessTerm}, \texttt{TransformationRule}, \texttt{ValidationIssue}, \texttt{MCPTool}, \texttt{Agent}, \texttt{ApprovalDecision}, \texttt{SourceChunk}. \\
+Edge types & \texttt{HAS\_FIELD}, \texttt{ALIAS\_OF}, \texttt{VALIDATED\_BY}, \texttt{TRANSFORMED\_BY}, \texttt{VIOLATES}, \texttt{EXPLAINED\_BY}, \texttt{APPROVED\_BY}, \texttt{SUPPORTED\_BY}, \texttt{DERIVED\_FROM}. \\
+Retrieval modes & Local entity search for specific fields/schemas; global community search for broad summaries; hybrid graph-vector search for multi-hop schema matching. \\
+Storage options & Start with PostgreSQL tables and NetworkX for MVP experiments; use Neo4j or a graph extension later if graph queries become central. \\
+\bottomrule
+\end{tabularx}
+
+\subsubsection{Graph-NER for Medical Entity Recognition and Schema Linking}
+
+OJTFlow should include a Graph-NER module: a hybrid clinical entity recognition, normalization, and relationship extraction layer that converts unstructured and semi-structured healthcare data into a retrievable graph. This is both a research contribution and an industrial capability because it supports de-identification, schema matching, terminology grounding, GraphRAG, and clinical audit.
+
+\begin{longtable}{p{0.20\textwidth}p{0.35\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Graph-NER layer} & \textbf{Advanced method} & \textbf{OJTFlow purpose} \\
+\midrule
+Entity recognition & Clinical NER using biomedical encoders, prompt-assisted extraction, weak supervision, and dictionary matching. & Detect patient identifiers, diagnoses, medications, procedures, labs, observations, units, dates, providers, departments, schema fields, and medical codes. \\
+\addlinespace
+Entity normalization & Link extracted mentions to controlled concepts such as ICD, LOINC, SNOMED CT, RxNorm, FHIR resource paths, and OMOP concept IDs. & Convert messy text/CSV columns into standardized healthcare concepts for validation and retrieval. \\
+\addlinespace
+Relationship extraction & Extract relations such as medication-dose, lab-value-unit, diagnosis-date, patient-encounter, field-schema, and rule-violation. & Build the graph used by GraphRAG, audit, data quality checks, and explanation. \\
+\addlinespace
+Graph construction & Store nodes and edges with provenance, confidence, source chunk IDs, schema version, and PHI risk level. & Make every entity and relationship inspectable and auditable. \\
+\addlinespace
+Graph learning & Use link prediction, node classification, and optional GNN reranking to improve entity linking and schema matching. & Research track for hard cases such as ambiguous abbreviations, site-specific columns, and multi-hop relationships. \\
+\addlinespace
+Human correction loop & Clinicians or reviewers correct entity links and relationships; corrections become weak supervision signals. & Improves model quality while preserving accountability. \\
+\bottomrule
+\end{longtable}
+
+\textbf{Graph-NER output contract.}
+
+\begin{verbatim}
+{
+  "entities": [
+    {
+      "text": "HbA1c",
+      "type": "lab_test",
+      "normalized_id": "LOINC:4548-4",
+      "source_ref": "row:17,column:lab_name",
+      "confidence": 0.92
+    }
+  ],
+  "relations": [
+    {
+      "head": "LOINC:4548-4",
+      "relation": "HAS_VALUE",
+      "tail": "7.4 %",
+      "evidence": "row:17",
+      "confidence": 0.88
+    }
+  ],
+  "graph_updates": ["node:lab_test", "edge:HAS_VALUE"],
+  "requires_review": false
+}
+\end{verbatim}
+
+\subsubsection{Safety Rules for Advanced Retrieval}
+
+\begin{itemize}
+  \item HyDE-generated text is only a retrieval query, never evidence. Final answers must cite retrieved trusted sources, validation reports, or tool outputs.
+  \item Rerankers and GraphRAG outputs must preserve source chunk IDs so explanations remain auditable.
+  \item Graph entity extraction should use a fixed ontology and canonicalization rules to reduce duplicate nodes.
+  \item GraphRAG and GNN modules should be enabled only when they beat the simpler hybrid baseline on a project evaluation set.
+  \item Retrieval should return a confidence package: retrieval mode, top-k scores, source IDs, schema versions, and missing-evidence warnings.
+\end{itemize}
+
+\subsection{Self-Supervised Representation Learning Strategy}
+
+Advanced retrieval depends on representation quality. For \projectname{}, the most realistic research contribution is to improve the embedding and schema-representation layer with self-supervised learning (SSL), while using an existing foundation model for reasoning. Full foundation-model pretraining is too expensive and risky for the MVP; domain adaptation of the embedding model is feasible, measurable, and directly useful for retrieval.
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figures/self_supervised_learning}}
+  \caption{Self-supervised representation learning path for project-specific retrieval and schema matching.}
+  \label{fig:self-supervised-learning}
+\end{figure}
+
+\subsubsection{Research-Informed Methods}
+
+\begin{longtable}{p{0.20\textwidth}p{0.34\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Method family} & \textbf{Research basis} & \textbf{Use in OJTFlow} \\
+\midrule
+Contrastive sentence embeddings & SimCSE uses contrastive learning to improve sentence embeddings, including an unsupervised variant that creates positive pairs through dropout noise \cite{gao2021simcse}. & Fine-tune a bi-encoder so schema descriptions, field definitions, and user questions land near each other in embedding space. \\
+\addlinespace
+Unsupervised dense retrieval & Contriever explores contrastive learning for unsupervised dense retrieval and shows strong transfer across retrieval settings \cite{izacard2021contriever}. & Use as a design reference for training retrieval embeddings without manual relevance labels. \\
+\addlinespace
+Weakly supervised embedding pretraining & E5 uses large-scale weakly supervised text pairs and contrastive learning for general-purpose embeddings \cite{wang2022e5}. OpenAI's text/code embedding work also shows contrastive pretraining can produce strong semantic search representations \cite{neelakantan2022textcode}. & Start with a strong off-the-shelf embedding model, then adapt only if project-specific retrieval tests expose gaps. \\
+\addlinespace
+Denoising autoencoding & TSDAE learns sentence embeddings by reconstructing original text from corrupted input and is useful for domain adaptation when labeled pairs are scarce \cite{wang2021tsdae}. & Train on project docs, schema descriptions, error messages, and transformation notes to make embeddings robust to noisy wording. \\
+\addlinespace
+BYOL / no-negative SSL & BYOL learns representations with online and target networks without negative pairs \cite{grill2020byol}. Barlow Twins reduces redundancy between paired representations instead of relying on explicit negatives \cite{zbontar2021barlow}. & Useful when hard negatives are risky or unavailable; apply to pairs of equivalent schemas, field aliases, and format-preserving conversions. \\
+\addlinespace
+Tabular SSL & SCARF forms contrastive tabular views through random feature corruption \cite{bahri2021scarf}. VIME uses value imputation and mask estimation for tabular self-supervision \cite{yoon2020vime}. SubTab creates multi-view representations from feature subsets \cite{uddin2021subtab}. & Learn row, column, and table representations for messy CSV profiling, column matching, anomaly explanation, and schema inference. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Project-Specific Pretext Tasks}
+
+\begin{tabularx}{\textwidth}{p{0.27\textwidth}X p{0.22\textwidth}}
+\toprule
+\textbf{Pretext task} & \textbf{Positive and negative construction} & \textbf{Expected benefit} \\
+\midrule
+Format-invariant alignment & Treat equivalent JSON, YAML, and CSV representations of the same dataset as positives; use different schemas or domains as negatives. & Embeddings learn meaning rather than file syntax. \\
+Field alias alignment & Treat \texttt{customer\_id}, \texttt{custId}, \texttt{Customer ID}, and data-dictionary descriptions as positives. Use unrelated fields as hard negatives. & Better schema matching for messy user files. \\
+Schema-document alignment & Pair schema fields with documentation, examples, validation messages, and accepted transformations that mention them. & Better RAG retrieval for explanations and validation reports. \\
+Transformation consistency & Pair before/after conversion examples and their approved cleaning rule. Use unsafe or rejected transformations as negatives. & Helps the retrieval layer surface relevant historical transformations. \\
+Denoising and masking & Corrupt field names, mask column values, drop rows, or shuffle harmless ordering; train the encoder to recover stable representations. & Robustness to malformed CSVs and inconsistent naming. \\
+Tabular view contrast & Create two views of the same table through row sampling, feature masking, random feature corruption, or column subset selection. & Stronger row/table embeddings for profiling and anomaly detection. \\
+Graph link prediction & Predict edges such as \texttt{ALIAS\_OF}, \texttt{HAS\_FIELD}, \texttt{VALIDATED\_BY}, and \texttt{DERIVED\_FROM}. & Supports GraphRAG and optional GNN reranking. \\
+\bottomrule
+\end{tabularx}
+
+\subsubsection{Recommended Implementation Path}
+
+\begin{enumerate}
+  \item \textbf{Baseline first:} start with a strong pretrained embedding model and hybrid retrieval. Measure retrieval before training anything.
+  \item \textbf{Build weak labels automatically:} generate positive pairs from schemas, data dictionaries, equivalent format conversions, chunk summaries, and approved transformation examples.
+  \item \textbf{Fine-tune a small embedding adapter:} use contrastive loss or TSDAE-style denoising on a sentence-transformer or similar bi-encoder. Keep the base foundation model unchanged.
+  \item \textbf{Add tabular SSL only if needed:} use SCARF/VIME/SubTab-style augmentations for CSV/table profiling if schema inference remains weak.
+  \item \textbf{Try BYOL-style learning carefully:} use no-negative learning for field/schema views when reliable negatives are unavailable, with collapse checks such as embedding variance and nearest-neighbor diversity.
+  \item \textbf{Promote only by evaluation:} deploy the adapted embedding model only if it improves recall@k, nDCG@10, schema-hit rate, and explanation faithfulness without increasing latency beyond target.
+\end{enumerate}
+
+\subsubsection{Foundation Model Boundary}
+
+The proposal should not promise custom foundation-model training. A realistic path is:
+
+\begin{itemize}
+  \item MVP: use an existing foundation model and existing embedding model.
+  \item MVP+: adapt the embedding model or a small retrieval encoder with SSL.
+  \item Future: use parameter-efficient fine-tuning or instruction tuning for specialized explanation behavior if enough high-quality examples exist.
+  \item Research-only: continued pretraining of a larger foundation model on project data, considered only with compute, governance, and evaluation capacity.
+\end{itemize}
+
+\subsection{MCP Integration Design}
+
+MCP gives \projectname{} a clean boundary between agent reasoning and executable capabilities. Instead of hardcoding every tool into the orchestrator, the platform can expose tool families as MCP servers.
+
+\begin{longtable}{p{0.21\textwidth}p{0.24\textwidth}p{0.27\textwidth}p{0.14\textwidth}}
+\toprule
+\textbf{MCP server} & \textbf{Resources} & \textbf{Tools} & \textbf{Prompts} \\
+\midrule
+structured-data-server & Dataset refs, sample rows, detected format metadata. & \texttt{parse\_data}, \texttt{convert\_json\_yaml}, \texttt{convert\_csv\_json}, \texttt{export\_file}. & Conversion and error templates. \\
+\addlinespace
+schema-validation-server & Schema registry, Pydantic models, JSON Schema documents. & \texttt{infer\_schema}, \texttt{validate\_schema}, \texttt{compare\_schema}, \texttt{detect\_anomalies}. & Schema repair and validation summary prompts. \\
+\addlinespace
+rag-context-server & Documentation chunks, field dictionaries, examples. & \texttt{search\_context}, \texttt{get\_schema\_docs}, \texttt{get\_examples}, \texttt{rerank\_context}. & Grounded explanation prompts. \\
+\addlinespace
+workflow-audit-server & Workflow logs, approval history, transformation diffs. & \texttt{record\_event}, \texttt{fetch\_history}, \texttt{generate\_audit\_report}. & Reviewer handoff and audit summary prompts. \\
+\addlinespace
+human-review-server & Pending approval items and issue reports. & \texttt{request\_approval}, \texttt{record\_decision}, \texttt{update\_plan}. & Clarification and approval prompts. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Example MCP Tool Contracts}
+
+\begin{verbatim}
+tool: convert_csv_to_json
+input:
+  csv_text: string
+  orientation: records | columns
+  schema: optional object
+output:
+  json_text: string
+  row_count: integer
+  warnings: list
+\end{verbatim}
+
+\begin{verbatim}
+tool: validate_against_schema
+input:
+  data_ref: string
+  schema_ref: string
+output:
+  valid: boolean
+  issues: list
+  severity_summary: object
+\end{verbatim}
+
+\subsection{Foundation Model Strategy}
+
+The foundation model should be treated as the reasoning and communication layer. Its responsibilities are intent interpretation, workflow planning, tool selection, explanation, summarization, and uncertainty communication. Exact parsing, conversion, schema validation, and storage should remain deterministic.
+
+\begin{tabularx}{\textwidth}{p{0.2\textwidth}X X X}
+\toprule
+\textbf{Option} & \textbf{Benefits} & \textbf{Trade-offs} & \textbf{Best use} \\
+\midrule
+Cloud LLM API & Strong reasoning, best demo quality, fast setup. & Cost, privacy review, vendor dependency. & Initial prototype and final demo. \\
+Local open-source model & Data control, offline operation, GPU deployment. & More setup, quality variance, inference tuning. & Privacy-sensitive deployment. \\
+Hybrid gateway & Routes simple tasks locally and complex tasks to stronger model. & More engineering complexity. & Future production-ready version. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Recommended MVP Position}
+
+Start with a model gateway abstraction and one high-quality model provider or local model. All code should call the gateway rather than hardcoding provider-specific logic. This keeps the MVP practical while preserving future flexibility.

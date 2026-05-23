@@ -1,0 +1,51 @@
+\section{Expected Outcomes, Risks, and Future Extensions}
+
+\subsection{Expected Outcomes}
+
+By the end of the MVP, the team should deliver:
+
+\begin{itemize}
+  \item A working multi-agent prototype for structured-data transformation and explanation.
+  \item API endpoints for conversion, validation, explanation, workflow execution, and human review.
+  \item RAG knowledge base for schemas, examples, field definitions, and project documentation.
+  \item MCP-compatible servers for structured-data tools, validation tools, retrieval, review, and audit.
+  \item Human-in-the-loop approval flow for risky or ambiguous transformations.
+  \item Docker-based deployment package.
+  \item Technical documentation, test cases, evaluation report, and final demonstration script.
+\end{itemize}
+
+\subsection{Project Risks}
+
+\begin{tabularx}{\textwidth}{p{0.20\textwidth}p{0.28\textwidth}X}
+\toprule
+\textbf{Risk} & \textbf{Impact} & \textbf{Mitigation} \\
+\midrule
+Scope creep & Team may attempt too many features. & Define MVP strictly and move analytics, multimodal extraction, and enterprise integration to stretch scope. \\
+Unreliable model outputs & Invalid structured output or incorrect explanation. & Use deterministic tools for conversion and validators after model outputs. \\
+RAG quality issues & Wrong context may cause poor explanations. & Use curated docs, metadata filters, retrieval evaluation, and low-confidence warnings. \\
+Retrieval complexity & HyDE, rerankers, GraphRAG, and GNN ranking can add latency, cost, and implementation risk. & Use a retrieval benchmark, ship hybrid search first, and enable advanced modules only when they outperform the baseline. \\
+Representation learning overreach & Training an embedding or foundation model can distract from core product delivery. & Restrict MVP to pretrained embeddings; run SSL adaptation as an optional experiment with a promotion gate. \\
+Representation collapse or drift & BYOL-style or poorly sampled contrastive learning can produce collapsed or domain-overfit embeddings. & Track embedding variance, nearest-neighbor diversity, baseline regression, and held-out schema retrieval quality. \\
+MCP complexity & Protocol integration may consume development time. & Build direct Python tools first, then wrap stable tools as MCP servers. \\
+GPU or model constraints & Local model performance may be insufficient. & Use model gateway; choose cloud model for demo if local inference is weak. \\
+Security risk & Prompt injection, sensitive data leakage, or tool misuse. & Least privilege, approval gates, audit logs, adversarial tests, and sensitive-data masking. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Future Extensions}
+
+\begin{itemize}
+  \item Multi-modal data support for PDFs, images of tables, screenshots, and chart explanations.
+  \item Domain-specific agents for finance, sales, healthcare, education, or DevOps configuration.
+  \item GraphRAG local/global/DRIFT-style retrieval over schema, field, transformation, and approval graphs.
+  \item GNN-based reranking for difficult multi-hop schema matching after enough labeled or synthetic training data exists.
+  \item Self-supervised embedding adaptation using contrastive, denoising, BYOL-style, or tabular SSL objectives.
+  \item Fine-tuned models or adapters for schema explanation and transformation planning.
+  \item Real-time collaborative pipelines where multiple users and agents review transformations.
+  \item Additional MCP integrations for GitHub, Google Drive, databases, dashboards, and workflow engines.
+  \item Benchmark suite for agentic structured-data workflows.
+\end{itemize}
+
+\subsection{Final Positioning}
+
+\projectname{} should be presented as a serious, deployable prototype for governed AI-assisted data operations. Its strongest claim is simple: users get the flexibility of natural language, while the system preserves the discipline of typed tools, schema validation, provenance, and human accountability.

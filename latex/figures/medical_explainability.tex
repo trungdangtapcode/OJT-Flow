@@ -1,0 +1,30 @@
+\begin{tikzpicture}[
+  font=\small,
+  >=Latex,
+  box/.style={draw, rounded corners=4pt, minimum height=0.78cm, align=center, inner sep=5pt},
+  layer/.style={box, text width=2.6cm},
+  arrow/.style={-{Latex[length=2mm]}, thick}
+]
+
+\node[layer, fill=sfblue!8, draw=sfblue] (input) {Healthcare data\\EHR, labs, CSV, FHIR-like records};
+\node[layer, fill=sfcyan!8, draw=sfcyan, right=0.55cm of input] (validate) {Validation trace\\schema, units, missingness};
+\node[layer, fill=sfgreen!8, draw=sfgreen, right=0.55cm of validate] (retrieval) {Evidence trace\\guidelines, schemas, dictionaries};
+\node[layer, fill=sfpurple!8, draw=sfpurple, right=0.55cm of retrieval] (uncertainty) {Uncertainty\\confidence, conflicts, abstention};
+\node[layer, fill=sforange!10, draw=sforange, right=0.55cm of uncertainty] (clinician) {Clinical review\\approve, edit, reject};
+\node[layer, fill=sfblue!8, draw=sfblue, right=0.55cm of clinician] (explain) {Explanation report\\claims, sources, limits};
+
+\draw[arrow, sfblue] (input) -- (validate);
+\draw[arrow, sfcyan] (validate) -- (retrieval);
+\draw[arrow, sfgreen] (retrieval) -- (uncertainty);
+\draw[arrow, sfpurple] (uncertainty) -- (clinician);
+\draw[arrow, sforange] (clinician) -- (explain);
+
+\node[box, fill=sfgray, draw=sfdark, text width=3.1cm, below=0.75cm of retrieval] (audit) {Audit log\\workflow ID, tool calls, source IDs, approvals};
+\node[box, fill=sfred!7, draw=sfred, text width=3.2cm, below=0.75cm of uncertainty] (guard) {Guardrail\\not diagnosis, not treatment, escalate when unsure};
+
+\draw[arrow, sfdark] (validate) |- (audit);
+\draw[arrow, sfdark] (retrieval) -- (audit);
+\draw[arrow, sfdark] (clinician) |- (audit);
+\draw[arrow, sfred] (guard) -- (uncertainty);
+
+\end{tikzpicture}

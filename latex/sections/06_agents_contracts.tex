@@ -1,0 +1,76 @@
+\section{Core Components and Agent Contracts}
+
+\subsection{Agent Roles}
+
+\begin{longtable}{p{0.18\textwidth}p{0.35\textwidth}p{0.18\textwidth}p{0.18\textwidth}}
+\toprule
+\textbf{Agent} & \textbf{Core responsibility} & \textbf{Inputs} & \textbf{Outputs} \\
+\midrule
+Orchestrator & Plans workflow, chooses agents, manages state, resolves dependencies, and aggregates final response. & User request, dataset metadata, agent results. & Task plan, agent calls, response package. \\
+\addlinespace
+Input Parser & Detects format, parses JSON/YAML/CSV, extracts field names, row counts, sample values, and parse errors. & Raw file or text. & Parsed object, format, parser report. \\
+\addlinespace
+Schema & Infers schema, compares against known schemas, identifies required and optional fields. & Parsed data, retrieved schemas. & Schema profile, candidate match, confidence. \\
+\addlinespace
+Validation & Checks syntax, types, missing values, duplicate keys, invalid rows, and schema violations. & Parsed data, schema profile. & Validation report, issue list, severity. \\
+\addlinespace
+Transformation & Executes JSON/YAML/CSV conversion, field mapping, normalization, and approved cleaning. & Validated data, plan, rules. & Converted output, diff, metadata. \\
+\addlinespace
+RAG Retrieval & Searches knowledge base for rules, examples, data dictionaries, and documentation. & User task, fields, schema candidates. & Retrieved context with source IDs. \\
+\addlinespace
+Explanation & Produces user-facing summary of the dataset, transformation, validation findings, and caveats. & Output, validation report, retrieved context. & Explanation, glossary, limitations. \\
+\addlinespace
+Safety and Audit & Checks prompt injection risk, sensitive data exposure, output validity, tool permissions, and logs. & Input, tool calls, outputs. & Audit log, safety flags, approval requirements. \\
+\addlinespace
+Clinical Explainability & Builds evidence-grounded healthcare explanations, uncertainty summaries, limitations, and clinician review prompts. & Retrieved evidence, validation trace, output, clinical safety flags. & Explanation report, claim support map, review recommendation. \\
+\addlinespace
+Human Review & Requests approval or clarification when actions are risky or ambiguous. & Proposed action, issue report. & Approval, edit, rejection, clarification. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Shared Workflow State}
+
+All agents should operate on a shared workflow state object. This prevents inconsistent interpretations and gives the system a single auditable source of truth.
+
+\begin{verbatim}
+{
+  "workflow_id": "uuid",
+  "user_instruction": "Clean this CSV, convert it to JSON, and explain anomalies",
+  "input_format": "csv",
+  "target_format": "json",
+  "dataset_ref": "storage://datasets/input-001",
+  "schema_profile": {},
+  "retrieved_context": [],
+  "validation_report": {},
+  "transformation_plan": {},
+  "human_approval": null,
+  "output_ref": null,
+  "audit_events": []
+}
+\end{verbatim}
+
+\subsection{Agent Response Contract}
+
+Agent-to-agent communication should be structured rather than free-form. Each agent response should include:
+
+\begin{tabularx}{\textwidth}{p{0.31\textwidth}X}
+\toprule
+\textbf{Field} & \textbf{Purpose} \\
+\midrule
+\texttt{status} & One of \texttt{success}, \texttt{warning}, \texttt{error}, or \texttt{needs\_human\_review}. \\
+\texttt{summary} & One short natural language description of what the agent found or changed. \\
+\texttt{data} & Structured payload, never the only place where a critical decision is hidden. \\
+\texttt{confidence} & Numeric or categorical confidence, especially for schema matching and repair suggestions. \\
+\texttt{issues} & Errors, warnings, policy flags, or schema problems with severity. \\
+\texttt{next\_recommended\_action} & Suggested next step for the orchestrator. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Workflow Example}
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figures/workflow}}
+  \caption{Human-reviewed workflow for cleaning a messy CSV, converting it to JSON, and generating a grounded explanation.}
+  \label{fig:workflow}
+\end{figure}

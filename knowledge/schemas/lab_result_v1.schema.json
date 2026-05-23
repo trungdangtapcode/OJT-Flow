@@ -1,0 +1,31 @@
+{
+  "$id": "lab_result_v1",
+  "title": "Synthetic Lab Result",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["date", "patient_id", "lab_name", "value", "unit"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Observation date in ISO YYYY-MM-DD format"
+    },
+    "patient_id": {
+      "type": "string",
+      "description": "Synthetic patient identifier; treat as sensitive"
+    },
+    "lab_name": {
+      "type": "string",
+      "description": "Laboratory test name"
+    },
+    "value": {
+      "type": "number",
+      "description": "Observed lab value"
+    },
+    "unit": {
+      "type": "string",
+      "description": "Measurement unit"
+    }
+  }
+}
+

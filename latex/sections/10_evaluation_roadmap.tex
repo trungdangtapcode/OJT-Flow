@@ -1,0 +1,85 @@
+\section{Evaluation Plan and Implementation Roadmap}
+
+\subsection{Evaluation Dimensions}
+
+\begin{longtable}{p{0.25\textwidth}p{0.45\textwidth}p{0.20\textwidth}}
+\toprule
+\textbf{Dimension} & \textbf{Metric} & \textbf{MVP target} \\
+\midrule
+Conversion correctness & Exact structural equivalence after conversion; round-trip consistency where possible. & \metric{>= 95\%} on curated tests. \\
+Validation accuracy & Correct detection of malformed rows, missing fields, type mismatches, invalid schemas. & \metric{>= 90\%}. \\
+RAG relevance & Reviewer judgment of retrieved schema/docs/examples in top-k results. & \metric{>= 80\%} relevant in top 5. \\
+Retrieval ranking & Recall@k, nDCG@10, MRR, and schema-hit rate on a curated query set with expected source chunks. & \metric{Beat hybrid baseline before enabling advanced modules}. \\
+Graph retrieval utility & Correct entity linking, schema-field match accuracy, and multi-hop answer support from graph evidence. & \metric{>= 85\%} correct links on demo schema set. \\
+Graph-NER quality & Entity-level precision/recall/F1, concept-normalization accuracy, relation extraction F1, PHI recall, and reviewer correction rate. & \metric{High recall for PHI; >= 85\% F1 for demo entity types}. \\
+Representation learning & Compare pretrained embeddings against SSL-adapted embeddings using Recall@k, nDCG@10, cluster purity, schema-hit rate, and nearest-neighbor review. & \metric{Promote only with statistically meaningful gain}. \\
+OCR/document AI & Character error rate, word error rate, key-value extraction F1, table-cell F1, checkbox accuracy, bounding-box provenance, and human correction rate. & \metric{Report per document type and language; review low-confidence fields}. \\
+Segmentation & Dice, IoU, HD95, boundary F1, uncertainty quality, reviewer correction time, and modality/device subgroup checks. & \metric{Research demo only; compare against baseline}. \\
+Object detection/tracking & Detection mAP, sensitivity, FROC, false positives per image, tracking IDF1/HOTA, temporal consistency, and latency. & \metric{Research demo or design report; no diagnostic claim}. \\
+Japan-market readiness & APPI/MHLW/PMDA checklist completion, JP Core/FHIR mapping coverage, Japanese terminology alias coverage, and audit/approval evidence completeness. & \metric{Checklist complete for pilot proposal}. \\
+Explanation quality & Human rating for clarity, usefulness, and faithfulness to retrieved context and validation report. & \metric{Average >= 4/5}. \\
+Workflow success & Tasks completed without incorrect routing or stalled state. & \metric{>= 85\%} for MVP scenarios. \\
+Human review effectiveness & Risky or ambiguous transformations correctly trigger review. & \metric{No critical risky action without review}. \\
+Latency & End-to-end response time for simple and complex workflows. & \metric{< 3 sec simple; < 15 sec demo workflow}. \\
+Security & Prompt injection and unsafe tool-call tests blocked or flagged. & \metric{No unapproved destructive action}. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Test Dataset Plan}
+
+\begin{itemize}
+  \item Valid JSON, YAML, and CSV examples for basic conversion.
+  \item Nested JSON objects and arrays for JSON-to-YAML and YAML-to-JSON conversion.
+  \item CSV files with missing values, malformed rows, quoted commas, numeric fields, date fields, and inconsistent columns.
+  \item Schema cases with required fields, optional fields, enumerations, type mismatches, and duplicate keys.
+  \item Prompt-injection strings embedded inside CSV cells and documentation chunks.
+  \item Synthetic/Japanese-style clinical forms, referral letters, lab reports, consent forms, and checkbox/table documents for OCR.
+  \item Public or synthetic DICOM samples with metadata, reports, segmentation masks, and source image/frame IDs.
+  \item Public medical imaging examples for segmentation, detection, and short tracking/video demonstrations when licensing permits.
+  \item Japan-market fixtures: JP Core/FHIR examples, Japanese terminology aliases, APPI-sensitive-field cases, and approval/audit workflows.
+\end{itemize}
+
+\subsection{Roadmap Summary}
+
+\begin{figure}[H]
+  \centering
+  \input{figures/roadmap}
+  \caption{Twelve-week roadmap summary for the full OJTFlow prototype.}
+  \label{fig:roadmap}
+\end{figure}
+
+\begin{longtable}{p{0.23\textwidth}p{0.15\textwidth}p{0.34\textwidth}p{0.16\textwidth}}
+\toprule
+\textbf{Phase} & \textbf{Duration} & \textbf{Main tasks} & \textbf{Deliverables} \\
+\midrule
+Phase 0: Scope and architecture & Week 1 & Finalize medical scope, Japan-market boundary, governance boundary, datasets, module contracts, risk register, and evaluation criteria. & Approved backlog and architecture baseline. \\
+Phase 1: Core data workflow & Weeks 2--4 & Build parser, profiler, deterministic conversion, schema validation, MCP-compatible tool contracts, workflow state, and human review triggers. & Stable core MVP with traceable workflow. \\
+Phase 2: Graph-NER and retrieval foundation & Weeks 5--6 & Build medical entity extraction, normalization, graph storage, hybrid search, vector collection, HyDE experiment, and retrieval benchmark. & Graph-NER prototype and measured retrieval baseline. \\
+Phase 3: Research acceleration & Weeks 7--8 & Add self-supervised embedding adaptation, reranker interface, GraphRAG context, evidence packaging, supported-claim mapping, multimodal evidence schema, and explanation metrics. & SSL, retrieval, GraphRAG, and evidence report. \\
+Phase 4: Japan multimodal and GCP MLOps & Weeks 9--10 & Add OCR/document AI, DICOM metadata flow, SAM/MedSAM or nnU-Net segmentation proof of concept, JP Core/Japan governance checklist, GitHub Actions + GCP deployment blueprint, and model/index versioning. & Multimodal prototype and MLOps package. \\
+Phase 5: Monitoring, evaluation, and submission & Weeks 11--12 & Run integrated evaluation, multimodal quality checks, security/privacy hardening, monitoring dry run, documentation, final demo, proposal package, slides, and post-MVP roadmap. & Submission-ready research and industrial prototype. \\
+\bottomrule
+\end{longtable}
+
+\subsection{MVP Backlog}
+
+\begin{itemize}
+  \item Backend conversion API for JSON, YAML, and CSV.
+  \item Pydantic-based validation and schema inference.
+  \item Agent workflow state and orchestrator.
+  \item RAG knowledge base with schemas and transformation examples.
+  \item Retrieval benchmark with hybrid search, reranking experiment, and source-attribution checks.
+  \item Optional HyDE and schema-graph prototype if baseline retrieval leaves measurable gaps.
+  \item Optional self-supervised embedding adaptation experiment using schema/document/conversion pairs.
+  \item Graph-NER prototype for medical entity extraction, normalization, relation extraction, and schema linking.
+  \item OCR/document AI prototype for scanned clinical-style forms with page/box provenance and human correction.
+  \item DICOM metadata and visual-evidence object design for image/video workflows.
+  \item SAM/MedSAM or nnU-Net segmentation proof of concept on public medical images.
+  \item Object detection/tracking experiment design with FROC/mAP/IDF1-style evaluation plan.
+  \item JP Core/Japan FHIR mapping notes, Japanese terminology aliases, and APPI/MHLW/PMDA governance checklist.
+  \item MCP server for conversion and validation tools.
+  \item Human review endpoint for ambiguous cleaning plans.
+  \item Simple UI with input, output, explanation, and agent progress timeline.
+  \item Docker Compose deployment.
+  \item Test dataset suite and evaluation report.
+\end{itemize}

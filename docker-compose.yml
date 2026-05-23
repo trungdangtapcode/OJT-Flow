@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ojtflow
+      POSTGRES_USER: ojtflow
+      POSTGRES_PASSWORD: ojtflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ojtflow -d ojtflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_DATABASE_URL: postgresql://ojtflow:ojtflow@postgres:5432/ojtflow
+      OJT_DATA_DIR: /app/var
+    ports:
+      - "8000:8000"
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  app_data:

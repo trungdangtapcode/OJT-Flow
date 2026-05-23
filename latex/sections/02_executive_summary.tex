@@ -1,0 +1,43 @@
+\section{Executive Summary}
+
+\projectname{} is a proposed multi-agent, multimodal medical AI platform for governed healthcare data collaboration. Users can provide structured files, FHIR/OMOP-like records, scanned clinical documents, DICOM images, or medical video and issue instructions such as ``validate this lab CSV against the approved schema,'' ``extract fields from this referral form,'' ``map this bundle to the hospital data model,'' or ``segment and explain the region of interest for review.'' The platform routes each request through a governed workflow where foundation models handle intent, planning, visual prompting, and explanation, while deterministic tools perform parsing, validation, conversion, OCR/layout extraction, DICOM metadata handling, persistence, and audit.
+
+The proposal combines four architecture patterns that are now central to production-grade AI applications:
+
+\begin{itemize}
+  \item \rolelabel{Foundation model interface:} interprets natural language, creates workflow plans, selects tools, summarizes validation findings, and produces human-friendly explanations.
+  \item \rolelabel{Retrieval-augmented generation:} retrieves trusted schemas, field definitions, transformation policies, historical examples, and error-handling guidance before the model explains or plans.
+  \item \rolelabel{Model Context Protocol integration:} exposes conversion, validation, retrieval, review, and audit capabilities as discoverable MCP tools, resources, and prompts.
+  \item \rolelabel{Multi-agent orchestration:} divides work across specialized agents for input parsing, schema inference, validation, transformation, retrieval, explanation, safety, and human review.
+  \item \rolelabel{Multimodal medical AI:} adds OCR, document layout understanding, DICOM ingestion, promptable segmentation, object detection/tracking, and image/video evidence overlays for clinician review.
+\end{itemize}
+
+For the advanced research track, the proposal also includes SOTA retrieval, representation-learning, and medical vision modules: HyDE query expansion, reranking, hierarchical/RAPTOR-style retrieval, GraphRAG, lightweight graph retrieval, optional GNN-based graph reranking, contrastive embedding adaptation, denoising representation learning, BYOL-style no-negative learning, tabular SSL for healthcare tables, medical OCR representation learning, SAM/MedSAM-style promptable segmentation, SAM2/MedSAM-2-style image/video tracking, nnU-Net baselines, and medical object detection. These methods are framed as measurable modules with promotion gates, so the project can be ambitious without becoming scientifically careless.
+
+The central engineering principle is separation of judgment from execution. The foundation model can reason, ask questions, and explain; it should not be trusted as the only mechanism for producing structured data. Exact transformations should be performed by code and verified by validators. This design directly addresses common LLM failure modes: hallucinated fields, invalid JSON, unsafe tool calls, prompt injection, sensitive data leakage, and silent schema drift.
+
+For medical and healthcare use, the system adds a second principle: separation of explanation from unsupported rationalization. OJTFlow should explain through evidence traces, validation outputs, source provenance, OCR bounding boxes, segmentation masks, detection boxes, tracking timelines, uncertainty, and clinician review, not through unverified model self-explanation alone. Because Japan is the target market, the full proposal also treats JP Core/FHIR alignment, MHLW Medical DX direction, APPI-sensitive medical data handling, PMDA/SaMD boundary awareness, and Japanese enterprise adoption style as design inputs rather than afterthoughts.
+
+\subsection{MVP Outcome}
+
+The MVP will deliver a deployable API and simple user interface that demonstrate an end-to-end workflow:
+
+\begin{enumerate}
+  \item User uploads a messy CSV and asks for cleaning, JSON conversion, and explanation.
+  \item Parser and schema agents profile the input.
+  \item RAG retrieves an approved schema and cleaning rules.
+  \item Validation identifies missing values, malformed rows, and type inconsistencies.
+  \item Human review is triggered for semantic changes such as dropping rows or filling missing values.
+  \item Transformation tools convert the approved data into JSON.
+  \item The system returns output, validation report, explanation, provenance, and audit trail.
+\end{enumerate}
+
+\subsection{Why This Proposal Is Strong}
+
+\begin{itemize}
+  \item It is ambitious enough to demonstrate modern AI engineering, but scoped enough to ship in an OJT timeline.
+  \item It uses current AI infrastructure ideas without overpromising full autonomy or custom model training.
+  \item It produces visible value for both technical and non-technical users.
+  \item It includes evaluation, safety, deployment, and human oversight from the beginning.
+  \item It can grow into a reusable middleware layer for APIs, documents, dashboards, internal tools, and enterprise workflows.
+\end{itemize}

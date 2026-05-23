@@ -1,0 +1,58 @@
+\section{Proposed Solution and System Architecture}
+
+\subsection{Product Concept}
+
+\projectname{} is a deployable AI platform that receives structured datasets and natural language instructions, routes work through specialized agents, retrieves trusted project knowledge, invokes deterministic tools through MCP, validates outputs, explains decisions, and asks for human confirmation when uncertainty or risk is high.
+
+\subsection{Primary Capabilities}
+
+\begin{itemize}
+  \item Natural language command interface for structured data tasks.
+  \item Conversion among JSON, YAML, and CSV with schema preservation checks.
+  \item Schema inference, schema validation, data profiling, and anomaly detection.
+  \item RAG-grounded explanations using data dictionaries, transformation examples, and project documentation.
+  \item Advanced retrieval modules: HyDE, reranking, hierarchical retrieval, GraphRAG, lightweight graph retrieval, and optional GNN reranking.
+  \item Self-supervised representation learning for schema, field, row, table, and medical terminology embeddings.
+  \item MCP servers for conversion, validation, retrieval, review, and audit functions.
+  \item Multi-agent task planning with visible workflow progress.
+  \item Human/clinician-in-the-loop checkpoints for risky, ambiguous, sensitive, or medically consequential transformations.
+  \item Healthcare-grade explainability with evidence traces, uncertainty, limitations, and audit logs.
+  \item API endpoints, containerized deployment, test datasets, and evaluation reports.
+\end{itemize}
+
+\subsection{Non-Goals for the MVP}
+
+\begin{itemize}
+  \item No custom foundation model training in the MVP.
+  \item No full enterprise integration in the MVP.
+  \item No autonomous external data export without explicit human approval.
+  \item No broad analytics platform; focus on conversion, validation, explanation, and audit.
+  \item No multimodal document extraction unless added later as a stretch feature.
+\end{itemize}
+
+\subsection{Architecture Overview}
+
+\begin{figure}[H]
+  \centering
+  \input{figures/architecture}
+  \caption{Architecture overview for OJTFlow. The model reasons and explains, while MCP-backed deterministic services parse, validate, transform, retrieve, review, and audit.}
+  \label{fig:architecture}
+\end{figure}
+
+\subsection{Layered Architecture}
+
+\begin{longtable}{p{0.24\textwidth}p{0.42\textwidth}p{0.25\textwidth}}
+\toprule
+\textbf{Layer} & \textbf{Responsibility} & \textbf{Recommended implementation} \\
+\midrule
+User interaction & Receives instructions, file uploads, approval decisions, and API requests. & React/Next.js or Streamlit; FastAPI REST; optional SSE. \\
+Orchestration & Classifies intent, creates task plan, routes work to agents, manages workflow state. & LangGraph preferred; lightweight custom graph acceptable for MVP. \\
+Agent layer & Performs parsing, schema inference, validation, transformation, retrieval, explanation, safety, and review. & Python classes or graph nodes with role-specific prompts. \\
+Foundation model gateway & Provides natural language reasoning, planning, summarization, and explanation. & Cloud LLM or local model behind provider-neutral interface. \\
+RAG layer & Retrieves schemas, docs, examples, rules, and error guidance. & Embeddings plus pgvector or FAISS with metadata filters. \\
+MCP layer & Standardizes access to tools, resources, and prompts. & MCP Python SDK / FastMCP, stdio for local, Streamable HTTP for server. \\
+Data processing & Performs exact parsing, conversion, cleaning, validation, and persistence. & Python json/csv, PyYAML, Pydantic, optional Pandas. \\
+Storage and observability & Stores datasets, outputs, history, validation reports, approvals, logs, and traces. & SQLite for MVP; PostgreSQL + pgvector for deployment. \\
+Deployment & Runs the stack reproducibly on development and server environments. & Docker Compose with API, MCP servers, worker, database, vector store, UI. \\
+\bottomrule
+\end{longtable}

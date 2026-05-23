@@ -1,0 +1,105 @@
+\section{Medical and Healthcare Explainability Strategy}
+
+Because \projectname{} is intended for medical and healthcare data workflows, explainability must be treated as a core system requirement. The system should not merely ask a foundation model to ``explain itself.'' In clinical settings, natural-language rationales can be persuasive but unfaithful; recent work shows LLM self-explanations should not be trusted by default \cite{huang2024selfExplanations}. Explanation must therefore be built from verifiable evidence, validated data operations, uncertainty estimates, human review, and audit trails.
+
+\subsection{Explainability Position}
+
+\projectname{} should use a layered explainability model:
+
+\begin{itemize}
+  \item \rolelabel{Data explainability:} what data was used, what format it had, what schema was inferred, what fields were missing, what values looked anomalous, and what transformations were applied.
+  \item \rolelabel{Retrieval explainability:} which clinical guideline, schema, ontology entry, data dictionary, or prior validated example was retrieved; why it was considered relevant; and what evidence was not found.
+  \item \rolelabel{Document and visual explainability:} which OCR page, layout block, table cell, DICOM study, image slice, frame, mask, box, or tracking segment contributed to a result.
+  \item \rolelabel{Model explainability:} what prompt, retrieved evidence, tool outputs, and uncertainty signals shaped the final response. The system should not present chain-of-thought as a faithful internal explanation.
+  \item \rolelabel{Workflow explainability:} which agents acted, which MCP tools were called, what validation checks passed or failed, and when human approval was required.
+  \item \rolelabel{Clinical explainability:} a clinician-facing summary of intended use, limitations, uncertainty, data-quality warnings, and recommended human review points.
+\end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figures/medical_explainability}}
+  \caption{Healthcare-grade explainability stack for OJTFlow. Explanations are assembled from evidence, validation, uncertainty, and review traces rather than unsupported model rationales.}
+  \label{fig:medical-explainability}
+\end{figure}
+
+\subsection{SOTA Explainability Methods to Apply}
+
+\begin{longtable}{p{0.19\textwidth}p{0.32\textwidth}p{0.32\textwidth}}
+\toprule
+\textbf{Method} & \textbf{Purpose} & \textbf{Use in OJTFlow} \\
+\midrule
+Evidence-grounded RAG explanations & Retrieval provides inspectable source evidence and provenance, reducing reliance on parametric model memory. & Every clinical or healthcare explanation should include source IDs, schema versions, retrieved context summaries, and missing-evidence warnings. \\
+\addlinespace
+Citation checks & Generated claims should be checked against retrieved evidence and validation reports. & The Explanation Agent should mark claims as \texttt{supported}, \texttt{partially supported}, \texttt{unsupported}, or \texttt{requires clinician review}. \\
+\addlinespace
+Counterfactual and contrastive explanations & Explain why one schema, field mapping, or transformation was chosen instead of another. & Show alternative schema candidates and the evidence that favored the selected schema. \\
+\addlinespace
+Feature attribution & LIME, SHAP, Integrated Gradients, and TCAV provide local or concept-level explanations for model components \cite{ribeiro2016lime,lundberg2017shap,sundararajan2017ig,kim2018tcav}. & Use for auxiliary classifiers such as PII detection, anomaly classification, schema matching, or risk scoring. Do not overclaim them as full LLM explanations. \\
+\addlinespace
+Attention and saliency with caveats & Attention weights are often tempting as explanations, but NLP research warns that attention is not necessarily a faithful explanation \cite{jain2019attention}. & If attention/saliency is shown, label it as a diagnostic visualization, not proof of clinical reasoning. \\
+\addlinespace
+Mechanistic and probing methods & LLM explainability surveys categorize approaches such as probing, attribution, neuron/activation analysis, and mechanistic interpretation \cite{zhao2024llmExplainability}. & Future research track for model behavior auditing, not a required MVP dependency. \\
+\addlinespace
+Uncertainty, calibration, and abstention & Medical LLM evaluation emphasizes reliability, calibration, and knowing when not to answer \cite{chen2024medEval}. & Require confidence scores, retrieval sufficiency checks, and explicit abstention/clinician escalation when evidence is incomplete. \\
+\addlinespace
+Human-centered XAI evaluation & Clinical AI reporting and evaluation should include safety, human factors, workflow fit, and stakeholder-specific explanations \cite{vasey2022decide,fdaTransparency}. & Evaluate explanations with reviewers using clarity, actionability, trust calibration, and risk-awareness rubrics. \\
+\addlinespace
+Visual evidence explanation & Medical OCR, segmentation, detection, and tracking should be explained with source page regions, image overlays, uncertainty, and reviewer edits rather than text-only rationales. & Show OCR bounding boxes, masks, boxes, frame IDs, image metadata, and clinician correction history for every multimodal output. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Clinical Explanation Output Contract}
+
+For medical and healthcare workflows, final responses should include a structured explanation object:
+
+\begin{verbatim}
+{
+  "answer_type": "data_transformation_explanation",
+  "intended_use": "Support data validation and review; not autonomous diagnosis",
+  "evidence": [
+    {"source_id": "schema:lab_result_v2", "claim": "LOINC code is required"},
+    {"source_id": "validation:wf_001", "claim": "3 rows have missing units"}
+  ],
+  "data_quality_flags": ["missing_units", "date_format_inconsistency"],
+  "uncertainty": {
+    "retrieval_confidence": "medium",
+    "schema_confidence": 0.78,
+    "requires_clinician_review": true
+  },
+  "transformation_trace": ["parse_csv", "infer_schema", "validate_schema"],
+  "multimodal_evidence": {
+    "ocr_boxes": ["page_2:block_7"],
+    "image_regions": ["study_01:series_02:slice_18:mask_3"],
+    "video_tracks": []
+  },
+  "unsupported_claims": [],
+  "limitations": ["No diagnosis or treatment recommendation was generated"]
+}
+\end{verbatim}
+
+\subsection{Healthcare Safety and Governance Rules}
+
+\begin{itemize}
+  \item The system should not make autonomous diagnosis, treatment, triage, or medication recommendations in the MVP.
+  \item Explanations must separate data facts, retrieved source statements, model-generated summaries, and human decisions.
+  \item Every clinically relevant claim should be traceable to source evidence, a validation result, or a human approval.
+  \item Every multimodal claim should be traceable to a page/box, table cell, DICOM study/series/instance, image slice, mask, bounding box, frame, or reviewer correction.
+  \item Low retrieval confidence, conflicting sources, missing patient context, or schema ambiguity should trigger abstention or clinician review.
+  \item Patient-facing explanations should use plain language; clinician-facing explanations may include technical terminology, coding systems, confidence intervals, and validation details.
+  \item Explanations should include known limitations, data gaps, and possible bias or distribution-shift warnings.
+\end{itemize}
+
+\subsection{Medical Evaluation Plan}
+
+\begin{tabularx}{\textwidth}{p{0.26\textwidth}X p{0.23\textwidth}}
+\toprule
+\textbf{Evaluation area} & \textbf{Metric or test} & \textbf{Target} \\
+\midrule
+Evidence faithfulness & Percentage of explanation claims supported by retrieved sources, validation reports, or tool outputs. & \metric{>= 95\% supported for demo cases}. \\
+Clinical clarity & Reviewer rating for whether explanation is understandable and useful for the intended audience. & \metric{Average >= 4/5}. \\
+Uncertainty handling & Correct abstention/escalation on incomplete, conflicting, or low-confidence evidence. & \metric{No unsafe confident answer}. \\
+Human factors & Reviewer can identify what changed, why it changed, and whether approval is required. & \metric{>= 90\% task success}. \\
+Bias and data gaps & Presence of warnings for missing demographics, skewed samples, unknown units, and schema mismatch. & \metric{All seeded gaps flagged}. \\
+Auditability & Ability to reconstruct input, retrieval, tool calls, validation, approval, and final answer. & \metric{100\% for completed workflows}. \\
+\bottomrule
+\end{tabularx}

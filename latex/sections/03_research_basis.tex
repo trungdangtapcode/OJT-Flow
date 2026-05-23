@@ -1,0 +1,45 @@
+\section{Research Basis and Design Rationale}
+
+The proposal is grounded in current research and official documentation for foundation models, RAG, MCP, multi-agent systems, human oversight, and AI security. The research points toward one conclusion: the most credible architecture is not a single chatbot, but a tool-grounded agent workflow with retrieval, validation, consent, and auditability.
+
+\subsection{Evidence Matrix}
+
+\begin{longtable}{p{0.18\textwidth}p{0.42\textwidth}p{0.32\textwidth}}
+\toprule
+\textbf{Area} & \textbf{Research or documentation finding} & \textbf{Design implication} \\
+\midrule
+Foundation models & Stanford CRFM defines foundation models as models trained on broad data, generally with self-supervision at scale, that can be adapted to many downstream tasks \cite{bommasani2021foundation}. & Use a foundation model for language understanding, planning, explanation, and flexible reasoning. Do not rely on it as the only source of truth for deterministic data transformation. \\
+\addlinespace
+RAG & Lewis et al. describe RAG as combining parametric model memory with non-parametric memory, addressing provenance and knowledge updating limitations in model-only systems \cite{lewis2020rag}. & Ground explanations and transformation plans in retrievable project knowledge: schemas, examples, documentation, and approved rules. \\
+\addlinespace
+Advanced retrieval & HyDE improves zero-shot dense retrieval through hypothetical document embeddings \cite{gao2022hyde}; RAPTOR retrieves over a recursive summary tree \cite{sarthi2024raptor}; GraphRAG builds entity graphs and community summaries for local and global sensemaking \cite{edge2024graphrag}. & Treat retrieval as a modular stack: hybrid first-stage retrieval, reranking, hierarchical retrieval, entity-aware graph retrieval, and optional graph-neural ranking for hard multi-hop schema questions. \\
+\addlinespace
+Self-supervised representation learning & SimCSE, Contriever, E5, and contrastive text-code embedding research show that contrastive or weakly supervised pretraining can produce strong retrieval embeddings \cite{gao2021simcse,izacard2021contriever,wang2022e5,neelakantan2022textcode}. BYOL-style learning shows that useful representations can also be learned without explicit negative pairs \cite{grill2020byol}. & Adapt the embedding and schema-representation layer using unlabeled project artifacts: schemas, fields, examples, conversions, validation errors, and data dictionaries. Keep foundation-model pretraining out of MVP scope. \\
+\addlinespace
+Explainability in medical AI & FDA/Health Canada/MHRA transparency principles for machine-learning-enabled medical devices emphasize intended users, workflow fit, performance, risks, limitations, logic where available, and human-centered communication \cite{fdaTransparency}. DECIDE-AI emphasizes early clinical evaluation, safety, human factors, and transparent reporting for AI decision support \cite{vasey2022decide}. & Design explanations as clinical safety artifacts: retrieved evidence, validation trace, uncertainty, abstention, limitations, user-facing rationale, and audit logs. Avoid treating model self-explanations or attention maps as sufficient proof. \\
+\addlinespace
+MCP & MCP is a JSON-RPC based client-server protocol where servers expose tools for actions, resources for context, and prompts for reusable interaction templates \cite{mcpArchitecture,mcpLatest}. & Wrap conversion, validation, retrieval, review, and audit functions as MCP servers with well-defined input schemas and access controls. \\
+\addlinespace
+MCP operations & MCP supports local stdio and remote Streamable HTTP transports, capability discovery, notifications, progress tracking, and user elicitation patterns \cite{mcpArchitecture}. & Start locally with stdio during development; design the server layer so it can move to remote Streamable HTTP deployment later. \\
+\addlinespace
+Multi-agent systems & AutoGen research shows that LLM applications can be built from customizable conversable agents that combine LLMs, tools, and human participation \cite{wu2023autogen}. & Use specialized agents rather than one monolithic prompt, with explicit roles and state transitions. \\
+\addlinespace
+Agent workflows & LangGraph emphasizes durable execution, streaming, persistence, and human-in-the-loop support for agent orchestration \cite{langgraphDocs}. & Use graph-based orchestration for workflows that can pause, resume, show progress, and preserve state for audit. \\
+\addlinespace
+LLM security & OWASP's LLM risk guidance identifies prompt injection, sensitive information disclosure, supply chain risk, improper output handling, excessive agency, vector/embedding weaknesses, misinformation, and unbounded consumption \cite{owaspLLM}. & Treat user data and retrieved text as untrusted, validate model outputs, limit tool permissions, and require review for risky actions. \\
+\addlinespace
+Risk management & NIST AI 600-1 provides a generative AI profile for identifying, measuring, managing, and governing AI risks \cite{nistAI600}. & Include evaluation, documentation, audit evidence, human accountability, and monitoring in the project plan. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Design Conclusion}
+
+\projectname{} should be positioned as \textbf{governed structured-data AI middleware}. Its value comes from combining language understanding with exact tools, not from replacing software engineering with free-form generation. The architecture should therefore enforce five rules:
+
+\begin{enumerate}
+  \item Use the model to interpret intent, not to silently mutate data.
+  \item Use deterministic parsers and validators for all data transformations.
+  \item Use RAG only from trusted, metadata-scoped knowledge sources.
+  \item Use MCP to make tools discoverable, typed, and auditable.
+  \item Use human review whenever a transformation can change meaning, reveal sensitive data, or call an external system.
+\end{enumerate}

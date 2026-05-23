@@ -1,0 +1,107 @@
+\section{Multimodal Medical AI and Japan Market Strategy}
+
+The full OJTFlow vision should go beyond structured tables. In Japanese healthcare, a realistic platform must handle structured records, scanned documents, referral letters, forms, radiology images, pathology images, ultrasound/endoscopy video, and the governance evidence around each output. The proposed multimodal track therefore adds OCR, document understanding, DICOM ingestion, medical image segmentation, object detection/tracking, and visual explainability to the existing RAG, Graph-NER, SSL, and MLOps architecture.
+
+\subsection{Japan-Market Rationale}
+
+Japan is an unusually strong fit for OJTFlow because its healthcare system is facing a combination of super-aging demand, medical DX policy pressure, interoperability modernization, and conservative enterprise adoption expectations. The Cabinet Office reported that people aged 65 and over represented 29.3\% of Japan's population as of October 1, 2024 \cite{japanAgingSociety}. MHLW's Healthcare DX roadmap emphasizes electronic medical chart standardization, information sharing, HL7 FHIR compatibility, cloud-based standard electronic medical charts, cybersecurity, and modernization of medical facility systems \cite{mhlwMedicalDXRoadmap,mhlwMedicalDX}. This creates a practical opening for a platform that can reduce data-preparation burden while staying auditable.
+
+The Japan strategy should be careful and respectful rather than stereotyped. The proposal treats common Japanese enterprise patterns such as consensus-building, risk reduction, careful documentation, and long-term trust as product requirements. OJTFlow should support \textit{genba} workflow fit, \textit{ringi}/\textit{nemawashi}-style approval evidence, \textit{kaizen}-style incremental improvement, and conservative release gates. This aligns with market expectations that decisions often require internal consultation, clear supporting information, and reliability over aggressive automation \cite{japanBusinessCulture}.
+
+\subsection{Japan-Specific Compliance and Adoption Controls}
+
+\begin{longtable}{p{0.20\textwidth}p{0.35\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Japan constraint} & \textbf{Implication for OJTFlow} & \textbf{Design response} \\
+\midrule
+APPI and medical data sensitivity & Japan's APPI treats medical history as special care-required personal information and restricts acquisition without consent except in defined cases \cite{japanAPPI}. & Use consent-aware data flows, tenant isolation, access control, pseudonymization/de-identification options, no raw medical data in logs, and explicit data-use records. \\
+\addlinespace
+MHLW medical information security & Healthcare information systems require governance, management, and system-operation controls \cite{mhlwMedicalInfoSecurity}. & Map controls to IAM, Cloud KMS, VPC Service Controls, Cloud Logging, audit retention, incident runbooks, backup/restore, and release approvals. \\
+\addlinespace
+PMDA/SaMD boundary & Software that moves from administrative support into diagnostic or treatment decision support may enter SaMD/program medical device scope \cite{pmdaSaMD}. & Position the prototype as assistive workflow, validation, annotation, retrieval, and explanation support; any diagnostic claim requires separate regulatory classification and clinical evaluation. \\
+\addlinespace
+JP Core and FHIR direction & JP Core defines Japan-oriented FHIR implementation guidance, while MHLW's roadmap emphasizes standard electronic medical chart information sharing and FHIR compatibility \cite{jpCore,mhlwMedicalDXRoadmap}. & Add JP Core-aware schema registry, Japanese code-system mapping, FHIR validation profiles, and versioned mappings to OMOP/FHIR/local hospital formats. \\
+\addlinespace
+Enterprise trust culture & Japanese hospital and enterprise buyers often need evidence, alignment, and stable operating commitments before adoption \cite{japanBusinessCulture}. & Provide reviewer queues, decision history, audit-ready reports, stakeholder sign-off, clear limitations, and measured pilot KPIs. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Multimodal Module Portfolio}
+
+\begin{longtable}{p{0.17\textwidth}p{0.29\textwidth}p{0.30\textwidth}p{0.14\textwidth}}
+\toprule
+\textbf{Module} & \textbf{Advanced method} & \textbf{OJTFlow use case} & \textbf{MVP boundary} \\
+\midrule
+Clinical OCR and layout AI & GCP Document AI Enterprise Document OCR for text/layout extraction, plus optional local OCR engines for private deployments \cite{gcpDocumentAI}. & Extract Japanese/English text, forms, tables, checkboxes, stamps, dates, lab values, referral content, and source bounding boxes from scanned documents. & Prototype extraction and validation, not final medical record automation without review. \\
+\addlinespace
+Document-to-graph extraction & OCR + layout-aware transformers/VLMs + Graph-NER + entity linking. & Convert scanned forms and reports into entities, relations, FHIR resources, OMOP concepts, and retrievable evidence nodes. & Human review for low-confidence fields and medically meaningful changes. \\
+\addlinespace
+DICOM ingestion and metadata & Cloud Healthcare API supports healthcare standards including FHIR, HL7v2, and DICOM \cite{gcpHealthcare}. & Store, search, and route radiology/pathology/endoscopy studies with provenance, modality, pixel spacing, study/series/instance IDs, and de-identification metadata. & Metadata and sample public DICOM workflow; no real patient data without governance. \\
+\addlinespace
+Promptable segmentation & SAM, MedSAM, SAM 2, MedSAM-2, nnU-Net, TotalSegmentator, and MONAI/MONAI Label \cite{sam2023,medsam2024,sam2,medsam2,nnunet,totalSegmentator,monaiLabel}. & Clinician-assisted organ, lesion, anatomy, or region-of-interest masks; fast annotation; segmentation evidence overlays. & Research prototype and annotation assistant, not autonomous diagnosis. \\
+\addlinespace
+Object detection & nnDetection, YOLO/RT-DETR/DETR-style detectors, Faster R-CNN baselines, and medical benchmark evaluation \cite{nndetection}. & Detect nodules, fractures, polyps, devices, instruments, lesions, or anomalies where public datasets permit. & Measured proof of concept with public data; results labeled as research only. \\
+\addlinespace
+Object tracking and video segmentation & SAM 2 and MedSAM-2-style tracking over ultrasound, endoscopy, laparoscopy, or 3D slice sequences \cite{sam2,medsam2}. & Track regions, instruments, or lesion boundaries across frames; support review, QA, and training data creation. & Short video/slice-stack demo with temporal consistency metrics. \\
+\addlinespace
+Visual explainability & Masks, boxes, heatmaps, uncertainty maps, OCR bounding boxes, source pages, frame IDs, and reviewer corrections. & Make visual AI outputs inspectable: what was seen, where it was seen, how confident it was, and what a clinician corrected. & Explanation artifact generation and reviewer UI mock/API fields. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Medical Vision Research Stack}
+
+The segmentation strategy should use both foundation-style and specialist baselines. SAM provides promptable segmentation that can transfer to new image distributions \cite{sam2023}. MedSAM adapts the idea to medical images and was evaluated across many modalities and tasks, making it a strong research anchor for medical image segmentation \cite{medsam2024}. SAM 2 extends promptable segmentation to images and video, while MedSAM-2 treats 2D/3D medical segmentation as a video-style tracking problem \cite{sam2,medsam2}. nnU-Net remains a critical benchmark because it self-configures preprocessing, architecture, training, and post-processing for biomedical segmentation tasks \cite{nnunet}. TotalSegmentator provides a practical CT anatomy baseline for many structures \cite{totalSegmentator}. MONAI Label is useful for interactive annotation and active learning loops with clinical imaging tools \cite{monaiLabel}.
+
+\begin{itemize}
+  \item \rolelabel{Segmentation metrics:} Dice, IoU, Hausdorff distance/HD95, boundary F1, calibration, uncertainty, reviewer correction time, and per-modality subgroup results.
+  \item \rolelabel{Detection metrics:} sensitivity, specificity, mAP, FROC, false positives per image, calibration, and clinically relevant operating points.
+  \item \rolelabel{Tracking metrics:} temporal Dice/IoU, IDF1, MOTA/HOTA, identity switches, track fragmentation, latency, and frame-level reviewer correction rate.
+  \item \rolelabel{OCR metrics:} character error rate, word error rate, field extraction F1, table-cell F1, checkbox accuracy, Japanese/English split performance, and human correction rate.
+\end{itemize}
+
+\subsection{How Multimodal AI Connects to RAG, Graph-NER, and SSL}
+
+The multimodal track should not be separate from the existing research contribution. OCR text, layout cells, DICOM metadata, segmentation masks, detection boxes, and tracking trajectories should all become evidence objects in the same retrieval and graph architecture.
+
+\begin{longtable}{p{0.24\textwidth}p{0.34\textwidth}p{0.31\textwidth}}
+\toprule
+\textbf{Connection} & \textbf{Research technique} & \textbf{Expected value} \\
+\midrule
+OCR-to-RAG & Chunk documents by page, section, table, field, and bounding box; retrieve source spans with confidence metadata. & Explanations can cite the exact page/field/box that produced a claim. \\
+\addlinespace
+OCR-to-Graph-NER & Extract clinical entities from OCR text and link them to JP Core/FHIR resources, OMOP concepts, and hospital schemas. & Scanned Japanese documents become searchable, validated, and interoperable. \\
+\addlinespace
+DICOM-to-RAG & Index study metadata, imaging reports, segmentation outputs, and clinician annotations. & Retrieval can combine image evidence, report evidence, and schema evidence. \\
+\addlinespace
+Segmentation-to-explainability & Treat masks, boxes, frame IDs, and reviewer edits as evidence artifacts. & Clinicians can inspect why a region was selected and what uncertainty remains. \\
+\addlinespace
+Self-supervised multimodal learning & Use contrastive pairs across report-text/image, OCR-field/schema, mask/anatomy label, and graph-neighborhood views. & Better embeddings for retrieval, entity linking, and cross-modal search without requiring large labeled private datasets. \\
+\addlinespace
+Japan localization & Embed Japanese medical terms, translated schema aliases, local coding conventions, and hospital-specific synonyms. & Higher practical adoption in Japanese hospitals and less friction during stakeholder review. \\
+\bottomrule
+\end{longtable}
+
+\subsection{GCP-First Industrial Architecture for Multimodal Healthcare}
+
+For Japan-market deployment, the recommended operations stack should prioritize GCP regions, enterprise isolation, and traceability. Cloud Healthcare API can store standards-based FHIR, HL7v2, and DICOM data \cite{gcpHealthcare}; Document AI can perform OCR and layout extraction for clinical forms \cite{gcpDocumentAI}; BigQuery and Cloud Storage support lakehouse-style analytics; and GKE/Cloud Run provide flexible serving paths for model services. Sensitive deployment should use IAM least privilege, Workload Identity Federation from GitHub Actions, Artifact Registry, Cloud Deploy or Argo CD, Cloud KMS, Secret Manager, VPC Service Controls, Cloud Logging, Cloud Monitoring, Cloud Trace, Managed Prometheus, and audit export.
+
+\begin{itemize}
+  \item \rolelabel{Data residency and tenant isolation:} keep hospital tenants isolated by project, VPC, dataset, encryption key, logging sink, and access policy.
+  \item \rolelabel{Medical image pipeline:} DICOM store $\rightarrow$ de-identification/export job $\rightarrow$ segmentation/detection batch job $\rightarrow$ DICOM SEG/SR or mask artifact $\rightarrow$ evidence index.
+  \item \rolelabel{Clinical document pipeline:} Cloud Storage intake $\rightarrow$ Document AI OCR $\rightarrow$ layout/entity extraction $\rightarrow$ validation/human review $\rightarrow$ FHIR/OMOP/JP Core mapping.
+  \item \rolelabel{MLOps monitoring:} track OCR confidence, segmentation Dice, detection FROC, tracking consistency, model version, device/protocol drift, latency, GPU cost, and reviewer override rate.
+  \item \rolelabel{Release control:} no model, prompt, schema, OCR processor, segmentation checkpoint, or retrieval index is promoted without evaluation artifacts, model/data cards, approval, rollback, and audit record.
+\end{itemize}
+
+\subsection{Realistic 12-Week Prototype Scope}
+
+The multimodal scope is intentionally ambitious, but the 12-week prototype should avoid claiming clinical readiness. The deliverable should be a research-backed, Japan-ready architecture plus a small proof of concept:
+
+\begin{itemize}
+  \item OCR proof of concept on public or synthetic Japanese/English medical-style documents with field-level confidence and human review.
+  \item DICOM ingestion demonstration using public or synthetic data through a GCP-compatible architecture path.
+  \item SAM/MedSAM or nnU-Net segmentation demonstration on public medical images, with masks exported as evidence artifacts.
+  \item Detection/tracking design and one lightweight public-data experiment if time permits.
+  \item JP Core/FHIR-aware schema registry, Japanese terminology aliases, and an APPI/MHLW/PMDA-aware governance checklist.
+  \item Monitoring dashboard design covering structured data, RAG, Graph-NER, OCR, vision models, review actions, and cloud cost.
+\end{itemize}

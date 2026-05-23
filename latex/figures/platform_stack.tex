@@ -1,0 +1,35 @@
+\begin{tikzpicture}[
+  font=\small,
+  >=Latex,
+  box/.style={draw, rounded corners=4pt, minimum height=0.7cm, align=center, inner sep=4pt},
+  layer/.style={box, text width=2.45cm},
+  arrow/.style={-{Latex[length=2mm]}, thick}
+]
+
+\node[layer, fill=sfblue!8, draw=sfblue] (data) {Healthcare data\\FHIR, OMOP, CSV, EHR, notes};
+\node[layer, fill=sfcyan!8, draw=sfcyan, right=0.55cm of data] (lake) {Lakehouse\\S3/MinIO, Iceberg, Parquet};
+\node[layer, fill=sfgreen!8, draw=sfgreen, right=0.55cm of lake] (stores) {Retrieval stores\\Qdrant/Milvus, OpenSearch, graph DB};
+\node[layer, fill=sfpurple!8, draw=sfpurple, right=0.55cm of stores] (ai) {AI layer\\ML, DL, LLM, VLM, GNN};
+\node[layer, fill=sforange!10, draw=sforange, right=0.55cm of ai] (serve) {Serving\\KServe, vLLM, Ray Serve};
+\node[layer, fill=sfblue!8, draw=sfblue, right=0.55cm of serve] (app) {OJTFlow API\\Agents, MCP, review UI};
+
+\node[layer, fill=sfgray, draw=sfdark, below=0.75cm of lake] (mlops) {MLOps\\MLflow, Kubeflow, Feast, DVC};
+\node[layer, fill=sfgray, draw=sfdark, below=0.75cm of ai] (cicd) {GitHub Actions + GCP\\WIF, Artifact Registry, Cloud Deploy, Argo CD};
+\node[layer, fill=sfgray, draw=sfdark, below=0.75cm of serve] (obs) {Observability\\OpenTelemetry, Prometheus, Grafana, Evidently};
+\node[layer, fill=sfred!7, draw=sfred, below=0.75cm of stores] (gov) {Governance\\PHI, RBAC, audit, model cards};
+
+\draw[arrow, sfblue] (data) -- (lake);
+\draw[arrow, sfcyan] (lake) -- (stores);
+\draw[arrow, sfgreen] (stores) -- (ai);
+\draw[arrow, sfpurple] (ai) -- (serve);
+\draw[arrow, sforange] (serve) -- (app);
+
+\draw[arrow, sfdark] (mlops) -- (lake);
+\draw[arrow, sfdark] (mlops) -- (ai);
+\draw[arrow, sfdark] (cicd) -- (serve);
+\draw[arrow, sfdark] (obs) -- (serve);
+\draw[arrow, sfdark] (obs) -- (app);
+\draw[arrow, sfred] (gov) -- (stores);
+\draw[arrow, sfred] (gov) -- (app);
+
+\end{tikzpicture}

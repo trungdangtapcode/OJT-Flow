@@ -1,0 +1,30 @@
+\begin{tikzpicture}[
+  font=\small,
+  >=Latex,
+  box/.style={draw, rounded corners=4pt, minimum height=0.78cm, align=center, inner sep=5pt},
+  stage/.style={box, text width=2.45cm},
+  arrow/.style={-{Latex[length=2mm]}, thick}
+]
+
+\node[stage, fill=sfblue!8, draw=sfblue] (artifacts) {Unlabeled artifacts\\schemas, docs, CSVs, examples};
+\node[stage, fill=sfcyan!8, draw=sfcyan, right=0.55cm of artifacts] (views) {View generation\\mask, corrupt, convert, summarize};
+\node[stage, fill=sfgreen!8, draw=sfgreen, right=0.55cm of views] (pairs) {Weak pairs\\positives, hard negatives, aliases};
+\node[stage, fill=sfpurple!8, draw=sfpurple, right=0.55cm of pairs] (train) {SSL objectives\\contrastive, denoising, BYOL};
+\node[stage, fill=sforange!10, draw=sforange, right=0.55cm of train] (encoder) {Adapted embedding\\or schema encoder};
+\node[stage, fill=sfblue!8, draw=sfblue, right=0.55cm of encoder] (deploy) {Retrieval upgrade\\schema match, RAG, GraphRAG};
+
+\node[box, fill=sfgray, draw=sfdark, text width=3.0cm, below=0.75cm of pairs] (eval) {Promotion gate\\Recall@k, nDCG@10, MRR, schema-hit rate, latency};
+
+\draw[arrow, sfblue] (artifacts) -- (views);
+\draw[arrow, sfcyan] (views) -- (pairs);
+\draw[arrow, sfgreen] (pairs) -- (train);
+\draw[arrow, sfpurple] (train) -- (encoder);
+\draw[arrow, sforange] (encoder) -- (deploy);
+
+\draw[arrow, sfdark] (encoder) |- (eval);
+\draw[arrow, sfdark] (eval) -| (deploy);
+
+\node[box, fill=sfred!7, draw=sfred, text width=3.4cm, below=0.75cm of train] (guard) {Guardrail: do not replace deterministic validation or source-grounded evidence};
+\draw[arrow, sfred] (guard) -- (train);
+
+\end{tikzpicture}
