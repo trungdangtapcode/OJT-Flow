@@ -211,6 +211,190 @@ class WorkflowService:
             self.workflows.save(workflow)
             return workflow
 
+    def start_workflow_from_file(
+        self,
+        instruction: str,
+        file_bytes: bytes,
+        filename: str,
+        target_format: DataFormat = DataFormat.JSON,
+        schema_id: str | None = "lab_result_v1",
+        require_human_review: bool = True,
+        prefer_extractor: str = "auto",
+    ) -> WorkflowState:
+        """Start a workflow from a raw document file (PDF, DOCX, image, …).
+
+        The file is extracted to text first, then the normal workflow pipeline runs.
+        The raw bytes are stored as the canonical dataset input.
+        """
+        workflow = WorkflowState(
+            user_instruction=instruction,
+            intent=WorkflowIntent(
+                target_format=target_format,
+                requires_explanation=True,
+                options={
+                    "schema_id": schema_id,
+                    "require_human_review": require_human_review,
+                    "source_filename": filename,
+                    "prefer_extractor": prefer_extractor,
+                },
+            ),
+            status=WorkflowStatus.RUNNING,
+        )
+        workflow.handoff_context["tool_specs"] = tool_specs_json()
+        self.workflows.save(workflow)
+
+        # Store raw bytes as the dataset (decoded as latin-1 for binary-safe round-trip)
+        dataset = self.datasets.put_text(
+            file_bytes.decode("latin-1"),
+            workflow_id=workflow.workflow_id,
+            source_kind="uploaded_file",
+            declared_format=None,
+            detected_format=None,
+        )
+        workflow.input = WorkflowInput(
+            dataset_ref=dataset.storage_ref,
+            input_hash=dataset.sha256,
+            declared_format=None,
+        )
+        workflow.handoff_context["source_filename"] = filename
+        self._event(
+            workflow,
+            ActorType.SYSTEM,
+            "workflow_service",
+            EventType.WORKFLOW_CREATED,
+            f"Workflow created from uploaded file '{filename}'",
+            output_refs=[dataset.storage_ref],
+        )
+        self._step(workflow, "workflow_created", StepStatus.COMPLETED, f"Uploaded file: {filename}")
+
+        try:
+            parser_result = self.parser_agent.run(
+                text="",
+                declared_format=None,
+                source_ref=dataset.storage_ref,
+                file_bytes=file_bytes,
+                filename=filename,
+                prefer_extractor=prefer_extractor,
+            )
+            parsed: ParsedData = parser_result.data["parsed"]
+            extraction = parser_result.data.get("extraction", {})
+            workflow.input.detected_format = parsed.format
+            workflow.profile = parser_result.data["profile"]
+            workflow.handoff_context["extraction"] = extraction
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                self.parser_agent.agent_id,
+                EventType.AGENT_COMPLETED,
+                parser_result.summary,
+                metadata={
+                    "confidence": parser_result.confidence,
+                    "extractor": extraction.get("extractor_used"),
+                    "source_format": extraction.get("source_format"),
+                },
+            )
+            self._step(
+                workflow,
+                "parser",
+                StepStatus.COMPLETED,
+                parser_result.summary,
+                issue_count=len(parser_result.issues),
+            )
+
+            # Remaining steps identical to text workflow
+            evidence = self.knowledge.search(
+                f"{instruction} fields {[field.name for field in workflow.profile.fields]}",
+                top_k=5,
+            )
+            workflow.retrieved_context = evidence
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                "retrieval_agent",
+                EventType.RETRIEVAL_COMPLETED,
+                f"Retrieved {len(evidence)} trusted evidence item(s)",
+                metadata={"source_ids": [item.source_id for item in evidence]},
+            )
+            self._step(
+                workflow,
+                "static_retrieval",
+                StepStatus.COMPLETED,
+                f"Retrieved {len(evidence)} trusted evidence item(s)",
+            )
+
+            schema = self.knowledge.get_schema(schema_id)
+            validation_result = self.validation_agent.run(parsed, workflow.profile, schema)
+            workflow.validation_report = validation_result.data["validation_report"]
+            workflow.schema_profile = {
+                "schema_id": schema.get("$id") if schema else None,
+                "schema_confidence": workflow.validation_report.schema_confidence,
+            }
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                self.validation_agent.agent_id,
+                EventType.VALIDATION_COMPLETED,
+                validation_result.summary,
+                metadata={"severity_summary": workflow.validation_report.severity_summary},
+            )
+            self._step(
+                workflow,
+                "validation",
+                StepStatus.COMPLETED,
+                validation_result.summary,
+                issue_count=len(workflow.validation_report.issues),
+            )
+
+            plan = build_transformation_plan(workflow.validation_report, target_format)
+            workflow.transformation_plan = plan
+            safety_result = self.safety_agent.run(workflow.validation_report, plan)
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                self.safety_agent.agent_id,
+                EventType.AGENT_COMPLETED,
+                safety_result.summary,
+                severity=Severity.WARNING if safety_result.data["requires_review"] else Severity.INFO,
+            )
+            self._step(
+                workflow,
+                "safety_review_gate",
+                StepStatus.COMPLETED,
+                safety_result.summary,
+                issue_count=len(safety_result.issues),
+            )
+
+            if require_human_review and safety_result.data["requires_review"]:
+                workflow.review = self._make_review(workflow, plan)
+                workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
+                self._event(
+                    workflow,
+                    ActorType.AGENT,
+                    "review_agent",
+                    EventType.REVIEW_REQUESTED,
+                    workflow.review.question,
+                    severity=Severity.WARNING,
+                    metadata={"review_id": workflow.review.review_id},
+                )
+                self._step(
+                    workflow,
+                    "human_review",
+                    StepStatus.PENDING,
+                    workflow.review.question,
+                    issue_count=len(workflow.validation_report.issues),
+                )
+                workflow.touch()
+                self.workflows.save(workflow)
+                return workflow
+
+            self._complete_transformation(workflow, parsed, target_format, plan)
+            self.workflows.save(workflow)
+            return workflow
+        except Exception as exc:
+            self._fail_workflow(workflow, exc)
+            self.workflows.save(workflow)
+            return workflow
+
     def get_workflow(self, workflow_id: str) -> WorkflowState:
         """Fetch a workflow."""
 

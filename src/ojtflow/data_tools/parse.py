@@ -23,6 +23,11 @@ def parse_data(text: str, data_format: DataFormat, source_ref: str | None = None
         return _parse_yaml(text, source_ref)
     if data_format == DataFormat.CSV:
         return _parse_csv(text, source_ref)
+    if data_format == DataFormat.MARKDOWN:
+        return _parse_markdown(text, source_ref)
+    # PDF/DOCX/IMAGE arrive here only if someone bypasses extraction; treat as markdown
+    if data_format in (DataFormat.PDF, DataFormat.DOCX, DataFormat.IMAGE):
+        return _parse_markdown(text, source_ref)
     raise ToolExecutionError(f"Unsupported format: {data_format}")
 
 
@@ -44,6 +49,78 @@ def _parse_yaml(text: str, source_ref: str | None) -> ParsedData:
 
     records = content if isinstance(content, list) and all(isinstance(row, dict) for row in content) else []
     return ParsedData(format=DataFormat.YAML, content=content, records=records, source_ref=source_ref)
+
+
+def _parse_markdown(text: str, source_ref: str | None) -> ParsedData:
+    """Parse markdown / unstructured text into ParsedData.
+
+    Tries to extract any markdown tables as records.
+    Falls back to treating the whole text as a single unstructured document.
+    """
+    warnings: list[str] = []
+    records = _extract_markdown_tables(text)
+
+    if records:
+        content: Any = {"tables": records, "raw": text}
+    else:
+        # No tables found — represent as a single document record
+        word_count = len(text.split())
+        line_count = len(text.splitlines())
+        content = {"raw": text, "word_count": word_count, "line_count": line_count}
+        if text.strip():
+            records = [{"_text": text, "_word_count": word_count, "_source_row": 1}]
+            warnings.append(
+                "No structured table found in markdown; treating document as a single record."
+            )
+        else:
+            warnings.append("Extracted text is empty.")
+
+    return ParsedData(
+        format=DataFormat.MARKDOWN,
+        content=content,
+        records=records,
+        source_ref=source_ref,
+        parser_warnings=warnings,
+    )
+
+
+def _extract_markdown_tables(text: str) -> list[dict[str, Any]]:
+    """Extract the first markdown table found in the text and return it as records.
+
+    Markdown table format:
+        | col1 | col2 |
+        |------|------|
+        | val1 | val2 |
+    """
+    lines = text.splitlines()
+    header: list[str] | None = None
+    records: list[dict[str, Any]] = []
+    row_index = 2  # start at 2 to match CSV convention (_source_row)
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if header is not None and records:
+                break  # table ended
+            continue
+
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+
+        # Separator row (|---|---|)
+        if all(set(cell.replace(":", "").replace("-", "")) == set() or cell.replace(":", "").replace("-", "") == "" for cell in cells):
+            continue
+
+        if header is None:
+            header = cells
+        else:
+            if len(cells) != len(header):
+                continue  # malformed row, skip
+            record: dict[str, Any] = dict(zip(header, cells))
+            record["_source_row"] = row_index
+            records.append(record)
+            row_index += 1
+
+    return records
 
 
 def _parse_csv(text: str, source_ref: str | None) -> ParsedData:
