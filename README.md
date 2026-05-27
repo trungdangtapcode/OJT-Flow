@@ -2,6 +2,14 @@
 
 OJTFlow is a governed healthcare data workflow scaffold. The current implementation is the system backbone: typed contracts, deterministic data tools, workflow orchestration, review gates, audit events, static trusted knowledge, and FastAPI routes.
 
+The product UI is a React/TypeScript operations console for both daily end users and B2B evaluators:
+
+- Workbench for messy healthcare data intake.
+- Workflow detail for status, steps, validation issues, review, output, explanation, evidence, and audit events.
+- Review queue for pending human decisions.
+- Schema registry read view.
+- Audit and settings surfaces for B2B governance, integrations, and deployment posture.
+
 ## Architecture
 
 The code follows a clean architecture shape:
@@ -14,6 +22,8 @@ src/ojtflow/
   application/      workflow use cases and ports
   infrastructure/   Postgres, SQLite, in-memory, and static knowledge adapters
   interfaces/api/   FastAPI routes and request schemas
+frontend/
+  src/              React product UI and API client
   medical/          OCR/DICOM/visual evidence extension contracts
   mcp_servers/      planned MCP wrapper boundary
 ```
@@ -34,6 +44,7 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 - Evidence-grounded explanation report with medical intended-use limitation.
 - Static trusted knowledge fixture for `lab_result_v1`.
 - FastAPI routes for workflows, review, convert, validate, FHIR profile, OCR evidence, and health.
+- React product console for workflow intake, review, schema, audit, and settings surfaces.
 
 ## Run Tests
 
@@ -53,12 +64,37 @@ This starts:
 
 - `postgres` on `localhost:5432`
 - `api` on `localhost:8000`
+- `frontend` on `localhost:5173`
 
 The default backend storage is Postgres plus local file artifacts:
 
 - `OJT_STORAGE_BACKEND=postgres`
 - `OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
 - `OJT_DATA_DIR=var`
+
+The frontend proxies `/api/*` requests to the API container in Docker. No API keys or ADC credential files are committed; pass those through environment variables or mounted runtime credentials only.
+
+## Run Frontend Locally Against API
+
+Install and start the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+The local Vite server defaults to proxying API requests to `http://localhost:8000`. Override with:
+
+```bash
+VITE_API_PROXY_TARGET=http://127.0.0.1:8000 npm run dev
+```
 
 ## Run API Locally Against Docker Postgres
 
@@ -91,6 +127,8 @@ Useful routes:
 - `POST /api/v1/workflows`
 - `GET /api/v1/workflows/{workflow_id}`
 - `GET /api/v1/workflows/{workflow_id}/events`
+- `GET /api/v1/reviews`
+- `GET /api/v1/schemas`
 - `POST /api/v1/review/{review_id}`
 - `POST /api/v1/convert`
 - `POST /api/v1/validate`
