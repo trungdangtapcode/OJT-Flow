@@ -98,10 +98,12 @@ class ParserAgent(Agent):
             "filename": result.filename,
             "page_count": result.page_count,
         }
-        # Honour declared_format if provided; otherwise keep None so detect_format() runs
-        effective_format = declared_format
-        if effective_format is None and result.source_format in ("pdf", "docx", "image"):
-            # After extraction the content is markdown text
+        # Extraction always produces markdown text (markitdown/minerU both output markdown).
+        # Use MARKDOWN so parse_data doesn't try to detect JSON/CSV from markdown syntax.
+        # Exception: if the caller explicitly declared a structured format, trust that.
+        if declared_format in (DataFormat.JSON, DataFormat.CSV, DataFormat.YAML, DataFormat.NDJSON):
+            effective_format = declared_format
+        else:
             effective_format = DataFormat.MARKDOWN
 
         return result.text, meta, effective_format, result.warnings
