@@ -18,7 +18,7 @@ router = APIRouter(tags=["validate"])
 
 
 @router.post("/validate")
-def validate(request: ValidateRequest) -> dict:
+async def validate(request: ValidateRequest) -> dict:
     detection = detect_format(request.data, request.input_format)
     parsed = parse_data(request.data, detection.format)
     profile = profile_data(parsed)

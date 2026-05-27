@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover - exercised only when optional dependenc
     dict_row = None
 
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError, OJTFlowError
@@ -221,6 +222,36 @@ class PostgresWorkflowRepository:
         if not row:
             raise NotFoundError(f"Review not found: {review_id}")
         return WorkflowState.model_validate(row["state_json"])
+
+    def list(
+        self,
+        status: WorkflowStatus | None = None,
+        limit: int = 50,
+    ) -> list[WorkflowState]:
+        limit = max(1, min(limit, 200))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                if status:
+                    cursor.execute(
+                        """
+                        select state_json from ojtflow.workflows
+                        where status = %s
+                        order by updated_at desc
+                        limit %s
+                        """,
+                        (status.value, limit),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        select state_json from ojtflow.workflows
+                        order by updated_at desc
+                        limit %s
+                        """,
+                        (limit,),
+                    )
+                rows = cursor.fetchall()
+        return [WorkflowState.model_validate(row["state_json"]) for row in rows]
 
 
 class PostgresEventRepository:

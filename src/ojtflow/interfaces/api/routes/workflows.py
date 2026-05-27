@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.interfaces.api.deps import get_workflow_service
 from ojtflow.interfaces.api.responses import ok
@@ -15,7 +16,7 @@ router = APIRouter(tags=["workflows"])
 
 
 @router.post("/workflows")
-def start_workflow(
+async def start_workflow(
     request: StartWorkflowRequest,
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
@@ -30,8 +31,17 @@ def start_workflow(
     return ok(workflow)
 
 
+@router.get("/workflows")
+async def list_workflows(
+    status: WorkflowStatus | None = None,
+    limit: int = 50,
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    return ok(service.list_workflows(status=status, limit=limit))
+
+
 @router.get("/workflows/{workflow_id}")
-def get_workflow(
+async def get_workflow(
     workflow_id: str,
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
@@ -39,8 +49,24 @@ def get_workflow(
 
 
 @router.get("/workflows/{workflow_id}/events")
-def get_workflow_events(
+async def get_workflow_events(
     workflow_id: str,
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
     return ok(service.list_events(workflow_id))
+
+
+@router.get("/reviews")
+async def list_reviews(
+    status: str | None = "pending",
+    limit: int = 50,
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    return ok(service.list_reviews(status=status, limit=limit))
+
+
+@router.get("/schemas")
+async def list_schemas(
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    return ok(service.list_schemas())

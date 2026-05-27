@@ -216,6 +216,37 @@ class WorkflowService:
 
         return self.workflows.get(workflow_id)
 
+    def list_workflows(
+        self,
+        status: WorkflowStatus | None = None,
+        limit: int = 50,
+    ) -> list[WorkflowState]:
+        """List workflows for product UI and audit surfaces."""
+
+        return self.workflows.list(status=status, limit=limit)
+
+    def list_reviews(
+        self,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[WorkflowState]:
+        """List workflows that have review objects attached."""
+
+        workflows = self.workflows.list(limit=max(limit * 3, limit))
+        reviewed = [workflow for workflow in workflows if workflow.review]
+        if status:
+            reviewed = [
+                workflow
+                for workflow in reviewed
+                if workflow.review and workflow.review.status.value == status
+            ]
+        return reviewed[:limit]
+
+    def list_schemas(self) -> list[dict]:
+        """List trusted schema registry entries."""
+
+        return self.knowledge.list_schemas()
+
     def list_events(self, workflow_id: str) -> list[WorkflowEvent]:
         """Fetch workflow events."""
 

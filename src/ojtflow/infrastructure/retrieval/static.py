@@ -24,6 +24,33 @@ class StaticKnowledgeRepository:
             return None
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def list_schemas(self) -> list[dict]:
+        """Return lightweight schema registry entries for the product UI."""
+
+        schemas: list[dict] = []
+        for path in sorted(self.schemas_dir.glob("*.schema.json")):
+            schema = json.loads(path.read_text(encoding="utf-8"))
+            properties = schema.get("properties", {})
+            schemas.append(
+                {
+                    "schema_id": schema.get("$id", path.name.removesuffix(".schema.json")),
+                    "title": schema.get("title", schema.get("$id", path.stem)),
+                    "version": schema.get("version", "unversioned"),
+                    "required": schema.get("required", []),
+                    "field_count": len(properties),
+                    "fields": [
+                        {
+                            "name": name,
+                            "type": definition.get("type", "unknown"),
+                            "description": definition.get("description"),
+                        }
+                        for name, definition in properties.items()
+                    ],
+                    "source_ref": str(path.relative_to(self.root.parent)),
+                }
+            )
+        return schemas
+
     def search(self, query: str, *, top_k: int = 5) -> list[Evidence]:
         """Return simple trusted evidence fixtures.
 
@@ -61,4 +88,3 @@ class StaticKnowledgeRepository:
         if "patient" in lowered or "lab" in lowered or "csv" in lowered:
             return candidates[:top_k]
         return candidates[: min(1, top_k)]
-

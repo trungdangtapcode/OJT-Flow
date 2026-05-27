@@ -28,7 +28,7 @@ from ojtflow.infrastructure.storage.sqlite import (
 
 
 @lru_cache(maxsize=1)
-def get_workflow_service() -> WorkflowService:
+def _build_workflow_service() -> WorkflowService:
     """Build the default local service graph."""
 
     repo_root = Path(__file__).resolve().parents[4]
@@ -62,3 +62,15 @@ def get_workflow_service() -> WorkflowService:
         events=events,
         knowledge=StaticKnowledgeRepository(repo_root / "knowledge"),
     )
+
+
+async def get_workflow_service() -> WorkflowService:
+    """Return the cached workflow service without FastAPI threadpool dispatch."""
+
+    return _build_workflow_service()
+
+
+def clear_workflow_service_cache() -> None:
+    """Clear cached service graph in tests."""
+
+    _build_workflow_service.cache_clear()

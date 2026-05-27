@@ -14,7 +14,7 @@ router = APIRouter(tags=["convert"])
 
 
 @router.post("/convert")
-def convert(request: ConvertRequest) -> dict:
+async def convert(request: ConvertRequest) -> dict:
     detection = detect_format(request.data, request.input_format)
     parsed = parse_data(request.data, detection.format)
     output_text, output = convert_data(parsed, request.target_format)

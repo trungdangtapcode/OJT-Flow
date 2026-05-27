@@ -6,6 +6,7 @@ from typing import Protocol
 
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowState
 
@@ -30,6 +31,8 @@ class WorkflowRepository(Protocol):
 
     def find_by_review_id(self, review_id: str) -> WorkflowState: ...
 
+    def list(self, status: WorkflowStatus | None = None, limit: int = 50) -> list[WorkflowState]: ...
+
 
 class EventRepository(Protocol):
     def append(self, event: WorkflowEvent) -> None: ...
@@ -40,5 +43,6 @@ class EventRepository(Protocol):
 class KnowledgeRepository(Protocol):
     def get_schema(self, schema_id: str | None) -> dict | None: ...
 
-    def search(self, query: str, *, top_k: int = 5) -> list[Evidence]: ...
+    def list_schemas(self) -> list[dict]: ...
 
+    def search(self, query: str, *, top_k: int = 5) -> list[Evidence]: ...

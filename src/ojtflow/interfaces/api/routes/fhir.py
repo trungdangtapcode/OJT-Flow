@@ -12,7 +12,6 @@ router = APIRouter(tags=["fhir"])
 
 
 @router.post("/fhir/profile")
-def fhir_profile(request: FhirProfileRequest) -> dict:
+async def fhir_profile(request: FhirProfileRequest) -> dict:
     profile = profile_fhir_like(request.data)
     return ok(profile)
-

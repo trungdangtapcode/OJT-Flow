@@ -14,7 +14,7 @@ router = APIRouter(tags=["review"])
 
 
 @router.post("/review/{review_id}")
-def submit_review(
+async def submit_review(
     review_id: str,
     request: SubmitReviewRequest,
     service: WorkflowService = Depends(get_workflow_service),

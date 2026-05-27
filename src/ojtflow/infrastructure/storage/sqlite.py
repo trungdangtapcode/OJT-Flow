@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
@@ -193,6 +194,32 @@ class SQLiteWorkflowRepository:
             raise NotFoundError(f"Review not found: {review_id}")
         return WorkflowState.model_validate_json(row["state_json"])
 
+    def list(
+        self,
+        status: WorkflowStatus | None = None,
+        limit: int = 50,
+    ) -> list[WorkflowState]:
+        limit = max(1, min(limit, 200))
+        params: tuple[object, ...]
+        if status:
+            sql = """
+                select state_json from workflows
+                where status = ?
+                order by updated_at desc
+                limit ?
+            """
+            params = (status.value, limit)
+        else:
+            sql = """
+                select state_json from workflows
+                order by updated_at desc
+                limit ?
+            """
+            params = (limit,)
+        with self.backbone.connect() as connection:
+            rows = connection.execute(sql, params).fetchall()
+        return [WorkflowState.model_validate_json(row["state_json"]) for row in rows]
+
 
 class SQLiteEventRepository:
     """Append-only SQLite event repository."""
@@ -233,4 +260,3 @@ class SQLiteEventRepository:
                 (workflow_id,),
             ).fetchall()
         return [WorkflowEvent.model_validate_json(row["event_json"]) for row in rows]
-

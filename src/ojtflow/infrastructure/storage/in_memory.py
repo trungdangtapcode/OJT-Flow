@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
@@ -71,6 +72,17 @@ class InMemoryWorkflowRepository:
                 return deepcopy(workflow)
         raise NotFoundError(f"Review not found: {review_id}")
 
+    def list(
+        self,
+        status: WorkflowStatus | None = None,
+        limit: int = 50,
+    ) -> list[WorkflowState]:
+        workflows = list(self._workflows.values())
+        if status:
+            workflows = [workflow for workflow in workflows if workflow.status == status]
+        workflows.sort(key=lambda workflow: workflow.updated_at, reverse=True)
+        return [deepcopy(workflow) for workflow in workflows[:limit]]
+
 
 class InMemoryEventRepository:
     """Append-only in-memory workflow event store."""
@@ -83,4 +95,3 @@ class InMemoryEventRepository:
 
     def list_for_workflow(self, workflow_id: str) -> list[WorkflowEvent]:
         return [deepcopy(event) for event in self._events if event.workflow_id == workflow_id]
-

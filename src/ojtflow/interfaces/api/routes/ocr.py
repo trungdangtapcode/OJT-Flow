@@ -14,7 +14,7 @@ router = APIRouter(tags=["ocr"])
 
 
 @router.post("/ocr/evidence")
-def ocr_evidence(request: OcrEvidenceRequest) -> dict:
+async def ocr_evidence(request: OcrEvidenceRequest) -> dict:
     fields: list[OcrField] = []
     evidence: list[Evidence] = []
     for item in request.fields:
@@ -53,4 +53,3 @@ def ocr_evidence(request: OcrEvidenceRequest) -> dict:
             "requires_review": any(field.requires_review for field in fields),
         }
     )
-
