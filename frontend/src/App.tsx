@@ -386,7 +386,7 @@ function Workbench({
               <input value={fileInstruction} onChange={(event) => setFileInstruction(event.target.value)} />
             </label>
 
-            <div className="field-grid">
+            <div className="field-grid two">
               <label>
                 Extractor
                 <select value={extractor} onChange={(event) => setExtractor(event.target.value)}>
