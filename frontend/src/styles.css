@@ -401,10 +401,29 @@ small {
   display: grid;
   gap: 10px;
   grid-template-columns: 12px minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .event-list li {
   grid-template-columns: 12px minmax(0, 1fr);
+}
+
+.step-list li div,
+.event-list li div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.step-list li div strong,
+.step-list li div small,
+.event-list li div strong,
+.event-list li div small,
+.event-list li div p {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .step-dot,

@@ -223,9 +223,11 @@ class WorkflowService:
     ) -> WorkflowState:
         """Start a workflow from a raw document file (PDF, DOCX, image, …).
 
-        The file is extracted to text first, then the normal workflow pipeline runs.
-        The raw bytes are stored as the canonical dataset input.
+        Extraction runs first so the stored dataset is the markdown text —
+        not raw bytes. This ensures submit_review() can re-parse after approval.
         """
+        from ojtflow.data_tools.extract import extract_document
+
         workflow = WorkflowState(
             user_instruction=instruction,
             intent=WorkflowIntent(
@@ -243,20 +245,30 @@ class WorkflowService:
         workflow.handoff_context["tool_specs"] = tool_specs_json()
         self.workflows.save(workflow)
 
-        # Store raw bytes as the dataset (decoded as latin-1 for binary-safe round-trip)
+        # Extract text first so the stored dataset is always re-parseable text.
+        extraction = extract_document(file_bytes, filename, prefer=prefer_extractor)
+        extracted_text = extraction.text
+        extraction_meta = {
+            "extractor_used": extraction.extractor_used,
+            "source_format": extraction.source_format,
+            "filename": extraction.filename,
+            "page_count": extraction.page_count,
+        }
+
         dataset = self.datasets.put_text(
-            file_bytes.decode("latin-1"),
+            extracted_text,
             workflow_id=workflow.workflow_id,
             source_kind="uploaded_file",
-            declared_format=None,
-            detected_format=None,
+            declared_format=DataFormat.MARKDOWN.value,
+            detected_format=DataFormat.MARKDOWN.value,
         )
         workflow.input = WorkflowInput(
             dataset_ref=dataset.storage_ref,
             input_hash=dataset.sha256,
-            declared_format=None,
+            declared_format=DataFormat.MARKDOWN,
         )
         workflow.handoff_context["source_filename"] = filename
+        workflow.handoff_context["extraction"] = extraction_meta
         self._event(
             workflow,
             ActorType.SYSTEM,
@@ -269,18 +281,13 @@ class WorkflowService:
 
         try:
             parser_result = self.parser_agent.run(
-                text="",
-                declared_format=None,
+                text=extracted_text,
+                declared_format=DataFormat.MARKDOWN,
                 source_ref=dataset.storage_ref,
-                file_bytes=file_bytes,
-                filename=filename,
-                prefer_extractor=prefer_extractor,
             )
             parsed: ParsedData = parser_result.data["parsed"]
-            extraction = parser_result.data.get("extraction", {})
             workflow.input.detected_format = parsed.format
             workflow.profile = parser_result.data["profile"]
-            workflow.handoff_context["extraction"] = extraction
             self._event(
                 workflow,
                 ActorType.AGENT,
@@ -289,8 +296,8 @@ class WorkflowService:
                 parser_result.summary,
                 metadata={
                     "confidence": parser_result.confidence,
-                    "extractor": extraction.get("extractor_used"),
-                    "source_format": extraction.get("source_format"),
+                    "extractor": extraction_meta.get("extractor_used"),
+                    "source_format": extraction_meta.get("source_format"),
                 },
             )
             self._step(
