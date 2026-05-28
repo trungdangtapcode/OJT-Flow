@@ -74,3 +74,36 @@ export function submitReview(
 export function listSchemas(): Promise<SchemaEntry[]> {
   return request<SchemaEntry[]>("/schemas");
 }
+
+export async function uploadFileWorkflow(
+  file: File,
+  options: {
+    instruction: string;
+    targetFormat: string;
+    schemaId: string | null;
+    requireHumanReview: boolean;
+    extractor: string;
+  },
+): Promise<WorkflowState> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("instruction", options.instruction);
+  form.append("target_format", options.targetFormat);
+  if (options.schemaId) form.append("schema_id", options.schemaId);
+  form.append("require_human_review", String(options.requireHumanReview));
+  form.append("extractor", options.extractor);
+
+  const response = await fetch(`${API_BASE_URL}/parse/upload/workflow`, {
+    method: "POST",
+    body: form,
+    // Do NOT set Content-Type — browser sets multipart boundary automatically
+  });
+  const envelope = (await response.json()) as ApiEnvelope<WorkflowState>;
+  if (!response.ok || envelope.error) {
+    const message = envelope.error
+      ? `${envelope.error.code}: ${envelope.error.message}`
+      : `Upload failed with status ${response.status}`;
+    throw new Error(message);
+  }
+  return envelope.data as WorkflowState;
+}

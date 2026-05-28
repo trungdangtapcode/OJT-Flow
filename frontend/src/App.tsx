@@ -6,7 +6,7 @@ import {
   Database,
   FileCode,
   FileSearch,
-  Gauge,
+  FileUp,
   History,
   Layers,
   Loader2,
@@ -16,7 +16,7 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   API_BASE_URL,
   createWorkflow,
@@ -26,6 +26,7 @@ import {
   listWorkflowEvents,
   listWorkflows,
   submitReview,
+  uploadFileWorkflow,
 } from "./api";
 import type { SchemaEntry, WorkflowEvent, WorkflowState } from "./types";
 
@@ -231,16 +232,29 @@ function Workbench({
   schemas: SchemaEntry[];
   onCreated: (workflow: WorkflowState) => void;
 }) {
+  const [mode, setMode] = useState<"text" | "file">("text");
+
+  // Text mode state
   const [instruction, setInstruction] = useState("Clean this CSV, convert it to JSON, and explain anomalies.");
   const [data, setData] = useState(sampleCsv);
   const [inputFormat, setInputFormat] = useState("csv");
   const [targetFormat, setTargetFormat] = useState("json");
   const [schemaId, setSchemaId] = useState("lab_result_v1");
   const [requireReview, setRequireReview] = useState(true);
+
+  // File mode state
+  const [file, setFile] = useState<File | null>(null);
+  const [fileInstruction, setFileInstruction] = useState("Extract and validate the content of this document.");
+  const [fileTargetFormat, setFileTargetFormat] = useState("json");
+  const [fileSchemaId, setFileSchemaId] = useState("");
+  const [fileRequireReview, setFileRequireReview] = useState(true);
+  const [extractor, setExtractor] = useState("auto");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async (event: FormEvent) => {
+  const submitText = async (event: FormEvent) => {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
@@ -261,9 +275,33 @@ function Workbench({
     }
   };
 
+  const submitFile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!file) { setError("Please select a file first."); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const workflow = await uploadFileWorkflow(file, {
+        instruction: fileInstruction,
+        targetFormat: fileTargetFormat,
+        schemaId: fileSchemaId || null,
+        requireHumanReview: fileRequireReview,
+        extractor,
+      });
+      onCreated(workflow);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="workbench-layout">
-      <form className="panel intake-panel" onSubmit={(event) => void submit(event)}>
+      <form
+        className="panel intake-panel"
+        onSubmit={(event) => void (mode === "file" ? submitFile(event) : submitText(event))}
+      >
         <div className="panel-heading">
           <FileCode size={20} />
           <div>
@@ -272,54 +310,163 @@ function Workbench({
           </div>
         </div>
 
-        <label>
-          Instruction
-          <input value={instruction} onChange={(event) => setInstruction(event.target.value)} />
-        </label>
-
-        <div className="field-grid">
-          <label>
-            Source
-            <select value={inputFormat} onChange={(event) => setInputFormat(event.target.value)}>
-              <option value="auto">Auto detect</option>
-              <option value="csv">CSV</option>
-              <option value="json">JSON</option>
-              <option value="yaml">YAML</option>
-            </select>
-          </label>
-          <label>
-            Target
-            <select value={targetFormat} onChange={(event) => setTargetFormat(event.target.value)}>
-              <option value="json">JSON</option>
-              <option value="yaml">YAML</option>
-              <option value="csv">CSV</option>
-            </select>
-          </label>
-          <label>
-            Schema
-            <select value={schemaId} onChange={(event) => setSchemaId(event.target.value)}>
-              <option value="">No schema</option>
-              {schemas.map((schema) => (
-                <option key={schema.schema_id} value={schema.schema_id}>
-                  {schema.schema_id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="switch-row">
-            <input
-              checked={requireReview}
-              onChange={(event) => setRequireReview(event.target.checked)}
-              type="checkbox"
-            />
-            Human review
-          </label>
+        {/* Mode toggle */}
+        <div className="mode-toggle">
+          <button
+            type="button"
+            className={mode === "text" ? "mode-btn active" : "mode-btn"}
+            onClick={() => { setMode("text"); setError(null); }}
+          >
+            <FileCode size={15} /> Text / paste
+          </button>
+          <button
+            type="button"
+            className={mode === "file" ? "mode-btn active" : "mode-btn"}
+            onClick={() => { setMode("file"); setError(null); }}
+          >
+            <FileUp size={15} /> Upload file
+          </button>
         </div>
 
-        <label>
-          Source data
-          <textarea value={data} onChange={(event) => setData(event.target.value)} spellCheck={false} />
-        </label>
+        {mode === "text" ? (
+          <>
+            <label>
+              Instruction
+              <input value={instruction} onChange={(event) => setInstruction(event.target.value)} />
+            </label>
+
+            <div className="field-grid">
+              <label>
+                Source
+                <select value={inputFormat} onChange={(event) => setInputFormat(event.target.value)}>
+                  <option value="auto">Auto detect</option>
+                  <option value="csv">CSV</option>
+                  <option value="json">JSON</option>
+                  <option value="yaml">YAML</option>
+                </select>
+              </label>
+              <label>
+                Target
+                <select value={targetFormat} onChange={(event) => setTargetFormat(event.target.value)}>
+                  <option value="json">JSON</option>
+                  <option value="yaml">YAML</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </label>
+              <label>
+                Schema
+                <select value={schemaId} onChange={(event) => setSchemaId(event.target.value)}>
+                  <option value="">No schema</option>
+                  {schemas.map((schema) => (
+                    <option key={schema.schema_id} value={schema.schema_id}>
+                      {schema.schema_id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="switch-row">
+                <input
+                  checked={requireReview}
+                  onChange={(event) => setRequireReview(event.target.checked)}
+                  type="checkbox"
+                />
+                Human review
+              </label>
+            </div>
+
+            <label>
+              Source data
+              <textarea value={data} onChange={(event) => setData(event.target.value)} spellCheck={false} />
+            </label>
+          </>
+        ) : (
+          <>
+            <label>
+              Instruction
+              <input value={fileInstruction} onChange={(event) => setFileInstruction(event.target.value)} />
+            </label>
+
+            <div className="field-grid">
+              <label>
+                Extractor
+                <select value={extractor} onChange={(event) => setExtractor(event.target.value)}>
+                  <option value="auto">Auto (markitdown → minerU)</option>
+                  <option value="markitdown">markitdown</option>
+                  <option value="mineru">minerU</option>
+                </select>
+              </label>
+              <label>
+                Target
+                <select value={fileTargetFormat} onChange={(event) => setFileTargetFormat(event.target.value)}>
+                  <option value="json">JSON</option>
+                  <option value="yaml">YAML</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </label>
+              <label>
+                Schema
+                <select value={fileSchemaId} onChange={(event) => setFileSchemaId(event.target.value)}>
+                  <option value="">No schema</option>
+                  {schemas.map((schema) => (
+                    <option key={schema.schema_id} value={schema.schema_id}>
+                      {schema.schema_id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="switch-row">
+                <input
+                  checked={fileRequireReview}
+                  onChange={(event) => setFileRequireReview(event.target.checked)}
+                  type="checkbox"
+                />
+                Human review
+              </label>
+            </div>
+
+            {/* File drop zone */}
+            <div
+              className={`drop-zone ${file ? "has-file" : ""}`}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const dropped = e.dataTransfer.files[0];
+                if (dropped) setFile(dropped);
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.html,.md,.txt,.csv,.json,.yaml"
+                style={{ display: "none" }}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              {file ? (
+                <div className="file-selected">
+                  <FileUp size={20} />
+                  <div>
+                    <strong>{file.name}</strong>
+                    <small>{(file.size / 1024).toFixed(1)} KB</small>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={(e) => { e.stopPropagation(); setFile(null); }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                <div className="drop-hint">
+                  <FileUp size={24} />
+                  <span>Click or drag a file here</span>
+                  <small>PDF, DOCX, XLSX, PPTX, PNG, JPG, CSV, JSON…</small>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         {error ? <div className="inline-error">{error}</div> : null}
 

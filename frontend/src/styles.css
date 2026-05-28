@@ -602,3 +602,104 @@ small {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Mode toggle (Text / File upload) ─────────────────────────── */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  border: 1px solid #dfe5df;
+  border-radius: 8px;
+  padding: 4px;
+  background: #f6f8f6;
+}
+
+.mode-btn {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #68736c;
+  display: inline-flex;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+  justify-content: center;
+  min-height: 34px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-btn.active {
+  background: #ffffff;
+  color: #116149;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.mode-btn:hover:not(.active) {
+  color: #243028;
+}
+
+/* ── Drop zone ─────────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed #ccd6ce;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 14px;
+  min-height: 140px;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-zone:hover,
+.drop-zone.has-file {
+  border-color: #116149;
+  background: #f0faf6;
+}
+
+.drop-hint {
+  align-items: center;
+  color: #68736c;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.drop-hint span {
+  font-weight: 700;
+  color: #344239;
+}
+
+.drop-hint small {
+  font-size: 12px;
+}
+
+.file-selected {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  width: 100%;
+}
+
+.file-selected div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.file-selected strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-selected small {
+  color: #68736c;
+  font-size: 12px;
+}
