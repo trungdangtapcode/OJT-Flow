@@ -1,4 +1,4 @@
-"""Static knowledge repository for scaffold fixtures."""
+"""Static retrieval adapters for tests and local fallback."""
 
 from __future__ import annotations
 
@@ -7,6 +7,14 @@ from pathlib import Path
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.infrastructure.retrieval.engine import (
+    DeterministicEmbeddingProvider,
+    KnowledgeChunk,
+    default_healthcare_chunks,
+    rank_chunks,
+    sources_from_chunks,
+)
 
 
 class StaticKnowledgeRepository:
@@ -52,39 +60,57 @@ class StaticKnowledgeRepository:
         return schemas
 
     def search(self, query: str, *, top_k: int = 5) -> list[Evidence]:
-        """Return simple trusted evidence fixtures.
+        """Backward-compatible evidence search for existing callers."""
 
-        This is intentionally plain. Hybrid retrieval, embeddings, and GraphRAG
-        should replace this adapter without changing the application service.
-        """
+        package = StaticRetrievalRepository(self.root).search(
+            RetrievalQuery(query=query, top_k=top_k)
+        )
+        return package.evidence
 
-        lowered = query.lower()
-        candidates = [
-            Evidence(
-                source_type=EvidenceSourceType.SCHEMA,
-                source_id="schema:lab_result_v1",
-                source_version="1.0.0",
-                claim="Lab result records require date, patient_id, lab_name, value, and unit fields.",
-                confidence=0.93,
-                trust_level=TrustLevel.APPROVED,
-            ),
-            Evidence(
-                source_type=EvidenceSourceType.DATA_DICTIONARY,
-                source_id="dictionary:lab_fields_v1",
-                source_version="1.0.0",
-                claim="Missing lab units should be surfaced for human review before downstream use.",
-                confidence=0.88,
-                trust_level=TrustLevel.APPROVED,
-            ),
-            Evidence(
-                source_type=EvidenceSourceType.TRANSFORMATION_EXAMPLE,
-                source_id="example:csv_lab_to_json_records_v1",
-                source_version="1.0.0",
-                claim="CSV lab rows can be converted to JSON records when source rows and validation warnings are preserved.",
-                confidence=0.81,
-                trust_level=TrustLevel.APPROVED,
-            ),
-        ]
-        if "patient" in lowered or "lab" in lowered or "csv" in lowered:
-            return candidates[:top_k]
-        return candidates[: min(1, top_k)]
+
+class StaticRetrievalRepository:
+    """Deterministic hybrid retrieval over local healthcare knowledge chunks."""
+
+    def __init__(
+        self,
+        root: Path | str,
+        embedding_provider: DeterministicEmbeddingProvider | None = None,
+    ) -> None:
+        self.root = Path(root)
+        self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        self._chunks = default_healthcare_chunks(self.root)
+
+    def search(self, query: RetrievalQuery) -> RetrievalPackage:
+        chunks = self._filter_chunks(self._chunks, query)
+        warnings = (
+            []
+            if chunks
+            else ["No retrieval chunks matched filters; returning empty package."]
+        )
+        return rank_chunks(
+            chunks,
+            query,
+            embedding_provider=self.embedding_provider,
+            strategy="static_hybrid_rrf",
+            warnings=warnings,
+        )
+
+    def list_sources(self) -> list[RetrievalSource]:
+        return sources_from_chunks(self._chunks)
+
+    def _filter_chunks(
+        self,
+        chunks: list[KnowledgeChunk],
+        query: RetrievalQuery,
+    ) -> list[KnowledgeChunk]:
+        trust_level = query.filters.get("trust_level")
+        clinical_domain = query.filters.get("clinical_domain")
+        standard_system = query.filters.get("standard_system")
+        filtered = chunks
+        if trust_level:
+            filtered = [chunk for chunk in filtered if chunk.trust_level == TrustLevel(trust_level)]
+        if clinical_domain:
+            filtered = [chunk for chunk in filtered if chunk.clinical_domain == clinical_domain]
+        if standard_system:
+            filtered = [chunk for chunk in filtered if chunk.standard_system == standard_system]
+        return filtered

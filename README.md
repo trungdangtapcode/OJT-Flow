@@ -44,8 +44,9 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
   Redis session cache in Postgres deployments, and HTTP-only browser session cookies.
 - Deterministic CSV-to-JSON conversion after approval.
 - Evidence-grounded explanation report with medical intended-use limitation.
-- Static trusted knowledge fixture for `lab_result_v1`.
-- FastAPI routes for workflows, review, convert, validate, FHIR profile, OCR evidence, and health.
+- Healthcare-aware retrieval module with Postgres full-text search, pgvector-ready
+  storage, deterministic local embeddings, and static fallback.
+- FastAPI routes for workflows, review, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
 - React product console for workflow intake, review, schema, audit, and settings surfaces.
 
 ## Run Tests
@@ -64,7 +65,7 @@ Use `docker-compose up --build` if your machine has Docker Compose v1.
 
 This starts:
 
-- `postgres` on `localhost:5432`
+- `postgres` on `localhost:5432` using the pgvector-capable Postgres image
 - `redis` on `localhost:6379`
 - `api` on `localhost:8000`
 - `frontend` on `localhost:5173`
@@ -91,6 +92,9 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_MAX_UPLOAD_BYTES=26214400`
 - `OJT_UPLOAD_READ_CHUNK_BYTES=1048576`
 - `OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml`
+- `OJT_EMBEDDING_PROVIDER=deterministic`
+- `OJT_EMBEDDING_MODEL=deterministic-hash-v0`
+- `OJT_EMBEDDING_DIMENSIONS=64`
 
 The frontend proxies `/api/*` requests to the API container in Docker. No API keys or ADC credential files are committed; pass those through environment variables or mounted runtime credentials only.
 
@@ -207,6 +211,8 @@ Useful routes:
 - `POST /api/v1/validate`
 - `POST /api/v1/fhir/profile`
 - `POST /api/v1/ocr/evidence`
+- `POST /api/v1/retrieval/search`
+- `GET /api/v1/retrieval/sources`
 - `POST /api/v1/parse/extract`
 - `POST /api/v1/parse/upload/workflow`
 - `GET /api/v1/parse/extractors`

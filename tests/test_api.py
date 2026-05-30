@@ -188,6 +188,26 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         assert ocr.status_code == 200
         assert ocr.json()["data"]["requires_review"] is True
 
+        retrieval = await client.post(
+            "/api/v1/retrieval/search",
+            json={
+                "query": "HbA1c lab CSV missing unit FHIR Observation",
+                "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+                "schema_id": "lab_result_v1",
+                "top_k": 4,
+            },
+        )
+        assert retrieval.status_code == 200
+        assert retrieval.json()["data"]["trace"]["strategy"] == "static_hybrid_rrf"
+        assert retrieval.json()["data"]["evidence"]
+
+        sources = await client.get("/api/v1/retrieval/sources")
+        assert sources.status_code == 200
+        assert any(
+            source["source_id"] == "standard:fhir_observation_r4"
+            for source in sources.json()["data"]
+        )
+
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "request_validation_error"

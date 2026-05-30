@@ -21,6 +21,7 @@ from ojtflow.interfaces.api.routes import (
     health,
     ocr,
     parse,
+    retrieval,
     review,
     validate,
     workflows,
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(fhir.router, prefix="/api/v1", dependencies=protected)
     app.include_router(ocr.router, prefix="/api/v1", dependencies=protected)
     app.include_router(parse.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(retrieval.router, prefix="/api/v1", dependencies=protected)
     return app
 
 

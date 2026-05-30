@@ -87,6 +87,15 @@ export type Evidence = {
   trust_level: string;
 };
 
+export type RetrievalTrace = {
+  strategy: string;
+  query_variants: string[];
+  filters_applied: Record<string, unknown>;
+  candidates_seen: number;
+  final_hit_ids: string[];
+  warnings: string[];
+};
+
 export type HumanReview = {
   review_id: string;
   workflow_id: string;
@@ -183,6 +192,11 @@ export type WorkflowState = {
     limitations: string[];
     requires_clinician_review: boolean;
   } | null;
+  handoff_context?: {
+    retrieval_trace?: RetrievalTrace;
+    retrieval_handoff?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
   audit_event_refs: string[];
 };
 

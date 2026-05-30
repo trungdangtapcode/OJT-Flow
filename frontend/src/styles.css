@@ -321,6 +321,24 @@ button {
   margin-bottom: 16px;
 }
 
+.panel-title-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.mini-chip {
+  background: #e8efe9;
+  border: 1px solid #d4ddd6;
+  border-radius: 999px;
+  color: #314238;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+}
+
 .workbench-layout {
   display: grid;
   gap: 16px;
@@ -651,10 +669,28 @@ small {
   padding: 10px;
 }
 
+.evidence-title {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.evidence-title span {
+  color: #4c6154;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .kv {
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);
   gap: 8px 12px;
+}
+
+.compact-kv {
+  grid-template-columns: 86px minmax(0, 1fr);
+  margin-top: 12px;
 }
 
 .kv dt {

@@ -78,7 +78,9 @@ Expected behavior:
 1. Workflow is created and persisted.
 2. Input is stored by file reference and hash.
 3. Parser detects CSV and profiles fields.
-4. Static retrieval returns trusted lab evidence.
+4. Retrieval returns trusted lab evidence.
+   In Postgres mode, retrieval uses seeded healthcare knowledge chunks with
+   full-text search, deterministic vector scoring, fusion, and reranking.
 5. Validation flags PHI-like patient ID, date inconsistency, missing value, and missing unit.
 6. Transformation plan is created.
 7. Safety gate pauses the workflow for human review.
@@ -105,3 +107,5 @@ Expected behavior:
 - Postgres/local files make the backend restart-safe; SQLite remains a local fallback
   with the same workflow and auth repository contracts.
 - FHIR and OCR are hook points, not overclaimed medical automation.
+- Retrieval evidence is traceable through `retrieved_context` and
+  `handoff_context.retrieval_trace`.

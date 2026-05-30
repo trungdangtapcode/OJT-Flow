@@ -85,6 +85,9 @@ class Settings(BaseModel):
         default=DEFAULT_ALLOWED_UPLOAD_EXTENSIONS,
         alias="OJT_ALLOWED_UPLOAD_EXTENSIONS",
     )
+    embedding_provider: str = Field(default="deterministic", alias="OJT_EMBEDDING_PROVIDER")
+    embedding_model: str = Field(default="deterministic-hash-v0", alias="OJT_EMBEDDING_MODEL")
+    embedding_dimensions: int = Field(default=64, alias="OJT_EMBEDDING_DIMENSIONS")
 
     @property
     def repo_root(self) -> Path:
@@ -162,6 +165,9 @@ def get_settings() -> Settings:
         OJT_ALLOWED_UPLOAD_EXTENSIONS=_parse_extensions(
             os.getenv("OJT_ALLOWED_UPLOAD_EXTENSIONS")
         ),
+        OJT_EMBEDDING_PROVIDER=os.getenv("OJT_EMBEDDING_PROVIDER", "deterministic"),
+        OJT_EMBEDDING_MODEL=os.getenv("OJT_EMBEDDING_MODEL", "deterministic-hash-v0"),
+        OJT_EMBEDDING_DIMENSIONS=int(os.getenv("OJT_EMBEDDING_DIMENSIONS", "64")),
     )
 
 

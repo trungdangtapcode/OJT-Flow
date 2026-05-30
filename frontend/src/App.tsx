@@ -830,18 +830,37 @@ function WorkflowDetail({
         </div>
 
         <div className="panel inspector">
-          <h3>Evidence</h3>
+          <div className="panel-title-row">
+            <h3>Retrieval evidence</h3>
+            {workflow.handoff_context?.retrieval_trace ? (
+              <span className="mini-chip">{workflow.handoff_context.retrieval_trace.strategy}</span>
+            ) : null}
+          </div>
           <div className="evidence-list">
             {workflow.retrieved_context.map((evidence) => (
               <div className="evidence" key={evidence.evidence_id}>
-                <strong>{evidence.source_id}</strong>
+                <div className="evidence-title">
+                  <strong>{evidence.source_id}</strong>
+                  <span>{formatConfidence(evidence.confidence)}</span>
+                </div>
                 <span>{evidence.claim}</span>
                 <small>
                   {evidence.source_type} / {evidence.trust_level}
+                  {typeof evidence.locator.standard_system === "string"
+                    ? ` / ${evidence.locator.standard_system}`
+                    : ""}
                 </small>
               </div>
             ))}
           </div>
+          {workflow.handoff_context?.retrieval_trace ? (
+            <dl className="kv compact-kv">
+              <dt>Candidates</dt>
+              <dd>{workflow.handoff_context.retrieval_trace.candidates_seen}</dd>
+              <dt>Variants</dt>
+              <dd>{workflow.handoff_context.retrieval_trace.query_variants.length}</dd>
+            </dl>
+          ) : null}
         </div>
       </div>
 
@@ -1155,6 +1174,13 @@ function formatDate(value: string) {
     return value;
   }
   return date.toLocaleString();
+}
+
+function formatConfidence(value?: number | null) {
+  if (typeof value !== "number") {
+    return "n/a";
+  }
+  return `${Math.round(value * 100)}%`;
 }
 
 export default App;

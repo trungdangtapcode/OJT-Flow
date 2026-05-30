@@ -4,7 +4,10 @@ from datetime import datetime, timedelta, timezone
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.core.contracts.auth import GoogleIdentityProfile
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision, WorkflowStatus
-from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
+from ojtflow.infrastructure.retrieval.static import (
+    StaticKnowledgeRepository,
+    StaticRetrievalRepository,
+)
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.sqlite import (
     SQLiteBackboneStore,
@@ -24,6 +27,7 @@ def make_service(tmp_path: Path) -> WorkflowService:
         workflows=SQLiteWorkflowRepository(backbone),
         events=SQLiteEventRepository(backbone),
         knowledge=StaticKnowledgeRepository(ROOT / "knowledge"),
+        retrieval=StaticRetrievalRepository(ROOT / "knowledge"),
     )
 
 

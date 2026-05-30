@@ -29,6 +29,9 @@ OJT_REDIS_URL=redis://localhost:6379/0
 OJT_DATA_DIR=var
 OJT_AUTH_COOKIE_NAME=ojtflow_session
 OJT_AUTH_COOKIE_SAMESITE=lax
+OJT_EMBEDDING_PROVIDER=deterministic
+OJT_EMBEDDING_MODEL=deterministic-hash-v0
+OJT_EMBEDDING_DIMENSIONS=64
 ```
 
 Schema migrations live in:
@@ -89,6 +92,9 @@ Response data is a `WorkflowState`. Important fields:
 - `explanation`
 - `handoff_context`
 - `audit_event_refs`
+
+`handoff_context.retrieval_trace` records retrieval strategy, query variants,
+filters, candidate count, selected evidence IDs, and retrieval warnings.
 
 `GET /api/v1/workflows/{workflow_id}` returns the current `WorkflowState`.
 
@@ -257,3 +263,38 @@ Structured unauthorized response:
   }
 }
 ```
+
+## Retrieval Search
+
+`POST /api/v1/retrieval/search`
+
+```json
+{
+  "query": "HbA1c lab CSV missing units FHIR Observation",
+  "top_k": 5,
+  "schema_id": "lab_result_v1",
+  "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+  "clinical_domain": "laboratory",
+  "trust_level": "approved"
+}
+```
+
+Response data is a `RetrievalPackage`:
+
+- `hits[].evidence`
+- `hits[].score`
+- `hits[].lexical_score`
+- `hits[].vector_score`
+- `hits[].rerank_score`
+- `hits[].matched_terms`
+- `evidence`
+- `trace.strategy`
+- `trace.query_variants`
+- `trace.filters_applied`
+- `trace.candidates_seen`
+- `trace.warnings`
+- `handoff_context`
+
+`GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
+including source type, version, trust level, clinical domain, standard system,
+and chunk count.

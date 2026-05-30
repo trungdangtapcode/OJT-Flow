@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel
-from ojtflow.core.contracts.enums import DataFormat, ReviewDecision
+from ojtflow.core.contracts.enums import (
+    DataFormat,
+    EvidenceSourceType,
+    ReviewDecision,
+    TrustLevel,
+)
 
 
 class StartWorkflowRequest(ContractModel):
@@ -88,3 +95,33 @@ class OcrEvidenceFieldRequest(ContractModel):
 
 class OcrEvidenceRequest(ContractModel):
     fields: list[OcrEvidenceFieldRequest]
+
+
+class RetrievalSearchRequest(ContractModel):
+    query: str = Field(min_length=1)
+    top_k: int = Field(default=5, ge=1, le=20)
+    schema_id: str | None = None
+    workflow_id: str | None = None
+    fields: list[str] = Field(default_factory=list)
+    detected_format: str | None = None
+    resource_type: str | None = None
+    clinical_domain: str | None = None
+    standard_system: str | None = None
+    trust_level: TrustLevel | None = TrustLevel.APPROVED
+    source_type: EvidenceSourceType | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "query": "HbA1c lab CSV missing units FHIR Observation",
+                    "top_k": 5,
+                    "schema_id": "lab_result_v1",
+                    "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+                    "clinical_domain": "laboratory",
+                    "trust_level": "approved",
+                }
+            ]
+        }
+    }

@@ -15,8 +15,11 @@ from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
-from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
+from ojtflow.infrastructure.retrieval.engine import DeterministicEmbeddingProvider
+from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
+from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
+from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
@@ -85,10 +88,13 @@ def _build_workflow_service() -> WorkflowService:
 
     repo_root = Path(__file__).resolve().parents[4]
     settings = get_settings()
+    knowledge_root = repo_root / "knowledge"
+    embedding_provider = DeterministicEmbeddingProvider(settings.embedding_dimensions)
     if settings.storage_backend == "memory":
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()
         events = InMemoryEventRepository()
+        retrieval = StaticRetrievalRepository(knowledge_root, embedding_provider)
     elif settings.storage_backend == "sqlite":
         backbone = SQLiteBackboneStore(
             settings.resolved_database_path,
@@ -97,6 +103,7 @@ def _build_workflow_service() -> WorkflowService:
         datasets = SQLiteDatasetStore(backbone)
         workflows = SQLiteWorkflowRepository(backbone)
         events = SQLiteEventRepository(backbone)
+        retrieval = StaticRetrievalRepository(knowledge_root, embedding_provider)
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -105,6 +112,7 @@ def _build_workflow_service() -> WorkflowService:
         datasets = PostgresDatasetStore(backbone)
         workflows = PostgresWorkflowRepository(backbone)
         events = PostgresEventRepository(backbone)
+        retrieval = PostgresRetrievalRepository(backbone, knowledge_root, embedding_provider)
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
 
@@ -112,7 +120,8 @@ def _build_workflow_service() -> WorkflowService:
         datasets=datasets,
         workflows=workflows,
         events=events,
-        knowledge=StaticKnowledgeRepository(repo_root / "knowledge"),
+        knowledge=StaticKnowledgeRepository(knowledge_root),
+        retrieval=retrieval,
     )
 
 

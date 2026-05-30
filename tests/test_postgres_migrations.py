@@ -12,13 +12,12 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         ROOT / "sql/postgres/migrations",
     ).load_migrations()
 
-    assert [migration.version for migration in migrations] == ["001", "003", "004"]
+    assert [migration.version for migration in migrations] == ["001", "002", "003", "004"]
     assert migrations[0].name == "backend_v0"
-    assert migrations[1].name == "auth_google_sessions"
-    assert migrations[2].name == "evidence_retrieval_source_types"
-    assert len(migrations[0].checksum) == 64
-    assert len(migrations[1].checksum) == 64
-    assert len(migrations[2].checksum) == 64
+    assert migrations[1].name == "retrieval_v0"
+    assert migrations[2].name == "auth_google_sessions"
+    assert migrations[3].name == "evidence_retrieval_source_types"
+    assert all(len(migration.checksum) == 64 for migration in migrations)
 
 
 def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
@@ -39,6 +38,21 @@ def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
     assert "workflow_events_event_type_check" in sql
     assert "evidence_source_type_check" in sql
     assert "evidence_trust_level_check" in sql
+
+
+def test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback() -> None:
+    sql = (ROOT / "sql/postgres/migrations/002_retrieval_v0.sql").read_text()
+
+    assert "create extension if not exists vector" in sql
+    assert "undefined_file" in sql
+    assert "ojtflow.knowledge_documents" in sql
+    assert "ojtflow.knowledge_chunks" in sql
+    assert "search_vector tsvector generated always" in sql
+    assert "using gin(search_vector)" in sql
+    assert "using hnsw" in sql
+    assert "healthcare_standard" in sql
+    assert "terminology_system" in sql
+    assert "uploaded_file_raw" in sql
 
 
 def test_auth_google_sessions_migration_has_users_and_sessions() -> None:

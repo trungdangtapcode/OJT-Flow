@@ -11,7 +11,10 @@ from ojtflow.data_tools.extract import ExtractionResult, sanitize_upload_filenam
 from ojtflow.data_tools.parse import parse_data
 from ojtflow.interfaces.api.app import create_app
 from ojtflow.interfaces.api.deps import clear_workflow_service_cache, require_authentication
-from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
+from ojtflow.infrastructure.retrieval.static import (
+    StaticKnowledgeRepository,
+    StaticRetrievalRepository,
+)
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
     InMemoryEventRepository,
@@ -28,6 +31,7 @@ def make_service() -> WorkflowService:
         workflows=InMemoryWorkflowRepository(),
         events=InMemoryEventRepository(),
         knowledge=StaticKnowledgeRepository(ROOT / "knowledge"),
+        retrieval=StaticRetrievalRepository(ROOT / "knowledge"),
     )
 
 

@@ -5,6 +5,7 @@ import pytest
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision, WorkflowStatus
+from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.storage.postgres import (
     PostgresBackboneStore,
@@ -28,6 +29,7 @@ def test_postgres_workflow_restart_resume(tmp_path: Path) -> None:
         workflows=PostgresWorkflowRepository(backbone),
         events=PostgresEventRepository(backbone),
         knowledge=StaticKnowledgeRepository(ROOT / "knowledge"),
+        retrieval=PostgresRetrievalRepository(backbone, ROOT / "knowledge"),
     )
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
     workflow = service.start_workflow(
@@ -44,9 +46,9 @@ def test_postgres_workflow_restart_resume(tmp_path: Path) -> None:
         workflows=PostgresWorkflowRepository(backbone),
         events=PostgresEventRepository(backbone),
         knowledge=StaticKnowledgeRepository(ROOT / "knowledge"),
+        retrieval=PostgresRetrievalRepository(backbone, ROOT / "knowledge"),
     )
     completed = restarted.submit_review(workflow.review.review_id, ReviewDecision.APPROVE)
 
     assert completed.status == WorkflowStatus.COMPLETED
     assert restarted.list_events(completed.workflow_id)
-

@@ -2,7 +2,10 @@ from pathlib import Path
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision, WorkflowStatus
-from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
+from ojtflow.infrastructure.retrieval.static import (
+    StaticKnowledgeRepository,
+    StaticRetrievalRepository,
+)
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
     InMemoryEventRepository,
@@ -19,6 +22,7 @@ def make_service() -> WorkflowService:
         workflows=InMemoryWorkflowRepository(),
         events=InMemoryEventRepository(),
         knowledge=StaticKnowledgeRepository(ROOT / "knowledge"),
+        retrieval=StaticRetrievalRepository(ROOT / "knowledge"),
     )
 
 
@@ -40,6 +44,7 @@ def test_workflow_pauses_for_review_then_completes_after_approval() -> None:
     assert workflow.transformation_plan is not None
     assert workflow.validation_report is not None
     assert workflow.retrieved_context
+    assert workflow.handoff_context["retrieval_trace"]["strategy"] == "static_hybrid_rrf"
 
     completed = service.submit_review(workflow.review.review_id, ReviewDecision.APPROVE)
 
@@ -63,4 +68,3 @@ def test_review_rejection_cancels_workflow() -> None:
 
     cancelled = service.submit_review(workflow.review.review_id, ReviewDecision.REJECT)
     assert cancelled.status == WorkflowStatus.CANCELLED
-

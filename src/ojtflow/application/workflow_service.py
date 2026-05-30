@@ -7,7 +7,14 @@ from ojtflow.agents.parser_agent import ParserAgent
 from ojtflow.agents.safety_agent import SafetyAgent
 from ojtflow.agents.transformation_agent import TransformationAgent
 from ojtflow.agents.validation_agent import ValidationAgent
-from ojtflow.application.ports import DatasetStore, EventRepository, KnowledgeRepository, WorkflowRepository
+from ojtflow.application.ports import (
+    DatasetStore,
+    EventRepository,
+    KnowledgeRepository,
+    RetrievalRepository,
+    WorkflowRepository,
+)
+from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.application.tool_registry import tool_specs_json
 from ojtflow.core.contracts.data import ParsedData, TransformationOutput, TransformationPlan
 from ojtflow.core.contracts.enums import (
@@ -20,6 +27,7 @@ from ojtflow.core.contracts.enums import (
     WorkflowStatus,
 )
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
 from ojtflow.core.contracts.review import HumanReview
 from ojtflow.core.contracts.workflow import (
     WorkflowInput,
@@ -41,11 +49,13 @@ class WorkflowService:
         workflows: WorkflowRepository,
         events: EventRepository,
         knowledge: KnowledgeRepository,
+        retrieval: RetrievalRepository,
     ) -> None:
         self.datasets = datasets
         self.workflows = workflows
         self.events = events
         self.knowledge = knowledge
+        self.retrieval_service = RetrievalService(retrieval)
         self.parser_agent = ParserAgent()
         self.validation_agent = ValidationAgent()
         self.safety_agent = SafetyAgent()
@@ -316,22 +326,34 @@ class WorkflowService:
         if workflow.profile is None:
             raise NotFoundError("Workflow is missing a data profile after parsing")
 
-        evidence = self.knowledge.search(
-            f"{instruction} fields {[field.name for field in workflow.profile.fields]}",
+        retrieval_package = self.retrieval_service.search_for_workflow(
+            workflow_id=workflow.workflow_id,
+            instruction=instruction,
+            profile=workflow.profile,
+            schema_id=schema_id,
             top_k=5,
         )
+        evidence = retrieval_package.evidence
         workflow.retrieved_context = evidence
+        workflow.handoff_context["retrieval_trace"] = retrieval_package.trace.model_dump(
+            mode="json"
+        )
+        workflow.handoff_context["retrieval_handoff"] = retrieval_package.handoff_context
         self._event(
             workflow,
             ActorType.AGENT,
             "retrieval_agent",
             EventType.RETRIEVAL_COMPLETED,
             f"Retrieved {len(evidence)} trusted evidence item(s)",
-            metadata={"source_ids": [item.source_id for item in evidence]},
+            metadata={
+                "source_ids": [item.source_id for item in evidence],
+                "strategy": retrieval_package.trace.strategy,
+                "warnings": retrieval_package.trace.warnings,
+            },
         )
         self._step(
             workflow,
-            "static_retrieval",
+            "retrieval",
             StepStatus.COMPLETED,
             f"Retrieved {len(evidence)} trusted evidence item(s)",
         )
@@ -440,6 +462,16 @@ class WorkflowService:
         """List trusted schema registry entries."""
 
         return self.knowledge.list_schemas()
+
+    def search_retrieval(self, query: RetrievalQuery) -> RetrievalPackage:
+        """Run direct retrieval search."""
+
+        return self.retrieval_service.search(query)
+
+    def list_retrieval_sources(self) -> list[RetrievalSource]:
+        """List available retrieval source inventory."""
+
+        return self.retrieval_service.list_sources()
 
     def list_events(self, workflow_id: str) -> list[WorkflowEvent]:
         """Fetch workflow events."""
