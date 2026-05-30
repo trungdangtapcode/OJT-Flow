@@ -19,7 +19,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ojtflow.core.errors import ToolExecutionError
+from ojtflow.core.errors import ToolExecutionError, UnsupportedUploadError
 
 
 # Map file extension → source format label
@@ -56,6 +56,49 @@ class Extractor:
     AUTO = "auto"
 
 
+ALLOWED_EXTRACTORS = {Extractor.AUTO, Extractor.MARKITDOWN, Extractor.MINERU}
+MAX_UPLOAD_FILENAME_BYTES = 255
+
+
+def sanitize_upload_filename(filename: str | None) -> str:
+    """Return a safe basename for an uploaded file or raise a policy error."""
+
+    candidate = (filename or "").strip()
+    if not candidate:
+        raise UnsupportedUploadError("Uploaded file is missing a filename.")
+    if "\x00" in candidate or "/" in candidate or "\\" in candidate:
+        raise UnsupportedUploadError("Uploaded filename must not contain path separators.")
+    if candidate in {".", ".."}:
+        raise UnsupportedUploadError("Uploaded filename is invalid.")
+    if len(candidate.encode("utf-8")) > MAX_UPLOAD_FILENAME_BYTES:
+        raise UnsupportedUploadError(
+            f"Uploaded filename exceeds {MAX_UPLOAD_FILENAME_BYTES} bytes."
+        )
+    if Path(candidate).suffix.lower() not in EXTENSION_FORMAT:
+        raise UnsupportedUploadError(
+            f"Unsupported upload extension '{Path(candidate).suffix.lower() or '<none>'}'."
+        )
+    return candidate
+
+
+def source_format_for_filename(filename: str) -> str:
+    """Return the configured source format for a sanitized filename."""
+
+    safe_filename = sanitize_upload_filename(filename)
+    return EXTENSION_FORMAT[Path(safe_filename).suffix.lower()]
+
+
+def validate_extractor_choice(prefer: str) -> str:
+    """Validate and normalize an extractor choice from API/user input."""
+
+    normalized = prefer.strip().lower()
+    if normalized not in ALLOWED_EXTRACTORS:
+        raise UnsupportedUploadError(
+            f"Unsupported extractor '{prefer}'. Expected one of: auto, markitdown, mineru."
+        )
+    return normalized
+
+
 @dataclass
 class ExtractionResult:
     """Output of document extraction."""
@@ -90,25 +133,22 @@ def extract_document(
         ToolExecutionError: if extraction fails and no fallback is available.
         ImportError: if the required library is not installed.
     """
-    suffix = Path(filename).suffix.lower()
-    source_format = EXTENSION_FORMAT.get(suffix, "unknown")
+    safe_filename = sanitize_upload_filename(filename)
+    prefer = validate_extractor_choice(prefer)
+    suffix = Path(safe_filename).suffix.lower()
+    source_format = EXTENSION_FORMAT[suffix]
     warnings: list[str] = []
 
-    if source_format == "unknown":
-        warnings.append(
-            f"Unrecognized file extension '{suffix}'. Attempting extraction anyway."
-        )
-
     if prefer == Extractor.MINERU:
-        return _extract_mineru(data, filename, source_format, warnings)
+        return _extract_mineru(data, safe_filename, source_format, warnings)
 
     if prefer == Extractor.MARKITDOWN:
-        return _extract_markitdown(data, filename, source_format, warnings)
+        return _extract_markitdown(data, safe_filename, source_format, warnings)
 
     # AUTO: try markitdown first, fall back to minerU
     markitdown_error: Exception | None = None
     try:
-        return _extract_markitdown(data, filename, source_format, list(warnings))
+        return _extract_markitdown(data, safe_filename, source_format, list(warnings))
     except ImportError as exc:
         markitdown_error = exc
         warnings.append("markitdown not installed, falling back to minerU.")
@@ -117,7 +157,7 @@ def extract_document(
         warnings.append(f"markitdown failed ({exc}), falling back to minerU.")
 
     try:
-        return _extract_mineru(data, filename, source_format, warnings)
+        return _extract_mineru(data, safe_filename, source_format, warnings)
     except ImportError:
         raise ImportError(
             "No document extractor is available. Install at least one:\n"
@@ -127,7 +167,7 @@ def extract_document(
         ) from markitdown_error
     except ToolExecutionError as exc:
         raise ToolExecutionError(
-            f"Both markitdown and minerU failed to extract '{filename}'. "
+            f"Both markitdown and minerU failed to extract '{safe_filename}'. "
             f"minerU error: {exc}"
         ) from exc
 
@@ -142,6 +182,7 @@ def _extract_markitdown(
     source_format: str,
     warnings: list[str],
 ) -> ExtractionResult:
+    filename = sanitize_upload_filename(filename)
     try:
         from markitdown import MarkItDown  # type: ignore[import]
     except ImportError as exc:
@@ -149,7 +190,7 @@ def _extract_markitdown(
             "markitdown is not installed. Run: pip install 'ojtflow[parsing]'"
         ) from exc
 
-    md = MarkItDown()
+    md = MarkItDown(enable_plugins=False)
     suffix = Path(filename).suffix
 
     # markitdown reliably detects format from file extension on a real path
@@ -210,6 +251,7 @@ def _extract_mineru(
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_dir_path = Path(tmp_dir)
+        filename = sanitize_upload_filename(filename)
         input_path = tmp_dir_path / filename
         input_path.write_bytes(data)
         output_dir = tmp_dir_path / "output"

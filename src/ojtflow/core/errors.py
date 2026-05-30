@@ -18,3 +18,10 @@ class PolicyBlockedError(OJTFlowError):
 class ToolExecutionError(OJTFlowError):
     """Raised when a deterministic tool fails with a known cause."""
 
+
+class UploadTooLargeError(OJTFlowError):
+    """Raised when an uploaded file exceeds the configured size limit."""
+
+
+class UnsupportedUploadError(OJTFlowError):
+    """Raised when an uploaded file fails server-side upload policy."""

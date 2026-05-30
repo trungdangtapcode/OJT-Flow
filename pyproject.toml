@@ -7,6 +7,7 @@ dependencies = [
   "fastapi>=0.111,<1",
   "pydantic>=2.7,<3",
   "psycopg[binary]>=3.2,<4",
+  "python-multipart>=0.0.9",
   "pyyaml>=6,<7",
   "uvicorn[standard]>=0.29,<1"
 ]
@@ -17,13 +18,11 @@ dev = [
   "pytest"
 ]
 parsing = [
-  "markitdown[docx,xlsx,pptx]>=0.1.0",
-  "python-multipart>=0.0.9",
+  "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
 ]
 parsing-full = [
-  "markitdown[docx,xlsx,pptx]>=0.1.0",
+  "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
   "magic-pdf[full]>=0.11.0",
-  "python-multipart>=0.0.9",
 ]
 
 [build-system]

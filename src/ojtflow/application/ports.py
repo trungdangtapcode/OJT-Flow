@@ -21,6 +21,16 @@ class DatasetStore(Protocol):
         detected_format: str | None = None,
     ) -> DatasetRecord: ...
 
+    def put_bytes(
+        self,
+        data: bytes,
+        workflow_id: str | None = None,
+        source_kind: str = "binary",
+        filename: str | None = None,
+        declared_format: str | None = None,
+        detected_format: str | None = None,
+    ) -> DatasetRecord: ...
+
     def get_text(self, storage_ref: str) -> str: ...
 
 

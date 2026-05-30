@@ -12,7 +12,7 @@ from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
 from ojtflow.core.ids import new_id
-from ojtflow.data_tools.hashing import sha256_text
+from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
 
 
 class SQLiteBackboneStore:
@@ -107,6 +107,53 @@ class SQLiteDatasetStore:
             declared_format=declared_format,
             detected_format=detected_format,
             byte_size=len(text.encode("utf-8")),
+            sha256=digest,
+            storage_ref=storage_ref,
+        )
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into datasets (
+                    dataset_id, workflow_id, source_kind, declared_format,
+                    detected_format, byte_size, sha256, storage_ref
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.dataset_id,
+                    record.workflow_id,
+                    record.source_kind,
+                    record.declared_format,
+                    record.detected_format,
+                    record.byte_size,
+                    record.sha256,
+                    record.storage_ref,
+                ),
+            )
+        return record
+
+    def put_bytes(
+        self,
+        data: bytes,
+        workflow_id: str | None = None,
+        source_kind: str = "binary",
+        filename: str | None = None,
+        declared_format: str | None = None,
+        detected_format: str | None = None,
+    ) -> DatasetRecord:
+        digest = sha256_bytes(data)
+        dataset_id = new_id("ds")
+        suffix = Path(filename or "").suffix.lower()
+        directory = self.backbone.datasets_dir
+        path = directory / f"{dataset_id}{suffix or '.bin'}"
+        path.write_bytes(data)
+        storage_ref = path.resolve().as_uri()
+        record = DatasetRecord(
+            dataset_id=dataset_id,
+            workflow_id=workflow_id,
+            source_kind=source_kind,
+            declared_format=declared_format,
+            detected_format=detected_format,
+            byte_size=len(data),
             sha256=digest,
             storage_ref=storage_ref,
         )

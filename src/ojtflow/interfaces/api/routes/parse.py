@@ -11,15 +11,48 @@ Requires:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import JSONResponse
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.core.contracts.enums import DataFormat
-from ojtflow.data_tools.extract import Extractor, available_extractors, supported_extensions
+from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
+from ojtflow.data_tools.extract import (
+    Extractor,
+    available_extractors,
+    sanitize_upload_filename,
+    source_format_for_filename,
+    supported_extensions,
+    validate_extractor_choice,
+)
 from ojtflow.interfaces.api.deps import get_workflow_service
 from ojtflow.interfaces.api.responses import ok
 
 router = APIRouter(tags=["parse"])
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_upload_bytes(file: UploadFile) -> tuple[bytes, str, str]:
+    """Validate and read an uploaded file without trusting client metadata."""
+
+    filename = sanitize_upload_filename(file.filename)
+    source_format = source_format_for_filename(filename)
+    extractor_bytes = bytearray()
+
+    while True:
+        chunk = await file.read(UPLOAD_READ_CHUNK_BYTES)
+        if not chunk:
+            break
+        extractor_bytes.extend(chunk)
+        if len(extractor_bytes) > MAX_UPLOAD_BYTES:
+            raise UploadTooLargeError(
+                f"Uploaded file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit."
+            )
+
+    if not extractor_bytes:
+        raise UnsupportedUploadError("Uploaded file is empty.")
+
+    return bytes(extractor_bytes), filename, source_format
 
 
 @router.post("/parse/upload/workflow")
@@ -54,8 +87,8 @@ async def upload_and_start_workflow(
 
     Returns the same `WorkflowState` envelope as `POST /api/v1/workflows`.
     """
-    file_bytes = await file.read()
-    filename = file.filename or "upload"
+    extractor = validate_extractor_choice(extractor)
+    file_bytes, filename, _source_format = await _read_upload_bytes(file)
 
     workflow = service.start_workflow_from_file(
         instruction=instruction,
@@ -91,8 +124,8 @@ async def extract_only(
     """
     from ojtflow.data_tools.extract import extract_document
 
-    file_bytes = await file.read()
-    filename = file.filename or "upload"
+    extractor = validate_extractor_choice(extractor)
+    file_bytes, filename, _source_format = await _read_upload_bytes(file)
 
     result = extract_document(file_bytes, filename, prefer=extractor)
     return ok(
