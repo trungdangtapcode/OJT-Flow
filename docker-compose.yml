@@ -15,19 +15,38 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
     environment:
       OJT_STORAGE_BACKEND: postgres
       OJT_DATABASE_URL: postgresql://ojtflow:ojtflow@postgres:5432/ojtflow
+      OJT_REDIS_URL: redis://redis:6379/0
       OJT_DATA_DIR: /app/var
+      OJT_GOOGLE_CLIENT_ID: ${OJT_GOOGLE_CLIENT_ID:-}
+      OJT_GOOGLE_CLIENT_SECRET: ${OJT_GOOGLE_CLIENT_SECRET:-}
+      OJT_GOOGLE_REDIRECT_URI: ${OJT_GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/auth/google/callback}
+      OJT_GOOGLE_FRONTEND_REDIRECT_URI: ${OJT_GOOGLE_FRONTEND_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      OJT_AUTH_SESSION_TTL_SECONDS: ${OJT_AUTH_SESSION_TTL_SECONDS:-604800}
+      OJT_AUTH_STATE_TTL_SECONDS: ${OJT_AUTH_STATE_TTL_SECONDS:-600}
     ports:
       - "8000:8000"
     volumes:
       - app_data:/app/var
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:

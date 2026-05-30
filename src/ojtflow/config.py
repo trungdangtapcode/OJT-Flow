@@ -44,6 +44,22 @@ class Settings(BaseModel):
     )
     database_path: Path = Field(default=Path("var/ojtflow.db"), alias="OJT_DATABASE_PATH")
     data_dir: Path = Field(default=Path("var"), alias="OJT_DATA_DIR")
+    redis_url: str = Field(default="redis://localhost:6379/0", alias="OJT_REDIS_URL")
+    google_client_id: str = Field(default="", alias="OJT_GOOGLE_CLIENT_ID")
+    google_client_secret: str = Field(default="", alias="OJT_GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: str = Field(
+        default="http://localhost:8000/api/v1/auth/google/callback",
+        alias="OJT_GOOGLE_REDIRECT_URI",
+    )
+    google_frontend_redirect_uri: str = Field(
+        default="http://localhost:5173/auth/callback",
+        alias="OJT_GOOGLE_FRONTEND_REDIRECT_URI",
+    )
+    auth_session_ttl_seconds: int = Field(
+        default=7 * 24 * 60 * 60,
+        alias="OJT_AUTH_SESSION_TTL_SECONDS",
+    )
+    auth_state_ttl_seconds: int = Field(default=10 * 60, alias="OJT_AUTH_STATE_TTL_SECONDS")
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, alias="OJT_MAX_UPLOAD_BYTES")
     upload_read_chunk_bytes: int = Field(
         default=1024 * 1024,
@@ -83,6 +99,21 @@ def get_settings() -> Settings:
         ),
         OJT_DATABASE_PATH=Path(os.getenv("OJT_DATABASE_PATH", "var/ojtflow.db")),
         OJT_DATA_DIR=Path(os.getenv("OJT_DATA_DIR", "var")),
+        OJT_REDIS_URL=os.getenv("OJT_REDIS_URL", "redis://localhost:6379/0"),
+        OJT_GOOGLE_CLIENT_ID=os.getenv("OJT_GOOGLE_CLIENT_ID", ""),
+        OJT_GOOGLE_CLIENT_SECRET=os.getenv("OJT_GOOGLE_CLIENT_SECRET", ""),
+        OJT_GOOGLE_REDIRECT_URI=os.getenv(
+            "OJT_GOOGLE_REDIRECT_URI",
+            "http://localhost:8000/api/v1/auth/google/callback",
+        ),
+        OJT_GOOGLE_FRONTEND_REDIRECT_URI=os.getenv(
+            "OJT_GOOGLE_FRONTEND_REDIRECT_URI",
+            "http://localhost:5173/auth/callback",
+        ),
+        OJT_AUTH_SESSION_TTL_SECONDS=int(
+            os.getenv("OJT_AUTH_SESSION_TTL_SECONDS", str(7 * 24 * 60 * 60))
+        ),
+        OJT_AUTH_STATE_TTL_SECONDS=int(os.getenv("OJT_AUTH_STATE_TTL_SECONDS", str(10 * 60))),
         OJT_MAX_UPLOAD_BYTES=int(os.getenv("OJT_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))),
         OJT_UPLOAD_READ_CHUNK_BYTES=int(
             os.getenv("OJT_UPLOAD_READ_CHUNK_BYTES", str(1024 * 1024))

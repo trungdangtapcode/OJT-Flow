@@ -10,7 +10,7 @@ from ojtflow.core.errors import ToolExecutionError, UnsupportedUploadError
 from ojtflow.data_tools.extract import ExtractionResult, sanitize_upload_filename
 from ojtflow.data_tools.parse import parse_data
 from ojtflow.interfaces.api.app import create_app
-from ojtflow.interfaces.api.deps import clear_workflow_service_cache
+from ojtflow.interfaces.api.deps import clear_workflow_service_cache, require_authentication
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
@@ -32,7 +32,9 @@ def make_service() -> WorkflowService:
 
 
 async def _client() -> httpx.AsyncClient:
-    transport = httpx.ASGITransport(app=create_app())
+    app = create_app()
+    app.dependency_overrides[require_authentication] = lambda: None
+    transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
 

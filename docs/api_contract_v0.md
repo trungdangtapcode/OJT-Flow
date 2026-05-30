@@ -9,11 +9,21 @@ All public endpoints return the same envelope:
 }
 ```
 
+All `/api/v1` workflow/data endpoints require:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+The exceptions are `GET /api/v1/auth/google/url` and
+`GET /api/v1/auth/google/callback`, which are used to obtain the token.
+
 Default persistence uses Postgres plus local file-backed artifacts:
 
 ```text
 OJT_STORAGE_BACKEND=postgres
 OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
+OJT_REDIS_URL=redis://localhost:6379/0
 OJT_DATA_DIR=var
 ```
 
@@ -181,3 +191,49 @@ Response data includes:
 
 Response data includes normalized OCR fields and `Evidence(source_type="ocr_box")`.
 Fields with confidence below `0.8` require review.
+
+## Google OAuth Auth
+
+`GET /api/v1/auth/google/url`
+
+Returns:
+
+- `authorization_url`: Google OAuth URL for redirecting the user.
+- `state`: nonce cached by the backend and verified during callback.
+
+The frontend passes:
+
+```text
+redirect_uri=http://localhost:5173/auth/callback
+```
+
+Swagger/API-only testing can omit `redirect_uri`, which uses the backend
+callback:
+
+```text
+http://localhost:8000/api/v1/auth/google/callback
+```
+
+`GET /api/v1/auth/google/callback?code=...&state=...`
+
+Exchanges the Google authorization code, verifies the identity token, creates or
+updates the user, creates a backend session, caches it in Redis, and returns:
+
+- `token_type`
+- `access_token`
+- `expires_at`
+- `user`
+
+`GET /api/v1/auth/me`
+
+Requires:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Returns the active user and session metadata.
+
+`POST /api/v1/auth/logout`
+
+Requires the same bearer token and revokes the session in Postgres and Redis.

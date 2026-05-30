@@ -13,6 +13,7 @@ Use `docker-compose up --build` if your machine has Docker Compose v1.
 Default backend storage:
 
 - Postgres: `postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
+- Redis session cache: `redis://localhost:6379/0`
 - input files: `var/datasets/`
 - generated outputs: `var/outputs/`
 

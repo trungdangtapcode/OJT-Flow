@@ -27,6 +27,94 @@ button {
   cursor: pointer;
 }
 
+.auth-shell {
+  align-items: center;
+  background: #f5f6f3;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 22px;
+}
+
+.auth-panel {
+  background: #ffffff;
+  border: 1px solid #dfe5df;
+  border-radius: 8px;
+  display: grid;
+  gap: 18px;
+  max-width: 460px;
+  padding: 24px;
+  width: 100%;
+}
+
+.compact-auth {
+  align-items: center;
+  color: #344239;
+  display: inline-flex;
+  font-weight: 750;
+  justify-content: center;
+  max-width: 260px;
+}
+
+.auth-brand {
+  color: #1d2420;
+}
+
+.auth-brand .brand-subtitle {
+  color: #68736c;
+}
+
+.auth-copy h1 {
+  font-size: 26px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.auth-copy p {
+  color: #68736c;
+  margin: 6px 0 0;
+}
+
+.google-button {
+  align-items: center;
+  background: #116149;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  display: inline-flex;
+  font-weight: 750;
+  gap: 8px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.google-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.auth-meta {
+  background: #f6f8f6;
+  border: 1px solid #e2e8e4;
+  border-radius: 6px;
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+}
+
+.auth-meta span {
+  color: #68736c;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.auth-meta strong {
+  color: #344239;
+  overflow-wrap: anywhere;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -133,6 +221,37 @@ button {
   align-items: center;
   display: flex;
   gap: 10px;
+}
+
+.user-menu {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d9dfda;
+  border-radius: 8px;
+  display: flex;
+  gap: 9px;
+  min-height: 42px;
+  padding: 5px 6px 5px 9px;
+}
+
+.user-menu > span {
+  display: grid;
+  gap: 1px;
+  max-width: 220px;
+  min-width: 0;
+}
+
+.user-menu strong,
+.user-menu small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-avatar {
+  border-radius: 999px;
+  height: 28px;
+  width: 28px;
 }
 
 .api-chip,

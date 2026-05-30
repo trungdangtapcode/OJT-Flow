@@ -9,26 +9,36 @@ import {
   FileUp,
   History,
   Layers,
+  LogIn,
+  LogOut,
   Loader2,
   Play,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
+  UserCircle,
   X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   API_BASE_URL,
+  clearStoredAuthToken,
+  completeGoogleLogin,
   createWorkflow,
+  getCurrentAuthSession,
+  getGoogleAuthorizationUrl,
   getWorkflow,
+  getStoredAuthToken,
   listReviews,
   listSchemas,
   listWorkflowEvents,
   listWorkflows,
+  logoutCurrentSession,
+  storeAuthToken,
   submitReview,
   uploadFileWorkflow,
 } from "./api";
-import type { SchemaEntry, WorkflowEvent, WorkflowState } from "./types";
+import type { AuthUser, SchemaEntry, WorkflowEvent, WorkflowState } from "./types";
 
 const sampleCsv =
   "date,patient_id,lab_name,value,unit\n" +
@@ -77,6 +87,9 @@ const navItems: Array<{ id: View; label: string; icon: React.ElementType }> = [
 ];
 
 function App() {
+  const [authToken, setAuthToken] = useState<string | null>(() => getStoredAuthToken());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authState, setAuthState] = useState<LoadState>({ loading: true, error: null });
   const [view, setView] = useState<View>("workbench");
   const [workflows, setWorkflows] = useState<WorkflowState[]>([]);
   const [reviews, setReviews] = useState<WorkflowState[]>([]);
@@ -85,8 +98,21 @@ function App() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowState | null>(null);
   const [events, setEvents] = useState<WorkflowEvent[]>([]);
   const [loadState, setLoadState] = useState<LoadState>({ loading: false, error: null });
+  const authCallbackHandled = useRef(false);
+
+  const clearWorkspace = useCallback(() => {
+    setWorkflows([]);
+    setReviews([]);
+    setSchemas([]);
+    setSelectedWorkflowId(null);
+    setSelectedWorkflow(null);
+    setEvents([]);
+  }, []);
 
   const refresh = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
     setLoadState({ loading: true, error: null });
     try {
       const [workflowData, reviewData, schemaData] = await Promise.all([
@@ -111,11 +137,95 @@ function App() {
     } catch (error) {
       setLoadState({ loading: false, error: error instanceof Error ? error.message : String(error) });
     }
-  }, [selectedWorkflowId]);
+  }, [currentUser, selectedWorkflowId]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (currentUser) {
+      void refresh();
+    }
+  }, [currentUser, refresh]);
+
+  useEffect(() => {
+    if (authCallbackHandled.current) {
+      return;
+    }
+    authCallbackHandled.current = true;
+
+    const syncAuth = async () => {
+      const url = new URL(window.location.href);
+      const isCallback = url.pathname === "/auth/callback";
+      const callbackError = url.searchParams.get("error");
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+
+      setAuthState({ loading: true, error: null });
+      try {
+        if (callbackError) {
+          throw new Error(`Google sign-in failed: ${callbackError}`);
+        }
+        if (isCallback) {
+          if (!code || !state) {
+            throw new Error("Google callback is missing code or state.");
+          }
+          const login = await completeGoogleLogin(code, state);
+          storeAuthToken(login.access_token);
+          setAuthToken(login.access_token);
+          setCurrentUser(login.user);
+          window.history.replaceState({}, document.title, "/");
+        } else if (authToken) {
+          const session = await getCurrentAuthSession();
+          setCurrentUser(session.user);
+        }
+        setAuthState({ loading: false, error: null });
+      } catch (error) {
+        clearStoredAuthToken();
+        setAuthToken(null);
+        setCurrentUser(null);
+        clearWorkspace();
+        if (isCallback) {
+          window.history.replaceState({}, document.title, "/");
+        }
+        setAuthState({
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+
+    void syncAuth();
+  }, [authToken, clearWorkspace]);
+
+  const handleGoogleSignIn = async () => {
+    setAuthState({ loading: true, error: null });
+    try {
+      const redirectUri = `${window.location.origin}/auth/callback`;
+      const authUrl = await getGoogleAuthorizationUrl(redirectUri);
+      window.location.assign(authUrl.authorization_url);
+    } catch (error) {
+      setAuthState({
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const handleLogout = async () => {
+    setAuthState({ loading: true, error: null });
+    try {
+      if (getStoredAuthToken()) {
+        await logoutCurrentSession();
+      }
+    } catch {
+      // The local session should still be cleared if the server token is already invalid.
+    } finally {
+      clearStoredAuthToken();
+      setAuthToken(null);
+      setCurrentUser(null);
+      clearWorkspace();
+      setView("workbench");
+      setAuthState({ loading: false, error: null });
+    }
+  };
 
   const selectWorkflow = async (workflowId: string) => {
     setSelectedWorkflowId(workflowId);
@@ -159,6 +269,21 @@ function App() {
 
   const stats = useMemo(() => buildStats(workflows, reviews), [workflows, reviews]);
 
+  if (authState.loading && !currentUser) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (!currentUser) {
+    return (
+      <SignInScreen
+        apiBaseUrl={API_BASE_URL}
+        error={authState.error}
+        loading={authState.loading}
+        onSignIn={() => void handleGoogleSignIn()}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary">
@@ -196,6 +321,7 @@ function App() {
           </div>
           <div className="topbar-actions">
             <span className="api-chip">API {API_BASE_URL}</span>
+            <UserMenu user={currentUser} onLogout={() => void handleLogout()} />
             <button className="icon-button" onClick={() => void refresh()} title="Refresh data" type="button">
               {loadState.loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
             </button>
@@ -245,6 +371,84 @@ function App() {
         ) : null}
         {view === "settings" ? <SettingsSurface /> : null}
       </main>
+    </div>
+  );
+}
+
+function AuthLoadingScreen() {
+  return (
+    <div className="auth-shell">
+      <div className="auth-panel compact-auth">
+        <Loader2 className="spin" size={22} />
+        <span>Checking session...</span>
+      </div>
+    </div>
+  );
+}
+
+function SignInScreen({
+  apiBaseUrl,
+  error,
+  loading,
+  onSignIn,
+}: {
+  apiBaseUrl: string;
+  error: string | null;
+  loading: boolean;
+  onSignIn: () => void;
+}) {
+  return (
+    <div className="auth-shell">
+      <section className="auth-panel">
+        <div className="brand auth-brand">
+          <div className="brand-mark">OF</div>
+          <div>
+            <div className="brand-name">OJTFlow</div>
+            <div className="brand-subtitle">Healthcare data workflow</div>
+          </div>
+        </div>
+
+        <div className="auth-copy">
+          <h1>Sign in to continue</h1>
+          <p>Use your Google account to access governed workflows, reviews, and audit records.</p>
+        </div>
+
+        {error ? (
+          <div className="inline-error" role="alert">
+            <AlertTriangle size={18} />
+            <span>{error}</span>
+          </div>
+        ) : null}
+
+        <button className="google-button" disabled={loading} onClick={onSignIn} type="button">
+          {loading ? <Loader2 className="spin" size={18} /> : <LogIn size={18} />}
+          Sign in with Google
+        </button>
+
+        <div className="auth-meta">
+          <span>API</span>
+          <strong>{apiBaseUrl}</strong>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function UserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  return (
+    <div className="user-menu">
+      {user.avatar_url ? (
+        <img alt="" className="user-avatar" src={user.avatar_url} />
+      ) : (
+        <UserCircle size={28} />
+      )}
+      <span>
+        <strong>{user.display_name || user.email}</strong>
+        <small>{user.email}</small>
+      </span>
+      <button className="icon-button" onClick={onLogout} title="Sign out" type="button">
+        <LogOut size={17} />
+      </button>
     </div>
   );
 }

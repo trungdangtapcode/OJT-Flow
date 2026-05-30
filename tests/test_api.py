@@ -5,15 +5,26 @@ import pytest
 
 from ojtflow.config import clear_settings_cache
 from ojtflow.interfaces.api.app import create_app
-from ojtflow.interfaces.api.deps import clear_workflow_service_cache
+from ojtflow.interfaces.api.deps import clear_workflow_service_cache, require_authentication
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 async def _client() -> httpx.AsyncClient:
-    transport = httpx.ASGITransport(app=create_app())
+    app = create_app()
+    app.dependency_overrides[require_authentication] = lambda: None
+    transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")
+
+
+@pytest.mark.asyncio
+async def test_api_routes_require_bearer_token() -> None:
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/api/v1/workflows")
+
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

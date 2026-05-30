@@ -11,6 +11,30 @@ export type ApiError = {
   workflow_id?: string | null;
 };
 
+export type AuthUser = {
+  user_id: string;
+  email: string;
+  email_verified: boolean;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
+
+export type AuthLoginResponse = {
+  token_type: "bearer";
+  access_token: string;
+  expires_at: string;
+  user: AuthUser;
+};
+
+export type AuthSessionResponse = {
+  user: AuthUser;
+  session: {
+    session_id: string;
+    expires_at: string;
+    last_seen_at?: string | null;
+  };
+};
+
 export type WorkflowStatus =
   | "created"
   | "running"

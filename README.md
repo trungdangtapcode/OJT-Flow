@@ -40,6 +40,7 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 - Data profiling and schema validation.
 - Conservative transformation plans that require review for semantic changes.
 - Human review pause/resume flow.
+- Google OAuth sign-in with Postgres-backed users/sessions and Redis session cache.
 - Deterministic CSV-to-JSON conversion after approval.
 - Evidence-grounded explanation report with medical intended-use limitation.
 - Static trusted knowledge fixture for `lab_result_v1`.
@@ -63,6 +64,7 @@ Use `docker-compose up --build` if your machine has Docker Compose v1.
 This starts:
 
 - `postgres` on `localhost:5432`
+- `redis` on `localhost:6379`
 - `api` on `localhost:8000`
 - `frontend` on `localhost:5173`
 
@@ -70,6 +72,13 @@ The default backend storage is Postgres plus local file artifacts:
 
 - `OJT_STORAGE_BACKEND=postgres`
 - `OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
+- `OJT_REDIS_URL=redis://localhost:6379/0`
+- `OJT_GOOGLE_CLIENT_ID=`
+- `OJT_GOOGLE_CLIENT_SECRET=`
+- `OJT_GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback`
+- `OJT_GOOGLE_FRONTEND_REDIRECT_URI=http://localhost:5173/auth/callback`
+- `OJT_AUTH_SESSION_TTL_SECONDS=604800`
+- `OJT_AUTH_STATE_TTL_SECONDS=600`
 - `OJT_DATA_DIR=var`
 - `OJT_MAX_UPLOAD_BYTES=26214400`
 - `OJT_UPLOAD_READ_CHUNK_BYTES=1048576`
@@ -84,6 +93,39 @@ PR #1 adds upload parsing routes:
 - `POST /api/v1/parse/extract`
 - `POST /api/v1/parse/upload/workflow`
 - `GET /api/v1/parse/extractors`
+- `GET /api/v1/auth/google/url`
+- `GET /api/v1/auth/google/callback`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/logout`
+
+## Google OAuth Login
+
+Create a Google OAuth client and set these callback URLs:
+
+```text
+http://localhost:8000/api/v1/auth/google/callback
+http://localhost:5173/auth/callback
+```
+
+Then set:
+
+```bash
+OJT_GOOGLE_CLIENT_ID=...
+OJT_GOOGLE_CLIENT_SECRET=...
+OJT_GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback
+OJT_GOOGLE_FRONTEND_REDIRECT_URI=http://localhost:5173/auth/callback
+```
+
+Login flow:
+
+1. The frontend calls `GET /api/v1/auth/google/url?redirect_uri=http://localhost:5173/auth/callback`.
+2. Redirect the user to `data.authorization_url`.
+3. Google redirects back to `/auth/callback` in the React app.
+4. The backend creates/updates `ojtflow.users`, creates a hashed session in
+   `ojtflow.sessions`, caches the session in Redis, and returns a bearer token.
+5. Send `Authorization: Bearer <token>` to `GET /api/v1/auth/me` and
+   `POST /api/v1/auth/logout`. The same header is required for workflow,
+   parse, convert, validate, FHIR, and OCR API routes.
 
 The API stores raw uploads as immutable artifacts and stores extracted markdown/text as derived artifacts for workflow parsing and review resume. Upload filenames, extensions, extractor names, empty files, and file sizes are validated server-side. See `docs/document_parsing_uploads.md` for supported extensions, dependency notes, and migration details.
 

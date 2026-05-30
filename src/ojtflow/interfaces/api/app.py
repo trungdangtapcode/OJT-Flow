@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 
 from ojtflow.core.errors import OJTFlowError
@@ -11,7 +11,18 @@ from ojtflow.interfaces.api.responses import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
-from ojtflow.interfaces.api.routes import convert, fhir, health, ocr, parse, review, validate, workflows
+from ojtflow.interfaces.api.deps import require_authentication
+from ojtflow.interfaces.api.routes import (
+    auth,
+    convert,
+    fhir,
+    health,
+    ocr,
+    parse,
+    review,
+    validate,
+    workflows,
+)
 
 
 def create_app() -> FastAPI:
@@ -25,14 +36,16 @@ def create_app() -> FastAPI:
     app.add_exception_handler(OJTFlowError, ojtflow_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
+    protected = [Depends(require_authentication)]
     app.include_router(health.router)
-    app.include_router(workflows.router, prefix="/api/v1")
-    app.include_router(review.router, prefix="/api/v1")
-    app.include_router(convert.router, prefix="/api/v1")
-    app.include_router(validate.router, prefix="/api/v1")
-    app.include_router(fhir.router, prefix="/api/v1")
-    app.include_router(ocr.router, prefix="/api/v1")
-    app.include_router(parse.router, prefix="/api/v1")
+    app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(workflows.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(review.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(convert.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(validate.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(fhir.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(ocr.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(parse.router, prefix="/api/v1", dependencies=protected)
     return app
 
 

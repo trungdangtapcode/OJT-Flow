@@ -1,5 +1,7 @@
 import type {
   ApiEnvelope,
+  AuthLoginResponse,
+  AuthSessionResponse,
   SchemaEntry,
   StartWorkflowPayload,
   WorkflowEvent,
@@ -13,11 +15,31 @@ export const API_BASE_URL =
     ? configuredBase.replace(/\/$/, "")
     : "/api/v1";
 
+const AUTH_TOKEN_STORAGE_KEY = "ojtflow.auth_token";
+
+export function getStoredAuthToken(): string | null {
+  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+export function storeAuthToken(token: string): void {
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+}
+
+export function clearStoredAuthToken(): void {
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getStoredAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...(init?.headers ?? {}),
     },
   });
@@ -29,6 +51,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message);
   }
   return envelope.data as T;
+}
+
+export function getGoogleAuthorizationUrl(redirectUri: string): Promise<{
+  authorization_url: string;
+  state: string;
+}> {
+  const query = `?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  return request(`/auth/google/url${query}`, { headers: {} });
+}
+
+export function completeGoogleLogin(
+  code: string,
+  state: string,
+): Promise<AuthLoginResponse> {
+  const query = `?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+  return request<AuthLoginResponse>(`/auth/google/callback${query}`, { headers: {} });
+}
+
+export function getCurrentAuthSession(): Promise<AuthSessionResponse> {
+  return request<AuthSessionResponse>("/auth/me");
+}
+
+export function logoutCurrentSession(): Promise<{ status: string }> {
+  return request<{ status: string }>("/auth/logout", { method: "POST" });
 }
 
 export function listWorkflows(status?: string): Promise<WorkflowState[]> {
@@ -96,6 +142,7 @@ export async function uploadFileWorkflow(
   const response = await fetch(`${API_BASE_URL}/parse/upload/workflow`, {
     method: "POST",
     body: form,
+    headers: authHeaders(),
     // Do NOT set Content-Type — browser sets multipart boundary automatically
   });
   const envelope = (await response.json()) as ApiEnvelope<WorkflowState>;

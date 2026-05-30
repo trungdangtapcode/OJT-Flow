@@ -12,9 +12,11 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         ROOT / "sql/postgres/migrations",
     ).load_migrations()
 
-    assert [migration.version for migration in migrations] == ["001"]
+    assert [migration.version for migration in migrations] == ["001", "002"]
     assert migrations[0].name == "backend_v0"
+    assert migrations[1].name == "auth_google_sessions"
     assert len(migrations[0].checksum) == 64
+    assert len(migrations[1].checksum) == 64
 
 
 def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
@@ -35,3 +37,14 @@ def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
     assert "workflow_events_event_type_check" in sql
     assert "evidence_source_type_check" in sql
     assert "evidence_trust_level_check" in sql
+
+
+def test_auth_google_sessions_migration_has_users_and_sessions() -> None:
+    sql = (ROOT / "sql/postgres/migrations/002_auth_google_sessions.sql").read_text()
+
+    assert "ojtflow.users" in sql
+    assert "ojtflow.sessions" in sql
+    assert "google_sub text not null unique" in sql
+    assert "token_hash text not null unique" in sql
+    assert "references ojtflow.users(user_id)" in sql
+    assert "sessions_token_hash_check" in sql
