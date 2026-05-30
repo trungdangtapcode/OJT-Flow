@@ -71,8 +71,21 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_STORAGE_BACKEND=postgres`
 - `OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
 - `OJT_DATA_DIR=var`
+- `OJT_MAX_UPLOAD_BYTES=26214400`
+- `OJT_UPLOAD_READ_CHUNK_BYTES=1048576`
+- `OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml`
 
 The frontend proxies `/api/*` requests to the API container in Docker. No API keys or ADC credential files are committed; pass those through environment variables or mounted runtime credentials only.
+
+## Document Upload Parsing
+
+PR #1 adds upload parsing routes:
+
+- `POST /api/v1/parse/extract`
+- `POST /api/v1/parse/upload/workflow`
+- `GET /api/v1/parse/extractors`
+
+The API stores raw uploads as immutable artifacts and stores extracted markdown/text as derived artifacts for workflow parsing and review resume. Upload filenames, extensions, extractor names, empty files, and file sizes are validated server-side. See `docs/document_parsing_uploads.md` for supported extensions, dependency notes, and migration details.
 
 ## Run Frontend Locally Against API
 
@@ -134,6 +147,9 @@ Useful routes:
 - `POST /api/v1/validate`
 - `POST /api/v1/fhir/profile`
 - `POST /api/v1/ocr/evidence`
+- `POST /api/v1/parse/extract`
+- `POST /api/v1/parse/upload/workflow`
+- `GET /api/v1/parse/extractors`
 
 ## Golden Fixture
 

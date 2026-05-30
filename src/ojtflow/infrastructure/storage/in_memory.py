@@ -9,7 +9,7 @@ from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
-from ojtflow.data_tools.hashing import sha256_text
+from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
 
 
 class InMemoryDatasetStore:
@@ -17,6 +17,7 @@ class InMemoryDatasetStore:
 
     def __init__(self) -> None:
         self._text_by_ref: dict[str, str] = {}
+        self._bytes_by_ref: dict[str, bytes] = {}
         self._records: dict[str, DatasetRecord] = {}
 
     def put_text(
@@ -41,6 +42,32 @@ class InMemoryDatasetStore:
             storage_ref=storage_ref,
         )
         self._text_by_ref[storage_ref] = text
+        self._records[storage_ref] = record
+        return record
+
+    def put_bytes(
+        self,
+        data: bytes,
+        workflow_id: str | None = None,
+        source_kind: str = "binary",
+        filename: str | None = None,
+        declared_format: str | None = None,
+        detected_format: str | None = None,
+    ) -> DatasetRecord:
+        digest = sha256_bytes(data)
+        dataset_id = f"ds_{digest[:12]}"
+        storage_ref = f"memory://datasets/{dataset_id}"
+        record = DatasetRecord(
+            dataset_id=dataset_id,
+            workflow_id=workflow_id,
+            source_kind=source_kind,
+            declared_format=declared_format,
+            detected_format=detected_format,
+            byte_size=len(data),
+            sha256=digest,
+            storage_ref=storage_ref,
+        )
+        self._bytes_by_ref[storage_ref] = bytes(data)
         self._records[storage_ref] = record
         return record
 

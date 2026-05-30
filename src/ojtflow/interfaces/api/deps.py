@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ojtflow.application.workflow_service import WorkflowService
-from ojtflow.config import get_settings
+from ojtflow.config import Settings, get_settings
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
@@ -68,6 +68,12 @@ async def get_workflow_service() -> WorkflowService:
     """Return the cached workflow service without FastAPI threadpool dispatch."""
 
     return _build_workflow_service()
+
+
+async def get_api_settings() -> Settings:
+    """Return settings without FastAPI threadpool dispatch."""
+
+    return get_settings()
 
 
 def clear_workflow_service_cache() -> None:

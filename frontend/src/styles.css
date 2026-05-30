@@ -202,11 +202,17 @@ button {
   margin-bottom: 16px;
 }
 
-.workbench-layout,
-.workflow-layout {
+.workbench-layout {
   display: grid;
   gap: 16px;
   grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.4fr);
+  min-width: 0;
+}
+
+.workflow-layout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 260px minmax(0, 1fr);
   min-width: 0;
 }
 
@@ -219,7 +225,7 @@ button {
 .detail-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr) minmax(220px, 1fr);
 }
 
 .detail-grid.two {
@@ -262,6 +268,10 @@ textarea {
 
 .field-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.field-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .schema-grid,
@@ -355,17 +365,23 @@ small {
   width: 100%;
 }
 
-.list-row span {
+.list-row > span:first-child {
   display: grid;
+  flex: 1 1 0%;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
+}
+
+.list-row > .status-badge,
+.list-row > .severity-badge {
+  flex-shrink: 0;
 }
 
 .list-row small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 260px;
 }
 
 .list-row.selected {
@@ -401,10 +417,29 @@ small {
   display: grid;
   gap: 10px;
   grid-template-columns: 12px minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .event-list li {
   grid-template-columns: 12px minmax(0, 1fr);
+}
+
+.step-list li div,
+.event-list li div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.step-list li div strong,
+.step-list li div small,
+.event-list li div strong,
+.event-list li div small,
+.event-list li div p {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .step-dot,
@@ -601,4 +636,105 @@ small {
   .nav-list {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Mode toggle (Text / File upload) ─────────────────────────── */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  border: 1px solid #dfe5df;
+  border-radius: 8px;
+  padding: 4px;
+  background: #f6f8f6;
+}
+
+.mode-btn {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #68736c;
+  display: inline-flex;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+  justify-content: center;
+  min-height: 34px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-btn.active {
+  background: #ffffff;
+  color: #116149;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.mode-btn:hover:not(.active) {
+  color: #243028;
+}
+
+/* ── Drop zone ─────────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed #ccd6ce;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 14px;
+  min-height: 140px;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-zone:hover,
+.drop-zone.has-file {
+  border-color: #116149;
+  background: #f0faf6;
+}
+
+.drop-hint {
+  align-items: center;
+  color: #68736c;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.drop-hint span {
+  font-weight: 700;
+  color: #344239;
+}
+
+.drop-hint small {
+  font-size: 12px;
+}
+
+.file-selected {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  width: 100%;
+}
+
+.file-selected div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.file-selected strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-selected small {
+  color: #68736c;
+  font-size: 12px;
 }

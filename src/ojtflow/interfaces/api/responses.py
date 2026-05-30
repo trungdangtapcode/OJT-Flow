@@ -11,7 +11,14 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel
-from ojtflow.core.errors import NotFoundError, OJTFlowError, PolicyBlockedError, ToolExecutionError
+from ojtflow.core.errors import (
+    NotFoundError,
+    OJTFlowError,
+    PolicyBlockedError,
+    ToolExecutionError,
+    UnsupportedUploadError,
+    UploadTooLargeError,
+)
 
 
 class ApiError(ContractModel):
@@ -59,6 +66,10 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
         return error_response("not_found", str(exc), status_code=404)
     if isinstance(exc, PolicyBlockedError):
         return error_response("policy_blocked", str(exc), status_code=403)
+    if isinstance(exc, UploadTooLargeError):
+        return error_response("upload_too_large", str(exc), status_code=413)
+    if isinstance(exc, UnsupportedUploadError):
+        return error_response("unsupported_upload", str(exc), status_code=415)
     if isinstance(exc, ToolExecutionError):
         return error_response("tool_execution_error", str(exc), status_code=422)
     return error_response("ojtflow_error", str(exc), status_code=400)

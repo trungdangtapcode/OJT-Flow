@@ -7,6 +7,7 @@ dependencies = [
   "fastapi>=0.111,<1",
   "pydantic>=2.7,<3",
   "psycopg[binary]>=3.2,<4",
+  "python-multipart>=0.0.9",
   "pyyaml>=6,<7",
   "uvicorn[standard]>=0.29,<1"
 ]
@@ -15,6 +16,13 @@ dependencies = [
 dev = [
   "httpx",
   "pytest"
+]
+parsing = [
+  "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
+]
+parsing-full = [
+  "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
+  "magic-pdf[full]>=0.11.0",
 ]
 
 [build-system]

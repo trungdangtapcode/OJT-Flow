@@ -10,6 +10,11 @@ class DataFormat(StrEnum):
     YAML = "yaml"
     CSV = "csv"
     NDJSON = "ndjson"
+    # Document formats — produced by extraction pipeline
+    MARKDOWN = "markdown"
+    PDF = "pdf"
+    DOCX = "docx"
+    IMAGE = "image"
     UNKNOWN = "unknown"
 
 

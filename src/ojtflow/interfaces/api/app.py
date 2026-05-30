@@ -11,7 +11,7 @@ from ojtflow.interfaces.api.responses import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
-from ojtflow.interfaces.api.routes import convert, fhir, health, ocr, review, validate, workflows
+from ojtflow.interfaces.api.routes import convert, fhir, health, ocr, parse, review, validate, workflows
 
 
 def create_app() -> FastAPI:
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(validate.router, prefix="/api/v1")
     app.include_router(fhir.router, prefix="/api/v1")
     app.include_router(ocr.router, prefix="/api/v1")
+    app.include_router(parse.router, prefix="/api/v1")
     return app
 
 
