@@ -36,6 +36,30 @@ const sampleCsv =
   "2026/01/02,P002,HbA1c,,\n" +
   "2026-01-03,P003,LDL,131,\n";
 
+const acceptedUploadExtensions = [
+  ".pdf",
+  ".docx",
+  ".xlsx",
+  ".xls",
+  ".pptx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".tiff",
+  ".tif",
+  ".bmp",
+  ".gif",
+  ".webp",
+  ".html",
+  ".htm",
+  ".md",
+  ".txt",
+  ".csv",
+  ".json",
+  ".yaml",
+  ".yml",
+].join(",");
+
 type View = "workbench" | "workflows" | "reviews" | "schemas" | "audit" | "settings";
 
 type LoadState = {
@@ -438,7 +462,7 @@ function Workbench({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.html,.md,.txt,.csv,.json,.yaml"
+                accept={acceptedUploadExtensions}
                 style={{ display: "none" }}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import tempfile
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,11 +27,9 @@ from ojtflow.core.errors import ToolExecutionError, UnsupportedUploadError
 EXTENSION_FORMAT: dict[str, str] = {
     ".pdf": "pdf",
     ".docx": "docx",
-    ".doc": "doc",
     ".xlsx": "xlsx",
     ".xls": "xls",
     ".pptx": "pptx",
-    ".ppt": "ppt",
     ".png": "image",
     ".jpg": "image",
     ".jpeg": "image",
@@ -60,7 +59,10 @@ ALLOWED_EXTRACTORS = {Extractor.AUTO, Extractor.MARKITDOWN, Extractor.MINERU}
 MAX_UPLOAD_FILENAME_BYTES = 255
 
 
-def sanitize_upload_filename(filename: str | None) -> str:
+def sanitize_upload_filename(
+    filename: str | None,
+    allowed_extensions: Collection[str] | None = None,
+) -> str:
     """Return a safe basename for an uploaded file or raise a policy error."""
 
     candidate = (filename or "").strip()
@@ -74,17 +76,22 @@ def sanitize_upload_filename(filename: str | None) -> str:
         raise UnsupportedUploadError(
             f"Uploaded filename exceeds {MAX_UPLOAD_FILENAME_BYTES} bytes."
         )
-    if Path(candidate).suffix.lower() not in EXTENSION_FORMAT:
+    allowed = {extension.lower() for extension in (allowed_extensions or EXTENSION_FORMAT)}
+    suffix = Path(candidate).suffix.lower()
+    if suffix not in EXTENSION_FORMAT or suffix not in allowed:
         raise UnsupportedUploadError(
-            f"Unsupported upload extension '{Path(candidate).suffix.lower() or '<none>'}'."
+            f"Unsupported upload extension '{suffix or '<none>'}'."
         )
     return candidate
 
 
-def source_format_for_filename(filename: str) -> str:
+def source_format_for_filename(
+    filename: str,
+    allowed_extensions: Collection[str] | None = None,
+) -> str:
     """Return the configured source format for a sanitized filename."""
 
-    safe_filename = sanitize_upload_filename(filename)
+    safe_filename = sanitize_upload_filename(filename, allowed_extensions=allowed_extensions)
     return EXTENSION_FORMAT[Path(safe_filename).suffix.lower()]
 
 

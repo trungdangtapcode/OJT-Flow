@@ -9,6 +9,31 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
+DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
+    ".pdf",
+    ".docx",
+    ".xlsx",
+    ".xls",
+    ".pptx",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tiff",
+    ".tif",
+    ".bmp",
+    ".gif",
+    ".webp",
+    ".html",
+    ".htm",
+    ".md",
+    ".txt",
+    ".csv",
+    ".json",
+    ".yaml",
+    ".yml",
+)
+
+
 class Settings(BaseModel):
     """Environment-backed settings with local demo defaults."""
 
@@ -19,6 +44,15 @@ class Settings(BaseModel):
     )
     database_path: Path = Field(default=Path("var/ojtflow.db"), alias="OJT_DATABASE_PATH")
     data_dir: Path = Field(default=Path("var"), alias="OJT_DATA_DIR")
+    max_upload_bytes: int = Field(default=25 * 1024 * 1024, alias="OJT_MAX_UPLOAD_BYTES")
+    upload_read_chunk_bytes: int = Field(
+        default=1024 * 1024,
+        alias="OJT_UPLOAD_READ_CHUNK_BYTES",
+    )
+    allowed_upload_extensions: tuple[str, ...] = Field(
+        default=DEFAULT_ALLOWED_UPLOAD_EXTENSIONS,
+        alias="OJT_ALLOWED_UPLOAD_EXTENSIONS",
+    )
 
     @property
     def repo_root(self) -> Path:
@@ -49,6 +83,13 @@ def get_settings() -> Settings:
         ),
         OJT_DATABASE_PATH=Path(os.getenv("OJT_DATABASE_PATH", "var/ojtflow.db")),
         OJT_DATA_DIR=Path(os.getenv("OJT_DATA_DIR", "var")),
+        OJT_MAX_UPLOAD_BYTES=int(os.getenv("OJT_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))),
+        OJT_UPLOAD_READ_CHUNK_BYTES=int(
+            os.getenv("OJT_UPLOAD_READ_CHUNK_BYTES", str(1024 * 1024))
+        ),
+        OJT_ALLOWED_UPLOAD_EXTENSIONS=_parse_extensions(
+            os.getenv("OJT_ALLOWED_UPLOAD_EXTENSIONS")
+        ),
     )
 
 
@@ -56,3 +97,15 @@ def clear_settings_cache() -> None:
     """Clear cached settings in tests."""
 
     get_settings.cache_clear()
+
+
+def _parse_extensions(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return DEFAULT_ALLOWED_UPLOAD_EXTENSIONS
+    extensions: list[str] = []
+    for item in value.split(","):
+        normalized = item.strip().lower()
+        if not normalized:
+            continue
+        extensions.append(normalized if normalized.startswith(".") else f".{normalized}")
+    return tuple(extensions) or DEFAULT_ALLOWED_UPLOAD_EXTENSIONS

@@ -118,94 +118,14 @@ class WorkflowService:
                 issue_count=len(parser_result.issues),
             )
 
-            evidence = self.knowledge.search(
-                f"{instruction} fields {[field.name for field in workflow.profile.fields]}",
-                top_k=5,
-            )
-            workflow.retrieved_context = evidence
-            self._event(
+            return self._run_after_parse(
                 workflow,
-                ActorType.AGENT,
-                "retrieval_agent",
-                EventType.RETRIEVAL_COMPLETED,
-                f"Retrieved {len(evidence)} trusted evidence item(s)",
-                metadata={"source_ids": [item.source_id for item in evidence]},
+                parsed,
+                instruction=instruction,
+                target_format=target_format,
+                schema_id=schema_id,
+                require_human_review=require_human_review,
             )
-            self._step(
-                workflow,
-                "static_retrieval",
-                StepStatus.COMPLETED,
-                f"Retrieved {len(evidence)} trusted evidence item(s)",
-            )
-
-            schema = self.knowledge.get_schema(schema_id)
-            validation_result = self.validation_agent.run(parsed, workflow.profile, schema)
-            workflow.validation_report = validation_result.data["validation_report"]
-            workflow.schema_profile = {
-                "schema_id": schema.get("$id") if schema else None,
-                "schema_confidence": workflow.validation_report.schema_confidence,
-            }
-            self._event(
-                workflow,
-                ActorType.AGENT,
-                self.validation_agent.agent_id,
-                EventType.VALIDATION_COMPLETED,
-                validation_result.summary,
-                metadata={"severity_summary": workflow.validation_report.severity_summary},
-            )
-            self._step(
-                workflow,
-                "validation",
-                StepStatus.COMPLETED,
-                validation_result.summary,
-                issue_count=len(workflow.validation_report.issues),
-            )
-
-            plan = build_transformation_plan(workflow.validation_report, target_format)
-            workflow.transformation_plan = plan
-            safety_result = self.safety_agent.run(workflow.validation_report, plan)
-            self._event(
-                workflow,
-                ActorType.AGENT,
-                self.safety_agent.agent_id,
-                EventType.AGENT_COMPLETED,
-                safety_result.summary,
-                severity=Severity.WARNING if safety_result.data["requires_review"] else Severity.INFO,
-            )
-            self._step(
-                workflow,
-                "safety_review_gate",
-                StepStatus.COMPLETED,
-                safety_result.summary,
-                issue_count=len(safety_result.issues),
-            )
-
-            if require_human_review and safety_result.data["requires_review"]:
-                workflow.review = self._make_review(workflow, plan)
-                workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
-                self._event(
-                    workflow,
-                    ActorType.AGENT,
-                    "review_agent",
-                    EventType.REVIEW_REQUESTED,
-                    workflow.review.question,
-                    severity=Severity.WARNING,
-                    metadata={"review_id": workflow.review.review_id},
-                )
-                self._step(
-                    workflow,
-                    "human_review",
-                    StepStatus.PENDING,
-                    workflow.review.question,
-                    issue_count=len(workflow.validation_report.issues),
-                )
-                workflow.touch()
-                self.workflows.save(workflow)
-                return workflow
-
-            self._complete_transformation(workflow, parsed, target_format, plan)
-            self.workflows.save(workflow)
-            return workflow
         except Exception as exc:
             self._fail_workflow(workflow, exc)
             self.workflows.save(workflow)
@@ -368,99 +288,122 @@ class WorkflowService:
                 issue_count=len(parser_result.issues),
             )
 
-            # Remaining steps identical to text workflow
-            evidence = self.knowledge.search(
-                f"{instruction} fields {[field.name for field in workflow.profile.fields]}",
-                top_k=5,
-            )
-            workflow.retrieved_context = evidence
-            self._event(
+            return self._run_after_parse(
                 workflow,
-                ActorType.AGENT,
-                "retrieval_agent",
-                EventType.RETRIEVAL_COMPLETED,
-                f"Retrieved {len(evidence)} trusted evidence item(s)",
-                metadata={"source_ids": [item.source_id for item in evidence]},
+                parsed,
+                instruction=instruction,
+                target_format=target_format,
+                schema_id=schema_id,
+                require_human_review=require_human_review,
             )
-            self._step(
-                workflow,
-                "static_retrieval",
-                StepStatus.COMPLETED,
-                f"Retrieved {len(evidence)} trusted evidence item(s)",
-            )
-
-            schema = self.knowledge.get_schema(schema_id)
-            validation_result = self.validation_agent.run(parsed, workflow.profile, schema)
-            workflow.validation_report = validation_result.data["validation_report"]
-            workflow.schema_profile = {
-                "schema_id": schema.get("$id") if schema else None,
-                "schema_confidence": workflow.validation_report.schema_confidence,
-            }
-            self._event(
-                workflow,
-                ActorType.AGENT,
-                self.validation_agent.agent_id,
-                EventType.VALIDATION_COMPLETED,
-                validation_result.summary,
-                metadata={"severity_summary": workflow.validation_report.severity_summary},
-            )
-            self._step(
-                workflow,
-                "validation",
-                StepStatus.COMPLETED,
-                validation_result.summary,
-                issue_count=len(workflow.validation_report.issues),
-            )
-
-            plan = build_transformation_plan(workflow.validation_report, target_format)
-            workflow.transformation_plan = plan
-            safety_result = self.safety_agent.run(workflow.validation_report, plan)
-            self._event(
-                workflow,
-                ActorType.AGENT,
-                self.safety_agent.agent_id,
-                EventType.AGENT_COMPLETED,
-                safety_result.summary,
-                severity=Severity.WARNING if safety_result.data["requires_review"] else Severity.INFO,
-            )
-            self._step(
-                workflow,
-                "safety_review_gate",
-                StepStatus.COMPLETED,
-                safety_result.summary,
-                issue_count=len(safety_result.issues),
-            )
-
-            if require_human_review and safety_result.data["requires_review"]:
-                workflow.review = self._make_review(workflow, plan)
-                workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
-                self._event(
-                    workflow,
-                    ActorType.AGENT,
-                    "review_agent",
-                    EventType.REVIEW_REQUESTED,
-                    workflow.review.question,
-                    severity=Severity.WARNING,
-                    metadata={"review_id": workflow.review.review_id},
-                )
-                self._step(
-                    workflow,
-                    "human_review",
-                    StepStatus.PENDING,
-                    workflow.review.question,
-                    issue_count=len(workflow.validation_report.issues),
-                )
-                workflow.touch()
-                self.workflows.save(workflow)
-                return workflow
-
-            self._complete_transformation(workflow, parsed, target_format, plan)
-            self.workflows.save(workflow)
-            return workflow
         except Exception as exc:
             self._fail_workflow(workflow, exc)
             self.workflows.save(workflow)
             return workflow
+
+    def _run_after_parse(
+        self,
+        workflow: WorkflowState,
+        parsed: ParsedData,
+        *,
+        instruction: str,
+        target_format: DataFormat,
+        schema_id: str | None,
+        require_human_review: bool,
+    ) -> WorkflowState:
+        """Run retrieval, validation, review gating, and transformation."""
+
+        if workflow.profile is None:
+            raise NotFoundError("Workflow is missing a data profile after parsing")
+
+        evidence = self.knowledge.search(
+            f"{instruction} fields {[field.name for field in workflow.profile.fields]}",
+            top_k=5,
+        )
+        workflow.retrieved_context = evidence
+        self._event(
+            workflow,
+            ActorType.AGENT,
+            "retrieval_agent",
+            EventType.RETRIEVAL_COMPLETED,
+            f"Retrieved {len(evidence)} trusted evidence item(s)",
+            metadata={"source_ids": [item.source_id for item in evidence]},
+        )
+        self._step(
+            workflow,
+            "static_retrieval",
+            StepStatus.COMPLETED,
+            f"Retrieved {len(evidence)} trusted evidence item(s)",
+        )
+
+        schema = self.knowledge.get_schema(schema_id)
+        validation_result = self.validation_agent.run(parsed, workflow.profile, schema)
+        workflow.validation_report = validation_result.data["validation_report"]
+        workflow.schema_profile = {
+            "schema_id": schema.get("$id") if schema else None,
+            "schema_confidence": workflow.validation_report.schema_confidence,
+        }
+        self._event(
+            workflow,
+            ActorType.AGENT,
+            self.validation_agent.agent_id,
+            EventType.VALIDATION_COMPLETED,
+            validation_result.summary,
+            metadata={"severity_summary": workflow.validation_report.severity_summary},
+        )
+        self._step(
+            workflow,
+            "validation",
+            StepStatus.COMPLETED,
+            validation_result.summary,
+            issue_count=len(workflow.validation_report.issues),
+        )
+
+        plan = build_transformation_plan(workflow.validation_report, target_format)
+        workflow.transformation_plan = plan
+        safety_result = self.safety_agent.run(workflow.validation_report, plan)
+        self._event(
+            workflow,
+            ActorType.AGENT,
+            self.safety_agent.agent_id,
+            EventType.AGENT_COMPLETED,
+            safety_result.summary,
+            severity=Severity.WARNING if safety_result.data["requires_review"] else Severity.INFO,
+        )
+        self._step(
+            workflow,
+            "safety_review_gate",
+            StepStatus.COMPLETED,
+            safety_result.summary,
+            issue_count=len(safety_result.issues),
+        )
+
+        if require_human_review and safety_result.data["requires_review"]:
+            workflow.review = self._make_review(workflow, plan)
+            workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                "review_agent",
+                EventType.REVIEW_REQUESTED,
+                workflow.review.question,
+                severity=Severity.WARNING,
+                metadata={"review_id": workflow.review.review_id},
+            )
+            self._step(
+                workflow,
+                "human_review",
+                StepStatus.PENDING,
+                workflow.review.question,
+                issue_count=len(workflow.validation_report.issues),
+            )
+            workflow.touch()
+            self.workflows.save(workflow)
+            return workflow
+
+        self._complete_transformation(workflow, parsed, target_format, plan)
+        self.workflows.save(workflow)
+        return workflow
 
     def get_workflow(self, workflow_id: str) -> WorkflowState:
         """Fetch a workflow."""

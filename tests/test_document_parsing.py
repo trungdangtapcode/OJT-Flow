@@ -80,7 +80,7 @@ def test_file_workflow_extraction_failure_is_persisted(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_api_upload_rejects_path_filename(monkeypatch) -> None:
+async def test_api_upload_rejects_unsupported_extension(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     clear_settings_cache()
     clear_workflow_service_cache()
@@ -88,7 +88,7 @@ async def test_api_upload_rejects_path_filename(monkeypatch) -> None:
     async with await _client() as client:
         response = await client.post(
             "/api/v1/parse/extract",
-            files={"file": ("../../evil.pdf", b"%PDF-1.4 demo", "application/pdf")},
+            files={"file": ("blocked.exe", b"demo", "application/octet-stream")},
             data={"extractor": "auto"},
         )
 
@@ -98,10 +98,8 @@ async def test_api_upload_rejects_path_filename(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_api_upload_enforces_size_limit(monkeypatch) -> None:
-    from ojtflow.interfaces.api.routes import parse as parse_routes
-
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
-    monkeypatch.setattr(parse_routes, "MAX_UPLOAD_BYTES", 4)
+    monkeypatch.setenv("OJT_MAX_UPLOAD_BYTES", "4")
     clear_settings_cache()
     clear_workflow_service_cache()
 
@@ -114,6 +112,24 @@ async def test_api_upload_enforces_size_limit(monkeypatch) -> None:
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "upload_too_large"
+
+
+@pytest.mark.asyncio
+async def test_api_upload_honors_configured_extension_allowlist(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_ALLOWED_UPLOAD_EXTENSIONS", ".txt")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.post(
+            "/api/v1/parse/extract",
+            files={"file": ("blocked.pdf", b"%PDF-1.4 demo", "application/pdf")},
+            data={"extractor": "auto"},
+        )
+
+    assert response.status_code == 415
+    assert response.json()["error"]["code"] == "unsupported_upload"
 
 
 @pytest.mark.asyncio

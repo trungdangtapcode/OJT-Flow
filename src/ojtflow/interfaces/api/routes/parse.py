@@ -13,6 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from ojtflow.application.workflow_service import WorkflowService
+from ojtflow.config import Settings
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
 from ojtflow.data_tools.extract import (
@@ -23,30 +24,33 @@ from ojtflow.data_tools.extract import (
     supported_extensions,
     validate_extractor_choice,
 )
-from ojtflow.interfaces.api.deps import get_workflow_service
+from ojtflow.interfaces.api.deps import get_api_settings, get_workflow_service
 from ojtflow.interfaces.api.responses import ok
 
 router = APIRouter(tags=["parse"])
 
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 
-
-async def _read_upload_bytes(file: UploadFile) -> tuple[bytes, str, str]:
+async def _read_upload_bytes(file: UploadFile, settings: Settings) -> tuple[bytes, str, str]:
     """Validate and read an uploaded file without trusting client metadata."""
 
-    filename = sanitize_upload_filename(file.filename)
-    source_format = source_format_for_filename(filename)
+    filename = sanitize_upload_filename(
+        file.filename,
+        allowed_extensions=settings.allowed_upload_extensions,
+    )
+    source_format = source_format_for_filename(
+        filename,
+        allowed_extensions=settings.allowed_upload_extensions,
+    )
     extractor_bytes = bytearray()
 
     while True:
-        chunk = await file.read(UPLOAD_READ_CHUNK_BYTES)
+        chunk = await file.read(settings.upload_read_chunk_bytes)
         if not chunk:
             break
         extractor_bytes.extend(chunk)
-        if len(extractor_bytes) > MAX_UPLOAD_BYTES:
+        if len(extractor_bytes) > settings.max_upload_bytes:
             raise UploadTooLargeError(
-                f"Uploaded file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit."
+                f"Uploaded file exceeds the {settings.max_upload_bytes} byte limit."
             )
 
     if not extractor_bytes:
@@ -79,6 +83,7 @@ async def upload_and_start_workflow(
         description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
     ),
     service: WorkflowService = Depends(get_workflow_service),
+    settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Upload a document file and start a full workflow.
 
@@ -88,7 +93,7 @@ async def upload_and_start_workflow(
     Returns the same `WorkflowState` envelope as `POST /api/v1/workflows`.
     """
     extractor = validate_extractor_choice(extractor)
-    file_bytes, filename, _source_format = await _read_upload_bytes(file)
+    file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
 
     workflow = service.start_workflow_from_file(
         instruction=instruction,
@@ -109,6 +114,7 @@ async def extract_only(
         default=Extractor.AUTO,
         description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
     ),
+    settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Extract text from a document without running the full workflow.
 
@@ -125,7 +131,7 @@ async def extract_only(
     from ojtflow.data_tools.extract import extract_document
 
     extractor = validate_extractor_choice(extractor)
-    file_bytes, filename, _source_format = await _read_upload_bytes(file)
+    file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
 
     result = extract_document(file_bytes, filename, prefer=extractor)
     return ok(
