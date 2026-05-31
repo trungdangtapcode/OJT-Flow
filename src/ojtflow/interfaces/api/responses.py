@@ -9,9 +9,11 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ojtflow.core.contracts.base import ContractModel
 from ojtflow.core.errors import (
+    AuthenticationError,
     NotFoundError,
     OJTFlowError,
     PolicyBlockedError,
@@ -62,6 +64,8 @@ def error_response(
 
 
 async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSONResponse:
+    if isinstance(exc, AuthenticationError):
+        return error_response("unauthorized", str(exc), status_code=401)
     if isinstance(exc, NotFoundError):
         return error_response("not_found", str(exc), status_code=404)
     if isinstance(exc, PolicyBlockedError):
@@ -73,6 +77,19 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
     if isinstance(exc, ToolExecutionError):
         return error_response("tool_execution_error", str(exc), status_code=422)
     return error_response("ojtflow_error", str(exc), status_code=400)
+
+
+async def http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+) -> JSONResponse:
+    detail = exc.detail if isinstance(exc.detail, str) else "HTTP request failed"
+    return error_response(
+        _http_error_code(exc.status_code),
+        detail,
+        status_code=exc.status_code,
+        details={} if isinstance(exc.detail, str) else {"detail": jsonable_encoder(exc.detail)},
+    )
 
 
 async def validation_exception_handler(
@@ -94,3 +111,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         status_code=500,
         details={"error_type": type(exc).__name__},
     )
+
+
+def _http_error_code(status_code: int) -> str:
+    if status_code == 401:
+        return "unauthorized"
+    if status_code == 403:
+        return "forbidden"
+    if status_code == 404:
+        return "not_found"
+    if status_code == 405:
+        return "method_not_allowed"
+    return "http_error"

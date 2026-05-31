@@ -82,6 +82,8 @@ class EvidenceSourceType(StrEnum):
     INPUT_DATA = "input_data"
     SCHEMA = "schema"
     DATA_DICTIONARY = "data_dictionary"
+    TERMINOLOGY_SYSTEM = "terminology_system"
+    HEALTHCARE_STANDARD = "healthcare_standard"
     TRANSFORMATION_EXAMPLE = "transformation_example"
     VALIDATION_REPORT = "validation_report"
     TOOL_OUTPUT = "tool_output"

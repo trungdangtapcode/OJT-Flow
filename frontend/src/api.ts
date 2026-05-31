@@ -1,5 +1,7 @@
 import type {
   ApiEnvelope,
+  AuthLoginResponse,
+  AuthSessionResponse,
   SchemaEntry,
   StartWorkflowPayload,
   WorkflowEvent,
@@ -13,9 +15,34 @@ export const API_BASE_URL =
     ? configuredBase.replace(/\/$/, "")
     : "/api/v1";
 
+export class ApiRequestError extends Error {
+  status: number;
+  code: string;
+  details: Record<string, unknown>;
+
+  constructor({
+    status,
+    code,
+    message,
+    details,
+  }: {
+    status: number;
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  }) {
+    super(`${code}: ${message}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+    this.details = details ?? {};
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
@@ -23,12 +50,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const envelope = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || envelope.error) {
-    const message = envelope.error
-      ? `${envelope.error.code}: ${envelope.error.message}`
-      : `Request failed with status ${response.status}`;
-    throw new Error(message);
+    throw new ApiRequestError({
+      status: response.status,
+      code: envelope.error?.code ?? "request_failed",
+      message: envelope.error?.message ?? `Request failed with status ${response.status}`,
+      details: envelope.error?.details,
+    });
   }
   return envelope.data as T;
+}
+
+export function getGoogleAuthorizationUrl(redirectUri: string): Promise<{
+  authorization_url: string;
+  state: string;
+}> {
+  const query = `?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  return request(`/auth/google/url${query}`, { headers: {} });
+}
+
+export function completeGoogleLogin(
+  code: string,
+  state: string,
+): Promise<AuthLoginResponse> {
+  const query = `?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+  return request<AuthLoginResponse>(`/auth/google/callback${query}`, { headers: {} });
+}
+
+export function getCurrentAuthSession(): Promise<AuthSessionResponse> {
+  return request<AuthSessionResponse>("/auth/me");
+}
+
+export function logoutCurrentSession(): Promise<{ status: string }> {
+  return request<{ status: string }>("/auth/logout", { method: "POST" });
 }
 
 export function listWorkflows(status?: string): Promise<WorkflowState[]> {
@@ -96,14 +149,17 @@ export async function uploadFileWorkflow(
   const response = await fetch(`${API_BASE_URL}/parse/upload/workflow`, {
     method: "POST",
     body: form,
+    credentials: "include",
     // Do NOT set Content-Type — browser sets multipart boundary automatically
   });
   const envelope = (await response.json()) as ApiEnvelope<WorkflowState>;
   if (!response.ok || envelope.error) {
-    const message = envelope.error
-      ? `${envelope.error.code}: ${envelope.error.message}`
-      : `Upload failed with status ${response.status}`;
-    throw new Error(message);
+    throw new ApiRequestError({
+      status: response.status,
+      code: envelope.error?.code ?? "upload_failed",
+      message: envelope.error?.message ?? `Upload failed with status ${response.status}`,
+      details: envelope.error?.details,
+    });
   }
   return envelope.data as WorkflowState;
 }
