@@ -97,6 +97,7 @@ class GoogleOAuthClient:
                 id_token_value,
                 google_requests.Request(),
                 self.client_id,
+                clock_skew_in_seconds=30,
             )
         except ValueError as exc:
             raise OJTFlowError("Google OAuth token verification failed.") from exc
