@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+import pytest
+
 from ojtflow.application.auth_service import AuthService
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
@@ -10,11 +12,16 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
+from ojtflow.core.errors import OJTFlowError
 
 
 class FakeGoogleClient:
     client_id = "google-client-id"
     client_secret = "google-client-secret"
+
+    @property
+    def is_configured(self) -> bool:
+        return True
 
     def authorization_url(self, redirect_uri: str, state: str) -> str:
         return f"https://accounts.google.com/o/oauth2/v2/auth?state={state}"
@@ -117,7 +124,7 @@ def test_auth_service_google_login_session_and_logout() -> None:
     service = AuthService(
         repository=repository,
         cache=cache,
-        google_client=FakeGoogleClient(),
+        identity_provider=FakeGoogleClient(),
         google_redirect_uri="http://localhost:8000/api/v1/auth/google/callback",
         allowed_redirect_uris={
             "http://localhost:8000/api/v1/auth/google/callback",
@@ -149,3 +156,38 @@ def test_auth_service_google_login_session_and_logout() -> None:
 
     service.logout(login["access_token"])
     assert service.authenticate_token(login["access_token"]) is None
+
+
+def test_auth_service_rejects_unallowed_redirect_uri() -> None:
+    service = AuthService(
+        repository=FakeAuthRepository(),
+        cache=FakeCache(),
+        identity_provider=FakeGoogleClient(),
+        google_redirect_uri="http://localhost:8000/api/v1/auth/google/callback",
+        allowed_redirect_uris={"http://localhost:5173/auth/callback"},
+        session_ttl_seconds=3600,
+        state_ttl_seconds=600,
+    )
+
+    with pytest.raises(OJTFlowError, match="redirect URI is not allowed"):
+        service.google_authorization_url(redirect_uri="https://example.com/auth/callback")
+
+
+def test_auth_service_consumes_oauth_state_once() -> None:
+    service = AuthService(
+        repository=FakeAuthRepository(),
+        cache=FakeCache(),
+        identity_provider=FakeGoogleClient(),
+        google_redirect_uri="http://localhost:8000/api/v1/auth/google/callback",
+        allowed_redirect_uris={
+            "http://localhost:8000/api/v1/auth/google/callback",
+            "http://localhost:5173/auth/callback",
+        },
+        session_ttl_seconds=3600,
+        state_ttl_seconds=600,
+    )
+    auth_url = service.google_authorization_url(redirect_uri="http://localhost:5173/auth/callback")
+    asyncio.run(service.complete_google_login(code="google-code", state=auth_url["state"]))
+
+    with pytest.raises(OJTFlowError, match="Invalid or expired OAuth state"):
+        asyncio.run(service.complete_google_login(code="google-code", state=auth_url["state"]))

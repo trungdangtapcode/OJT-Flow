@@ -17,33 +17,17 @@ except ImportError:  # pragma: no cover
         pass
 
 
-class RedisSessionCache:
-    """Caches active sessions and short-lived OAuth state values."""
+class InMemorySessionCache:
+    """Process-local cache for tests and single-process development."""
 
-    def __init__(self, redis_url: str) -> None:
-        self.redis_url = redis_url
-        self._client = redis.from_url(redis_url, decode_responses=True) if redis else None
+    def __init__(self) -> None:
         self._fallback_sessions: dict[str, tuple[float, dict[str, Any]]] = {}
         self._fallback_states: dict[str, tuple[float, dict[str, Any]]] = {}
 
     def set_session(self, token_hash: str, payload: dict[str, Any], ttl_seconds: int) -> None:
-        key = self._session_key(token_hash)
-        try:
-            if self._client:
-                self._client.setex(key, ttl_seconds, json.dumps(payload))
-                return
-        except RedisError:
-            pass
         self._fallback_sessions[token_hash] = (time.time() + ttl_seconds, deepcopy(payload))
 
     def get_session(self, token_hash: str) -> dict[str, Any] | None:
-        key = self._session_key(token_hash)
-        try:
-            if self._client:
-                raw = self._client.get(key)
-                return json.loads(raw) if raw else None
-        except (RedisError, json.JSONDecodeError):
-            pass
         item = self._fallback_sessions.get(token_hash)
         if not item:
             return None
@@ -54,13 +38,60 @@ class RedisSessionCache:
         return deepcopy(payload)
 
     def delete_session(self, token_hash: str) -> None:
+        self._fallback_sessions.pop(token_hash, None)
+
+    def set_oauth_state(
+        self,
+        state: str,
+        ttl_seconds: int,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        self._fallback_states[state] = (time.time() + ttl_seconds, payload or {})
+
+    def consume_oauth_state(self, state: str) -> dict[str, Any] | None:
+        item = self._fallback_states.pop(state, None)
+        if not item:
+            return None
+        expires_at, payload = item
+        return deepcopy(payload) if expires_at > time.time() else None
+
+
+class RedisSessionCache:
+    """Caches active sessions and short-lived OAuth state values."""
+
+    def __init__(self, redis_url: str) -> None:
+        self.redis_url = redis_url
+        self._client = redis.from_url(redis_url, decode_responses=True) if redis else None
+        self._fallback = InMemorySessionCache()
+
+    def set_session(self, token_hash: str, payload: dict[str, Any], ttl_seconds: int) -> None:
+        key = self._session_key(token_hash)
+        try:
+            if self._client:
+                self._client.setex(key, ttl_seconds, json.dumps(payload))
+                return
+        except RedisError:
+            pass
+        self._fallback.set_session(token_hash, payload, ttl_seconds)
+
+    def get_session(self, token_hash: str) -> dict[str, Any] | None:
+        key = self._session_key(token_hash)
+        try:
+            if self._client:
+                raw = self._client.get(key)
+                return json.loads(raw) if raw else None
+        except (RedisError, json.JSONDecodeError):
+            pass
+        return self._fallback.get_session(token_hash)
+
+    def delete_session(self, token_hash: str) -> None:
         key = self._session_key(token_hash)
         try:
             if self._client:
                 self._client.delete(key)
         except RedisError:
             pass
-        self._fallback_sessions.pop(token_hash, None)
+        self._fallback.delete_session(token_hash)
 
     def set_oauth_state(
         self,
@@ -76,7 +107,7 @@ class RedisSessionCache:
                 return
         except RedisError:
             pass
-        self._fallback_states[state] = (time.time() + ttl_seconds, payload or {})
+        self._fallback.set_oauth_state(state, ttl_seconds, payload)
 
     def consume_oauth_state(self, state: str) -> dict[str, Any] | None:
         key = self._state_key(state)
@@ -92,11 +123,7 @@ class RedisSessionCache:
                 return None
         except (RedisError, json.JSONDecodeError):
             pass
-        item = self._fallback_states.pop(state, None)
-        if not item:
-            return None
-        expires_at, payload = item
-        return deepcopy(payload) if expires_at > time.time() else None
+        return self._fallback.consume_oauth_state(state)
 
     def _session_key(self, token_hash: str) -> str:
         return f"ojtflow:session:{token_hash}"

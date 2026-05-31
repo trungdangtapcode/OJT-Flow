@@ -15,40 +15,47 @@ export const API_BASE_URL =
     ? configuredBase.replace(/\/$/, "")
     : "/api/v1";
 
-const AUTH_TOKEN_STORAGE_KEY = "ojtflow.auth_token";
+export class ApiRequestError extends Error {
+  status: number;
+  code: string;
+  details: Record<string, unknown>;
 
-export function getStoredAuthToken(): string | null {
-  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-}
-
-export function storeAuthToken(token: string): void {
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-}
-
-export function clearStoredAuthToken(): void {
-  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getStoredAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  constructor({
+    status,
+    code,
+    message,
+    details,
+  }: {
+    status: number;
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  }) {
+    super(`${code}: ${message}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+    this.details = details ?? {};
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...authHeaders(),
       ...(init?.headers ?? {}),
     },
   });
   const envelope = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || envelope.error) {
-    const message = envelope.error
-      ? `${envelope.error.code}: ${envelope.error.message}`
-      : `Request failed with status ${response.status}`;
-    throw new Error(message);
+    throw new ApiRequestError({
+      status: response.status,
+      code: envelope.error?.code ?? "request_failed",
+      message: envelope.error?.message ?? `Request failed with status ${response.status}`,
+      details: envelope.error?.details,
+    });
   }
   return envelope.data as T;
 }
@@ -142,15 +149,17 @@ export async function uploadFileWorkflow(
   const response = await fetch(`${API_BASE_URL}/parse/upload/workflow`, {
     method: "POST",
     body: form,
-    headers: authHeaders(),
+    credentials: "include",
     // Do NOT set Content-Type — browser sets multipart boundary automatically
   });
   const envelope = (await response.json()) as ApiEnvelope<WorkflowState>;
   if (!response.ok || envelope.error) {
-    const message = envelope.error
-      ? `${envelope.error.code}: ${envelope.error.message}`
-      : `Upload failed with status ${response.status}`;
-    throw new Error(message);
+    throw new ApiRequestError({
+      status: response.status,
+      code: envelope.error?.code ?? "upload_failed",
+      message: envelope.error?.message ?? `Upload failed with status ${response.status}`,
+      details: envelope.error?.details,
+    });
   }
   return envelope.data as WorkflowState;
 }

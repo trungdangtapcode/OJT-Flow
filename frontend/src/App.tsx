@@ -21,20 +21,18 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ApiRequestError,
   API_BASE_URL,
-  clearStoredAuthToken,
   completeGoogleLogin,
   createWorkflow,
   getCurrentAuthSession,
   getGoogleAuthorizationUrl,
   getWorkflow,
-  getStoredAuthToken,
   listReviews,
   listSchemas,
   listWorkflowEvents,
   listWorkflows,
   logoutCurrentSession,
-  storeAuthToken,
   submitReview,
   uploadFileWorkflow,
 } from "./api";
@@ -87,7 +85,6 @@ const navItems: Array<{ id: View; label: string; icon: React.ElementType }> = [
 ];
 
 function App() {
-  const [authToken, setAuthToken] = useState<string | null>(() => getStoredAuthToken());
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authState, setAuthState] = useState<LoadState>({ loading: true, error: null });
   const [view, setView] = useState<View>("workbench");
@@ -168,18 +165,24 @@ function App() {
             throw new Error("Google callback is missing code or state.");
           }
           const login = await completeGoogleLogin(code, state);
-          storeAuthToken(login.access_token);
-          setAuthToken(login.access_token);
           setCurrentUser(login.user);
           window.history.replaceState({}, document.title, "/");
-        } else if (authToken) {
-          const session = await getCurrentAuthSession();
-          setCurrentUser(session.user);
+        } else {
+          try {
+            const session = await getCurrentAuthSession();
+            setCurrentUser(session.user);
+          } catch (error) {
+            if (isUnauthorizedError(error)) {
+              setCurrentUser(null);
+              clearWorkspace();
+              setAuthState({ loading: false, error: null });
+              return;
+            }
+            throw error;
+          }
         }
         setAuthState({ loading: false, error: null });
       } catch (error) {
-        clearStoredAuthToken();
-        setAuthToken(null);
         setCurrentUser(null);
         clearWorkspace();
         if (isCallback) {
@@ -193,7 +196,7 @@ function App() {
     };
 
     void syncAuth();
-  }, [authToken, clearWorkspace]);
+  }, [clearWorkspace]);
 
   const handleGoogleSignIn = async () => {
     setAuthState({ loading: true, error: null });
@@ -212,14 +215,10 @@ function App() {
   const handleLogout = async () => {
     setAuthState({ loading: true, error: null });
     try {
-      if (getStoredAuthToken()) {
-        await logoutCurrentSession();
-      }
+      await logoutCurrentSession();
     } catch {
       // The local session should still be cleared if the server token is already invalid.
     } finally {
-      clearStoredAuthToken();
-      setAuthToken(null);
       setCurrentUser(null);
       clearWorkspace();
       setView("workbench");
@@ -373,6 +372,10 @@ function App() {
       </main>
     </div>
   );
+}
+
+function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 401;
 }
 
 function AuthLoadingScreen() {

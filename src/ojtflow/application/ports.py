@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
+from ojtflow.core.contracts.auth import (
+    AuthenticatedSession,
+    GoogleIdentityProfile,
+    SessionRecord,
+    UserRecord,
+)
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
@@ -56,3 +63,61 @@ class KnowledgeRepository(Protocol):
     def list_schemas(self) -> list[dict]: ...
 
     def search(self, query: str, *, top_k: int = 5) -> list[Evidence]: ...
+
+
+class IdentityProvider(Protocol):
+    @property
+    def is_configured(self) -> bool: ...
+
+    def authorization_url(self, redirect_uri: str, state: str) -> str: ...
+
+    async def exchange_code_for_profile(
+        self,
+        code: str,
+        redirect_uri: str,
+    ) -> GoogleIdentityProfile: ...
+
+
+class AuthRepository(Protocol):
+    def upsert_google_user(self, profile: GoogleIdentityProfile) -> UserRecord: ...
+
+    def create_session(
+        self,
+        user_id: str,
+        token_hash: str,
+        expires_at: datetime,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> SessionRecord: ...
+
+    def get_active_session(
+        self,
+        token_hash: str,
+        now: datetime,
+    ) -> AuthenticatedSession | None: ...
+
+    def touch_session(self, token_hash: str) -> None: ...
+
+    def revoke_session(self, token_hash: str) -> None: ...
+
+
+class SessionCache(Protocol):
+    def set_session(
+        self,
+        token_hash: str,
+        payload: dict,
+        ttl_seconds: int,
+    ) -> None: ...
+
+    def get_session(self, token_hash: str) -> dict | None: ...
+
+    def delete_session(self, token_hash: str) -> None: ...
+
+    def set_oauth_state(
+        self,
+        state: str,
+        ttl_seconds: int,
+        payload: dict | None = None,
+    ) -> None: ...
+
+    def consume_oauth_state(self, state: str) -> dict | None: ...

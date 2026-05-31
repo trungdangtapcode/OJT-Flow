@@ -13,7 +13,7 @@ Use `docker-compose up --build` if your machine has Docker Compose v1.
 Default backend storage:
 
 - Postgres: `postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
-- Redis session cache: `redis://localhost:6379/0`
+- Redis session cache for Postgres deployments: `redis://localhost:6379/0`
 - input files: `var/datasets/`
 - generated outputs: `var/outputs/`
 
@@ -102,5 +102,6 @@ Expected behavior:
 - Review gates block semantic changes.
 - Events are append-only audit trace.
 - Steps are UI/progress state.
-- Postgres/local files make the backend restart-safe; SQLite remains a local fallback.
+- Postgres/local files make the backend restart-safe; SQLite remains a local fallback
+  with the same workflow and auth repository contracts.
 - FHIR and OCR are hook points, not overclaimed medical automation.

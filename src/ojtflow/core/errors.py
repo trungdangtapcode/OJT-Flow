@@ -7,6 +7,10 @@ class OJTFlowError(Exception):
     """Base exception for expected OJTFlow failures."""
 
 
+class AuthenticationError(OJTFlowError):
+    """Raised when a request does not include a valid authenticated session."""
+
+
 class NotFoundError(OJTFlowError):
     """Raised when an expected workflow, dataset, review, or schema is missing."""
 

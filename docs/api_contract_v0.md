@@ -9,7 +9,9 @@ All public endpoints return the same envelope:
 }
 ```
 
-All `/api/v1` workflow/data endpoints require:
+All `/api/v1` workflow/data endpoints require an authenticated backend session.
+Browser clients use the HTTP-only session cookie set by the Google callback.
+API clients may use:
 
 ```text
 Authorization: Bearer <access_token>
@@ -25,6 +27,8 @@ OJT_STORAGE_BACKEND=postgres
 OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
 OJT_REDIS_URL=redis://localhost:6379/0
 OJT_DATA_DIR=var
+OJT_AUTH_COOKIE_NAME=ojtflow_session
+OJT_AUTH_COOKIE_SAMESITE=lax
 ```
 
 Schema migrations live in:
@@ -216,8 +220,9 @@ http://localhost:8000/api/v1/auth/google/callback
 
 `GET /api/v1/auth/google/callback?code=...&state=...`
 
-Exchanges the Google authorization code, verifies the identity token, creates or
-updates the user, creates a backend session, caches it in Redis, and returns:
+Exchanges the Google authorization code, verifies the identity token with
+Google's verifier, creates or updates the user, creates a backend session, sets
+an HTTP-only session cookie for browser clients, and returns:
 
 - `token_type`
 - `access_token`
@@ -226,7 +231,7 @@ updates the user, creates a backend session, caches it in Redis, and returns:
 
 `GET /api/v1/auth/me`
 
-Requires:
+Requires either the session cookie or:
 
 ```text
 Authorization: Bearer <access_token>
@@ -236,4 +241,19 @@ Returns the active user and session metadata.
 
 `POST /api/v1/auth/logout`
 
-Requires the same bearer token and revokes the session in Postgres and Redis.
+Requires the same session cookie or bearer token, revokes the persisted session,
+clears the cache entry when present, and expires the browser cookie.
+
+Structured unauthorized response:
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "unauthorized",
+    "message": "Missing authenticated session.",
+    "details": {},
+    "workflow_id": null
+  }
+}
+```

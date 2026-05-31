@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ojtflow.core.errors import OJTFlowError
 from ojtflow.interfaces.api.responses import (
+    http_exception_handler,
     ojtflow_exception_handler,
     unhandled_exception_handler,
     validation_exception_handler,
@@ -34,6 +36,7 @@ def create_app() -> FastAPI:
         description="Governed healthcare data workflow scaffold",
     )
     app.add_exception_handler(OJTFlowError, ojtflow_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
     protected = [Depends(require_authentication)]

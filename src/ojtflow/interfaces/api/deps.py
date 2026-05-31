@@ -5,16 +5,20 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import HTTPException, Security
+from fastapi import Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from ojtflow.application.auth_service import AuthService, GoogleOAuthClient
+from ojtflow.application.auth_service import AuthService
 from ojtflow.application.workflow_service import WorkflowService
-from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.config import Settings, get_settings
-from ojtflow.infrastructure.cache.session_cache import RedisSessionCache
+from ojtflow.core.contracts.auth import AuthenticatedSession
+from ojtflow.core.errors import AuthenticationError
+from ojtflow.infrastructure.auth.google import GoogleOAuthClient
+from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
+from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
+from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
     InMemoryEventRepository,
@@ -42,21 +46,34 @@ def _build_auth_service() -> AuthService:
     """Build Google OAuth session services."""
 
     settings = get_settings()
-    repository = PostgresAuthRepository(settings.postgres_dsn)
-    cache = RedisSessionCache(settings.redis_url)
+    if settings.storage_backend == "memory":
+        repository = InMemoryAuthRepository()
+        cache = InMemorySessionCache()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteAuthRepository(backbone)
+        cache = InMemorySessionCache()
+    elif settings.storage_backend == "postgres":
+        repository = PostgresAuthRepository(settings.postgres_dsn)
+        cache = RedisSessionCache(settings.redis_url)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+
     google_client = GoogleOAuthClient(
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
+        timeout_seconds=settings.google_oauth_timeout_seconds,
+        allowed_hosted_domains=set(settings.allowed_google_hosted_domains),
     )
     return AuthService(
         repository=repository,
         cache=cache,
-        google_client=google_client,
+        identity_provider=google_client,
         google_redirect_uri=settings.google_redirect_uri,
-        allowed_redirect_uris={
-            settings.google_redirect_uri,
-            settings.google_frontend_redirect_uri,
-        },
+        allowed_redirect_uris=settings.resolved_allowed_auth_redirect_uris,
         session_ttl_seconds=settings.auth_session_ttl_seconds,
         state_ttl_seconds=settings.auth_state_ttl_seconds,
     )
@@ -117,22 +134,42 @@ def bearer_token_from_credentials(
     """Extract a bearer token from HTTP bearer credentials."""
 
     if not credentials:
-        raise HTTPException(status_code=401, detail="Missing Authorization header.")
+        raise AuthenticationError("Missing Authorization header.")
     if credentials.scheme.lower() != "bearer" or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="Expected Bearer token.")
-    return credentials.credentials.strip()
+        raise AuthenticationError("Expected Bearer token.")
+    token = credentials.credentials.strip()
+    if not token:
+        raise AuthenticationError("Expected Bearer token.")
+    return token
+
+
+def session_token_from_request(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    """Resolve a session token from bearer credentials or the configured auth cookie."""
+
+    if credentials:
+        return bearer_token_from_credentials(credentials)
+
+    settings = get_settings()
+    cookie_token = request.cookies.get(settings.auth_cookie_name)
+    if cookie_token and cookie_token.strip():
+        return cookie_token.strip()
+    raise AuthenticationError("Missing authenticated session.")
 
 
 async def require_authentication(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> AuthenticatedSession:
     """Require a valid backend session token for protected routes."""
 
-    token = bearer_token_from_credentials(credentials)
+    token = session_token_from_request(request, credentials)
     service = _build_auth_service()
     authenticated = service.authenticate_token(token)
     if not authenticated:
-        raise HTTPException(status_code=401, detail="Invalid or expired session token.")
+        raise AuthenticationError("Invalid or expired session token.")
     return authenticated
 
 

@@ -15,6 +15,7 @@ class GoogleIdentityProfile:
     email_verified: bool
     display_name: str | None = None
     avatar_url: str | None = None
+    hosted_domain: str | None = None
 
 
 @dataclass(frozen=True)

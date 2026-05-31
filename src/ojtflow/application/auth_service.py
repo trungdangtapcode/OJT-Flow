@@ -6,108 +6,14 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlencode
 
-import httpx
-
+from ojtflow.application.ports import AuthRepository, IdentityProvider, SessionCache
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
-    GoogleIdentityProfile,
     SessionRecord,
     UserRecord,
 )
 from ojtflow.core.errors import OJTFlowError
-
-
-class GoogleOAuthClient:
-    """Minimal Google OpenID Connect client."""
-
-    auth_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
-    token_endpoint = "https://oauth2.googleapis.com/token"
-    tokeninfo_endpoint = "https://oauth2.googleapis.com/tokeninfo"
-
-    def __init__(self, client_id: str, client_secret: str, timeout_seconds: float = 10.0) -> None:
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.timeout_seconds = timeout_seconds
-
-    def authorization_url(self, redirect_uri: str, state: str) -> str:
-        query = urlencode(
-            {
-                "client_id": self.client_id,
-                "redirect_uri": redirect_uri,
-                "response_type": "code",
-                "scope": "openid email profile",
-                "state": state,
-                "access_type": "online",
-                "prompt": "select_account",
-            }
-        )
-        return f"{self.auth_endpoint}?{query}"
-
-    async def exchange_code_for_profile(
-        self,
-        code: str,
-        redirect_uri: str,
-    ) -> GoogleIdentityProfile:
-        """Exchange an authorization code and verify the returned identity token."""
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                token_response = await client.post(
-                    self.token_endpoint,
-                    data={
-                        "code": code,
-                        "client_id": self.client_id,
-                        "client_secret": self.client_secret,
-                        "redirect_uri": redirect_uri,
-                        "grant_type": "authorization_code",
-                    },
-                )
-                token_response.raise_for_status()
-                token_data = token_response.json()
-                id_token = token_data.get("id_token")
-                if not id_token:
-                    raise OJTFlowError("Google OAuth response did not include an id_token.")
-
-                tokeninfo_response = await client.get(
-                    self.tokeninfo_endpoint,
-                    params={"id_token": id_token},
-                )
-                tokeninfo_response.raise_for_status()
-                claims = tokeninfo_response.json()
-        except httpx.HTTPStatusError as exc:
-            raise OJTFlowError(f"Google OAuth request failed: {exc.response.text}") from exc
-        except httpx.HTTPError as exc:
-            raise OJTFlowError(f"Google OAuth request failed: {exc}") from exc
-
-        return self._profile_from_claims(claims)
-
-    def _profile_from_claims(self, claims: dict[str, Any]) -> GoogleIdentityProfile:
-        audience = claims.get("aud")
-        issuer = claims.get("iss")
-        if audience != self.client_id:
-            raise OJTFlowError("Google OAuth token audience does not match this backend.")
-        if issuer not in {"accounts.google.com", "https://accounts.google.com"}:
-            raise OJTFlowError("Google OAuth token issuer is not trusted.")
-
-        google_sub = claims.get("sub")
-        email = claims.get("email")
-        email_verified = claims.get("email_verified")
-        if isinstance(email_verified, str):
-            email_verified = email_verified.lower() == "true"
-        if not google_sub or not email:
-            raise OJTFlowError("Google OAuth token is missing required identity claims.")
-        if not email_verified:
-            raise OJTFlowError("Google account email is not verified.")
-
-        return GoogleIdentityProfile(
-            google_sub=google_sub,
-            email=email,
-            email_verified=True,
-            display_name=claims.get("name"),
-            avatar_url=claims.get("picture"),
-        )
 
 
 class AuthService:
@@ -115,9 +21,9 @@ class AuthService:
 
     def __init__(
         self,
-        repository,
-        cache,
-        google_client: GoogleOAuthClient,
+        repository: AuthRepository,
+        cache: SessionCache,
+        identity_provider: IdentityProvider,
         google_redirect_uri: str,
         allowed_redirect_uris: set[str] | None,
         session_ttl_seconds: int,
@@ -125,7 +31,7 @@ class AuthService:
     ) -> None:
         self.repository = repository
         self.cache = cache
-        self.google_client = google_client
+        self.identity_provider = identity_provider
         self.google_redirect_uri = google_redirect_uri
         self.allowed_redirect_uris = {
             uri for uri in (allowed_redirect_uris or {google_redirect_uri}) if uri
@@ -143,7 +49,7 @@ class AuthService:
             payload={"redirect_uri": selected_redirect_uri},
         )
         return {
-            "authorization_url": self.google_client.authorization_url(
+            "authorization_url": self.identity_provider.authorization_url(
                 redirect_uri=selected_redirect_uri,
                 state=state,
             ),
@@ -165,7 +71,7 @@ class AuthService:
         redirect_uri = self._select_redirect_uri(
             str(state_payload.get("redirect_uri") or self.google_redirect_uri)
         )
-        profile = await self.google_client.exchange_code_for_profile(
+        profile = await self.identity_provider.exchange_code_for_profile(
             code=code,
             redirect_uri=redirect_uri,
         )
@@ -218,7 +124,7 @@ class AuthService:
         self.cache.delete_session(token_hash)
 
     def _ensure_google_configured(self) -> None:
-        if not self.google_client.client_id or not self.google_client.client_secret:
+        if not self.identity_provider.is_configured:
             raise OJTFlowError(
                 "Google OAuth is not configured. Set OJT_GOOGLE_CLIENT_ID and "
                 "OJT_GOOGLE_CLIENT_SECRET."

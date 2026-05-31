@@ -5,10 +5,37 @@ import pytest
 
 from ojtflow.config import clear_settings_cache
 from ojtflow.interfaces.api.app import create_app
-from ojtflow.interfaces.api.deps import clear_workflow_service_cache, require_authentication
+from ojtflow.interfaces.api.deps import (
+    clear_workflow_service_cache,
+    get_auth_service,
+    require_authentication,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class FakeAuthService:
+    def __init__(self) -> None:
+        self.logged_out_token: str | None = None
+
+    async def complete_google_login(self, code, state, user_agent=None, ip_address=None):
+        del code, state, user_agent, ip_address
+        return {
+            "token_type": "bearer",
+            "access_token": "raw-session-token",
+            "expires_at": "2026-01-01T00:00:00+00:00",
+            "user": {
+                "user_id": "usr_test",
+                "email": "user@example.com",
+                "email_verified": True,
+                "display_name": "Example User",
+                "avatar_url": None,
+            },
+        }
+
+    def logout(self, token: str) -> None:
+        self.logged_out_token = token
 
 
 async def _client() -> httpx.AsyncClient:
@@ -19,12 +46,47 @@ async def _client() -> httpx.AsyncClient:
 
 
 @pytest.mark.asyncio
-async def test_api_routes_require_bearer_token() -> None:
+async def test_api_routes_require_session_envelope(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
     transport = httpx.ASGITransport(app=create_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get("/api/v1/workflows")
+        current_user = await client.get("/api/v1/auth/me")
+        invalid = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Bearer invalid"},
+        )
 
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+    assert response.json()["data"] is None
+    assert current_user.status_code == 401
+    assert current_user.json()["error"]["code"] == "unauthorized"
+    assert invalid.status_code == 401
+    assert invalid.json()["error"]["code"] == "unauthorized"
+
+
+@pytest.mark.asyncio
+async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
+    fake_service = FakeAuthService()
+    app = create_app()
+    app.dependency_overrides[get_auth_service] = lambda: fake_service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        callback = await client.get("/api/v1/auth/google/callback?code=code&state=state")
+        client.cookies.set("ojtflow_session", "raw-session-token")
+        logout = await client.post("/api/v1/auth/logout")
+
+    assert callback.status_code == 200
+    callback_cookie = callback.headers["set-cookie"]
+    assert "ojtflow_session=raw-session-token" in callback_cookie
+    assert "HttpOnly" in callback_cookie
+    assert "SameSite=lax" in callback_cookie
+    assert logout.status_code == 200
+    assert fake_service.logged_out_token == "raw-session-token"
+    assert "ojtflow_session=" in logout.headers["set-cookie"]
 
 
 @pytest.mark.asyncio
