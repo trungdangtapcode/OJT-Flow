@@ -12,11 +12,13 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         ROOT / "sql/postgres/migrations",
     ).load_migrations()
 
-    assert [migration.version for migration in migrations] == ["001", "003"]
+    assert [migration.version for migration in migrations] == ["001", "003", "004"]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "auth_google_sessions"
+    assert migrations[2].name == "evidence_retrieval_source_types"
     assert len(migrations[0].checksum) == 64
     assert len(migrations[1].checksum) == 64
+    assert len(migrations[2].checksum) == 64
 
 
 def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
@@ -48,3 +50,11 @@ def test_auth_google_sessions_migration_has_users_and_sessions() -> None:
     assert "token_hash text not null unique" in sql
     assert "references ojtflow.users(user_id)" in sql
     assert "sessions_token_hash_check" in sql
+
+
+def test_evidence_retrieval_source_type_migration_extends_constraint() -> None:
+    sql = (ROOT / "sql/postgres/migrations/004_evidence_retrieval_source_types.sql").read_text()
+
+    assert "drop constraint if exists evidence_source_type_check" in sql
+    assert "'terminology_system'" in sql
+    assert "'healthcare_standard'" in sql
