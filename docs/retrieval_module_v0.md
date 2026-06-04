@@ -131,6 +131,26 @@ Workflow output includes:
   identifiers such as patient fields. Retrieval continues, but downstream
   handoff code should avoid treating the query text as executable instruction.
 
+## Ranking Architecture
+
+Retrieval is a two-stage architecture with deterministic defaults:
+
+1. First-stage candidate retrieval uses query expansion, lexical overlap,
+   configured embeddings, and reciprocal-rank fusion. Postgres deployments use
+   full-text search and pgvector when available, then keep JSON/Python vector
+   scoring as a fallback.
+2. Optional second-stage reranking uses a SentenceTransformers CrossEncoder over
+   only the top candidate set. This follows the standard retrieve-then-rerank
+   pattern: the first stage is broad and efficient; the reranker is slower but
+   can make better pairwise relevance decisions for the final list.
+3. The final package preserves `lexical_score`, `vector_score`, and
+   `rerank_score` per hit so workflow explanations can show why evidence was
+   selected instead of hiding relevance behind a single opaque score.
+
+Second-stage reranking is disabled by default because it downloads a model and
+adds inference latency. Enable it only in environments that intentionally
+provide local model dependencies and CPU/GPU capacity.
+
 ## Configuration
 
 ```text
@@ -179,6 +199,24 @@ Install local embedding dependencies with:
 ```bash
 uv pip install -e '.[embeddings-local]'
 ```
+
+Recommended local CrossEncoder reranking settings:
+
+```text
+OJT_RERANK_PROVIDER=huggingface
+OJT_RERANK_MODEL=BAAI/bge-reranker-base
+OJT_RERANK_DEVICE=cuda
+OJT_RERANK_BATCH_SIZE=16
+OJT_RERANK_CANDIDATE_LIMIT=20
+OJT_RERANK_SCORE_WEIGHT=0.08
+```
+
+`OJT_RERANK_PROVIDER` supports `none` and `huggingface`. The Hugging Face
+adapter uses SentenceTransformers `CrossEncoder.predict` with query/document
+pairs. `OJT_RERANK_CANDIDATE_LIMIT` keeps reranking bounded to the strongest
+first-stage candidates, and `OJT_RERANK_SCORE_WEIGHT` controls how much the
+external rerank score can refine the existing fusion score. Invalid provider,
+device, batch, candidate-limit, or score-weight values fail settings load.
 
 Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
 to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,

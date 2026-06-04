@@ -145,6 +145,12 @@ def test_compose_runtime_uses_postgres_redis_and_persistent_app_data() -> None:
     assert "OJT_MAX_INLINE_DATA_BYTES: ${OJT_MAX_INLINE_DATA_BYTES:-1048576}" in api_section
     assert "OJT_UPLOAD_READ_CHUNK_BYTES: ${OJT_UPLOAD_READ_CHUNK_BYTES:-1048576}" in api_section
     assert "OJT_ALLOWED_UPLOAD_EXTENSIONS: ${OJT_ALLOWED_UPLOAD_EXTENSIONS:-" in api_section
+    assert "OJT_RERANK_PROVIDER: ${OJT_RERANK_PROVIDER:-none}" in api_section
+    assert "OJT_RERANK_MODEL: ${OJT_RERANK_MODEL:-BAAI/bge-reranker-base}" in api_section
+    assert "OJT_RERANK_DEVICE: ${OJT_RERANK_DEVICE:-auto}" in api_section
+    assert "OJT_RERANK_BATCH_SIZE: ${OJT_RERANK_BATCH_SIZE:-16}" in api_section
+    assert "OJT_RERANK_CANDIDATE_LIMIT: ${OJT_RERANK_CANDIDATE_LIMIT:-20}" in api_section
+    assert "OJT_RERANK_SCORE_WEIGHT: ${OJT_RERANK_SCORE_WEIGHT:-0.08}" in api_section
     assert '"${OJT_API_PORT:-8000}:8000"' in api_section
     assert "- app_data:/app/var" in api_section
     assert "postgres:" in api_section
@@ -189,6 +195,12 @@ def test_env_example_exposes_compose_and_upload_runtime_knobs() -> None:
         "OJT_HF_EMBEDDING_DEVICE=auto",
         "OJT_HF_EMBEDDING_BATCH_SIZE=32",
         "OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface",
+        "OJT_RERANK_PROVIDER=none",
+        "OJT_RERANK_MODEL=BAAI/bge-reranker-base",
+        "OJT_RERANK_DEVICE=auto",
+        "OJT_RERANK_BATCH_SIZE=16",
+        "OJT_RERANK_CANDIDATE_LIMIT=20",
+        "OJT_RERANK_SCORE_WEIGHT=0.08",
         "OJT_RETRIEVAL_CORPUS_DIRS=knowledge/corpus",
         "OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200",
         "OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160",

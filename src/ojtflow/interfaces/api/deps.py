@@ -18,6 +18,7 @@ from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
+from ojtflow.infrastructure.retrieval.reranking import build_reranker
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
@@ -91,6 +92,7 @@ def _build_workflow_service() -> WorkflowService:
     settings = get_settings()
     knowledge_root = settings.resolved_knowledge_dir
     embedding_provider = build_embedding_provider(settings)
+    reranker = build_reranker(settings)
     if settings.storage_backend == "memory":
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()
@@ -98,6 +100,9 @@ def _build_workflow_service() -> WorkflowService:
         retrieval = StaticRetrievalRepository(
             knowledge_root,
             embedding_provider,
+            reranker=reranker,
+            rerank_candidate_limit=settings.rerank_candidate_limit,
+            rerank_score_weight=settings.rerank_score_weight,
             corpus_dirs=settings.resolved_retrieval_corpus_dirs,
             chunk_max_chars=settings.retrieval_chunk_max_chars,
             chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
@@ -113,6 +118,9 @@ def _build_workflow_service() -> WorkflowService:
         retrieval = StaticRetrievalRepository(
             knowledge_root,
             embedding_provider,
+            reranker=reranker,
+            rerank_candidate_limit=settings.rerank_candidate_limit,
+            rerank_score_weight=settings.rerank_score_weight,
             corpus_dirs=settings.resolved_retrieval_corpus_dirs,
             chunk_max_chars=settings.retrieval_chunk_max_chars,
             chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
@@ -129,6 +137,9 @@ def _build_workflow_service() -> WorkflowService:
             backbone,
             knowledge_root,
             embedding_provider,
+            reranker=reranker,
+            rerank_candidate_limit=settings.rerank_candidate_limit,
+            rerank_score_weight=settings.rerank_score_weight,
             corpus_dirs=settings.resolved_retrieval_corpus_dirs,
             chunk_max_chars=settings.retrieval_chunk_max_chars,
             chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,

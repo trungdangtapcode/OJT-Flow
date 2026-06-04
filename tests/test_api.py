@@ -825,6 +825,12 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "deterministic")
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", "deterministic-hash-v0")
     monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", "64")
+    monkeypatch.setenv("OJT_RERANK_PROVIDER", "huggingface")
+    monkeypatch.setenv("OJT_RERANK_MODEL", "BAAI/bge-reranker-base")
+    monkeypatch.setenv("OJT_RERANK_DEVICE", "cuda")
+    monkeypatch.setenv("OJT_RERANK_BATCH_SIZE", "4")
+    monkeypatch.setenv("OJT_RERANK_CANDIDATE_LIMIT", "12")
+    monkeypatch.setenv("OJT_RERANK_SCORE_WEIGHT", "0.2")
     monkeypatch.setenv("OJT_MAX_INLINE_DATA_BYTES", "4096")
     clear_settings_cache()
     clear_workflow_service_cache()
@@ -847,6 +853,15 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert body["auth"]["cookie_effective_secure"] is True
         assert body["auth"]["cookie_samesite"] == "strict"
         assert body["embedding"]["provider"] == "deterministic"
+        assert body["rerank"] == {
+            "provider": "huggingface",
+            "enabled": True,
+            "model": "BAAI/bge-reranker-base",
+            "device": "cuda",
+            "batch_size": 4,
+            "candidate_limit": 12,
+            "score_weight": 0.2,
+        }
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text

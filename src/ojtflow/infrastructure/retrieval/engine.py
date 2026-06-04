@@ -149,12 +149,16 @@ def rank_chunks(
     query: RetrievalQuery,
     *,
     embedding_provider: Any | None = None,
+    reranker: Any | None = None,
+    rerank_candidate_limit: int = 20,
+    rerank_score_weight: float = 0.08,
     strategy: str = "deterministic_hybrid",
     warnings: list[str] | None = None,
 ) -> RetrievalPackage:
-    """Rank chunks using lexical overlap, configured vectors, and simple rerank boosts."""
+    """Rank chunks using lexical overlap, vectors, optional reranking, and traceable boosts."""
 
     provider = embedding_provider or DeterministicEmbeddingProvider()
+    reranker_metadata = _reranker_metadata(reranker)
     variants = build_query_variants(query)
     safety_flags = retrieval_safety_flags(query)
     trace_warnings = list(warnings or [])
@@ -195,26 +199,42 @@ def rank_chunks(
     vector_scores = {chunk.chunk_id: score for chunk, score in vector_ranked}
     matched_terms = {chunk.chunk_id: matched for chunk, _, matched in lexical_ranked}
 
-    hits: list[RetrievalHit] = []
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]] = []
     for chunk in chunks:
         lexical_rrf = 1.0 / (RRF_K + lexical_positions[chunk.chunk_id])
         vector_rrf = 1.0 / (RRF_K + vector_positions[chunk.chunk_id])
         rerank = _rerank_boost(chunk, query, matched_terms[chunk.chunk_id])
         score = lexical_rrf + vector_rrf + rerank
         evidence = evidence_from_chunk(chunk, confidence=min(0.99, 0.55 + score * 8))
-        hits.append(
-            RetrievalHit(
-                evidence=evidence,
-                score=round(score, 6),
-                lexical_score=round(lexical_scores[chunk.chunk_id], 6),
-                vector_score=round(vector_scores[chunk.chunk_id], 6),
-                rerank_score=round(rerank, 6),
-                matched_terms=matched_terms[chunk.chunk_id][:12],
-                source_locator=chunk.locator,
+        ranked_hits.append(
+            (
+                chunk,
+                RetrievalHit(
+                    evidence=evidence,
+                    score=round(score, 6),
+                    lexical_score=round(lexical_scores[chunk.chunk_id], 6),
+                    vector_score=round(vector_scores[chunk.chunk_id], 6),
+                    rerank_score=round(rerank, 6),
+                    matched_terms=matched_terms[chunk.chunk_id][:12],
+                    source_locator=chunk.locator,
+                ),
             )
         )
 
-    hits.sort(key=lambda hit: hit.score, reverse=True)
+    ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
+    if _reranker_enabled(reranker) and ranked_hits:
+        candidates = ranked_hits[: max(1, rerank_candidate_limit)]
+        external_scores = reranker.score(query_text, [chunk for chunk, _ in candidates])
+        if external_scores:
+            for chunk, hit in candidates:
+                external_score = external_scores.get(chunk.chunk_id, 0.0)
+                contribution = external_score * rerank_score_weight
+                hit.score = round(hit.score + contribution, 6)
+                hit.rerank_score = round(hit.rerank_score + contribution, 6)
+                hit.evidence.confidence = round(min(0.99, 0.55 + hit.score * 8), 4)
+            ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
+
+    hits = [hit for _, hit in ranked_hits]
     top_hits = hits[: query.top_k]
     trace = RetrievalTrace(
         strategy=strategy,
@@ -236,6 +256,7 @@ def rank_chunks(
             "strategy": strategy,
             "safety_flags": safety_flags,
             "embedding": provider.metadata(),
+            "reranker": reranker_metadata,
         },
     )
 
@@ -507,3 +528,20 @@ def _rerank_boost(chunk: KnowledgeChunk, query: RetrievalQuery, matched_terms: l
     if filter_domain and filter_domain == chunk.clinical_domain:
         boost += 0.03
     return boost
+
+
+def _reranker_enabled(reranker: Any | None) -> bool:
+    return bool(reranker and getattr(reranker, "enabled", False))
+
+
+def _reranker_metadata(reranker: Any | None) -> dict[str, Any]:
+    if reranker is None:
+        return {"provider": "none", "model": "none", "enabled": False}
+    metadata = getattr(reranker, "metadata", None)
+    if callable(metadata):
+        return metadata()
+    return {
+        "provider": getattr(reranker, "provider_name", "unknown"),
+        "model": getattr(reranker, "model", "unknown"),
+        "enabled": _reranker_enabled(reranker),
+    }
