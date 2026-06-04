@@ -131,7 +131,10 @@ source coverage from retrieval diversity metadata so redundant single-source
 results are visible during evidence review. Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see
-the reason, confidence, and existing applied state.
+the reason, confidence, and existing applied state. Result facets should also be
+actionable refinements: applying a visible facet bucket must update the query
+builder filter state and rerun the typed retrieval search instead of mutating
+results locally.
 The assistant route is the operator shortcut over those same backend contracts.
 It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
 write-gate state, executed tool calls, and compact evidence/output previews.

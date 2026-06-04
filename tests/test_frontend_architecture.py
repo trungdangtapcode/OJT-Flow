@@ -189,11 +189,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "packageData.handoff_context.diversity" in retrieval_page
     assert "runtime?.rerank?.enabled" in retrieval_page
     assert "applyFilterSuggestion" in retrieval_page
+    assert "applySearchFilter" in retrieval_page
+    assert "onApplyFacet" in retrieval_page
+    assert "aria-pressed={applied}" in retrieval_page
     assert "supportedSuggestionFilterFields" in retrieval_page
     assert "onApplyFilterSuggestion" in retrieval_page
     assert "Embedding and rerank provider state" in frontend_architecture
     assert "source coverage" in frontend_architecture
     assert "explicit operator apply" in frontend_architecture
+    assert "actionable refinements" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:

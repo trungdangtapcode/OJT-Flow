@@ -40,6 +40,7 @@ import {
 import { cn, humanize } from "../../lib/utils";
 import type {
   Evidence,
+  RetrievalFacetBucket,
   RetrievalGraphContext,
   RetrievalHit,
   RetrievalIntegrityReport,
@@ -62,7 +63,16 @@ const sourceTypeOptions = [
   "tool_output",
 ];
 const trustOptions = ["approved", "internal", "user_provided", "untrusted"];
-const supportedSuggestionFilterFields = new Set([
+type SupportedFilterField = "clinical_domain" | "standard_system" | "source_type" | "trust_level";
+type ActiveFacetFilters = Partial<Record<SupportedFilterField, string>>;
+type FacetSection = {
+  field: SupportedFilterField;
+  label: string;
+  values: RetrievalFacetBucket[];
+  formatter: (value: string) => string;
+};
+
+const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
   "clinical_domain",
   "standard_system",
   "source_type",
@@ -99,6 +109,12 @@ export function RetrievalPage() {
   const domainOptions = uniqueValues([...domains, clinicalDomain]);
   const standardOptions = uniqueValues([...standards, standardSystem]);
   const graphContext = packageData?.handoff_context.graph_context;
+  const activeFacetFilters: ActiveFacetFilters = {
+    clinical_domain: clinicalDomain || undefined,
+    standard_system: standardSystem || undefined,
+    source_type: sourceType || undefined,
+    trust_level: trustLevel || undefined,
+  };
 
   const executeSearch = async (overrides: Partial<RetrievalSearchPayload> = {}) => {
     const normalizedQuery = query.trim();
@@ -128,25 +144,27 @@ export function RetrievalPage() {
     await executeSearch();
   };
 
-  const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
-    const value = suggestion.value;
+  const applySearchFilter = (field: SupportedFilterField, value: string) => {
     const overrides: Partial<RetrievalSearchPayload> = {};
-    if (suggestion.field === "clinical_domain") {
+    if (field === "clinical_domain") {
       setClinicalDomain(value);
       overrides.clinical_domain = value;
-    } else if (suggestion.field === "standard_system") {
+    } else if (field === "standard_system") {
       setStandardSystem(value);
       overrides.standard_system = value;
-    } else if (suggestion.field === "source_type") {
+    } else if (field === "source_type") {
       setSourceType(value);
       overrides.source_type = value;
-    } else if (suggestion.field === "trust_level") {
+    } else if (field === "trust_level") {
       setTrustLevel(value);
       overrides.trust_level = value;
-    } else {
-      return;
     }
     void executeSearch(overrides);
+  };
+
+  const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
+    if (!isSupportedFilterField(suggestion.field)) return;
+    applySearchFilter(suggestion.field, suggestion.value);
   };
 
   const reindex = () => {
@@ -339,7 +357,12 @@ export function RetrievalPage() {
         </Card>
 
         <div className="grid min-w-0 gap-5">
-          <SearchResults packageData={packageData} />
+          <SearchResults
+            activeFilters={activeFacetFilters}
+            isSearchPending={searchMutation.isPending}
+            onApplyFacet={applySearchFilter}
+            packageData={packageData}
+          />
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
             <TracePanel
               isSearchPending={searchMutation.isPending}
@@ -434,7 +457,17 @@ function RetrievalSummary({
   );
 }
 
-function SearchResults({ packageData }: { packageData: RetrievalPackage | undefined }) {
+function SearchResults({
+  activeFilters,
+  isSearchPending,
+  onApplyFacet,
+  packageData,
+}: {
+  activeFilters: ActiveFacetFilters;
+  isSearchPending: boolean;
+  onApplyFacet: (field: SupportedFilterField, value: string) => void;
+  packageData: RetrievalPackage | undefined;
+}) {
   if (!packageData) {
     return (
       <Card className="min-w-0 overflow-hidden">
@@ -468,7 +501,12 @@ function SearchResults({ packageData }: { packageData: RetrievalPackage | undefi
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 pt-4">
-        <ResultFacets facets={packageData.facets} />
+        <ResultFacets
+          activeFilters={activeFilters}
+          facets={packageData.facets}
+          isSearchPending={isSearchPending}
+          onApplyFacet={onApplyFacet}
+        />
         {packageData.hits.map((hit, index) => (
           <HitCard hit={hit} index={index} key={hit.evidence.evidence_id} />
         ))}
@@ -482,40 +520,82 @@ function SearchResults({ packageData }: { packageData: RetrievalPackage | undefi
   );
 }
 
-function ResultFacets({ facets }: { facets: RetrievalFacets | null | undefined }) {
+function ResultFacets({
+  activeFilters,
+  facets,
+  isSearchPending,
+  onApplyFacet,
+}: {
+  activeFilters: ActiveFacetFilters;
+  facets: RetrievalFacets | null | undefined;
+  isSearchPending: boolean;
+  onApplyFacet: (field: SupportedFilterField, value: string) => void;
+}) {
   if (!facets) return null;
-  const sections = [
-    { label: "Source type", values: facets.source_type, formatter: humanize },
-    { label: "Domain", values: facets.clinical_domain, formatter: humanize },
-    { label: "Standard", values: facets.standard_system, formatter: (value: string) => value },
-    { label: "Trust", values: facets.trust_level, formatter: humanize },
-  ].filter((section) => section.values.length > 0);
+  const facetSections: FacetSection[] = [
+    { field: "source_type", label: "Source type", values: facets.source_type, formatter: humanize },
+    { field: "clinical_domain", label: "Domain", values: facets.clinical_domain, formatter: humanize },
+    { field: "standard_system", label: "Standard", values: facets.standard_system, formatter: (value: string) => value },
+    { field: "trust_level", label: "Trust", values: facets.trust_level, formatter: humanize },
+  ];
+  const sections = facetSections.filter((section) => section.values.length > 0);
   if (!sections.length) return null;
   return (
     <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="text-xs font-bold uppercase text-muted-foreground">
-        Result facets
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Result facets
+        </div>
+        <Badge variant="muted">click to refine</Badge>
       </div>
       <div className="grid gap-2 lg:grid-cols-2">
         {sections.map((section) => (
           <div className="grid gap-1.5" key={section.label}>
             <div className="text-xs font-bold text-muted-foreground">{section.label}</div>
             <div className="flex min-w-0 flex-wrap gap-1.5">
-              {section.values.map((bucket) => (
-                <span
-                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground"
-                  key={`${section.label}-${bucket.value}`}
-                >
-                  <span className="break-words">{section.formatter(bucket.value)}</span>
-                  <span className="tabular-nums text-foreground">{bucket.count}</span>
-                </span>
-              ))}
+              {section.values.map((bucket) => {
+                const applied = activeFilters[section.field] === bucket.value;
+                return (
+                  <button
+                    aria-label={`Filter by ${section.label} ${section.formatter(bucket.value)}`}
+                    aria-pressed={applied}
+                    className={cn(
+                      "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-bold transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-70",
+                      applied
+                        ? "border-emerald-200 bg-emerald-100 text-emerald-900"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-foreground",
+                    )}
+                    disabled={applied || isSearchPending}
+                    key={`${section.label}-${bucket.value}`}
+                    onClick={() => onApplyFacet(section.field, bucket.value)}
+                    title={
+                      applied
+                        ? `${section.formatter(bucket.value)} is already applied`
+                        : `Apply ${section.label}=${section.formatter(bucket.value)}`
+                    }
+                    type="button"
+                  >
+                    {isSearchPending && !applied ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <ListFilter className="h-3 w-3" />
+                    )}
+                    <span className="break-words">{section.formatter(bucket.value)}</span>
+                    <span className="tabular-nums text-foreground">{bucket.count}</span>
+                    {applied ? <span>applied</span> : null}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+function isSupportedFilterField(value: string): value is SupportedFilterField {
+  return supportedSuggestionFilterFields.has(value as SupportedFilterField);
 }
 
 function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
@@ -926,7 +1006,7 @@ function FilterSuggestionList({
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {suggestions.map((suggestion) => {
           const actionable =
-            !suggestion.applied && supportedSuggestionFilterFields.has(suggestion.field);
+            !suggestion.applied && isSupportedFilterField(suggestion.field);
           return (
             <span
               className={cn(
