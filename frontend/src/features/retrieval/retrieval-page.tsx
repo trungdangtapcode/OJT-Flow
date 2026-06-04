@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileSearch,
   Gauge,
+  History,
   ListFilter,
   Loader2,
   Network,
@@ -91,6 +92,21 @@ type FacetSection = {
   values: RetrievalFacetBucket[];
   formatter: (value: string) => string;
 };
+type RetrievalSearchRun = {
+  packageData: RetrievalPackage;
+  payload: RetrievalSearchPayload;
+  runId: string;
+  signature: string;
+  submittedAt: string;
+  summary: RetrievalRunSummary;
+};
+type RetrievalRunSummary = {
+  candidateCount: number;
+  hitCount: number;
+  qualityWarningCount: number;
+  topSourceId: string | null;
+  warningCount: number;
+};
 
 const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
   "clinical_domain",
@@ -98,6 +114,7 @@ const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
   "source_type",
   "trust_level",
 ]);
+const searchRunHistoryLimit = 6;
 
 export function RetrievalPage() {
   const presetsQuery = useRetrievalPresetsQuery();
@@ -128,8 +145,14 @@ export function RetrievalPage() {
     React.useState<RetrievalSearchPayload | null>(null);
   const [activePresetId, setActivePresetId] = React.useState<string | null>(null);
   const [didApplyInitialPreset, setDidApplyInitialPreset] = React.useState(false);
+  const [searchRuns, setSearchRuns] = React.useState<RetrievalSearchRun[]>([]);
+  const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
 
-  const packageData = searchMutation.data;
+  const activeRun = React.useMemo(
+    () => searchRuns.find((run) => run.runId === activeRunId) ?? null,
+    [activeRunId, searchRuns],
+  );
+  const packageData = activeRun?.packageData ?? searchMutation.data;
   const presets = presetsQuery.data ?? [];
   const searchOptions = searchOptionsQuery.data;
   const sources = sourcesQuery.data ?? [];
@@ -188,9 +211,16 @@ export function RetrievalPage() {
       return;
     }
     setFormError(null);
-    await searchMutation.mutateAsync(payload);
+    const packageResult = await searchMutation.mutateAsync(payload);
+    const signature = retrievalSearchSignature(payload);
+    const run = createSearchRun(payload, packageResult, signature);
+    setSearchRuns((current) => [
+      run,
+      ...current.filter((item) => item.signature !== signature),
+    ].slice(0, searchRunHistoryLimit));
+    setActiveRunId(run.runId);
     setSubmittedSearchPayload(payload);
-    setLastSearchSignature(retrievalSearchSignature(payload));
+    setLastSearchSignature(signature);
   };
 
   const runSearch = async (event: React.FormEvent) => {
@@ -277,19 +307,34 @@ export function RetrievalPage() {
 
   const restoreSubmittedSearch = () => {
     if (!submittedSearchPayload) return;
+    restoreSearchPayload(submittedSearchPayload);
+  };
 
+  const restoreSearchPayload = (payload: RetrievalSearchPayload) => {
     markCustomSearch();
-    setQuery(submittedSearchPayload.query);
-    setFields(submittedSearchPayload.fields.join(", "));
-    setSchemaId(submittedSearchPayload.schema_id ?? "");
-    setDetectedFormat(submittedSearchPayload.detected_format ?? "");
-    setResourceType(submittedSearchPayload.resource_type ?? "");
-    setClinicalDomain(submittedSearchPayload.clinical_domain ?? "");
-    setStandardSystem(submittedSearchPayload.standard_system ?? "");
-    setSourceType(submittedSearchPayload.source_type ?? "");
-    setTrustLevel(submittedSearchPayload.trust_level ?? "");
-    setTopK(submittedSearchPayload.top_k);
+    setQuery(payload.query);
+    setFields(payload.fields.join(", "));
+    setSchemaId(payload.schema_id ?? "");
+    setDetectedFormat(payload.detected_format ?? "");
+    setResourceType(payload.resource_type ?? "");
+    setClinicalDomain(payload.clinical_domain ?? "");
+    setStandardSystem(payload.standard_system ?? "");
+    setSourceType(payload.source_type ?? "");
+    setTrustLevel(payload.trust_level ?? "");
+    setTopK(payload.top_k);
     setFormError(null);
+  };
+
+  const restoreSearchRun = (run: RetrievalSearchRun) => {
+    restoreSearchPayload(run.payload);
+    setSubmittedSearchPayload(run.payload);
+    setLastSearchSignature(run.signature);
+    setActiveRunId(run.runId);
+  };
+
+  const clearSearchRuns = () => {
+    setSearchRuns([]);
+    setActiveRunId(null);
   };
 
   const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
@@ -353,16 +398,17 @@ export function RetrievalPage() {
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(360px,0.72fr)_minmax(0,1.28fr)]">
-        <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70">
-            <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5 text-primary" />
-              Query builder
-            </CardTitle>
-            <CardDescription>Search approved schema, terminology, and corpus evidence.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <form className="grid gap-4" onSubmit={(event) => void runSearch(event)}>
+        <div className="grid min-w-0 gap-5">
+          <Card className="min-w-0 overflow-hidden">
+            <CardHeader className="border-b border-border bg-card/70">
+              <CardTitle className="flex items-center gap-2">
+                <Search className="h-5 w-5 text-primary" />
+                Query builder
+              </CardTitle>
+              <CardDescription>Search approved schema, terminology, and corpus evidence.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <form className="grid gap-4" onSubmit={(event) => void runSearch(event)}>
               {formError ? (
                 <Notice title="Search blocked" tone="danger">
                   {formError}
@@ -562,9 +608,17 @@ export function RetrievalPage() {
                 )}
                 Search evidence
               </Button>
-            </form>
-          </CardContent>
-        </Card>
+              </form>
+            </CardContent>
+          </Card>
+          <SearchRunHistory
+            activeRunId={activeRunId}
+            isSearchPending={searchMutation.isPending}
+            onClear={clearSearchRuns}
+            onRestore={restoreSearchRun}
+            runs={searchRuns}
+          />
+        </div>
 
         <div className="grid min-w-0 gap-5">
           <SearchResults
@@ -668,6 +722,97 @@ function RetrievalSummary({
         value={rerankerEnabled ? "on" : "off"}
       />
     </SummaryStrip>
+  );
+}
+
+function SearchRunHistory({
+  activeRunId,
+  isSearchPending,
+  onClear,
+  onRestore,
+  runs,
+}: {
+  activeRunId: string | null;
+  isSearchPending: boolean;
+  onClear: () => void;
+  onRestore: (run: RetrievalSearchRun) => void;
+  runs: RetrievalSearchRun[];
+}) {
+  if (!runs.length) return null;
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b border-border bg-card/70">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5 text-primary" />
+            Search runs
+          </CardTitle>
+          <CardDescription>{formatCount(runs.length, "recent run")}</CardDescription>
+        </div>
+        <Button
+          aria-label="Clear recent search runs"
+          disabled={isSearchPending}
+          onClick={onClear}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Clear
+        </Button>
+      </CardHeader>
+      <CardContent className="grid gap-2 pt-4">
+        {runs.map((run) => {
+          const active = run.runId === activeRunId;
+          return (
+            <button
+              aria-pressed={active}
+              className={cn(
+                "grid min-w-0 gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-70",
+                active
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border bg-card hover:bg-muted",
+              )}
+              disabled={isSearchPending}
+              key={run.runId}
+              onClick={() => onRestore(run)}
+              title={run.payload.query}
+              type="button"
+            >
+              <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="min-w-0 break-words font-black">
+                  {run.payload.query}
+                </span>
+                <Badge variant={searchRunSummaryVariant(run.summary)}>
+                  {run.summary.qualityWarningCount
+                    ? formatCount(run.summary.qualityWarningCount, "issue")
+                    : "ready"}
+                </Badge>
+              </span>
+              <span className="flex min-w-0 flex-wrap gap-1.5">
+                <Badge variant="muted">{formatRunTime(run.submittedAt)}</Badge>
+                <Badge variant="muted">top {run.payload.top_k}</Badge>
+                <Badge variant="muted">
+                  {formatCount(run.summary.hitCount, "hit")}
+                </Badge>
+                <Badge variant="muted">
+                  {formatCount(run.summary.candidateCount, "candidate")}
+                </Badge>
+                {run.summary.warningCount ? (
+                  <Badge variant="warning">
+                    {formatCount(run.summary.warningCount, "warning")}
+                  </Badge>
+                ) : null}
+              </span>
+              {run.summary.topSourceId ? (
+                <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
+                  Top source: {run.summary.topSourceId}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2947,6 +3092,51 @@ function retrievalSearchSignature(payload: RetrievalSearchPayload): string {
     source_type: payload.source_type ?? null,
     filters: payload.filters ?? {},
   });
+}
+
+function createSearchRun(
+  payload: RetrievalSearchPayload,
+  packageData: RetrievalPackage,
+  signature: string,
+): RetrievalSearchRun {
+  return {
+    packageData,
+    payload,
+    runId: crypto.randomUUID(),
+    signature,
+    submittedAt: new Date().toISOString(),
+    summary: retrievalRunSummary(packageData),
+  };
+}
+
+function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary {
+  return {
+    candidateCount: packageData.trace.candidates_seen,
+    hitCount: packageData.hits.length,
+    qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
+    topSourceId: packageData.hits[0]?.evidence.source_id ?? null,
+    warningCount: packageData.trace.warnings.length,
+  };
+}
+
+function qualityWarningCount(signals: RetrievalQualitySignal[]): number {
+  return signals.filter((signal) =>
+    ["destructive", "error", "warning"].includes(signal.severity),
+  ).length;
+}
+
+function searchRunSummaryVariant(
+  summary: RetrievalRunSummary,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (summary.qualityWarningCount > 0 || summary.warningCount > 0) return "warning";
+  if (summary.hitCount > 0) return "success";
+  return "destructive";
+}
+
+function formatRunTime(submittedAt: string): string {
+  const date = new Date(submittedAt);
+  if (Number.isNaN(date.getTime())) return "recent";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {

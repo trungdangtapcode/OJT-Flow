@@ -170,9 +170,13 @@ submitted request summary and use that submitted payload to mark result facets
 as applied, so displayed evidence remains auditable even while the builder is
 being edited. When displayed evidence is stale, operators must be able to
 restore the query builder to the submitted request without changing the result
-package or issuing another search. The trusted source inventory should be
-searchable and filterable by data-derived source type, clinical domain, and
-standard system so large corpora remain inspectable.
+package or issuing another search. The Retrieval console should keep a compact
+in-session history of recent unique search runs with hit count, candidate count,
+warnings, quality issue count, and top source so operators can compare and
+restore recent result packages without rerunning every query.
+The trusted source inventory should be searchable and filterable by
+data-derived source type, clinical domain, and standard system so large corpora
+remain inspectable.
 Medical search hints in the trace should be copyable and launchable when the
 backend provides a vetted URL, so PubMed, ClinicalTrials.gov, and openFDA
 workflows remain backend-owned and data-driven instead of hardcoded in React.

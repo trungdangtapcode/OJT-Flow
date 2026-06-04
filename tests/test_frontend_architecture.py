@@ -228,6 +228,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "submittedSearchPayload" in retrieval_page
     assert "SubmittedSearchSummary" in retrieval_page
     assert "Submitted search" in retrieval_page
+    assert "SearchRunHistory" in retrieval_page
+    assert "Search runs" in retrieval_page
+    assert "searchRuns" in retrieval_page
+    assert "createSearchRun" in retrieval_page
+    assert "restoreSearchRun" in retrieval_page
+    assert "retrievalRunSummary" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page
