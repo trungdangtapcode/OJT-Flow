@@ -321,7 +321,10 @@ The corresponding `WorkflowState.failure` stores `code`, `message`,
 
 `handoff_context.retrieval_trace` records retrieval strategy, query variants,
 filters, candidate count, selected evidence IDs, safety flags, and retrieval
-warnings.
+warnings. Retrieval packages also expose
+`handoff_context.query_analysis`, which records deterministic clinical query
+expansion metadata: strategy, detected concepts, expanded terms, healthcare
+standard cues, rule IDs, and final query variants.
 
 `GET /api/v1/workflows`
 
@@ -929,10 +932,15 @@ Response data is a `RetrievalPackage`:
 - `trace.warnings`
 - `handoff_context`
 - `handoff_context.graph_context`
+- `handoff_context.query_analysis`
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
 `prompt_injection_pattern_in_query` and `sensitive_field_context`.
+`handoff_context.query_analysis` is auditable query-understanding metadata.
+It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
+such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
+produced expanded query variants.
 
 Retrieval endpoints require an authenticated session. Searches without
 `workflow_id` run over the approved knowledge inventory. Searches with

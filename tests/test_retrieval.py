@@ -26,6 +26,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     rank_chunks,
     retrieval_safety_flags,
 )
+from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 from ojtflow.infrastructure.retrieval.reranking import HuggingFaceCrossEncoderReranker
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 
@@ -54,6 +55,26 @@ def test_query_variants_include_fields_schema_and_format() -> None:
     assert any("csv parsing conversion" in variant for variant in variants)
 
 
+def test_query_analysis_expands_clinical_standard_terms() -> None:
+    query = RetrievalQuery(
+        query="A1c CSV missing units",
+        fields=["lab_name", "unit"],
+        detected_format="csv",
+        resource_type="Observation",
+    )
+
+    analysis = analyze_query(query)
+
+    assert build_query_variants(query) == analysis.query_variants
+    assert "hba1c_laboratory_test" in analysis.detected_concepts
+    assert "unit_normalization" in analysis.detected_concepts
+    assert "csv_tabular_quality" in analysis.detected_concepts
+    assert {"FHIR", "LOINC", "UCUM"}.issubset(set(analysis.standards))
+    assert "UCUM computable unit" in analysis.expanded_terms
+    assert any("LOINC laboratory observation" in variant for variant in analysis.query_variants)
+    assert any("FHIR Observation" in variant for variant in analysis.query_variants)
+
+
 def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
     package = repository.search(
@@ -72,6 +93,10 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.trace.strategy == "static_hybrid_rrf"
     assert package.trace.candidates_seen >= 5
     assert package.hits[0].score >= package.hits[-1].score
+    analysis = package.handoff_context["query_analysis"]
+    assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
+    assert "unit_normalization" in analysis["detected_concepts"]
+    assert "UCUM" in analysis["standards"]
 
 
 def test_static_retrieval_filters_by_standard_system() -> None:
@@ -87,6 +112,26 @@ def test_static_retrieval_filters_by_standard_system() -> None:
     assert package.evidence
     assert all(item.source_id == "terminology:ucum" for item in package.evidence)
     assert package.evidence[0].source_type == EvidenceSourceType.TERMINOLOGY_SYSTEM
+
+
+def test_static_retrieval_filters_by_source_type() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    package = repository.search(
+        RetrievalQuery(
+            query="FHIR Observation UCUM units",
+            top_k=5,
+            filters={
+                "source_type": "terminology_system",
+                "trust_level": "approved",
+            },
+        )
+    )
+
+    assert package.evidence
+    assert all(
+        item.source_type == EvidenceSourceType.TERMINOLOGY_SYSTEM
+        for item in package.evidence
+    )
 
 
 def test_retrieval_trace_flags_untrusted_query_context() -> None:
@@ -420,7 +465,7 @@ def test_retrieval_eval_fixture_passes_static_repository() -> None:
     )
 
     assert summary.passed is True
-    assert summary.case_count == 4
+    assert summary.case_count == 5
     assert summary.hit_rate_at_k == 1.0
     assert summary.mean_reciprocal_rank == 1.0
     assert summary.total_missing_source_ids == 0
@@ -441,5 +486,5 @@ def test_retrieval_eval_cli_outputs_json_summary() -> None:
     summary = json.loads(result.stdout)
 
     assert summary["passed"] is True
-    assert summary["case_count"] == 4
+    assert summary["case_count"] == 5
     assert summary["hit_rate_at_k"] == 1.0

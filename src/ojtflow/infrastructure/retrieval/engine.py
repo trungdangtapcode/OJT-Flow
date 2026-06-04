@@ -16,10 +16,12 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalHit,
     RetrievalPackage,
     RetrievalQuery,
+    RetrievalQueryAnalysis,
     RetrievalSource,
     RetrievalTrace,
 )
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
+from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
 DEFAULT_EMBEDDING_DIMENSIONS = 64
@@ -123,25 +125,7 @@ def tokenize(text: str) -> list[str]:
 def build_query_variants(query: RetrievalQuery) -> list[str]:
     """Create deterministic query variants inspired by practical RAG routing."""
 
-    variants = [query.query]
-    if query.fields:
-        variants.append(" ".join(query.fields))
-        variants.append(f"healthcare fields {' '.join(query.fields)} validation units terminology")
-    if query.schema_id:
-        variants.append(f"{query.schema_id} schema required fields validation")
-    if query.resource_type:
-        variants.append(f"FHIR {query.resource_type} resource profile required shape")
-    if query.detected_format:
-        variants.append(f"{query.detected_format} parsing conversion data quality")
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for variant in variants:
-        normalized = " ".join(variant.split())
-        if normalized and normalized.lower() not in seen:
-            seen.add(normalized.lower())
-            deduped.append(normalized)
-    return deduped
+    return analyze_query(query).query_variants
 
 
 def rank_chunks(
@@ -161,7 +145,8 @@ def rank_chunks(
 
     provider = embedding_provider or DeterministicEmbeddingProvider()
     reranker_metadata = _reranker_metadata(reranker)
-    variants = build_query_variants(query)
+    query_analysis = analyze_query(query)
+    variants = query_analysis.query_variants
     safety_flags = retrieval_safety_flags(query)
     trace_warnings = list(warnings or [])
     if safety_flags:
@@ -205,7 +190,12 @@ def rank_chunks(
     for chunk in chunks:
         lexical_rrf = 1.0 / (RRF_K + lexical_positions[chunk.chunk_id])
         vector_rrf = 1.0 / (RRF_K + vector_positions[chunk.chunk_id])
-        rerank = _rerank_boost(chunk, query, matched_terms[chunk.chunk_id])
+        rerank = _rerank_boost(
+            chunk,
+            query,
+            matched_terms[chunk.chunk_id],
+            query_analysis=query_analysis,
+        )
         score = lexical_rrf + vector_rrf + rerank
         evidence = evidence_from_chunk(chunk, confidence=min(0.99, 0.55 + score * 8))
         ranked_hits.append(
@@ -269,6 +259,7 @@ def rank_chunks(
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,
             "diversity": diversity_metadata,
+            "query_analysis": query_analysis.model_dump(),
         },
     )
 
@@ -522,10 +513,16 @@ def _lexical_score(
     return overlap + phrase_boost + title_boost
 
 
-def _rerank_boost(chunk: KnowledgeChunk, query: RetrievalQuery, matched_terms: list[str]) -> float:
+def _rerank_boost(
+    chunk: KnowledgeChunk,
+    query: RetrievalQuery,
+    matched_terms: list[str],
+    *,
+    query_analysis: RetrievalQueryAnalysis,
+) -> float:
     boost = 0.0
     if query.schema_id and query.schema_id in chunk.source_id:
-        boost += 0.04
+        boost += 0.08
     if query.fields and any(field.lower() in matched_terms for field in query.fields):
         boost += 0.035
     if chunk.trust_level == TrustLevel.APPROVED:
@@ -536,6 +533,13 @@ def _rerank_boost(chunk: KnowledgeChunk, query: RetrievalQuery, matched_terms: l
         "fhir",
     }.intersection(matched_terms):
         boost += 0.02
+    concepts = set(query_analysis.detected_concepts)
+    if chunk.standard_system == "LOINC" and "hba1c_laboratory_test" in concepts:
+        boost += 0.08
+    if chunk.standard_system == "UCUM" and "unit_normalization" in concepts:
+        boost += 0.05
+    if chunk.standard_system == "FHIR" and "fhir_observation_profile" in concepts:
+        boost += 0.05
     filter_domain = query.filters.get("clinical_domain")
     if filter_domain and filter_domain == chunk.clinical_domain:
         boost += 0.03

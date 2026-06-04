@@ -250,11 +250,11 @@ class PostgresRetrievalRepository:
         where_sql, filter_params = _filters_sql(query.filters)
         vector_dimensions = self._vector_column_dimensions()
         vector_literal: str | None = None
+        query_text = " ".join(build_query_variants(query))
         if vector_dimensions == self.embedding_provider.dimensions:
-            query_text = " ".join(build_query_variants(query))
             vector_literal = _vector_literal(self.embedding_provider.embed_query(query_text))
 
-        params: list[Any] = [query.query, query.query]
+        params: list[Any] = [query_text, query_text]
         if vector_literal is not None:
             params.append(vector_literal)
         params.extend(filter_params)

@@ -27,7 +27,8 @@ embedding providers for parity with Postgres mode.
 
 The retrieval pipeline is auditable in v0:
 
-1. Build query variants from instruction, fields, schema, format, and resource type.
+1. Analyze the query and build variants from instruction, fields, schema,
+   format, resource type, and deterministic clinical-standard expansion rules.
 2. Candidate chunks are filtered by trust level, clinical domain, standard system, or source type.
 3. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
 4. Vector score uses the configured embedding provider:
@@ -59,6 +60,43 @@ Seeded v0 sources include:
 
 The implementation preserves original user data and records terminology evidence
 without silently normalizing clinical concepts.
+
+## Query Analysis
+
+Retrieval now includes deterministic clinical query analysis before first-stage
+ranking. This follows the query-transformation direction used in practical RAG
+systems, but keeps the healthcare v0 behavior auditable: no LLM rewrites are
+used, and every expansion is tied to a rule ID.
+
+Current rules detect:
+
+- laboratory observation identity cues and expand toward LOINC terminology.
+- HbA1c/A1c synonyms and expand toward LOINC/FHIR lab-observation evidence.
+- missing or ambiguous units and expand toward UCUM/FHIR `valueQuantity`.
+- FHIR Observation profile cues.
+- CSV/tabular quality cues.
+- sensitive patient identifier context for human-review governance.
+
+The public retrieval package exposes this under
+`handoff_context.query_analysis`:
+
+```json
+{
+  "strategy": "deterministic_clinical_expansion_v0",
+  "detected_concepts": ["hba1c_laboratory_test", "unit_normalization"],
+  "expanded_terms": ["HbA1c", "UCUM computable unit"],
+  "standards": ["LOINC", "FHIR", "UCUM"],
+  "rule_ids": ["hba1c_lab_test", "unit_normalization"],
+  "query_variants": ["..."]
+}
+```
+
+Research basis:
+
+- RAG query transformation patterns: `https://github.com/NirDiamant/RAG_Techniques`
+- FHIR Observation R4: `https://hl7.org/fhir/r4/observation.html`
+- LOINC laboratory terminology: `https://cdn.loinc.org/about/`
+- UCUM units: `https://ucum.nlm.nih.gov/`
 
 ## API
 

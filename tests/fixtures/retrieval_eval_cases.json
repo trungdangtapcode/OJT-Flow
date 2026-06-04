@@ -35,5 +35,14 @@
     "top_k": 5,
     "filters": {"trust_level": "approved"},
     "expected_source_ids": ["example:csv_lab_to_json_records_v1"]
+  },
+  {
+    "case_id": "hba1c_standard_mapping",
+    "description": "HbA1c terminology lookup should retrieve LOINC grounding evidence.",
+    "query": "A1c result needs standard lab test code and lab_name mapping",
+    "fields": ["lab_name", "value", "unit"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["terminology:loinc"]
   }
 ]

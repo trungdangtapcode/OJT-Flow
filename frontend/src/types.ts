@@ -150,12 +150,22 @@ export type RetrievalGraphContext = {
   limits?: Record<string, unknown>;
 };
 
+export type RetrievalQueryAnalysis = {
+  strategy: string;
+  detected_concepts: string[];
+  expanded_terms: string[];
+  standards: string[];
+  rule_ids: string[];
+  query_variants: string[];
+};
+
 export type RetrievalPackage = {
   hits: RetrievalHit[];
   evidence: Evidence[];
   trace: RetrievalTrace;
   handoff_context: {
     graph_context?: RetrievalGraphContext;
+    query_analysis?: RetrievalQueryAnalysis;
     [key: string]: unknown;
   };
 };
