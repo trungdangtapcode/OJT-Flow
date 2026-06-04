@@ -982,6 +982,19 @@ the official source catalog, medical concept seed registry, FHIR R4 search
 parameter seed, clinical data standards map, medical search playbook, and public
 dataset ingestion plan.
 
+`GET /api/v1/retrieval/integrity` returns a `RetrievalIntegrityReport` for the
+current retrieval index. Query parameters:
+
+- `include_seeded`: default `true`.
+- `include_corpus`: default `false`.
+
+Response data includes `repository`, `status`, `checked_scope`,
+`expected_source_count`, `indexed_source_count`, `ok_count`, `stale_count`,
+`missing_count`, `extra_count`, per-source `checks`, and `warnings`. Each check
+contains `source_id`, `status`, expected/indexed chunk counts, expected/indexed
+hashes, and a message. This endpoint is intended for operational consistency
+checks after deployment, reindexing, or source file changes.
+
 `POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from
 seeded knowledge and configured local corpus directories:
 

@@ -360,6 +360,59 @@ def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
     assert sources["dictionary:medical_search_playbook_v1"].clinical_domain == "retrieval"
 
 
+def test_static_retrieval_integrity_report_matches_seeded_knowledge() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+
+    report = repository.integrity_report()
+
+    assert report.repository == "static"
+    assert report.status == "ok"
+    assert report.checked_scope == "seeded"
+    assert report.expected_source_count == report.indexed_source_count
+    assert report.stale_count == 0
+    assert report.missing_count == 0
+    assert report.extra_count == 0
+    assert report.warnings == []
+    assert all(check.expected_hash == check.indexed_hash for check in report.checks)
+
+
+def test_static_retrieval_integrity_report_detects_stale_indexed_source() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    stale_chunk = next(
+        chunk
+        for chunk in repository._chunks
+        if chunk.source_id == "standard:openfda_drug_apis"
+    )
+    repository._chunks = [
+        (
+            KnowledgeChunk(
+                chunk_id=chunk.chunk_id,
+                source_id=chunk.source_id,
+                source_type=chunk.source_type,
+                title=chunk.title,
+                content="stale indexed content",
+                source_version=chunk.source_version,
+                trust_level=chunk.trust_level,
+                clinical_domain=chunk.clinical_domain,
+                standard_system=chunk.standard_system,
+                locator=chunk.locator,
+                metadata=chunk.metadata,
+            )
+            if chunk.chunk_id == stale_chunk.chunk_id
+            else chunk
+        )
+        for chunk in repository._chunks
+    ]
+
+    report = repository.integrity_report()
+    checks = {check.source_id: check for check in report.checks}
+
+    assert report.status == "warning"
+    assert report.stale_count == 1
+    assert checks["standard:openfda_drug_apis"].status == "stale"
+    assert checks["standard:openfda_drug_apis"].expected_hash != checks["standard:openfda_drug_apis"].indexed_hash
+
+
 def test_knowledge_json_sources_are_valid() -> None:
     for path in [
         ROOT / "knowledge/terminologies/medical_concepts.json",

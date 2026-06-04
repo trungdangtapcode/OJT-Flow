@@ -14,7 +14,12 @@ from ojtflow.core.contracts.auth import (
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalSource,
+)
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
@@ -150,3 +155,10 @@ class RetrievalRepository(Protocol):
     def list_sources(self) -> list[RetrievalSource]: ...
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict: ...
+
+    def integrity_report(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = False,
+    ) -> RetrievalIntegrityReport: ...

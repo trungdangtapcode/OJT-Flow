@@ -8,7 +8,12 @@ from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalSource,
+)
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
@@ -17,6 +22,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     rank_chunks,
     sources_from_chunks,
 )
+from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
 
 
 class StaticKnowledgeRepository:
@@ -143,6 +149,30 @@ class StaticRetrievalRepository:
             "corpus": result.__dict__ if result else None,
         }
 
+    def integrity_report(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = False,
+    ) -> RetrievalIntegrityReport:
+        expected_chunks: list[KnowledgeChunk] = []
+        if include_seeded:
+            expected_chunks.extend(default_healthcare_chunks(self.root))
+        if include_corpus:
+            corpus_chunks, _result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            expected_chunks.extend(corpus_chunks)
+        return build_integrity_report(
+            repository="static",
+            expected_chunks=expected_chunks,
+            indexed_chunks=self._chunks,
+            checked_scope=_checked_scope(include_seeded=include_seeded, include_corpus=include_corpus),
+        )
+
     def _filter_chunks(
         self,
         chunks: list[KnowledgeChunk],
@@ -166,3 +196,12 @@ class StaticRetrievalRepository:
                 if chunk.source_type == EvidenceSourceType(source_type)
             ]
         return filtered
+
+
+def _checked_scope(*, include_seeded: bool, include_corpus: bool) -> str:
+    scopes = []
+    if include_seeded:
+        scopes.append("seeded")
+    if include_corpus:
+        scopes.append("corpus")
+    return "+".join(scopes) or "none"

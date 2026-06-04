@@ -173,3 +173,31 @@ class RetrievalSource(ContractModel):
     clinical_domain: str | None = None
     standard_system: str | None = None
     chunk_count: int = 0
+
+
+class RetrievalIntegrityItem(ContractModel):
+    """One consistency check for a retrieval source family."""
+
+    source_id: str
+    status: NonBlankStr
+    expected_chunk_count: int = Field(ge=0)
+    indexed_chunk_count: int = Field(ge=0)
+    expected_hash: str | None = None
+    indexed_hash: str | None = None
+    message: NonBlankStr
+
+
+class RetrievalIntegrityReport(ContractModel):
+    """Consistency report comparing trusted knowledge sources with the index."""
+
+    repository: NonBlankStr
+    status: NonBlankStr
+    checked_scope: NonBlankStr
+    expected_source_count: int = Field(ge=0)
+    indexed_source_count: int = Field(ge=0)
+    ok_count: int = Field(ge=0)
+    stale_count: int = Field(ge=0)
+    missing_count: int = Field(ge=0)
+    extra_count: int = Field(ge=0)
+    checks: list[RetrievalIntegrityItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

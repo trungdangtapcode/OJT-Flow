@@ -581,6 +581,63 @@ async def test_retrieval_reindex_route_delegates_to_workflow_service(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_retrieval_integrity_route_delegates_to_workflow_service(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def retrieval_integrity_report(self, *, include_seeded=True, include_corpus=False):
+            self.calls.append(
+                {
+                    "include_seeded": include_seeded,
+                    "include_corpus": include_corpus,
+                }
+            )
+            return {
+                "repository": "fake",
+                "status": "ok",
+                "checked_scope": "seeded+corpus",
+                "expected_source_count": 1,
+                "indexed_source_count": 1,
+                "ok_count": 1,
+                "stale_count": 0,
+                "missing_count": 0,
+                "extra_count": 0,
+                "checks": [],
+                "warnings": [],
+            }
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get(
+            "/api/v1/retrieval/integrity",
+            params={"include_seeded": "true", "include_corpus": "true"},
+        )
+
+    assert response.status_code == 200
+    assert _assert_success_envelope(response)["data"]["status"] == "ok"
+    assert fake_service.calls == [
+        {
+            "include_seeded": True,
+            "include_corpus": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_health_route_is_raw_liveness_probe() -> None:
     transport = httpx.ASGITransport(app=create_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -731,6 +788,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
             json={"include_seeded": True, "include_corpus": True},
         )
         retrieval_sources = await client.get("/api/v1/retrieval/sources")
+        retrieval_integrity = await client.get("/api/v1/retrieval/integrity")
         review = await client.post(
             "/api/v1/review/rev_missing",
             json={"decision": "approve"},
@@ -778,6 +836,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_reindex, expected_code="unauthorized")
     assert retrieval_sources.status_code == 401
     _assert_error_envelope(retrieval_sources, expected_code="unauthorized")
+    assert retrieval_integrity.status_code == 401
+    _assert_error_envelope(retrieval_integrity, expected_code="unauthorized")
     assert review.status_code == 401
     _assert_error_envelope(review, expected_code="unauthorized")
     assert logout.status_code == 401

@@ -5,7 +5,12 @@ from __future__ import annotations
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.ports import RetrievalRepository
 from ojtflow.core.contracts.data import DataProfile
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalSource,
+)
 
 
 class RetrievalService:
@@ -34,6 +39,19 @@ class RetrievalService:
         """Refresh retrieval index from configured trusted sources."""
 
         return self.repository.reindex(
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
+        )
+
+    def integrity_report(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = False,
+    ) -> RetrievalIntegrityReport:
+        """Check whether indexed retrieval knowledge matches trusted sources."""
+
+        return self.repository.integrity_report(
             include_seeded=include_seeded,
             include_corpus=include_corpus,
         )

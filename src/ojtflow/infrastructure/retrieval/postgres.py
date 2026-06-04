@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalSource,
+)
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
@@ -17,6 +22,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     default_healthcare_chunks,
     rank_chunks,
 )
+from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
 from ojtflow.infrastructure.storage.postgres import PostgresBackboneStore
 
 
@@ -243,6 +249,30 @@ class PostgresRetrievalRepository:
             for row in rows
         ]
 
+    def integrity_report(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = False,
+    ) -> RetrievalIntegrityReport:
+        expected_chunks: list[KnowledgeChunk] = []
+        if include_seeded:
+            expected_chunks.extend(default_healthcare_chunks(self.knowledge_root))
+        if include_corpus:
+            corpus_chunks, _result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.knowledge_root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            expected_chunks.extend(corpus_chunks)
+        return build_integrity_report(
+            repository="postgres",
+            expected_chunks=expected_chunks,
+            indexed_chunks=self._load_all_chunks(),
+            checked_scope=_checked_scope(include_seeded=include_seeded, include_corpus=include_corpus),
+        )
+
     def _load_candidate_chunks(
         self,
         query: RetrievalQuery,
@@ -315,6 +345,30 @@ class PostgresRetrievalRepository:
             )
         return [_row_to_chunk(row) for row in rows], warnings
 
+    def _load_all_chunks(self) -> list[KnowledgeChunk]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        chunk_id,
+                        source_id,
+                        source_type,
+                        title,
+                        source_version,
+                        trust_level,
+                        clinical_domain,
+                        standard_system,
+                        content,
+                        locator,
+                        metadata
+                    from ojtflow.knowledge_chunks
+                    order by source_id, chunk_id
+                    """
+                )
+                rows = cursor.fetchall()
+        return [_row_to_chunk(row) for row in rows]
+
     def _vector_column_dimensions(self) -> int | None:
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
@@ -369,6 +423,15 @@ def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:
         locator=row["locator"] or {},
         metadata=row["metadata"] or {},
     )
+
+
+def _checked_scope(*, include_seeded: bool, include_corpus: bool) -> str:
+    scopes = []
+    if include_seeded:
+        scopes.append("seeded")
+    if include_corpus:
+        scopes.append("corpus")
+    return "+".join(scopes) or "none"
 
 
 def _vector_literal(values: list[float]) -> str:

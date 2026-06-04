@@ -378,6 +378,23 @@ POST /api/v1/retrieval/reindex
 }
 ```
 
+Check retrieval index consistency:
+
+```http
+GET /api/v1/retrieval/integrity?include_seeded=true&include_corpus=false
+```
+
+The integrity report compares trusted source chunks with the currently indexed
+chunks and returns source-level status values:
+
+- `ok`: indexed source hash matches trusted source hash.
+- `missing`: trusted source is absent from the index.
+- `stale`: indexed source exists but content or metadata differs.
+- `extra`: indexed source is outside the selected check scope.
+
+By default the check verifies seeded project knowledge. Operators can include
+configured local corpus directories with `include_corpus=true`.
+
 Direct retrieval requires an authenticated session. Requests without
 `workflow_id` search the approved knowledge inventory. Requests with
 `workflow_id` are scoped to the authenticated workflow owner and return

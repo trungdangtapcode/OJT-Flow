@@ -35,7 +35,12 @@ from ojtflow.core.contracts.enums import (
     WorkflowStatus,
 )
 from ojtflow.core.contracts.events import WorkflowEvent
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalSource,
+)
 from ojtflow.core.contracts.review import HumanReview
 from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import (
@@ -757,6 +762,19 @@ class WorkflowService:
         """Refresh retrieval index from configured trusted sources."""
 
         return self.retrieval_service.reindex(
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
+        )
+
+    def retrieval_integrity_report(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = False,
+    ) -> RetrievalIntegrityReport:
+        """Check retrieval index consistency against trusted knowledge sources."""
+
+        return self.retrieval_service.integrity_report(
             include_seeded=include_seeded,
             include_corpus=include_corpus,
         )

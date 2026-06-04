@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
@@ -73,5 +73,21 @@ async def reindex_retrieval(
         service.reindex_retrieval(
             include_seeded=request.include_seeded,
             include_corpus=request.include_corpus,
+        )
+    )
+
+
+@router.get("/retrieval/integrity")
+async def retrieval_integrity(
+    include_seeded: bool = Query(default=True),
+    include_corpus: bool = Query(default=False),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    del authenticated
+    return ok(
+        service.retrieval_integrity_report(
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
         )
     )
