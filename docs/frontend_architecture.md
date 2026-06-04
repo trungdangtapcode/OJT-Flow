@@ -233,6 +233,10 @@ Retrieval runtime controls should show the active retrieval rule-pack inventory
 from `/runtime/config`, including sanitized pack name, status, rule count,
 default-vs-override source, and controlling environment variable. The UI must
 not expose local filesystem paths for those packs.
+The readiness panel should render the `retrieval_rule_packs` check as a nested
+pack list, not only generic detail chips, so missing or malformed query
+expansion, diagnostic, ranking, evaluation, or search-hint rules are visible to
+operators before they run searches.
 
 ## Extension Rules
 

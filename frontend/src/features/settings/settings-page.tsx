@@ -986,6 +986,40 @@ function runtimeRulePackVariant(
   return "warning";
 }
 
+function retrievalRulePacksFromDetails(
+  details: Record<string, unknown>,
+): RuntimeRetrievalRulePack[] {
+  const rawPacks = details.packs;
+  if (!Array.isArray(rawPacks)) return [];
+  return rawPacks.reduce<RuntimeRetrievalRulePack[]>((packs, rawPack) => {
+    if (!rawPack || typeof rawPack !== "object" || Array.isArray(rawPack)) {
+      return packs;
+    }
+    const pack = rawPack as Record<string, unknown>;
+    const name = typeof pack.name === "string" ? pack.name : "";
+    const envVar = typeof pack.env_var === "string" ? pack.env_var : "";
+    if (!name || !envVar) return packs;
+    packs.push({
+      name,
+      status: runtimeRulePackStatus(pack.status),
+      source: typeof pack.source === "string" ? pack.source : "unknown",
+      env_var: envVar,
+      configured: pack.configured === true,
+      rule_count:
+        typeof pack.rule_count === "number" && Number.isFinite(pack.rule_count)
+          ? pack.rule_count
+          : 0,
+      error: typeof pack.error === "string" ? pack.error : undefined,
+    });
+    return packs;
+  }, []);
+}
+
+function runtimeRulePackStatus(value: unknown): RuntimeRetrievalRulePack["status"] {
+  if (value === "ok" || value === "missing" || value === "error") return value;
+  return "error";
+}
+
 function readinessLabel(readiness: RuntimeReadiness | undefined) {
   if (!readiness) return "unavailable";
   if (readiness.status === "not_ready") return "not ready";
@@ -1228,9 +1262,51 @@ function ReadinessChecks({
             </Badge>
           </div>
           <p className="text-sm leading-5 text-muted-foreground">{check.summary}</p>
+          <ReadinessRulePackDetails check={check} />
           <ReadinessDetailChips details={check.details} />
         </div>
       ))}
+    </div>
+  );
+}
+
+function ReadinessRulePackDetails({ check }: { check: ReadinessCheck }) {
+  if (check.name !== "retrieval_rule_packs") return null;
+  const packs = retrievalRulePacksFromDetails(check.details);
+  if (!packs.length) return null;
+  const issueCount = packs.filter((pack) => pack.status !== "ok").length;
+  return (
+    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-bold uppercase text-muted-foreground">
+          Rule pack readiness
+        </span>
+        <Badge variant={issueCount ? "warning" : "success"}>
+          {issueCount ? `${issueCount} issue` : "all loadable"}
+        </Badge>
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {packs.map((pack) => (
+          <div
+            className="grid gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-[11px]"
+            key={`${pack.name}-${pack.env_var}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{humanizeSettingLabel(pack.name)}</span>
+              <Badge variant={runtimeRulePackVariant(pack.status)}>{pack.status}</Badge>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1">
+              <Badge variant="muted">{pack.rule_count} rules</Badge>
+              <Badge variant={pack.configured ? "success" : "muted"}>
+                {pack.source}
+              </Badge>
+            </div>
+            <code className="break-words rounded bg-muted px-1.5 py-1 font-mono text-[10px] text-muted-foreground">
+              {pack.env_var}
+            </code>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
