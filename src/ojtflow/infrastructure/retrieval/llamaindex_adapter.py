@@ -20,6 +20,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
     RetrievalPackage,
     RetrievalQuery,
+    RetrievalScoreComponent,
     RetrievalSource,
     RetrievalTrace,
 )
@@ -531,6 +532,15 @@ def _hits_from_nodes(
                 lexical_score=0.0,
                 vector_score=round(score, 6),
                 rerank_score=0.0,
+                score_components=[
+                    RetrievalScoreComponent(
+                        component="framework_vector_score",
+                        label="Framework score",
+                        value=round(score, 6),
+                        description="LlamaIndex adapter relevance score.",
+                        metadata={"framework": "llamaindex"},
+                    )
+                ],
                 matched_terms=matched_terms[:12],
                 source_locator=chunk.locator,
                 snippet=snippet_from_chunk(

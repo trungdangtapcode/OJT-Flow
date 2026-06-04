@@ -34,6 +34,17 @@ class RetrievalSnippet(ContractModel):
     extraction_strategy: str = "deterministic_sentence_window_v0"
 
 
+class RetrievalScoreComponent(ContractModel):
+    """One auditable contribution to a retrieval hit's final score."""
+
+    component: NonBlankStr
+    label: NonBlankStr
+    value: float
+    rank: int | None = Field(default=None, ge=1)
+    description: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalFacetBucket(ContractModel):
     """One result facet bucket and selected-hit count."""
 
@@ -76,6 +87,7 @@ class RetrievalHit(ContractModel):
     lexical_score: float = 0.0
     vector_score: float = 0.0
     rerank_score: float = 0.0
+    score_components: list[RetrievalScoreComponent] = Field(default_factory=list)
     matched_terms: list[str] = Field(default_factory=list)
     source_locator: dict[str, Any] = Field(default_factory=dict)
     snippet: RetrievalSnippet | None = None

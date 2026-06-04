@@ -24,6 +24,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalPackage,
     RetrievalQuery,
     RetrievalQueryAnalysis,
+    RetrievalScoreComponent,
     RetrievalSource,
     RetrievalSnippet,
     RetrievalTrace,
@@ -259,6 +260,16 @@ def rank_chunks(
         )
         score = lexical_rrf + vector_rrf + rerank
         evidence = evidence_from_chunk(chunk, confidence=min(0.99, 0.55 + score * 8))
+        score_components = _score_components(
+            lexical_rrf=lexical_rrf,
+            vector_rrf=vector_rrf,
+            policy_boost=rerank,
+            lexical_rank=lexical_positions[chunk.chunk_id],
+            vector_rank=vector_positions[chunk.chunk_id],
+            lexical_score=lexical_scores[chunk.chunk_id],
+            vector_score=vector_scores[chunk.chunk_id],
+            applied_boost_rules=applied_boost_rules,
+        )
         ranked_hits.append(
             (
                 chunk,
@@ -268,6 +279,7 @@ def rank_chunks(
                     lexical_score=round(lexical_scores[chunk.chunk_id], 6),
                     vector_score=round(vector_scores[chunk.chunk_id], 6),
                     rerank_score=round(rerank, 6),
+                    score_components=score_components,
                     matched_terms=matched_terms[chunk.chunk_id][:12],
                     source_locator=_hit_source_locator(
                         chunk,
@@ -292,6 +304,14 @@ def rank_chunks(
                 contribution = external_score * rerank_score_weight
                 hit.score = round(hit.score + contribution, 6)
                 hit.rerank_score = round(hit.rerank_score + contribution, 6)
+                hit.score_components = [
+                    *hit.score_components,
+                    _external_rerank_score_component(
+                        external_score=external_score,
+                        contribution=contribution,
+                        score_weight=rerank_score_weight,
+                    ),
+                ]
                 hit.evidence.confidence = round(min(0.99, 0.55 + hit.score * 8), 4)
             ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
 
@@ -968,6 +988,74 @@ def _ranking_boost(
                 )
             )
     return boost, applied_rules
+
+
+def _score_components(
+    *,
+    lexical_rrf: float,
+    vector_rrf: float,
+    policy_boost: float,
+    lexical_rank: int,
+    vector_rank: int,
+    lexical_score: float,
+    vector_score: float,
+    applied_boost_rules: list[AppliedRankingBoost],
+) -> list[RetrievalScoreComponent]:
+    components = [
+        RetrievalScoreComponent(
+            component="lexical_rrf",
+            label="Lexical RRF",
+            value=round(lexical_rrf, 6),
+            rank=lexical_rank,
+            description="Reciprocal-rank contribution from lexical retrieval.",
+            metadata={
+                "raw_score": round(lexical_score, 6),
+                "rrf_k": RRF_K,
+            },
+        ),
+        RetrievalScoreComponent(
+            component="vector_rrf",
+            label="Vector RRF",
+            value=round(vector_rrf, 6),
+            rank=vector_rank,
+            description="Reciprocal-rank contribution from vector retrieval.",
+            metadata={
+                "raw_score": round(vector_score, 6),
+                "rrf_k": RRF_K,
+            },
+        ),
+    ]
+    if policy_boost:
+        components.append(
+            RetrievalScoreComponent(
+                component="policy_boost",
+                label="Policy boost",
+                value=round(policy_boost, 6),
+                description="Sum of applied deterministic ranking boost policy weights.",
+                metadata={
+                    "rule_ids": [rule.rule_id for rule in applied_boost_rules],
+                },
+            )
+        )
+    return components
+
+
+def _external_rerank_score_component(
+    *,
+    external_score: float,
+    contribution: float,
+    score_weight: float,
+) -> RetrievalScoreComponent:
+    return RetrievalScoreComponent(
+        component="external_rerank",
+        label="External rerank",
+        value=round(contribution, 6),
+        description="Weighted second-stage reranker contribution.",
+        metadata={
+            "raw_score": round(external_score, 6),
+            "score_weight": score_weight,
+        },
+    )
 
 
 def _ranking_boost_rule_matches(

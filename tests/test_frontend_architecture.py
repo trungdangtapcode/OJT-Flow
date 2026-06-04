@@ -186,6 +186,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
 
     assert "rankingStackFromPackage" in retrieval_page
     assert "diversityFromPackage" in retrieval_page
+    assert "scoreComponentsFromHit" in retrieval_page
+    assert "ScoreExplanation" in retrieval_page
+    assert "Score explanation" in retrieval_page
     assert "RerankBadge" in retrieval_page
     assert "DiversityBadge" in retrieval_page
     assert "packageData.handoff_context.reranker" in retrieval_page

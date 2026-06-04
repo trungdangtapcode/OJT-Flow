@@ -289,6 +289,14 @@ ranking influence is visible in API payloads and the Retrieval console. The
 legacy `source_locator.ranking_boost_rules` ID list is preserved for compact
 audit views and older clients.
 
+Each hit also carries `score_components`, the auditable score explanation for
+the final hit score. The deterministic adapters emit lexical RRF, vector RRF,
+policy boost, and optional external reranker contribution rows. Each row carries
+the component key, operator label, numeric contribution, optional rank,
+description, and metadata such as raw score, RRF `k`, or ranking-rule IDs. This
+keeps the final score inspectable without requiring clients to reconstruct
+ranking math from separate fields.
+
 Search hints are syntax scaffolds for medical search workflows outside the
 local retrieval index. PubMed hints prefer a conservative combination of
 title/abstract text words and MeSH-review warnings; FHIR hints produce resource
@@ -569,9 +577,10 @@ Retrieval is a two-stage architecture with deterministic defaults:
    redundant chunks from sources already selected, which reduces repeated
    same-document evidence in operator review.
 4. The final package preserves `lexical_score`, `vector_score`, `rerank_score`,
-   `source_locator.ranking_boosts`, and `source_locator.ranking_boost_rules`
-   per hit so workflow explanations can show why evidence was selected instead
-   of hiding relevance behind a single opaque score.
+   `score_components`, `source_locator.ranking_boosts`, and
+   `source_locator.ranking_boost_rules` per hit so workflow explanations can
+   show why evidence was selected instead of hiding relevance behind a single
+   opaque score.
 
 Second-stage reranking is disabled by default because it downloads a model and
 adds inference latency. Enable it only in environments that intentionally

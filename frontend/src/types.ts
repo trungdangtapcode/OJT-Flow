@@ -118,9 +118,19 @@ export type RetrievalHit = {
   lexical_score: number;
   vector_score: number;
   rerank_score: number;
+  score_components: RetrievalScoreComponent[];
   matched_terms: string[];
   source_locator: Record<string, unknown>;
   snippet?: RetrievalSnippet | null;
+};
+
+export type RetrievalScoreComponent = {
+  component: string;
+  label: string;
+  value: number;
+  rank?: number | null;
+  description: string;
+  metadata: Record<string, unknown>;
 };
 
 export type RetrievalSnippet = {

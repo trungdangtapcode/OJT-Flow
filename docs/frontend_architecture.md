@@ -135,7 +135,9 @@ registry grows. Format and top-K controls come from
 can be added through trusted registry data. The route
 must surface embedding and rerank provider metadata from runtime config and
 retrieval handoff context so operators can distinguish first-stage hybrid
-searches from searches refined by second-stage reranking. It must also surface
+searches from searches refined by second-stage reranking. It must render
+`hits[].score_components` as a compact score explanation so operators can see
+the final score contributions without opening raw JSON. It must also surface
 per-hit ranking boost signals from `source_locator.ranking_boosts`, including
 the applied rule ID, reason, and weight, with
 `source_locator.ranking_boost_rules` kept as the compatibility fallback for

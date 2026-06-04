@@ -536,6 +536,16 @@ def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch)
             "reason": "Custom ranking boost",
         }
     ]
+    score_components = {
+        component.component: component
+        for component in package.hits[0].score_components
+    }
+    assert score_components["lexical_rrf"].rank >= 1
+    assert score_components["vector_rrf"].rank >= 1
+    assert score_components["policy_boost"].value == 0.5
+    assert score_components["policy_boost"].metadata["rule_ids"] == [
+        "custom_boost_standard"
+    ]
 
     registry_path.write_text(
         json.dumps(
@@ -1029,6 +1039,12 @@ def test_second_stage_reranker_refines_ranked_candidates() -> None:
 
     assert package.hits[0].evidence.source_id == "terminology:ucum"
     assert package.hits[0].rerank_score > package.hits[1].rerank_score
+    components = {
+        component.component: component
+        for component in package.hits[0].score_components
+    }
+    assert components["external_rerank"].value == 1.0
+    assert components["external_rerank"].metadata["score_weight"] == 1.0
     assert package.handoff_context["reranker"]["provider"] == "fake"
 
 

@@ -52,6 +52,7 @@ import type {
   RetrievalPackage,
   RetrievalCoverage,
   RetrievalFacets,
+  RetrievalScoreComponent,
   RetrievalSearchPayload,
   RetrievalSearchOption,
   RetrievalSearchPreset,
@@ -1130,6 +1131,7 @@ function isSupportedFilterField(value: string): value is SupportedFilterField {
 function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
   const evidence = hit.evidence;
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
+  const scoreComponents = scoreComponentsFromHit(hit);
   return (
     <article className="grid min-w-0 gap-3 rounded-md border border-border bg-card p-3 shadow-sm">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -1167,6 +1169,8 @@ function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
         <ScoreMeter label="Vector" value={hit.vector_score} />
         <ScoreMeter label="Rerank" value={hit.rerank_score} />
       </div>
+
+      <ScoreExplanation components={scoreComponents} />
 
       {rankingBoostSignals.length ? (
         <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
@@ -1275,6 +1279,37 @@ function ScoreMeter({ label, value }: { label: string; value: number }) {
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-border">
         <div className="h-full rounded-full bg-primary" style={{ width: `${normalized}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function ScoreExplanation({ components }: { components: RetrievalScoreComponent[] }) {
+  if (!components.length) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
+        <Gauge className="h-3.5 w-3.5 shrink-0" />
+        <span>Score explanation</span>
+      </div>
+      <div className="grid gap-1.5">
+        {components.map((component) => (
+          <div
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs md:grid-cols-[10rem_5rem_minmax(0,1fr)] md:items-center"
+            key={component.component}
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="min-w-0 break-words font-bold">{component.label}</span>
+              {component.rank ? <Badge variant="muted">rank {component.rank}</Badge> : null}
+            </div>
+            <span className="font-mono font-semibold tabular-nums text-muted-foreground">
+              {formatScore(component.value)}
+            </span>
+            <span className="min-w-0 break-words font-semibold text-muted-foreground">
+              {component.description}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2356,6 +2391,19 @@ function formatDiversityTrace(diversity: DiversityStack): string {
   const lambda = diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2);
   const duplicateText = `${diversity.duplicateSelectedSourceCount} duplicate selected`;
   return `${diversity.selectionMode} / lambda ${lambda} / ${formatSourceCoverage(diversity)} sources / ${duplicateText}`;
+}
+
+function scoreComponentsFromHit(hit: RetrievalHit): RetrievalScoreComponent[] {
+  return (hit.score_components ?? [])
+    .map((component) => ({
+      component: stringValue(component.component, ""),
+      description: stringValue(component.description, "Score component contribution."),
+      label: stringValue(component.label, humanize(component.component)),
+      metadata: recordValue(component.metadata),
+      rank: typeof component.rank === "number" ? component.rank : null,
+      value: numberValue(component.value) ?? 0,
+    }))
+    .filter((component) => component.component);
 }
 
 function rankingBoostSignalsFromHit(hit: RetrievalHit): RankingBoostSignal[] {

@@ -176,6 +176,11 @@ must be between `0` and `1`; higher values favor relevance and lower values
 favor diversity. Retrieval packages expose the policy and source coverage under
 `handoff_context.diversity`.
 
+Retrieval hits expose `score_components` as the score explanation contract.
+Custom/static/Postgres retrieval emits lexical RRF, vector RRF, policy boost,
+and optional external reranker contribution rows. Framework adapters emit their
+own framework score row while preserving the same field shape.
+
 `OJT_RETRIEVAL_FRAMEWORK` supports `custom` and `llamaindex`. `custom` keeps the
 native Postgres/static retrieval adapters. `llamaindex` uses the optional
 LlamaIndex adapter behind the same retrieval port and requires
@@ -1170,6 +1175,8 @@ Response data is a `RetrievalPackage`:
 - `hits[].lexical_score`
 - `hits[].vector_score`
 - `hits[].rerank_score`
+- `hits[].score_components[]` with `component`, `label`, `value`, optional
+  `rank`, `description`, and `metadata`
 - `hits[].matched_terms`
 - `hits[].snippet`
 - `evidence`
