@@ -440,6 +440,8 @@ export type RuntimeConfig = {
     corpus_dir_count: number;
     chunk_max_chars: number;
     chunk_overlap_chars: number;
+    diversity_enabled?: boolean;
+    diversity_lambda?: number;
   };
   upload: {
     max_upload_bytes: number;

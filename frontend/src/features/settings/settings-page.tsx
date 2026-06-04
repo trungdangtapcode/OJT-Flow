@@ -225,6 +225,23 @@ export function SettingsPage() {
                       : runtimeConfigLabel(runtimeConfigQuery)
                   }
                 />
+                <SettingRow
+                  label="Diversity"
+                  value={
+                    runtime
+                      ? runtime.retrieval?.diversity_enabled
+                        ? `MMR / lambda ${runtime.retrieval.diversity_lambda?.toFixed(2) ?? "n/a"}`
+                        : "Score order"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                  badge={
+                    runtime?.retrieval?.diversity_enabled
+                      ? "configured"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "disabled"
+                  }
+                />
               </RuntimeFactGroup>
             </div>
 

@@ -31,6 +31,8 @@ class PostgresRetrievalRepository:
         reranker: Any | None = None,
         rerank_candidate_limit: int = 20,
         rerank_score_weight: float = 0.08,
+        diversity_enabled: bool = True,
+        diversity_lambda: float = 0.72,
         corpus_dirs: tuple[Path, ...] | None = None,
         chunk_max_chars: int = 1200,
         chunk_overlap_chars: int = 160,
@@ -42,6 +44,8 @@ class PostgresRetrievalRepository:
         self.reranker = reranker
         self.rerank_candidate_limit = rerank_candidate_limit
         self.rerank_score_weight = rerank_score_weight
+        self.diversity_enabled = diversity_enabled
+        self.diversity_lambda = diversity_lambda
         self.corpus_dirs = corpus_dirs or (self.knowledge_root / "corpus",)
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap_chars = chunk_overlap_chars
@@ -190,6 +194,8 @@ class PostgresRetrievalRepository:
             reranker=self.reranker,
             rerank_candidate_limit=self.rerank_candidate_limit,
             rerank_score_weight=self.rerank_score_weight,
+            diversity_enabled=self.diversity_enabled,
+            diversity_lambda=self.diversity_lambda,
             strategy="postgres_fts_vector_rrf",
             warnings=postgres_warnings,
         )

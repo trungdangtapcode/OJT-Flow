@@ -70,6 +70,8 @@ OJT_RERANK_SCORE_WEIGHT=0.08
 OJT_RETRIEVAL_CORPUS_DIRS=knowledge/corpus
 OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200
 OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160
+OJT_RETRIEVAL_DIVERSITY_ENABLED=true
+OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72
 ```
 
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
@@ -150,6 +152,14 @@ uses a SentenceTransformers CrossEncoder over the top
 provider names, blank model identifiers, unsupported devices, non-positive
 batch/candidate limits, or score weights outside `(0, 1]` are rejected during
 settings load.
+
+`OJT_RETRIEVAL_DIVERSITY_ENABLED` controls source-aware final selection after
+first-stage fusion and optional reranking. When enabled, final `top_k` selection
+uses an MMR-style relevance/novelty balance so repeated chunks from the same
+source do not crowd out other relevant evidence. `OJT_RETRIEVAL_DIVERSITY_LAMBDA`
+must be between `0` and `1`; higher values favor relevance and lower values
+favor diversity. Retrieval packages expose the policy and source coverage under
+`handoff_context.diversity`.
 
 Boundary string fields that drive tool behavior must remain non-blank after
 trimming. Whitespace-only workflow instructions, workflow data, direct

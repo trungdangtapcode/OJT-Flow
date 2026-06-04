@@ -153,6 +153,8 @@ def test_compose_runtime_uses_postgres_redis_and_persistent_app_data() -> None:
     assert "OJT_RERANK_BATCH_SIZE: ${OJT_RERANK_BATCH_SIZE:-16}" in api_section
     assert "OJT_RERANK_CANDIDATE_LIMIT: ${OJT_RERANK_CANDIDATE_LIMIT:-20}" in api_section
     assert "OJT_RERANK_SCORE_WEIGHT: ${OJT_RERANK_SCORE_WEIGHT:-0.08}" in api_section
+    assert "OJT_RETRIEVAL_DIVERSITY_ENABLED: ${OJT_RETRIEVAL_DIVERSITY_ENABLED:-true}" in api_section
+    assert "OJT_RETRIEVAL_DIVERSITY_LAMBDA: ${OJT_RETRIEVAL_DIVERSITY_LAMBDA:-0.72}" in api_section
     assert '"${OJT_API_PORT:-8000}:8000"' in api_section
     assert "- app_data:/app/var" in api_section
     assert "postgres:" in api_section
@@ -207,6 +209,8 @@ def test_env_example_exposes_compose_and_upload_runtime_knobs() -> None:
         "OJT_RETRIEVAL_CORPUS_DIRS=knowledge/corpus",
         "OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200",
         "OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160",
+        "OJT_RETRIEVAL_DIVERSITY_ENABLED=true",
+        "OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72",
     }
 
     assert required_settings <= lines

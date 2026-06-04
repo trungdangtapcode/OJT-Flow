@@ -190,6 +190,16 @@ class Settings(BaseModel):
         alias="OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS",
         ge=0,
     )
+    retrieval_diversity_enabled: bool = Field(
+        default=True,
+        alias="OJT_RETRIEVAL_DIVERSITY_ENABLED",
+    )
+    retrieval_diversity_lambda: float = Field(
+        default=0.72,
+        alias="OJT_RETRIEVAL_DIVERSITY_LAMBDA",
+        ge=0,
+        le=1,
+    )
     rerank_provider: RerankProvider = Field(default="none", alias="OJT_RERANK_PROVIDER")
     rerank_model: str = Field(
         default=HUGGINGFACE_RERANK_MODEL,
@@ -361,6 +371,13 @@ def get_settings() -> Settings:
         ),
         OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=int(
             os.getenv("OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS", "160")
+        ),
+        OJT_RETRIEVAL_DIVERSITY_ENABLED=_parse_bool(
+            os.getenv("OJT_RETRIEVAL_DIVERSITY_ENABLED"),
+            default=True,
+        ),
+        OJT_RETRIEVAL_DIVERSITY_LAMBDA=float(
+            os.getenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", "0.72")
         ),
         OJT_RERANK_PROVIDER=_parse_rerank_provider(os.getenv("OJT_RERANK_PROVIDER")),
         OJT_RERANK_MODEL=_parse_rerank_model(os.getenv("OJT_RERANK_MODEL")),

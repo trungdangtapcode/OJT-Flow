@@ -288,6 +288,52 @@ def test_second_stage_reranker_refines_ranked_candidates() -> None:
     assert package.handoff_context["reranker"]["provider"] == "fake"
 
 
+def test_retrieval_diversity_selection_reduces_redundant_sources() -> None:
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="alpha_one",
+            source_id="source:alpha",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Alpha unit policy",
+            content="alpha unit validation review",
+        ),
+        KnowledgeChunk(
+            chunk_id="alpha_two",
+            source_id="source:alpha",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Alpha unit duplicate",
+            content="alpha unit validation duplicate",
+        ),
+        KnowledgeChunk(
+            chunk_id="beta_one",
+            source_id="source:beta",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="Beta unit policy",
+            content="alpha unit validation alternate source",
+        ),
+    ]
+
+    package = rank_chunks(
+        chunks,
+        RetrievalQuery(query="alpha unit validation", top_k=2),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=True,
+        diversity_lambda=0.5,
+        strategy="test_rrf_diversity",
+    )
+
+    selected_sources = [hit.evidence.source_id for hit in package.hits]
+    assert selected_sources == ["source:alpha", "source:beta"]
+    assert package.handoff_context["diversity"] == {
+        "enabled": True,
+        "selection_mode": "mmr_source_diversity",
+        "lambda": 0.5,
+        "candidate_source_count": 2,
+        "selected_source_count": 2,
+        "duplicate_selected_source_count": 0,
+    }
+
+
 def test_local_corpus_loader_chunks_trusted_healthcare_docs(tmp_path: Path) -> None:
     corpus_dir = tmp_path / "knowledge" / "corpus"
     corpus_dir.mkdir(parents=True)

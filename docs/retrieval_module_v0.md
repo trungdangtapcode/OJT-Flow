@@ -143,7 +143,11 @@ Retrieval is a two-stage architecture with deterministic defaults:
    only the top candidate set. This follows the standard retrieve-then-rerank
    pattern: the first stage is broad and efficient; the reranker is slower but
    can make better pairwise relevance decisions for the final list.
-3. The final package preserves `lexical_score`, `vector_score`, and
+3. Source-aware MMR selection chooses the final `top_k` hits from the ranked
+   candidate list. It keeps relevance as the primary signal while penalizing
+   redundant chunks from sources already selected, which reduces repeated
+   same-document evidence in operator review.
+4. The final package preserves `lexical_score`, `vector_score`, and
    `rerank_score` per hit so workflow explanations can show why evidence was
    selected instead of hiding relevance behind a single opaque score.
 
@@ -216,6 +220,8 @@ OJT_RERANK_DEVICE=cuda
 OJT_RERANK_BATCH_SIZE=16
 OJT_RERANK_CANDIDATE_LIMIT=20
 OJT_RERANK_SCORE_WEIGHT=0.08
+OJT_RETRIEVAL_DIVERSITY_ENABLED=true
+OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72
 ```
 
 `OJT_RERANK_PROVIDER` supports `none` and `huggingface`. The Hugging Face
@@ -224,6 +230,14 @@ pairs. `OJT_RERANK_CANDIDATE_LIMIT` keeps reranking bounded to the strongest
 first-stage candidates, and `OJT_RERANK_SCORE_WEIGHT` controls how much the
 external rerank score can refine the existing fusion score. Invalid provider,
 device, batch, candidate-limit, or score-weight values fail settings load.
+
+`OJT_RETRIEVAL_DIVERSITY_ENABLED` controls final source-aware MMR selection.
+`OJT_RETRIEVAL_DIVERSITY_LAMBDA` is a probability-like value from `0` to `1`;
+higher values favor relevance, lower values favor novelty. The default `0.72`
+keeps relevance dominant while reducing duplicate-source evidence in the final
+operator-visible list. Retrieval packages report the selection mode, lambda,
+candidate source count, selected source count, and duplicate selected source
+count under `handoff_context.diversity`.
 
 Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
 to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,

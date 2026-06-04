@@ -614,6 +614,32 @@ def test_retrieval_chunk_overlap_must_be_smaller_than_chunk_size(monkeypatch) ->
         clear_settings_cache()
 
 
+def test_retrieval_diversity_settings_are_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_ENABLED", "false")
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", "0.35")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.retrieval_diversity_enabled is False
+    assert settings.retrieval_diversity_lambda == 0.35
+
+
+@pytest.mark.parametrize("bad_lambda", ["-0.1", "1.1"])
+def test_retrieval_diversity_lambda_must_be_probability(monkeypatch, bad_lambda) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", bad_lambda)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValidationError):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
 @pytest.mark.parametrize("bad_cookie_name", ["", "   ", "bad name", "bad;name", "bad,name"])
 def test_auth_cookie_name_must_be_valid_http_cookie_token(
     monkeypatch,
@@ -770,6 +796,9 @@ def test_runtime_docs_explain_embedding_provider_validation() -> None:
     assert "OJT_RERANK_PROVIDER=huggingface" in docs
     assert "OJT_RERANK_MODEL=BAAI/bge-reranker-base" in docs
     assert "CrossEncoder" in docs
+    assert "OJT_RETRIEVAL_DIVERSITY_ENABLED" in docs
+    assert "OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72" in docs
+    assert "source-aware MMR" in docs
     assert "deterministic-hash-v0" in docs
     assert "OJT_EMBEDDING_DIMENSIONS=384" in docs
     assert "vector(384)" in docs
