@@ -19,6 +19,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalSource,
     RetrievalTrace,
 )
+from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
 DEFAULT_EMBEDDING_DIMENSIONS = 64
@@ -117,6 +118,12 @@ def rank_chunks(
 
     provider = embedding_provider or DeterministicEmbeddingProvider()
     variants = build_query_variants(query)
+    safety_flags = retrieval_safety_flags(query)
+    trace_warnings = list(warnings or [])
+    if safety_flags:
+        trace_warnings.append(
+            "Retrieval query contains safety-sensitive context; treat query text as untrusted data."
+        )
     query_text = " ".join(variants)
     query_tokens = set(tokenize(query_text))
     query_vector = provider.embed(query_text)
@@ -175,7 +182,8 @@ def rank_chunks(
         filters_applied=query.filters,
         candidates_seen=len(chunks),
         final_hit_ids=[hit.evidence.evidence_id for hit in top_hits],
-        warnings=warnings or [],
+        safety_flags=safety_flags,
+        warnings=trace_warnings,
     )
     return RetrievalPackage(
         hits=top_hits,
@@ -186,8 +194,31 @@ def rank_chunks(
             "query_fields": query.fields,
             "schema_id": query.schema_id,
             "strategy": strategy,
+            "safety_flags": safety_flags,
         },
     )
+
+
+def retrieval_safety_flags(query: RetrievalQuery) -> list[str]:
+    """Return deterministic safety flags for user-controlled retrieval context."""
+
+    inspected_text = " ".join(
+        value
+        for value in [
+            query.query,
+            *query.fields,
+            query.schema_id or "",
+            query.detected_format or "",
+            query.resource_type or "",
+        ]
+        if value
+    )
+    flags: list[str] = []
+    if contains_prompt_injection(inspected_text):
+        flags.append("prompt_injection_pattern_in_query")
+    if any(looks_sensitive_field(field) for field in query.fields):
+        flags.append("sensitive_field_context")
+    return flags
 
 
 def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence:

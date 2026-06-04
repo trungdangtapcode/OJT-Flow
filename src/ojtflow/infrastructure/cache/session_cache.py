@@ -7,6 +7,8 @@ import time
 from copy import deepcopy
 from typing import Any
 
+from ojtflow.core.errors import DependencyUnavailableError
+
 try:
     import redis
     from redis.exceptions import RedisError
@@ -59,9 +61,15 @@ class InMemorySessionCache:
 class RedisSessionCache:
     """Caches active sessions and short-lived OAuth state values."""
 
-    def __init__(self, redis_url: str) -> None:
+    def __init__(self, redis_url: str, *, allow_fallback: bool = True) -> None:
         self.redis_url = redis_url
-        self._client = redis.from_url(redis_url, decode_responses=True) if redis else None
+        self._client_error: Exception | None = None
+        try:
+            self._client = redis.from_url(redis_url, decode_responses=True) if redis else None
+        except (RedisError, ValueError) as exc:
+            self._client = None
+            self._client_error = exc
+        self.allow_fallback = allow_fallback
         self._fallback = InMemorySessionCache()
 
     def set_session(self, token_hash: str, payload: dict[str, Any], ttl_seconds: int) -> None:
@@ -70,8 +78,9 @@ class RedisSessionCache:
             if self._client:
                 self._client.setex(key, ttl_seconds, json.dumps(payload))
                 return
-        except RedisError:
-            pass
+        except RedisError as exc:
+            self._raise_or_fallback("set_session", exc)
+        self._raise_or_fallback("set_session")
         self._fallback.set_session(token_hash, payload, ttl_seconds)
 
     def get_session(self, token_hash: str) -> dict[str, Any] | None:
@@ -79,9 +88,14 @@ class RedisSessionCache:
         try:
             if self._client:
                 raw = self._client.get(key)
-                return json.loads(raw) if raw else None
-        except (RedisError, json.JSONDecodeError):
-            pass
+                try:
+                    return json.loads(raw) if raw else None
+                except json.JSONDecodeError:
+                    self._delete_corrupt_key(key)
+                    return None
+        except RedisError as exc:
+            self._raise_or_fallback("get_session", exc)
+        self._raise_or_fallback("get_session")
         return self._fallback.get_session(token_hash)
 
     def delete_session(self, token_hash: str) -> None:
@@ -89,8 +103,10 @@ class RedisSessionCache:
         try:
             if self._client:
                 self._client.delete(key)
-        except RedisError:
-            pass
+        except RedisError as exc:
+            self._raise_or_fallback("delete_session", exc)
+        if self._client is None:
+            self._raise_or_fallback("delete_session")
         self._fallback.delete_session(token_hash)
 
     def set_oauth_state(
@@ -105,8 +121,9 @@ class RedisSessionCache:
             if self._client:
                 self._client.setex(key, ttl_seconds, value)
                 return
-        except RedisError:
-            pass
+        except RedisError as exc:
+            self._raise_or_fallback("set_oauth_state", exc)
+        self._raise_or_fallback("set_oauth_state")
         self._fallback.set_oauth_state(state, ttl_seconds, payload)
 
     def consume_oauth_state(self, state: str) -> dict[str, Any] | None:
@@ -121,9 +138,35 @@ class RedisSessionCache:
                     self._client.delete(key)
                     return json.loads(raw)
                 return None
-        except (RedisError, json.JSONDecodeError):
-            pass
+        except RedisError as exc:
+            self._raise_or_fallback("consume_oauth_state", exc)
+        except json.JSONDecodeError:
+            self._delete_corrupt_key(key)
+            return None
+        self._raise_or_fallback("consume_oauth_state")
         return self._fallback.consume_oauth_state(state)
+
+    def _raise_or_fallback(self, operation: str, exc: Exception | None = None) -> None:
+        if self.allow_fallback:
+            return
+        cause = exc or self._client_error
+        details = {
+            "dependency": "redis",
+            "operation": operation,
+        }
+        if cause is not None:
+            details["error_type"] = type(cause).__name__
+        raise DependencyUnavailableError(
+            "Redis session cache is unavailable.",
+            details=details,
+        )
+
+    def _delete_corrupt_key(self, key: str) -> None:
+        try:
+            if self._client:
+                self._client.delete(key)
+        except RedisError:
+            pass
 
     def _session_key(self, token_hash: str) -> str:
         return f"ojtflow:session:{token_hash}"

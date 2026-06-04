@@ -36,6 +36,7 @@ async def google_callback(
     state: str,
     request: Request,
     response: Response,
+    include_token: bool = False,
     settings: Settings = Depends(get_api_settings),
     service: AuthService = Depends(get_auth_service),
 ) -> dict:
@@ -48,7 +49,7 @@ async def google_callback(
         ip_address=request.client.host if request.client else None,
     )
     _set_session_cookie(response, settings, result["access_token"])
-    return ok(result)
+    return ok(_login_response(result, include_token=include_token))
 
 
 @router.get("/auth/me")
@@ -65,11 +66,13 @@ async def logout(
     request: Request,
     response: Response,
     credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
     settings: Settings = Depends(get_api_settings),
     service: AuthService = Depends(get_auth_service),
 ) -> dict:
     """Revoke the current session token."""
 
+    del authenticated
     token = session_token_from_request(request, credentials)
     service.logout(token)
     _clear_session_cookie(response, settings)
@@ -78,13 +81,12 @@ async def logout(
 
 def _set_session_cookie(response: Response, settings: Settings, token: str) -> None:
     same_site = _normalized_same_site(settings.auth_cookie_samesite)
-    secure = settings.auth_cookie_secure or same_site == "none"
     response.set_cookie(
         key=settings.auth_cookie_name,
         value=token,
         max_age=settings.auth_session_ttl_seconds,
         httponly=True,
-        secure=secure,
+        secure=settings.effective_auth_cookie_secure,
         samesite=same_site,
         domain=settings.auth_cookie_domain,
         path="/",
@@ -93,10 +95,9 @@ def _set_session_cookie(response: Response, settings: Settings, token: str) -> N
 
 def _clear_session_cookie(response: Response, settings: Settings) -> None:
     same_site = _normalized_same_site(settings.auth_cookie_samesite)
-    secure = settings.auth_cookie_secure or same_site == "none"
     response.delete_cookie(
         key=settings.auth_cookie_name,
-        secure=secure,
+        secure=settings.effective_auth_cookie_secure,
         samesite=same_site,
         domain=settings.auth_cookie_domain,
         path="/",
@@ -108,3 +109,14 @@ def _normalized_same_site(value: str) -> str:
     if normalized not in {"lax", "strict", "none"}:
         raise ValueError(f"Unsupported auth cookie SameSite setting: {value}")
     return normalized
+
+
+def _login_response(result: dict, *, include_token: bool) -> dict:
+    payload = {
+        "expires_at": result["expires_at"],
+        "user": result["user"],
+    }
+    if include_token:
+        payload["token_type"] = result["token_type"]
+        payload["access_token"] = result["access_token"]
+    return payload

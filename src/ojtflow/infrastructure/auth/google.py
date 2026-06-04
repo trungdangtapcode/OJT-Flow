@@ -74,17 +74,26 @@ class GoogleOAuthClient:
                     },
                 )
                 token_response.raise_for_status()
-                token_data = token_response.json()
+                token_data = self._parse_token_response(token_response)
         except httpx.HTTPStatusError as exc:
             raise OJTFlowError(f"Google OAuth request failed: {exc.response.text}") from exc
         except httpx.HTTPError as exc:
             raise OJTFlowError(f"Google OAuth request failed: {exc}") from exc
 
         id_token_value = token_data.get("id_token")
-        if not id_token_value:
+        if not isinstance(id_token_value, str) or not id_token_value:
             raise OJTFlowError("Google OAuth response did not include an id_token.")
         claims = self._verify_id_token(id_token_value)
         return self._profile_from_claims(claims)
+
+    def _parse_token_response(self, response: httpx.Response) -> dict[str, Any]:
+        try:
+            token_data = response.json()
+        except ValueError as exc:
+            raise OJTFlowError("Google OAuth response was not valid JSON.") from exc
+        if not isinstance(token_data, dict):
+            raise OJTFlowError("Google OAuth response had an unexpected shape.")
+        return token_data
 
     def _verify_id_token(self, id_token_value: str) -> dict[str, Any]:
         if google_id_token is None or google_requests is None:

@@ -20,8 +20,6 @@ export type AuthUser = {
 };
 
 export type AuthLoginResponse = {
-  token_type: "bearer";
-  access_token: string;
   expires_at: string;
   user: AuthUser;
 };
@@ -53,6 +51,12 @@ export type ReviewStatus =
   | "clarification_requested"
   | "cancelled";
 
+export type ClarificationRequest = {
+  requested_by?: string | null;
+  requested_at?: string | null;
+  payload: Record<string, unknown>;
+};
+
 export type WorkflowStep = {
   step_id: string;
   name: string;
@@ -64,14 +68,25 @@ export type WorkflowStep = {
   issue_count: number;
 };
 
+export type WorkflowFailure = {
+  code: string;
+  message: string;
+  error_type: string;
+  details: Record<string, unknown>;
+  failed_at: string;
+};
+
 export type ValidationIssue = {
   issue_id: string;
   kind: string;
   severity: string;
   message: string;
-  field?: string | null;
-  row?: number | null;
-  source_ref?: string | null;
+  location?: {
+    row?: number | null;
+    column?: string | null;
+    field?: string | null;
+    source_ref?: string | null;
+  } | null;
   suggested_action?: string | null;
   requires_review: boolean;
 };
@@ -93,6 +108,7 @@ export type RetrievalTrace = {
   filters_applied: Record<string, unknown>;
   candidates_seen: number;
   final_hit_ids: string[];
+  safety_flags: string[];
   warnings: string[];
 };
 
@@ -108,6 +124,7 @@ export type HumanReview = {
   decision_payload?: Record<string, unknown> | null;
   decided_by?: string | null;
   decided_at?: string | null;
+  clarification_requests: ClarificationRequest[];
 };
 
 export type WorkflowEvent = {
@@ -126,6 +143,7 @@ export type WorkflowEvent = {
 
 export type WorkflowState = {
   workflow_id: string;
+  owner_user_id?: string | null;
   created_at: string;
   updated_at: string;
   status: WorkflowStatus;
@@ -177,6 +195,7 @@ export type WorkflowState = {
       output_format: string;
       output_ref?: string | null;
       output_hash?: string | null;
+      preview?: string | null;
       row_count?: number | null;
       warnings: string[];
       diff_summary: Record<string, unknown>;
@@ -192,12 +211,24 @@ export type WorkflowState = {
     limitations: string[];
     requires_clinician_review: boolean;
   } | null;
+  failure?: WorkflowFailure | null;
   handoff_context?: {
     retrieval_trace?: RetrievalTrace;
     retrieval_handoff?: Record<string, unknown>;
     [key: string]: unknown;
   };
   audit_event_refs: string[];
+  risk_flags: string[];
+};
+
+export type WorkflowOutputArtifact = {
+  workflow_id: string;
+  output_format: string;
+  output_hash?: string | null;
+  byte_size: number;
+  content: string;
+  warnings: string[];
+  diff_summary: Record<string, unknown>;
 };
 
 export type SchemaEntry = {
@@ -221,4 +252,86 @@ export type StartWorkflowPayload = {
   target_format: string;
   schema_id: string | null;
   require_human_review: boolean;
+};
+
+export type WorkflowSummaryItem = {
+  workflow_id: string;
+  owner_user_id?: string | null;
+  status: WorkflowStatus;
+  instruction: string;
+  schema_id?: string | null;
+  target_format?: string | null;
+  issue_count: number;
+  review_id?: string | null;
+  review_status?: string | null;
+  evidence_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkflowSummaryPage = {
+  items: WorkflowSummaryItem[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
+export type WorkflowStats = {
+  total: number;
+  by_status: Record<string, number>;
+  pending_reviews: number;
+  failed: number;
+  completed: number;
+  review_gated: number;
+  average_issue_count: number;
+};
+
+export type ExtractorInventory = {
+  available: string[];
+  supported_extensions: string[];
+};
+
+export type RuntimeHealth = {
+  status: string;
+};
+
+export type ReadinessCheck = {
+  name: string;
+  status: "ok" | "warning" | "error";
+  summary: string;
+  details: Record<string, unknown>;
+};
+
+export type RuntimeReadiness = {
+  status: "ready" | "degraded" | "not_ready";
+  checks: ReadinessCheck[];
+};
+
+export type RuntimeConfig = {
+  status: string;
+  storage_backend: string;
+  persistent_storage: boolean;
+  postgres_configured: boolean;
+  redis_configured: boolean;
+  data_dir_configured: boolean;
+  auth: {
+    google_oauth_configured: boolean;
+    hosted_domain_restricted: boolean;
+    cookie_secure: boolean;
+    cookie_effective_secure: boolean;
+    cookie_samesite: string;
+    session_ttl_seconds: number;
+    state_ttl_seconds: number;
+  };
+  embedding: {
+    provider: string;
+    model: string;
+    dimensions: number;
+  };
+  upload: {
+    max_upload_bytes: number;
+    max_inline_data_bytes: number;
+    read_chunk_bytes: number;
+    allowed_extensions: string[];
+  };
 };

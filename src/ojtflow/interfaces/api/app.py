@@ -23,6 +23,7 @@ from ojtflow.interfaces.api.routes import (
     parse,
     retrieval,
     review,
+    runtime,
     validate,
     workflows,
 )
@@ -40,17 +41,27 @@ def create_app() -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
+
+    @app.middleware("http")
+    async def no_store_auth_responses(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/v1/auth/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
     protected = [Depends(require_authentication)]
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/api/v1")
-    app.include_router(workflows.router, prefix="/api/v1", dependencies=protected)
-    app.include_router(review.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(workflows.router, prefix="/api/v1")
+    app.include_router(review.router, prefix="/api/v1")
     app.include_router(convert.router, prefix="/api/v1", dependencies=protected)
     app.include_router(validate.router, prefix="/api/v1", dependencies=protected)
     app.include_router(fhir.router, prefix="/api/v1", dependencies=protected)
     app.include_router(ocr.router, prefix="/api/v1", dependencies=protected)
-    app.include_router(parse.router, prefix="/api/v1", dependencies=protected)
-    app.include_router(retrieval.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(parse.router, prefix="/api/v1")
+    app.include_router(retrieval.router, prefix="/api/v1")
+    app.include_router(runtime.router, prefix="/api/v1")
     return app
 
 

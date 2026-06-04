@@ -38,6 +38,7 @@ def profile_fhir_like(text: str) -> dict[str, Any]:
         issues.append("Missing root resourceType or Bundle.entry resources")
     if root_resource_type == "Bundle" and "entry" not in payload:
         issues.append("Bundle is missing entry array")
+    _validate_minimal_resource_shapes(resources, issues)
 
     evidence = [
         Evidence(
@@ -92,3 +93,42 @@ def _extract_resources(payload: Any, issues: list[str]) -> list[dict[str, Any]]:
 
     return [payload] if resource_type else []
 
+
+def _validate_minimal_resource_shapes(
+    resources: list[dict[str, Any]],
+    issues: list[str],
+) -> None:
+    """Validate lightweight FHIR-like shape for known healthcare demo resources."""
+
+    for index, resource in enumerate(resources):
+        resource_type = resource.get("resourceType")
+        prefix = f"{resource_type or 'Resource'}[{index}]"
+        if resource_type == "Observation":
+            for field in ("status", "code"):
+                if field not in resource:
+                    issues.append(f"{prefix} is missing '{field}'")
+            if "subject" not in resource:
+                issues.append(f"{prefix} is missing 'subject'")
+            if not _has_any(resource, ("effectiveDateTime", "effectivePeriod", "issued")):
+                issues.append(
+                    f"{prefix} is missing effective time ('effectiveDateTime', 'effectivePeriod', or 'issued')"
+                )
+            if not _has_any(
+                resource,
+                (
+                    "valueQuantity",
+                    "valueCodeableConcept",
+                    "valueString",
+                    "valueBoolean",
+                    "valueInteger",
+                    "valueRange",
+                    "component",
+                ),
+            ):
+                issues.append(f"{prefix} is missing observation value or component")
+        elif resource_type == "Patient" and not _has_any(resource, ("id", "identifier")):
+            issues.append(f"{prefix} is missing 'id' or 'identifier'")
+
+
+def _has_any(resource: dict[str, Any], field_names: tuple[str, ...]) -> bool:
+    return any(field in resource and resource[field] not in (None, "", []) for field in field_names)

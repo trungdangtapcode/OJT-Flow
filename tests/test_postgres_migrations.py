@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pytest
+
+from ojtflow.config import clear_settings_cache
+from ojtflow.core.errors import OJTFlowError
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
 
 
@@ -12,12 +16,70 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         ROOT / "sql/postgres/migrations",
     ).load_migrations()
 
-    assert [migration.version for migration in migrations] == ["001", "002", "003", "004"]
+    assert [migration.version for migration in migrations] == ["001", "002", "003", "004", "005"]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
     assert migrations[2].name == "auth_google_sessions"
     assert migrations[3].name == "evidence_retrieval_source_types"
+    assert migrations[4].name == "workflow_owner_scope"
     assert all(len(migration.checksum) == 64 for migration in migrations)
+
+
+def test_postgres_migration_default_directory_comes_from_settings(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    migrations_dir = tmp_path / "custom-migrations"
+    migrations_dir.mkdir()
+    (migrations_dir / "001_custom.sql").write_text("select 1;", encoding="utf-8")
+    monkeypatch.setenv("OJT_MIGRATIONS_DIR", str(migrations_dir))
+    clear_settings_cache()
+
+    try:
+        migrations = PostgresMigrator("postgresql://unused").load_migrations()
+    finally:
+        clear_settings_cache()
+
+    assert [migration.name for migration in migrations] == ["custom"]
+
+
+def test_postgres_migration_loader_rejects_missing_directory(tmp_path: Path) -> None:
+    missing_dir = tmp_path / "missing-migrations"
+
+    with pytest.raises(OJTFlowError, match="migrations directory not found"):
+        PostgresMigrator("postgresql://unused", missing_dir).load_migrations()
+
+
+def test_postgres_migration_loader_rejects_empty_directory(tmp_path: Path) -> None:
+    with pytest.raises(OJTFlowError, match="No Postgres migration files found"):
+        PostgresMigrator("postgresql://unused", tmp_path).load_migrations()
+
+
+def test_postgres_migration_loader_rejects_duplicate_versions(tmp_path: Path) -> None:
+    (tmp_path / "001_initial.sql").write_text("select 1;", encoding="utf-8")
+    (tmp_path / "001_duplicate.sql").write_text("select 2;", encoding="utf-8")
+
+    with pytest.raises(OJTFlowError, match="Duplicate migration version 001"):
+        PostgresMigrator("postgresql://unused", tmp_path).load_migrations()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "1_initial.sql",
+        "abc_initial.sql",
+        "001.sql",
+        "001_.sql",
+    ],
+)
+def test_postgres_migration_loader_rejects_invalid_filenames(
+    tmp_path: Path,
+    filename: str,
+) -> None:
+    (tmp_path / filename).write_text("select 1;", encoding="utf-8")
+
+    with pytest.raises(OJTFlowError, match="Invalid migration"):
+        PostgresMigrator("postgresql://unused", tmp_path).load_migrations()
 
 
 def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
@@ -72,3 +134,11 @@ def test_evidence_retrieval_source_type_migration_extends_constraint() -> None:
     assert "drop constraint if exists evidence_source_type_check" in sql
     assert "'terminology_system'" in sql
     assert "'healthcare_standard'" in sql
+
+
+def test_workflow_owner_scope_migration_adds_owner_index() -> None:
+    sql = (ROOT / "sql/postgres/migrations/005_workflow_owner_scope.sql").read_text()
+
+    assert "add column if not exists owner_user_id text" in sql
+    assert "idx_workflows_owner_updated" in sql
+    assert "idx_workflows_owner_status_updated" in sql

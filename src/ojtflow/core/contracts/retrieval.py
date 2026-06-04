@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import Field
 
-from ojtflow.core.contracts.base import ContractModel
+from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 
@@ -14,7 +14,7 @@ from ojtflow.core.contracts.evidence import Evidence
 class RetrievalQuery(ContractModel):
     """Normalized retrieval request used by workflow and direct API paths."""
 
-    query: str = Field(min_length=1)
+    query: NonBlankStr
     workflow_id: str | None = None
     fields: list[str] = Field(default_factory=list)
     schema_id: str | None = None
@@ -44,6 +44,7 @@ class RetrievalTrace(ContractModel):
     filters_applied: dict[str, Any] = Field(default_factory=dict)
     candidates_seen: int = 0
     final_hit_ids: list[str] = Field(default_factory=list)
+    safety_flags: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

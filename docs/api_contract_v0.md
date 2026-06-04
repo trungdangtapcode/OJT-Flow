@@ -1,6 +1,6 @@
 # OJTFlow API Contract v0
 
-All public endpoints return the same envelope:
+All `/api/v1` endpoints return the same envelope:
 
 ```json
 {
@@ -8,6 +8,10 @@ All public endpoints return the same envelope:
   "error": null
 }
 ```
+
+The operational liveness probe `GET /health` is intentionally outside
+`/api/v1` and returns raw JSON (`{"status":"ok"}`) for Docker, load balancers,
+and simple uptime checks.
 
 All `/api/v1` workflow/data endpoints require an authenticated backend session.
 Browser clients use the HTTP-only session cookie set by the Google callback.
@@ -20,6 +24,18 @@ Authorization: Bearer <access_token>
 The exceptions are `GET /api/v1/auth/google/url` and
 `GET /api/v1/auth/google/callback`, which are used to obtain the token.
 
+Cookie-authenticated write requests (`POST`, `PUT`, `PATCH`, and `DELETE`) must
+include a trusted `Origin` or `Referer` header. Trusted origins come from the
+current API origin and configured OAuth redirect URIs. Bearer-token API clients
+are not subject to this cookie-origin guard.
+
+Workflow, review, event, output, summary, and stats endpoints are scoped to the
+authenticated user. `POST /api/v1/workflows` and
+`POST /api/v1/parse/upload/workflow` persist `WorkflowState.owner_user_id`
+from the backend session; clients cannot set or override ownership. A workflow
+owned by another user returns the standard `not_found` envelope rather than
+revealing that the ID exists.
+
 Default persistence uses Postgres plus local file-backed artifacts:
 
 ```text
@@ -27,12 +43,98 @@ OJT_STORAGE_BACKEND=postgres
 OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
 OJT_REDIS_URL=redis://localhost:6379/0
 OJT_DATA_DIR=var
+OJT_KNOWLEDGE_DIR=knowledge
+OJT_MIGRATIONS_DIR=sql/postgres/migrations
 OJT_AUTH_COOKIE_NAME=ojtflow_session
 OJT_AUTH_COOKIE_SAMESITE=lax
+OJT_MAX_UPLOAD_BYTES=26214400
+OJT_MAX_INLINE_DATA_BYTES=1048576
+OJT_UPLOAD_READ_CHUNK_BYTES=1048576
+OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml
 OJT_EMBEDDING_PROVIDER=deterministic
 OJT_EMBEDDING_MODEL=deterministic-hash-v0
 OJT_EMBEDDING_DIMENSIONS=64
 ```
+
+`OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
+are rejected during settings load before API services are constructed.
+`OJT_DATABASE_URL` must use `postgres://` or `postgresql://` syntax with a host,
+optional numeric port, and database name. Unsupported schemes, blank values,
+missing hosts, missing database names, invalid ports, and fragments are rejected
+during settings load.
+`OJT_REDIS_URL` may be blank only to mark Redis as not configured; otherwise it
+must use `redis://`, `rediss://`, or `unix://` syntax. Unsupported schemes,
+missing hosts for TCP Redis URLs, invalid ports, and fragments are rejected
+during settings load.
+
+`OJT_KNOWLEDGE_DIR` and `OJT_MIGRATIONS_DIR` control runtime discovery of
+trusted healthcare knowledge files and Postgres SQL migrations. Relative values
+resolve from the project root; Docker sets absolute `/app/...` paths so runtime
+behavior is independent of the installed Python package location. The migration
+directory must exist and contain ordered `.sql` files; a missing or empty
+migration directory is a startup error for Postgres deployments.
+Named `schema_id` values are strict. Use `GET /api/v1/schemas` to discover
+available profiles, or send `schema_id: null` for explicit no-schema
+validation. If a request names an unavailable schema, the API returns
+`error.code: "not_found"` and persisted workflow starts are saved with failed
+state for inspection.
+
+`OJT_AUTH_COOKIE_NAME` must be a valid HTTP cookie token. Invalid names such as
+blank values or names containing spaces, commas, or semicolons are rejected
+during settings load.
+
+OAuth redirect URI settings (`OJT_GOOGLE_REDIRECT_URI`,
+`OJT_GOOGLE_FRONTEND_REDIRECT_URI`, and `OJT_ALLOWED_AUTH_REDIRECT_URIS`) must
+use `http` or `https`. Non-local HTTP callbacks must use HTTPS. Local
+`http://localhost`, `http://127.0.0.1`, and `http://[::1]` callbacks remain
+valid for development. Redirect URIs with fragments, embedded user info, missing
+hosts, or non-web schemes are rejected during settings load.
+
+Auth domain settings (`OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS` and
+`OJT_AUTH_COOKIE_DOMAIN`) must be bare DNS domains. URLs, ports, wildcards,
+spaces, IP addresses, and localhost are rejected during settings load. Hosted
+domain allowlists do not accept leading dots; cookie domains may use either
+`example.com` or `.example.com`. For localhost development, omit
+`OJT_AUTH_COOKIE_DOMAIN`.
+
+Inline JSON/text payloads are capped by `OJT_MAX_INLINE_DATA_BYTES` for
+`POST /api/v1/workflows`, `POST /api/v1/convert`,
+`POST /api/v1/validate`, `POST /api/v1/fhir/profile`,
+`POST /api/v1/ocr/evidence`, and `POST /api/v1/retrieval/search`.
+Multipart uploads are capped by
+`OJT_MAX_UPLOAD_BYTES`, read in `OJT_UPLOAD_READ_CHUNK_BYTES` chunks, and
+filtered by `OJT_ALLOWED_UPLOAD_EXTENSIONS`. Larger inline inputs should use the
+upload workflow routes so the backend can stream and preserve file artifacts.
+Over-limit inline or upload requests return HTTP `413` with
+`error.code = "upload_too_large"`.
+
+`OJT_ALLOWED_UPLOAD_EXTENSIONS` can only narrow supported upload extensions.
+Values may include or omit the leading dot and are normalized to lowercase.
+Unsupported or unsafe values such as `.exe`, `.tar.gz`, path-like values,
+wildcards, or extensions containing spaces are rejected during settings load.
+
+`OJT_EMBEDDING_PROVIDER=deterministic` and
+`OJT_EMBEDDING_MODEL=deterministic-hash-v0` are the only implemented embedding
+provider/model pair in v0. Other provider names or model IDs are rejected during
+settings load until a real adapter is added. `OJT_EMBEDDING_DIMENSIONS=64` is
+fixed in v0 because the Postgres retrieval schema uses `embedding vector(64)`;
+other dimensions are rejected during settings load.
+
+Boundary string fields that drive tool behavior must remain non-blank after
+trimming. Whitespace-only workflow instructions, workflow data, direct
+conversion/validation data, FHIR payloads, OCR `name` or `source_ref` values,
+and retrieval `query` values return `request_validation_error` before service
+logic runs. Raw source `data` is checked for blank content without stripping so
+stored dataset artifacts and hashes still represent the submitted text.
+Optional identifiers and retrieval context strings are also trimmed and rejected
+when blank, including `schema_id`, `workflow_id`, `fields[]`,
+`detected_format`, `resource_type`, `clinical_domain`, and `standard_system`.
+Path identifiers such as `/workflows/{workflow_id}` and `/review/{review_id}`
+also reject encoded whitespace-only values with `request_validation_error`.
+
+Numeric runtime settings shown above, plus OAuth timeout and auth TTLs, must be
+positive. Invalid non-positive values are rejected at settings load time instead
+of being silently coerced.
 
 Schema migrations live in:
 
@@ -40,11 +142,34 @@ Schema migrations live in:
 sql/postgres/migrations/
 ```
 
-Apply migrations manually with:
+Postgres-backed repositories apply pending migrations automatically during
+service construction. For CI or release checks, the same migrator can be invoked
+explicitly with:
 
 ```bash
-PYTHONPATH=src /home/tcuong1000/.ostwin/.venv/bin/python -m ojtflow.infrastructure.storage.migrate
+PYTHONPATH=src python -m ojtflow.infrastructure.storage.migrate
 ```
+
+Local dataset and output artifact refs are stored internally as file-backed
+references and are accepted by repository adapters only when they resolve under
+the configured `OJT_DATA_DIR` artifact roots (`datasets/` or `outputs/`).
+Unsupported schemes, non-local file authorities, missing files, directory refs,
+relative `file:` URIs, direct outside paths, and symlink escapes return the
+standard `not_found` envelope without echoing the local path. Public API
+responses redact local filesystem refs in workflow, event, issue-location, and
+handoff payloads to opaque `artifact://local/<artifact-file>` handles. Clients
+cannot use those handles to read arbitrary files; generated output content is
+available only through `GET /api/v1/workflows/{workflow_id}/output`. Generated
+output artifacts are also verified against the
+`WorkflowState.output.transformation.output_hash` value before content is
+returned. A hash mismatch returns an `artifact_integrity_error` envelope and the
+corrupted content is not served.
+
+Paused workflows also verify `WorkflowState.input.input_hash` before review
+approval resumes parsing and transformation. If the persisted input artifact was
+changed after validation/review was prepared, approval fails with
+`artifact_integrity_error`, the workflow is persisted as `failed`, and no output
+artifact is generated from the tampered input.
 
 Errors use:
 
@@ -60,9 +185,40 @@ Errors use:
 }
 ```
 
+Workflow-scoped domain failures populate `error.workflow_id` when returning the
+identifier does not reveal another user's resource. For example, artifact
+integrity failures include the workflow ID and `error.details.artifact` set to
+`"input"` or `"output"`.
+Required runtime dependency failures return HTTP `503` with
+`error.code = "dependency_unavailable"`. For example, Postgres auth requires
+Redis for multi-instance OAuth state/session cache operations; if Redis is
+unavailable, auth URL, callback, session lookup, and logout operations fail
+loudly instead of silently using process-local cache.
+
+Request validation failures preserve structural diagnostics such as `loc`,
+`msg`, and `type`, but submitted raw `input` values are redacted in
+`error.details.errors[]`. This prevents malformed healthcare payloads from
+being echoed back into browser, proxy, or observability logs.
+
 ## Workflow
 
 `POST /api/v1/workflows`
+
+Standard structured workflow inputs:
+
+- CSV with a header row and one record per row.
+- JSON as an array of objects.
+- YAML as a list of mappings.
+- FHIR-like JSON resources or Bundles. These are profiled as healthcare
+  standard payloads and attached to workflow `handoff_context.fhir_profile`.
+
+For the healthcare demo scope, `lab_result_v1` expects lab-result records with:
+
+- `date`
+- `patient_id`
+- `lab_name`
+- `value`
+- `unit`
 
 Request:
 
@@ -80,6 +236,7 @@ Request:
 Response data is a `WorkflowState`. Important fields:
 
 - `workflow_id`
+- `owner_user_id`
 - `status`
 - `steps`
 - `input`
@@ -91,14 +248,154 @@ Response data is a `WorkflowState`. Important fields:
 - `output`
 - `explanation`
 - `handoff_context`
+- `failure`
 - `audit_event_refs`
 
+If startup reaches workflow creation but fails during parsing, extraction,
+retrieval, validation, policy, or transformation preparation, the backend still
+persists the failed `WorkflowState` and returns a standard error envelope
+instead of a `200` success response. The error includes `error.workflow_id` so
+the failed run can be inspected:
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "tool_execution_error",
+    "message": "Invalid JSON: Expecting property name enclosed in double quotes",
+    "details": {
+      "status": "failed",
+      "risk_flags": ["ToolExecutionError"],
+      "error_type": "ToolExecutionError",
+      "failure_code": "tool_execution_error"
+    },
+    "workflow_id": "wf_example"
+  }
+}
+```
+
+The corresponding `WorkflowState.failure` stores `code`, `message`,
+`error_type`, `details`, and `failed_at`; the audit stream also includes
+`workflow.failed`.
+
 `handoff_context.retrieval_trace` records retrieval strategy, query variants,
-filters, candidate count, selected evidence IDs, and retrieval warnings.
+filters, candidate count, selected evidence IDs, safety flags, and retrieval
+warnings.
+
+`GET /api/v1/workflows`
+
+Returns recent `WorkflowState` records for the authenticated user. This legacy
+list endpoint is kept for direct API clients that need full workflow state
+objects. Browser queue views should prefer `/workflows/summary`.
+
+Query parameters:
+
+- `status`: optional workflow status filter.
+- `limit`: number of records to return. Defaults to 50 and is bounded to
+  `1..100`; out-of-range values return `request_validation_error`.
 
 `GET /api/v1/workflows/{workflow_id}` returns the current `WorkflowState`.
 
 `GET /api/v1/workflows/{workflow_id}/events` returns append-only workflow events.
+
+`GET /api/v1/workflows/{workflow_id}/output` returns the generated artifact
+content for completed or approved workflows. The client supplies only
+`workflow_id`; the backend resolves the persisted output reference from
+`WorkflowState` and does not accept arbitrary file paths.
+
+Response data:
+
+```json
+{
+  "workflow_id": "wf_example",
+  "output_format": "json",
+  "output_hash": "sha256...",
+  "byte_size": 412,
+  "content": "[{\"date\":\"2026-01-01\"}]",
+  "warnings": [],
+  "diff_summary": {
+    "format_changed": true,
+    "source_format": "csv",
+    "target_row_count": 3,
+    "actions_applied": ["mask_sensitive_field_for_explanation"]
+  }
+}
+```
+
+If the workflow has not produced an artifact yet, the endpoint returns the
+standard `not_found` error envelope. If the stored artifact content no longer
+matches the workflow's recorded output hash, the endpoint returns HTTP `409`
+with `error.code = "artifact_integrity_error"`.
+
+Review approval uses the same integrity rule for stored input. An input hash
+mismatch during `POST /api/v1/review/{review_id}` returns HTTP `409`, records a
+`workflow.failed` audit event, and leaves `output` unset. If the input still
+passes integrity checks but a deterministic resume tool fails, for example the
+stored content cannot be parsed with the workflow's declared format, the review
+route returns the same persisted-failure error envelope with
+`error.workflow_id` and `WorkflowState.failure`.
+
+FHIR-like workflow behavior:
+
+- JSON input with root `resourceType` or `Bundle.entry[].resource.resourceType`
+  triggers lightweight FHIR profiling during orchestration.
+- `handoff_context.fhir_profile` records resource type counts, minimal shape
+  issues, and evidence IDs.
+- `handoff_context.fhir_handoff` records Graph-NER/RAG handoff terms.
+- The retrieval query receives `resource_type`, so standard evidence such as
+  FHIR Observation guidance can be ranked with the workflow context.
+
+`GET /api/v1/workflows/summary`
+
+Returns a paged operational projection for queue/table views without requiring
+the browser to download full workflow states.
+
+Query parameters:
+
+- `status`: optional workflow status filter.
+- `q`: optional search across workflow ID, instruction, schema ID, and review ID.
+- `page`: 1-based page number.
+- `page_size`: capped at 100.
+- `sort`: one of `updated_at`, `created_at`, `status`, `workflow_id`, `issue_count`, `evidence_count`.
+- `direction`: `asc` or `desc`.
+
+Response data:
+
+```json
+{
+  "items": [
+    {
+      "workflow_id": "wf_example",
+      "owner_user_id": "usr_example",
+      "status": "needs_human_review",
+      "instruction": "Clean this CSV, convert it to JSON, and explain anomalies.",
+      "schema_id": "lab_result_v1",
+      "target_format": "json",
+      "issue_count": 8,
+      "review_id": "rev_example",
+      "review_status": "pending",
+      "evidence_count": 5,
+      "created_at": "2026-05-31T00:00:00+00:00",
+      "updated_at": "2026-05-31T00:01:00+00:00"
+    }
+  ],
+  "page": 1,
+  "page_size": 25,
+  "total": 1
+}
+```
+
+`GET /api/v1/workflows/stats`
+
+Returns aggregate operational counts for the authenticated user's workflows:
+
+- `total`
+- `by_status`
+- `pending_reviews`
+- `failed`
+- `completed`
+- `review_gated`
+- `average_issue_count`
 
 ## Review
 
@@ -107,10 +404,16 @@ filters, candidate count, selected evidence IDs, and retrieval warnings.
 ```json
 {
   "decision": "approve",
-  "decided_by": "demo_user",
   "payload": {}
 }
 ```
+
+The API records `review.decided_by` and the `review.decided` audit-event actor
+from the authenticated backend session. Clients must not send or spoof reviewer
+identity in the request body.
+
+Review decisions are also owner-scoped. A user cannot approve, reject, list, or
+inspect another user's pending review by guessing `review_id`.
 
 Allowed decisions:
 
@@ -119,6 +422,90 @@ Allowed decisions:
 - `reject`
 - `clarify`
 - `cancel`
+
+`approve_with_edits` is available for structured API clients only when the
+request includes explicit deterministic edit actions:
+
+```json
+{
+  "decision": "approve_with_edits",
+  "payload": {
+    "actions": [
+      {
+        "action": "mask_sensitive_field_for_explanation",
+        "field": "patient_id",
+        "reason": "Keep patient identifiers masked in generated output.",
+        "requires_review": true
+      }
+    ]
+  }
+}
+```
+
+The backend replaces the pending transformation-plan actions with the supplied
+validated actions before execution. Empty edit payloads, unsupported action
+names, or target-format changes return `policy_blocked` and leave the review
+pending with no output artifact. The browser UI intentionally hides
+`approve_with_edits` until a real edit form exists, so users cannot accidentally
+approve the original plan under an edited decision label.
+
+The service enforces the `HumanReview.allowed_decisions` contract before
+mutating workflow state. Terminal review decisions are single-use: after a
+review leaves `pending`, another decision for the same `review_id` returns
+`policy_blocked` with `error.workflow_id` and
+`error.details.review_status`. `clarify` is non-terminal in v0. It appends to
+`review.clarification_requests`, records an audit event, leaves the review
+`pending`, and allows a later approve/reject/cancel decision.
+
+Approval is also failure-observable. If approval is accepted but the resumed
+parser/converter/explanation path fails, the failed workflow is persisted and
+the review endpoint returns a non-`200` error envelope instead of silently
+returning a failed workflow as success.
+
+`GET /api/v1/reviews/summary`
+
+Returns the same `WorkflowSummaryPage` projection as workflow summaries, but
+limited to workflows with review gates. `status=pending` filters by review
+status, not workflow status. Use `status=all` to disable the review-status
+filter.
+
+`GET /api/v1/reviews`
+
+Returns recent full workflow states that have attached review gates. This
+legacy endpoint is intended for direct API clients; browser review tables should
+prefer `/reviews/summary`.
+
+Query parameters:
+
+- `status`: optional review status filter. Defaults to `pending`.
+- `limit`: number of records to return. Defaults to 50 and is bounded to
+  `1..100`; out-of-range values return `request_validation_error`.
+
+Summary list endpoints validate `sort`, `direction`, and `page_size`; legacy
+list endpoints validate `limit`. Invalid values return the standard
+`request_validation_error` envelope.
+
+## Schema Registry
+
+`GET /api/v1/schemas`
+
+Returns approved schema profiles loaded by the workflow service knowledge
+repository. The operations UI uses this registry to show validation-ready
+healthcare data formats before users start workflows.
+
+Response data is a list of schema entries. Each entry includes:
+
+- `schema_id`
+- `version`
+- `title`
+- `required`
+- `field_count`
+- `fields`
+- `source_ref`
+
+The endpoint is authenticated and read-only. It does not expose local filesystem
+paths beyond the repository-relative `source_ref` used to identify the approved
+knowledge asset.
 
 ## Direct Conversion
 
@@ -138,8 +525,18 @@ Response data includes:
 - `output_format`
 - `output`
 - `metadata.output_hash`
+- `metadata.source_format`
+- `metadata.target_format`
+- `metadata.source_row_count`
+- `metadata.target_row_count`
+- `metadata.lossy`
+- `metadata.actions_applied`
 - `metadata.diff_summary`
 - `metadata.warnings`
+
+Direct conversion uses the workflow service parser and transformation agent, but
+does not create a workflow, dataset, output artifact, or audit event. CSV output
+from nested JSON/YAML sets `metadata.lossy=true` and includes a warning.
 
 ## Direct Validation
 
@@ -160,6 +557,13 @@ Response data includes:
 - `validation_report.issues`
 - `validation_report.requires_review`
 
+Direct validation uses the same parser, profiler, schema repository, and
+validation agent service graph as persisted workflows. It does not create a
+workflow, dataset, output artifact, or audit event.
+If `schema_id` names a profile that is not available in the configured
+knowledge directory, direct validation returns `not_found`; `schema_id: null`
+is the explicit mode for validation without a schema profile.
+
 ## FHIR-Like Profile
 
 `POST /api/v1/fhir/profile`
@@ -171,6 +575,9 @@ Response data includes:
 ```
 
 This endpoint performs lightweight FHIR-like profiling only. It does not perform full HL7 FHIR validation.
+FHIR profiling is owned by the medical evidence application service so the API
+route remains transport-only and the same hook can later call a full validator.
+The `data` field is trimmed and must be non-blank.
 
 Response data includes:
 
@@ -201,8 +608,166 @@ Response data includes:
 
 Response data includes normalized OCR fields and `Evidence(source_type="ocr_box")`.
 Fields with confidence below `0.8` require review.
+OCR evidence normalization is owned by the medical evidence application service.
+The endpoint does not perform OCR extraction and does not persist workflow
+artifacts.
+
+Request validation:
+
+- `fields` must contain at least one OCR field.
+- `page` is 1-based and must be greater than or equal to `1`.
+- `bbox` must contain exactly four non-negative numbers: `[x, y, width, height]`.
+- `confidence` must be between `0.0` and `1.0`.
+- `name` and `source_ref` are trimmed and must be non-blank.
+
+## Runtime Configuration
+
+`GET /api/v1/runtime/config`
+
+Returns sanitized runtime facts for the authenticated operations UI. This route
+must never expose DSNs, OAuth client secrets, ADC material, session tokens, or
+local filesystem paths.
+
+Response data includes:
+
+- `status`
+- `storage_backend`
+- `persistent_storage`
+- `postgres_configured`
+- `redis_configured`
+- `auth.google_oauth_configured`
+- `auth.cookie_secure`
+- `auth.cookie_effective_secure`
+- `auth.cookie_samesite`
+- `embedding.provider`
+- `embedding.model`
+- `embedding.dimensions`
+- `upload.max_upload_bytes`
+- `upload.max_inline_data_bytes`
+- `upload.allowed_extensions`
+
+Example:
+
+```json
+{
+  "data": {
+    "status": "ok",
+    "storage_backend": "postgres",
+    "persistent_storage": true,
+    "postgres_configured": true,
+    "redis_configured": true,
+    "data_dir_configured": true,
+    "auth": {
+      "google_oauth_configured": true,
+      "hosted_domain_restricted": false,
+      "cookie_secure": false,
+      "cookie_effective_secure": false,
+      "cookie_samesite": "lax",
+      "session_ttl_seconds": 604800,
+      "state_ttl_seconds": 600
+    },
+    "embedding": {
+      "provider": "deterministic",
+      "model": "deterministic-hash-v0",
+      "dimensions": 64
+    },
+    "upload": {
+      "max_upload_bytes": 26214400,
+      "max_inline_data_bytes": 1048576,
+      "read_chunk_bytes": 1048576,
+      "allowed_extensions": [".csv", ".json", ".yaml"]
+    }
+  },
+  "error": null
+}
+```
+
+`GET /api/v1/runtime/readiness`
+
+Returns sanitized readiness diagnostics for authenticated operators. This is
+separate from the public raw `GET /health` liveness probe: `/health` should stay
+cheap enough for Docker/load balancer checks, while readiness verifies that the
+backend can reach the workflow repository and load governance/retrieval assets.
+The response must not expose DSNs, OAuth secrets, Redis URLs, ADC material,
+session tokens, or local filesystem paths.
+
+Response data includes:
+
+- `status`: `ready`, `degraded`, or `not_ready`.
+- `checks[]`: named checks with `status`, `summary`, and sanitized `details`.
+
+Current checks:
+
+- `settings`
+- `artifact_directory`
+- `session_cache`
+- `workflow_repository`
+- `schema_inventory`
+- `retrieval_inventory`: source inventory plus a bounded retrieval search probe.
+
+In Postgres mode, `session_cache` verifies that Redis can be reached with a
+short ping. If Redis is missing or unavailable, readiness returns
+`status = "not_ready"` because process-local OAuth/session fallback is not
+multi-instance safe for Postgres deployments.
+For file artifacts, `artifact_directory` performs safe create/delete probes in
+the data, dataset, and output directories and returns only booleans and error
+types, never local filesystem paths.
+For schemas, `schema_inventory` must load at least one trusted profile. If the
+configured knowledge directory yields zero schemas, readiness returns
+`status = "not_ready"` because default schema-backed workflows cannot run.
+For retrieval, `retrieval_inventory` runs a small approved-source query through
+the same workflow retrieval service path and reports only operational metadata:
+`source_count`, `probe_hit_count`, `probe_strategy`, `probe_candidates_seen`, and
+`probe_warning_count`.
+If no trusted retrieval sources are loaded, readiness returns
+`status = "not_ready"` because evidence-backed workflows cannot run. If sources
+exist but the bounded probe returns no evidence, readiness returns
+`status = "degraded"` so operators can investigate retrieval quality without
+blocking all startup.
+If a readiness check fails, the check is marked `error` and exposes only a
+sanitized `error_type`; exception messages, DSNs, Redis URLs, and local paths are
+not returned.
+
+Example:
+
+```json
+{
+  "data": {
+    "status": "ready",
+    "checks": [
+      {
+        "name": "workflow_repository",
+        "status": "ok",
+        "summary": "Workflow repository is reachable.",
+        "details": {
+          "visible_workflows": 0
+        }
+      },
+      {
+        "name": "retrieval_inventory",
+        "status": "ok",
+        "summary": "Retrieval source inventory and search probe are available.",
+        "details": {
+          "source_count": 5,
+          "probe_hit_count": 3,
+          "probe_strategy": "postgres_fts_vector_rrf",
+          "probe_candidates_seen": 5,
+          "probe_warning_count": 0
+        }
+      }
+    ]
+  },
+  "error": null
+}
+```
 
 ## Google OAuth Auth
+
+All auth/session responses return `Cache-Control: no-store` and
+`Pragma: no-cache`. This includes OAuth URL generation, OAuth callback, current
+session lookup, and logout. The callback may set cookies and can optionally
+return bearer token material, so clients and intermediaries must not cache these
+responses.
 
 `GET /api/v1/auth/google/url`
 
@@ -230,10 +795,12 @@ Exchanges the Google authorization code, verifies the identity token with
 Google's verifier, creates or updates the user, creates a backend session, sets
 an HTTP-only session cookie for browser clients, and returns:
 
-- `token_type`
-- `access_token`
 - `expires_at`
 - `user`
+
+The browser callback response does not include the raw bearer token by default.
+API-only clients that need the bearer token may pass `include_token=true`; that
+adds `token_type` and `access_token` to the response body.
 
 `GET /api/v1/auth/me`
 
@@ -247,8 +814,12 @@ Returns the active user and session metadata.
 
 `POST /api/v1/auth/logout`
 
-Requires the same session cookie or bearer token, revokes the persisted session,
-clears the cache entry when present, and expires the browser cookie.
+Requires a valid active session cookie or bearer token, revokes the persisted
+session, clears the cache entry when present, and expires the browser cookie.
+Invalid or expired tokens return the standard `unauthorized` envelope instead of
+being reported as successful logout.
+When authenticated by cookie, logout also requires the trusted-origin write
+guard described above.
 
 Structured unauthorized response:
 
@@ -292,9 +863,77 @@ Response data is a `RetrievalPackage`:
 - `trace.query_variants`
 - `trace.filters_applied`
 - `trace.candidates_seen`
+- `trace.final_hit_ids`
+- `trace.safety_flags`
 - `trace.warnings`
 - `handoff_context`
+
+`trace.safety_flags` marks retrieval query context that should remain data-only
+for downstream agents. Current values include
+`prompt_injection_pattern_in_query` and `sensitive_field_context`.
+
+Retrieval endpoints require an authenticated session. Searches without
+`workflow_id` run over the approved knowledge inventory. Searches with
+`workflow_id` are owner-scoped; users cannot attach direct retrieval context to
+another user's workflow by guessing an ID.
+The `query` field and optional context fields are trimmed and must be non-blank
+when supplied.
 
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,
 and chunk count.
+
+## Upload Workflow
+
+`POST /api/v1/parse/upload/workflow`
+
+Accepts multipart uploads and returns the same `WorkflowState` as
+`POST /api/v1/workflows`.
+
+Form fields:
+
+- `file`: upload file.
+- `instruction`: required natural-language workflow instruction. The backend
+  trims surrounding whitespace and rejects blank or omitted values with
+  `error.code = "request_validation_error"`.
+- `target_format`: `json`, `yaml`, or `csv`.
+- `schema_id`: optional validation schema. Blank multipart values are treated as
+  omitted, which keeps unstructured document upload usable.
+- `require_human_review`: boolean review gate.
+- `extractor`: `auto`, `markitdown`, or `mineru`. Values are trimmed and
+  normalized before validation.
+
+Structured text uploads (`.csv`, `.json`, `.yaml`, `.md`, `.txt`) do not require
+optional document extraction packages. They are decoded as UTF-8, stored as
+derived text artifacts, and parsed with the deterministic parser for the
+detected file type.
+
+`POST /api/v1/parse/extract`
+
+Extracts text from an uploaded file without creating a workflow, dataset row,
+review gate, output artifact, or audit event. This is intended for upload
+preview and extractor diagnostics before a user commits to a governed workflow.
+
+Form fields:
+
+- `file`: upload file.
+- `extractor`: `auto`, `markitdown`, or `mineru`.
+
+Response data includes:
+
+- `filename`: sanitized upload filename.
+- `source_format`: detected source extension/type.
+- `extractor_used`: selected extraction engine.
+- `page_count`: page count when the extractor reports one.
+- `char_count`
+- `word_count`
+- `text`: extracted markdown/plain text.
+- `warnings`: non-fatal extraction warnings.
+
+The same upload filename, extension, size, chunking, and empty-file validation
+rules used by `/parse/upload/workflow` apply here. Over-limit uploads return
+`upload_too_large`; unsupported extensions or unavailable extractor choices
+return `unsupported_upload`.
+
+`GET /api/v1/parse/extractors` returns installed extractor inventory and the
+server-recognized upload extensions.

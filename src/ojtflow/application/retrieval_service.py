@@ -30,6 +30,8 @@ class RetrievalService:
         instruction: str,
         profile: DataProfile,
         schema_id: str | None,
+        resource_type: str | None = None,
+        query_terms: list[str] | None = None,
         top_k: int = 5,
     ) -> RetrievalPackage:
         """Build workflow-aware retrieval context from instruction and profile."""
@@ -40,6 +42,8 @@ class RetrievalService:
             f"fields: {', '.join(field_names)}" if field_names else "",
             f"schema: {schema_id}" if schema_id else "",
             f"format: {profile.format.value}",
+            f"FHIR resource: {resource_type}" if resource_type else "",
+            " ".join(query_terms or []),
         ]
         query = RetrievalQuery(
             query=" ".join(part for part in query_parts if part),
@@ -47,6 +51,7 @@ class RetrievalService:
             fields=field_names,
             schema_id=schema_id,
             detected_format=profile.format.value,
+            resource_type=resource_type,
             top_k=top_k,
             filters={"trust_level": "approved"},
         )

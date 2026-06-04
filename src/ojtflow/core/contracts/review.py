@@ -27,17 +27,34 @@ class HumanReview(ContractModel):
             ReviewDecision.APPROVE_WITH_EDITS,
             ReviewDecision.REJECT,
             ReviewDecision.CLARIFY,
+            ReviewDecision.CANCEL,
         ]
     )
     decision: ReviewDecision | None = None
     decision_payload: dict[str, Any] | None = None
     decided_by: str | None = None
     decided_at: str | None = None
+    clarification_requests: list[dict[str, Any]] = Field(default_factory=list)
+
+    def request_clarification(
+        self,
+        requested_by: str,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Record a non-terminal clarification request while keeping review pending."""
+
+        self.clarification_requests.append(
+            {
+                "requested_by": requested_by,
+                "requested_at": utc_now().isoformat(),
+                "payload": payload or {},
+            }
+        )
 
     def apply_decision(
         self,
         decision: ReviewDecision,
-        decided_by: str = "user",
+        decided_by: str,
         payload: dict[str, Any] | None = None,
     ) -> None:
         """Record a review decision."""
@@ -53,7 +70,11 @@ class HumanReview(ContractModel):
         elif decision == ReviewDecision.REJECT:
             self.status = ReviewStatus.REJECTED
         elif decision == ReviewDecision.CLARIFY:
-            self.status = ReviewStatus.CLARIFICATION_REQUESTED
+            self.request_clarification(decided_by, payload)
+            self.decision = None
+            self.decision_payload = None
+            self.decided_by = None
+            self.decided_at = None
+            self.status = ReviewStatus.PENDING
         elif decision == ReviewDecision.CANCEL:
             self.status = ReviewStatus.CANCELLED
-

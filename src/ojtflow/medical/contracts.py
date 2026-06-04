@@ -2,20 +2,39 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from pydantic import Field
 
-from ojtflow.core.contracts.base import ContractModel
+from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.ids import new_id
+
+
+OcrBoxCoordinate = Annotated[float, Field(ge=0.0)]
+
+
+class OcrEvidenceInput(ContractModel):
+    page: int = Field(ge=1)
+    name: NonBlankStr
+    value: str
+    bbox: list[OcrBoxCoordinate] = Field(
+        min_length=4,
+        max_length=4,
+        description="OCR bounding box as [x, y, width, height] in source coordinates.",
+    )
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_ref: NonBlankStr
+    normalized_to: str | None = None
 
 
 class OcrField(ContractModel):
     field_id: str = Field(default_factory=lambda: new_id("ocr"))
-    name: str
+    name: NonBlankStr
     value: str
-    confidence: float
-    page: int
-    bbox: list[float]
-    source_ref: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    page: int = Field(ge=1)
+    bbox: list[OcrBoxCoordinate] = Field(min_length=4, max_length=4)
+    source_ref: NonBlankStr
     normalized_to: str | None = None
     requires_review: bool = False
 

@@ -16,6 +16,7 @@ from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
 from ojtflow.core.contracts.storage import DatasetRecord
+from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
 
 
@@ -49,7 +50,27 @@ class WorkflowRepository(Protocol):
 
     def find_by_review_id(self, review_id: str) -> WorkflowState: ...
 
-    def list(self, status: WorkflowStatus | None = None, limit: int = 50) -> list[WorkflowState]: ...
+    def list(
+        self,
+        status: WorkflowStatus | None = None,
+        limit: int = 50,
+        owner_user_id: str | None = None,
+    ) -> list[WorkflowState]: ...
+
+    def list_summary(
+        self,
+        status: WorkflowStatus | None = None,
+        q: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        sort: str = "updated_at",
+        direction: str = "desc",
+        reviews_only: bool = False,
+        review_status: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> WorkflowSummaryPage: ...
+
+    def stats(self, owner_user_id: str | None = None) -> WorkflowStats: ...
 
 
 class EventRepository(Protocol):

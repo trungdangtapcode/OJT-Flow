@@ -32,6 +32,8 @@ The retrieval pipeline is deterministic in v0:
 4. Vector score uses a deterministic hash embedding provider unless disabled later.
 5. Reciprocal Rank Fusion combines lexical and vector rankings.
 6. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
+7. Trace safety flags mark prompt-injection-like query text and sensitive field
+   context without blocking retrieval.
 
 This is intentionally compatible with later HyDE, learned embeddings, GraphRAG,
 RAPTOR, and terminology-service adapters without changing workflow contracts.
@@ -77,32 +79,63 @@ List sources:
 GET /api/v1/retrieval/sources
 ```
 
+Direct retrieval requires an authenticated session. Requests without
+`workflow_id` search the approved knowledge inventory. Requests with
+`workflow_id` are scoped to the authenticated workflow owner and return
+`not_found` for other users' workflow IDs.
+
 Workflow output includes:
 
 - `retrieved_context`
 - `handoff_context.retrieval_trace`
 - `handoff_context.retrieval_handoff`
 
+`retrieval_trace.safety_flags` is deterministic and auditable. Current flags are:
+
+- `prompt_injection_pattern_in_query`: the retrieval query or query context
+  looks like instruction injection and must be treated as untrusted data.
+- `sensitive_field_context`: the query fields include healthcare-sensitive
+  identifiers such as patient fields. Retrieval continues, but downstream
+  handoff code should avoid treating the query text as executable instruction.
+
 ## Configuration
 
 ```text
 OJT_STORAGE_BACKEND=postgres
 OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
+OJT_KNOWLEDGE_DIR=knowledge
 OJT_EMBEDDING_PROVIDER=deterministic
 OJT_EMBEDDING_MODEL=deterministic-hash-v0
 OJT_EMBEDDING_DIMENSIONS=64
 ```
 
-`OJT_EMBEDDING_PROVIDER=deterministic` is the only implemented provider in v0.
+`OJT_EMBEDDING_PROVIDER=deterministic` is the only implemented embedding provider
+in v0. `OJT_EMBEDDING_MODEL=deterministic-hash-v0` is the only accepted model ID
+for that provider. Both settings are validated during settings load so runtime
+diagnostics cannot report an external provider while the deterministic adapter is
+actually serving retrieval.
+
+`OJT_EMBEDDING_DIMENSIONS=64` is fixed in v0 because it must match the
+Postgres-compatible `embedding vector(64)` schema. Other dimensions are rejected
+during settings load.
 External ADC/model-backed embeddings should be added behind the provider
-interface after retrieval quality tests exist.
+interface after retrieval quality tests and a matching vector migration exist.
+
+`OJT_KNOWLEDGE_DIR` points at the trusted healthcare knowledge inventory used to
+seed retrieval sources and schema evidence. Relative paths resolve from the
+project root in local development; container deployments set an absolute path.
+Named schema requests are strict. Workflow, validation, and direct retrieval
+callers must use a profile returned by `GET /api/v1/schemas`, or set
+`schema_id` to `null` for explicit no-schema processing. Missing requested
+schemas fail before retrieval so the evidence package cannot imply a weaker
+validation contract than the caller requested.
 
 ## Verification
 
 Run:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /home/tcuong1000/.ostwin/.venv/bin/python -m pytest
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m pytest
 cd frontend && npm run build
 ```
 
