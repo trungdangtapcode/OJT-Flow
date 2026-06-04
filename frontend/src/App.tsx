@@ -9,6 +9,7 @@ import {
 import { AuthGate } from "./app/auth";
 import { AppProviders } from "./app/providers";
 import { AppShell } from "./components/layout/app-shell";
+import { AiChatPage } from "./features/ai/ai-chat-page";
 import { AuditPage } from "./features/audit/audit-page";
 import { ReviewsPage } from "./features/reviews/reviews-page";
 import { SchemasPage } from "./features/schemas/schemas-page";
@@ -69,6 +70,12 @@ const workbenchRoute = createRoute({
   component: WorkbenchPage,
 });
 
+const aiRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/ai",
+  component: AiChatPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -89,6 +96,7 @@ const routeTree = rootRoute.addChildren([
   auditRoute,
   schemasRoute,
   workbenchRoute,
+  aiRoute,
   settingsRoute,
   authCallbackRoute,
 ]);

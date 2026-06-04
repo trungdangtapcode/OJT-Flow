@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Bot,
   ClipboardCheck,
   Database,
   FileCode,
@@ -30,7 +31,10 @@ const navGroups = [
   },
   {
     label: "Intake",
-    items: [{ to: "/workbench", label: "Workbench", icon: FileCode }],
+    items: [
+      { to: "/workbench", label: "Workbench", icon: FileCode },
+      { to: "/ai", label: "AI Chat", icon: Bot },
+    ],
   },
   {
     label: "Governance",

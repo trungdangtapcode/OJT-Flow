@@ -1,3 +1,31 @@
+export type AiToolCall = {
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
+export type AiChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type AiChatRequest = {
+  message: string;
+  history?: AiChatMessage[];
+};
+
+export type AiChatResponse = {
+  answer: string;
+  tool_calls: AiToolCall[];
+  model: string;
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+};
+
+export type AiStatusResponse = {
+  configured: boolean;
+  model: string;
+  available_tools: string[];
+};
+
 export type ApiEnvelope<T> = {
   data: T | null;
   error: ApiError | null;

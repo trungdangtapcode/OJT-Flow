@@ -1,4 +1,7 @@
 import type {
+  AiChatRequest,
+  AiChatResponse,
+  AiStatusResponse,
   ApiEnvelope,
   AuthLoginResponse,
   AuthSessionResponse,
@@ -413,3 +416,15 @@ export async function uploadFileWorkflow(
   }
   return envelope.data as WorkflowState;
 }
+
+export async function fetchAiStatus(): Promise<AiStatusResponse> {
+  return request<AiStatusResponse>("/ai/status");
+}
+
+export async function sendAiChat(body: AiChatRequest): Promise<AiChatResponse> {
+  return request<AiChatResponse>("/ai/chat", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
