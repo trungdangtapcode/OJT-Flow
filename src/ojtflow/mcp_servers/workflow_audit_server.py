@@ -287,4 +287,4 @@ if __name__ == "__main__":
     if transport == "http":
         mcp.run(transport="streamable-http", host=host, port=port)
     else:
-        mcp.run()
+        mcp.run(transport="stdio", show_banner=False)

@@ -81,22 +81,21 @@ def search_knowledge(
 
     evidence_out = [
         {
-            "source_id": ev.source_id,
-            "content": ev.content,
-            "trust_level": ev.trust_level.value if ev.trust_level else None,
-            "relevance_score": ev.relevance_score,
-            "standard_system": ev.standard_system,
-            "clinical_domain": ev.clinical_domain,
-            "metadata": ev.metadata,
+            "source_id": hit.evidence.source_id,
+            "claim": hit.evidence.claim,
+            "trust_level": hit.evidence.trust_level.value if hit.evidence.trust_level else None,
+            "relevance_score": hit.score,
+            "lexical_score": hit.lexical_score,
+            "vector_score": hit.vector_score,
         }
-        for ev in package.evidence
+        for hit in package.hits
     ]
 
     return {
         "evidence": evidence_out,
-        "retrieval_mode": package.retrieval_mode,
-        "warnings": package.warnings,
-        "source_ids": [ev.source_id for ev in package.evidence],
+        "retrieval_mode": package.trace.strategy,
+        "warnings": package.trace.warnings,
+        "source_ids": [hit.evidence.source_id for hit in package.hits],
         "result_count": len(evidence_out),
     }
 
@@ -144,14 +143,14 @@ def get_retrieval_confidence_package(query: str) -> dict[str, Any]:
     rq = RetrievalQuery(query=query, top_k=3)
     package = _repo().search(rq)
 
-    top_score = max((ev.relevance_score for ev in package.evidence), default=0.0)
+    top_score = max((hit.score for hit in package.hits), default=0.0)
     if top_score > 0.7:
         confidence_level = "high"
         recommendation = "cite retrieved sources in explanation"
     elif top_score > 0.4:
         confidence_level = "medium"
         recommendation = "cite with caveat — evidence is partial"
-    elif package.evidence:
+    elif package.hits:
         confidence_level = "low"
         recommendation = "warn user that evidence is weak — consider clinician review"
     else:
@@ -160,20 +159,20 @@ def get_retrieval_confidence_package(query: str) -> dict[str, Any]:
 
     evidence_out = [
         {
-            "source_id": ev.source_id,
-            "content": ev.content,
-            "relevance_score": ev.relevance_score,
+            "source_id": hit.evidence.source_id,
+            "claim": hit.evidence.claim,
+            "relevance_score": hit.score,
         }
-        for ev in package.evidence
+        for hit in package.hits
     ]
 
     return {
-        "has_evidence": bool(package.evidence),
+        "has_evidence": bool(package.hits),
         "top_score": top_score,
         "confidence_level": confidence_level,
         "recommendation": recommendation,
         "evidence": evidence_out,
-        "warnings": package.warnings,
+        "warnings": package.trace.warnings,
     }
 
 
@@ -192,7 +191,7 @@ def knowledge_sources_resource() -> str:
                 "source_id": s.source_id,
                 "title": s.title,
                 "trust_level": s.trust_level.value if s.trust_level else None,
-                "clinical_domain": s.clinical_domain,
+                "clinical_domain": getattr(s, "clinical_domain", None),
             }
             for s in sources
         ],
@@ -229,4 +228,4 @@ if __name__ == "__main__":
     if transport == "http":
         mcp.run(transport="streamable-http", host=host, port=port)
     else:
-        mcp.run()
+        mcp.run(transport="stdio", show_banner=False)

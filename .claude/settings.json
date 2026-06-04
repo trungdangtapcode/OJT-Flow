@@ -2,33 +2,55 @@
   "mcpServers": {
     "ojtflow-structured-data": {
       "type": "stdio",
-      "command": "python",
+      "command": "C:\\Users\\MSI\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": ["-m", "ojtflow.mcp_servers.structured_data_server"],
-      "env": {}
+      "env": {
+        "PYTHONPATH": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\src",
+        "OJT_STORAGE_BACKEND": "sqlite",
+        "OJT_DATA_DIR": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\var"
+      }
     },
     "ojtflow-schema-validation": {
       "type": "stdio",
-      "command": "python",
+      "command": "C:\\Users\\MSI\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": ["-m", "ojtflow.mcp_servers.schema_validation_server"],
-      "env": {}
+      "env": {
+        "PYTHONPATH": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\src",
+        "OJT_STORAGE_BACKEND": "sqlite",
+        "OJT_DATA_DIR": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\var"
+      }
     },
     "ojtflow-rag-context": {
       "type": "stdio",
-      "command": "python",
+      "command": "C:\\Users\\MSI\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": ["-m", "ojtflow.mcp_servers.rag_context_server"],
-      "env": {}
+      "env": {
+        "PYTHONPATH": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\src",
+        "OJT_STORAGE_BACKEND": "sqlite",
+        "OJT_DATA_DIR": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\var"
+      }
     },
     "ojtflow-workflow-audit": {
       "type": "stdio",
-      "command": "python",
+      "command": "C:\\Users\\MSI\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": ["-m", "ojtflow.mcp_servers.workflow_audit_server"],
-      "env": {}
+      "env": {
+        "PYTHONPATH": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\src",
+        "OJT_STORAGE_BACKEND": "sqlite",
+        "OJT_DATABASE_PATH": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\var\\ojtflow.db",
+        "OJT_DATA_DIR": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\var"
+      }
     },
     "ojtflow-human-review": {
       "type": "stdio",
-      "command": "python",
+      "command": "C:\\Users\\MSI\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": ["-m", "ojtflow.mcp_servers.human_review_server"],
-      "env": {}
+      "env": {
+        "PYTHONPATH": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\src",
+        "OJT_STORAGE_BACKEND": "sqlite",
+        "OJT_DATABASE_PATH": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\var\\ojtflow.db",
+        "OJT_DATA_DIR": "D:\\Github_Repos\\AI_Research\\OJT-Flow\\var"
+      }
     }
   }
 }
