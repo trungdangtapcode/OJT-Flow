@@ -70,6 +70,15 @@ async def runtime_config(
                 "hf_batch_size": settings.hf_embedding_batch_size,
                 "hf_cache_dir_configured": bool(settings.hf_embedding_cache_dir),
             },
+            "rerank": {
+                "provider": settings.rerank_provider,
+                "enabled": settings.rerank_provider != "none",
+                "model": settings.rerank_model,
+                "device": settings.rerank_device,
+                "batch_size": settings.rerank_batch_size,
+                "candidate_limit": settings.rerank_candidate_limit,
+                "score_weight": settings.rerank_score_weight,
+            },
             "retrieval": {
                 "corpus_dir_count": len(settings.retrieval_corpus_dirs),
                 "chunk_max_chars": settings.retrieval_chunk_max_chars,

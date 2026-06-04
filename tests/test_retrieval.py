@@ -15,9 +15,12 @@ from ojtflow.infrastructure.retrieval.embeddings import (
 )
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
+    KnowledgeChunk,
     build_query_variants,
+    rank_chunks,
     retrieval_safety_flags,
 )
+from ojtflow.infrastructure.retrieval.reranking import HuggingFaceCrossEncoderReranker
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 
 
@@ -194,6 +197,95 @@ def test_huggingface_embedding_provider_uses_query_and_document_methods(tmp_path
     ]
     assert model.calls == ["query:16", "document:16"]
     assert provider.metadata()["device"] == "cuda"
+
+
+def test_huggingface_reranker_scores_cross_encoder_pairs() -> None:
+    class FakeCrossEncoder:
+        def __init__(self) -> None:
+            self.pairs: list[tuple[str, str]] = []
+            self.batch_size = 0
+
+        def predict(self, pairs, **kwargs):
+            self.pairs = list(pairs)
+            self.batch_size = kwargs["batch_size"]
+            return [0.1, 2.1]
+
+    model = FakeCrossEncoder()
+    reranker = HuggingFaceCrossEncoderReranker(
+        model="BAAI/bge-reranker-base",
+        device="cuda",
+        batch_size=8,
+        model_instance=model,
+    )
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="one",
+            source_id="source:one",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="General schema",
+            content="Patient identifiers require review.",
+        ),
+        KnowledgeChunk(
+            chunk_id="two",
+            source_id="source:two",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="UCUM units",
+            content="Missing units require human review.",
+        ),
+    ]
+
+    scores = reranker.score("missing units", chunks)
+
+    assert model.batch_size == 8
+    assert model.pairs[0][0] == "missing units"
+    assert "General schema" in model.pairs[0][1]
+    assert scores == {"one": 0.0, "two": 1.0}
+    assert reranker.metadata()["provider"] == "huggingface"
+
+
+def test_second_stage_reranker_refines_ranked_candidates() -> None:
+    class FakeReranker:
+        enabled = True
+        provider_name = "fake"
+        model = "fake-cross-encoder"
+
+        def score(self, query_text, chunks):
+            del query_text
+            return {chunk.chunk_id: 1.0 if chunk.chunk_id == "ucum" else 0.0 for chunk in chunks}
+
+        def metadata(self):
+            return {"provider": self.provider_name, "model": self.model, "enabled": True}
+
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="general",
+            source_id="source:general",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="General data quality",
+            content="Healthcare rows require careful validation.",
+        ),
+        KnowledgeChunk(
+            chunk_id="ucum",
+            source_id="terminology:ucum",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="UCUM units",
+            content="Missing units require human review before clinical analytics use.",
+        ),
+    ]
+
+    package = rank_chunks(
+        chunks,
+        RetrievalQuery(query="healthcare validation", top_k=2),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        reranker=FakeReranker(),
+        rerank_candidate_limit=2,
+        rerank_score_weight=1.0,
+        strategy="test_rrf_rerank",
+    )
+
+    assert package.hits[0].evidence.source_id == "terminology:ucum"
+    assert package.hits[0].rerank_score > package.hits[1].rerank_score
+    assert package.handoff_context["reranker"]["provider"] == "fake"
 
 
 def test_local_corpus_loader_chunks_trusted_healthcare_docs(tmp_path: Path) -> None:

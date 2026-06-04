@@ -484,6 +484,72 @@ def test_embedding_settings_accept_huggingface_provider(monkeypatch) -> None:
     )
 
 
+def test_rerank_settings_accept_huggingface_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_RERANK_PROVIDER", " HF ")
+    monkeypatch.setenv("OJT_RERANK_MODEL", " BAAI/bge-reranker-base ")
+    monkeypatch.setenv("OJT_RERANK_DEVICE", " cuda:0 ")
+    monkeypatch.setenv("OJT_RERANK_BATCH_SIZE", " 4 ")
+    monkeypatch.setenv("OJT_RERANK_CANDIDATE_LIMIT", " 12 ")
+    monkeypatch.setenv("OJT_RERANK_SCORE_WEIGHT", " 0.2 ")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.rerank_provider == "huggingface"
+    assert settings.rerank_model == "BAAI/bge-reranker-base"
+    assert settings.rerank_device == "cuda:0"
+    assert settings.rerank_batch_size == 4
+    assert settings.rerank_candidate_limit == 12
+    assert settings.rerank_score_weight == 0.2
+
+
+@pytest.mark.parametrize("bad_provider", ["vertex", "openai", "crossencoder"])
+def test_rerank_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
+    monkeypatch.setenv("OJT_RERANK_PROVIDER", bad_provider)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid rerank provider"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_device", ["", "   ", "gpu", "cuda:abc"])
+def test_rerank_device_must_be_supported(monkeypatch, bad_device) -> None:
+    monkeypatch.setenv("OJT_RERANK_DEVICE", bad_device)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid Hugging Face rerank device"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize(
+    ("env_var", "bad_value"),
+    [
+        ("OJT_RERANK_BATCH_SIZE", "0"),
+        ("OJT_RERANK_CANDIDATE_LIMIT", "0"),
+        ("OJT_RERANK_SCORE_WEIGHT", "0"),
+        ("OJT_RERANK_SCORE_WEIGHT", "1.1"),
+    ],
+)
+def test_rerank_numeric_settings_are_validated(monkeypatch, env_var, bad_value) -> None:
+    monkeypatch.setenv(env_var, bad_value)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValidationError):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
 @pytest.mark.parametrize("bad_provider", ["", "   ", "vertex"])
 def test_embedding_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", bad_provider)
@@ -701,6 +767,9 @@ def test_runtime_docs_explain_embedding_provider_validation() -> None:
     assert "OJT_EMBEDDING_PROVIDER=huggingface" in docs
     assert "OJT_HF_EMBEDDING_DEVICE=cuda" in docs
     assert "OJT_OPENAI_API_KEY" in docs
+    assert "OJT_RERANK_PROVIDER=huggingface" in docs
+    assert "OJT_RERANK_MODEL=BAAI/bge-reranker-base" in docs
+    assert "CrossEncoder" in docs
     assert "deterministic-hash-v0" in docs
     assert "OJT_EMBEDDING_DIMENSIONS=384" in docs
     assert "vector(384)" in docs

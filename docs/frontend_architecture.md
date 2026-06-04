@@ -129,6 +129,9 @@ should show status facts first, then group runtime configuration into compact
 sections, summarize readiness/security/inventory counts before detailed rows,
 and render operational policy as structured rows. Configuration values must come
 from runtime endpoints and auth state rather than hardcoded deployment claims.
+Embedding and rerank provider state should be visible here because model choice,
+device, and second-stage reranking materially affect retrieval latency and
+evidence quality.
 
 ## Extension Rules
 

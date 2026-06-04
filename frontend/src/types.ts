@@ -421,9 +421,20 @@ export type RuntimeConfig = {
     provider: string;
     model: string;
     dimensions: number;
+    openai_configured?: boolean;
+    openai_base_url_configured?: boolean;
     hf_device?: string;
     hf_batch_size?: number;
     hf_cache_dir_configured?: boolean;
+  };
+  rerank?: {
+    provider: string;
+    enabled: boolean;
+    model: string;
+    device: string;
+    batch_size: number;
+    candidate_limit: number;
+    score_weight: number;
   };
   retrieval?: {
     corpus_dir_count: number;

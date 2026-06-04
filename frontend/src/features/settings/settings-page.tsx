@@ -180,7 +180,7 @@ export function SettingsPage() {
                 />
               </RuntimeFactGroup>
 
-              <RuntimeFactGroup icon={UserRound} title="Identity and embeddings">
+              <RuntimeFactGroup icon={UserRound} title="Identity and retrieval AI">
                 <SettingRow
                   label="User"
                   value={user?.email ?? "No active session"}
@@ -195,6 +195,33 @@ export function SettingsPage() {
                   value={
                     runtime
                       ? `${runtime.embedding.model} / ${runtime.embedding.dimensions}d`
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                />
+                <SettingRow
+                  label="Reranker"
+                  value={
+                    runtime
+                      ? runtime.rerank?.enabled
+                        ? `${runtime.rerank.provider} / ${runtime.rerank.device}`
+                        : "disabled"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                  badge={
+                    runtime?.rerank?.enabled
+                      ? "configured"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "offline"
+                  }
+                />
+                <SettingRow
+                  label="Rerank model"
+                  value={
+                    runtime
+                      ? runtime.rerank?.enabled
+                        ? `${runtime.rerank.model} / top ${runtime.rerank.candidate_limit}`
+                        : "First-stage hybrid only"
                       : runtimeConfigLabel(runtimeConfigQuery)
                   }
                 />
@@ -528,16 +555,18 @@ function InventoryGroup({
 }
 
 function SettingRow({ badge, label, value }: { badge?: string; label: string; value: string }) {
+  const badgeVariant: React.ComponentProps<typeof Badge>["variant"] =
+    badge === "attention" || badge === "missing"
+      ? "warning"
+      : badge === "offline" || badge === "disabled"
+        ? "muted"
+        : "success";
   return (
     <div className="grid gap-1 border-b border-border py-2 last:border-b-0">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
         <span className="break-words font-semibold">{value}</span>
-        {badge ? (
-          <Badge variant={badge === "attention" || badge === "missing" ? "warning" : "success"}>
-            {badge}
-          </Badge>
-        ) : null}
+        {badge ? <Badge variant={badgeVariant}>{badge}</Badge> : null}
       </div>
     </div>
   );

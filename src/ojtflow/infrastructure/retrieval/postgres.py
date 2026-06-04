@@ -28,6 +28,9 @@ class PostgresRetrievalRepository:
         backbone: PostgresBackboneStore,
         knowledge_root: Path | str,
         embedding_provider: Any | None = None,
+        reranker: Any | None = None,
+        rerank_candidate_limit: int = 20,
+        rerank_score_weight: float = 0.08,
         corpus_dirs: tuple[Path, ...] | None = None,
         chunk_max_chars: int = 1200,
         chunk_overlap_chars: int = 160,
@@ -36,6 +39,9 @@ class PostgresRetrievalRepository:
         self.backbone = backbone
         self.knowledge_root = Path(knowledge_root)
         self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        self.reranker = reranker
+        self.rerank_candidate_limit = rerank_candidate_limit
+        self.rerank_score_weight = rerank_score_weight
         self.corpus_dirs = corpus_dirs or (self.knowledge_root / "corpus",)
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap_chars = chunk_overlap_chars
@@ -181,6 +187,9 @@ class PostgresRetrievalRepository:
             chunks,
             query,
             embedding_provider=self.embedding_provider,
+            reranker=self.reranker,
+            rerank_candidate_limit=self.rerank_candidate_limit,
+            rerank_score_weight=self.rerank_score_weight,
             strategy="postgres_fts_vector_rrf",
             warnings=postgres_warnings,
         )

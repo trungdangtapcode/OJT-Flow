@@ -157,6 +157,12 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_OPENAI_API_KEY=` or `OPENAI_API_KEY=`
 - `OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1`
 - `OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0`
+- `OJT_RERANK_PROVIDER=none`
+- `OJT_RERANK_MODEL=BAAI/bge-reranker-base`
+- `OJT_RERANK_DEVICE=auto`
+- `OJT_RERANK_BATCH_SIZE=16`
+- `OJT_RERANK_CANDIDATE_LIMIT=20`
+- `OJT_RERANK_SCORE_WEIGHT=0.08`
 
 `OJT_STORAGE_BACKEND` must be one of `postgres`, `sqlite`, or `memory`.
 Postgres is the production-like default. SQLite is a local single-file fallback.
@@ -221,6 +227,23 @@ available or if the configured provider dimension does not match the vector
 column. Operator-provided trusted corpus files are indexed from
 `OJT_RETRIEVAL_CORPUS_DIRS` and can be refreshed through
 `POST /api/v1/retrieval/reindex`.
+
+Second-stage reranking is opt-in. The first stage retrieves a broader candidate
+set with lexical, vector, and reciprocal-rank-fusion signals. When
+`OJT_RERANK_PROVIDER=huggingface`, the backend applies a SentenceTransformers
+CrossEncoder over the top `OJT_RERANK_CANDIDATE_LIMIT` candidates and adds a
+bounded `OJT_RERANK_SCORE_WEIGHT` contribution to the transparent
+`rerank_score`. Use this when local GPU is available and relevance quality is
+more important than the extra model latency:
+
+```text
+OJT_RERANK_PROVIDER=huggingface
+OJT_RERANK_MODEL=BAAI/bge-reranker-base
+OJT_RERANK_DEVICE=cuda
+OJT_RERANK_BATCH_SIZE=16
+OJT_RERANK_CANDIDATE_LIMIT=20
+OJT_RERANK_SCORE_WEIGHT=0.08
+```
 
 The frontend container proxies `/api/*` and `/health` requests to the API
 container in Docker. No API keys or ADC credential files are committed; pass

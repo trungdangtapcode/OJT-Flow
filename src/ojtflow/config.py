@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 EmbeddingProvider = Literal["deterministic", "openai", "huggingface"]
+RerankProvider = Literal["none", "huggingface"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
 DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
     ".pdf",
@@ -47,6 +48,7 @@ ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = (
     "openai",
     "huggingface",
 )
+ALLOWED_RERANK_PROVIDERS: tuple[RerankProvider, ...] = ("none", "huggingface")
 DETERMINISTIC_EMBEDDING_MODEL = "deterministic-hash-v0"
 DETERMINISTIC_EMBEDDING_DIMENSIONS = 64
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
@@ -54,6 +56,7 @@ OPENAI_EMBEDDING_DIMENSIONS = 384
 OPENAI_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
 HUGGINGFACE_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 HUGGINGFACE_EMBEDDING_DIMENSIONS = 384
+HUGGINGFACE_RERANK_MODEL = "BAAI/bge-reranker-base"
 DEFAULT_HF_EMBEDDING_CACHE_DIR = Path("var/huggingface")
 DEFAULT_RETRIEVAL_CORPUS_DIRS = (Path("knowledge/corpus"),)
 DEFAULT_STORAGE_BACKEND: StorageBackend = "postgres"
@@ -186,6 +189,24 @@ class Settings(BaseModel):
         default=160,
         alias="OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS",
         ge=0,
+    )
+    rerank_provider: RerankProvider = Field(default="none", alias="OJT_RERANK_PROVIDER")
+    rerank_model: str = Field(
+        default=HUGGINGFACE_RERANK_MODEL,
+        alias="OJT_RERANK_MODEL",
+    )
+    rerank_device: str = Field(default="auto", alias="OJT_RERANK_DEVICE")
+    rerank_batch_size: int = Field(default=16, alias="OJT_RERANK_BATCH_SIZE", gt=0)
+    rerank_candidate_limit: int = Field(
+        default=20,
+        alias="OJT_RERANK_CANDIDATE_LIMIT",
+        gt=0,
+    )
+    rerank_score_weight: float = Field(
+        default=0.08,
+        alias="OJT_RERANK_SCORE_WEIGHT",
+        gt=0,
+        le=1,
     )
 
     @model_validator(mode="after")
@@ -341,6 +362,15 @@ def get_settings() -> Settings:
         OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=int(
             os.getenv("OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS", "160")
         ),
+        OJT_RERANK_PROVIDER=_parse_rerank_provider(os.getenv("OJT_RERANK_PROVIDER")),
+        OJT_RERANK_MODEL=_parse_rerank_model(os.getenv("OJT_RERANK_MODEL")),
+        OJT_RERANK_DEVICE=_parse_hf_device(
+            os.getenv("OJT_RERANK_DEVICE"),
+            setting_name="Hugging Face rerank device",
+        ),
+        OJT_RERANK_BATCH_SIZE=int(os.getenv("OJT_RERANK_BATCH_SIZE", "16")),
+        OJT_RERANK_CANDIDATE_LIMIT=int(os.getenv("OJT_RERANK_CANDIDATE_LIMIT", "20")),
+        OJT_RERANK_SCORE_WEIGHT=float(os.getenv("OJT_RERANK_SCORE_WEIGHT", "0.08")),
     )
 
 
@@ -600,6 +630,18 @@ def _parse_embedding_provider(value: str | None) -> EmbeddingProvider:
     )
 
 
+def _parse_rerank_provider(value: str | None) -> RerankProvider:
+    normalized = "none" if value is None else value.strip().lower()
+    if normalized in {"", "none", "off", "disabled"}:
+        return "none"
+    if normalized in {"huggingface", "sentence-transformers", "sentence_transformers", "hf"}:
+        return "huggingface"
+    allowed = ", ".join(ALLOWED_RERANK_PROVIDERS)
+    raise ValueError(
+        f"Invalid rerank provider environment value: {value}. Expected one of: {allowed}"
+    )
+
+
 def _parse_embedding_model(value: str | None, *, provider: str | None = None) -> str:
     parsed_provider = _parse_embedding_provider(provider)
     default = (
@@ -668,6 +710,16 @@ def _parse_embedding_dimensions(
     )
 
 
+def _parse_rerank_model(value: str | None) -> str:
+    normalized = HUGGINGFACE_RERANK_MODEL if value is None else value.strip()
+    if _valid_model_identifier(normalized):
+        return normalized
+    raise ValueError(
+        "Invalid rerank model environment value: "
+        f"{value}. Expected a non-blank Hugging Face CrossEncoder model id or local path"
+    )
+
+
 def _parse_openai_base_url(value: str | None) -> str:
     raw = OPENAI_EMBEDDING_BASE_URL if value is None else value.strip().rstrip("/")
     if not raw:
@@ -685,15 +737,19 @@ def _parse_openai_base_url(value: str | None) -> str:
 
 
 def _parse_hf_embedding_device(value: str | None) -> str:
+    return _parse_hf_device(value, setting_name="Hugging Face embedding device")
+
+
+def _parse_hf_device(value: str | None, *, setting_name: str) -> str:
     normalized = "auto" if value is None else value.strip().lower()
     if not normalized:
-        raise ValueError("Invalid Hugging Face embedding device: value is blank")
+        raise ValueError(f"Invalid {setting_name}: value is blank")
     if normalized in {"auto", "cpu", "cuda", "mps"}:
         return normalized
     if re.fullmatch(r"cuda:\d+", normalized):
         return normalized
     raise ValueError(
-        "Invalid Hugging Face embedding device: expected auto, cpu, cuda, cuda:N, or mps"
+        f"Invalid {setting_name}: expected auto, cpu, cuda, cuda:N, or mps"
     )
 
 
