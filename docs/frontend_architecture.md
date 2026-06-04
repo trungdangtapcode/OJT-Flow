@@ -229,6 +229,10 @@ other secrets backend-only.
 Embedding and rerank provider state should be visible here because model choice,
 device, and second-stage reranking materially affect retrieval latency and
 evidence quality.
+Retrieval runtime controls should show the active retrieval rule-pack inventory
+from `/runtime/config`, including sanitized pack name, status, rule count,
+default-vs-override source, and controlling environment variable. The UI must
+not expose local filesystem paths for those packs.
 
 ## Extension Rules
 

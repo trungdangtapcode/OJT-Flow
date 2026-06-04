@@ -394,6 +394,26 @@ def test_settings_page_exposes_reloadable_assistant_runtime() -> None:
     assert "Assistant runtime" in frontend_architecture
 
 
+def test_settings_page_surfaces_retrieval_rule_pack_inventory() -> None:
+    settings_page = SETTINGS_PAGE.read_text(encoding="utf-8")
+    types_module = (FRONTEND_SRC / "types.ts").read_text(encoding="utf-8")
+    api_contract = (REPO_ROOT / "docs" / "api_contract_v0.md").read_text(
+        encoding="utf-8"
+    )
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "RetrievalRulePackInventory" in settings_page
+    assert "Retrieval rule packs" in settings_page
+    assert "runtime?.retrieval?.rule_packs" in settings_page
+    assert "RuntimeRetrievalRulePack" in types_module
+    assert "rule_packs?: RuntimeRetrievalRulePack[]" in types_module
+    assert "retrieval.rule_packs[]" in api_contract
+    assert "OJT_QUERY_DIAGNOSTIC_RULES_PATH" in api_contract
+    assert "sanitized pack name" in frontend_architecture
+
+
 def test_assistant_ui_surfaces_tool_layer() -> None:
     assistant_page = ASSISTANT_PAGE.read_text(encoding="utf-8")
     app_shell = APP_SHELL.read_text(encoding="utf-8")

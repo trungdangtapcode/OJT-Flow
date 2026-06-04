@@ -843,9 +843,17 @@ Response data includes:
 - `retrieval.hnsw_ef_search`
 - `retrieval.runtime_settings_configured`
 - `retrieval.runtime_settings`
+- `retrieval.rule_packs[]` with sanitized `name`, `status`, `source`,
+  `env_var`, `configured`, and `rule_count`
 - `upload.max_upload_bytes`
 - `upload.max_inline_data_bytes`
 - `upload.allowed_extensions`
+
+Retrieval rule-pack entries may reference controlling environment variables
+such as `OJT_QUERY_EXPANSION_RULES_PATH`, `OJT_FILTER_SUGGESTION_RULES_PATH`,
+`OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_RANKING_BOOST_RULES_PATH`,
+`OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, and `OJT_SEARCH_HINT_TARGETS_PATH`.
+The response exposes the env var name and loaded status, but not local paths.
 
 Example:
 

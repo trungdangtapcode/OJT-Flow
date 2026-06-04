@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -117,6 +119,7 @@ async def runtime_config(
                 "hnsw_ef_search": settings.retrieval_hnsw_ef_search,
                 "runtime_settings_configured": bool(settings.runtime_settings_path),
                 "runtime_settings": runtime_retrieval_settings(settings),
+                "rule_packs": _retrieval_rule_packs(settings),
             },
             "upload": {
                 "max_upload_bytes": settings.max_upload_bytes,
@@ -292,6 +295,86 @@ def _artifact_directory_check(settings: Settings) -> dict[str, Any]:
             **probes,
         },
     )
+
+
+def _retrieval_rule_packs(settings: Settings) -> list[dict[str, Any]]:
+    root = settings.resolved_knowledge_dir
+    return [
+        _retrieval_rule_pack(
+            root,
+            name="query_expansion",
+            relative_path=Path("retrieval/query_expansion_rules.json"),
+            env_var="OJT_QUERY_EXPANSION_RULES_PATH",
+        ),
+        _retrieval_rule_pack(
+            root,
+            name="filter_suggestions",
+            relative_path=Path("retrieval/filter_suggestion_rules.json"),
+            env_var="OJT_FILTER_SUGGESTION_RULES_PATH",
+        ),
+        _retrieval_rule_pack(
+            root,
+            name="query_diagnostics",
+            relative_path=Path("retrieval/query_diagnostic_rules.json"),
+            env_var="OJT_QUERY_DIAGNOSTIC_RULES_PATH",
+        ),
+        _retrieval_rule_pack(
+            root,
+            name="ranking_boosts",
+            relative_path=Path("retrieval/ranking_boost_rules.json"),
+            env_var="OJT_RANKING_BOOST_RULES_PATH",
+        ),
+        _retrieval_rule_pack(
+            root,
+            name="evaluation_policy",
+            relative_path=Path("retrieval/evaluation_policy.json"),
+            env_var="OJT_RETRIEVAL_EVALUATION_POLICY_PATH",
+        ),
+        _retrieval_rule_pack(
+            root,
+            name="search_hint_targets",
+            relative_path=Path("retrieval/search_hint_targets.json"),
+            env_var="OJT_SEARCH_HINT_TARGETS_PATH",
+        ),
+    ]
+
+
+def _retrieval_rule_pack(
+    knowledge_root: Path,
+    *,
+    name: str,
+    relative_path: Path,
+    env_var: str,
+) -> dict[str, Any]:
+    override = os.environ.get(env_var)
+    path = Path(override) if override else knowledge_root / relative_path
+    source = "override" if override else "knowledge"
+    details: dict[str, Any] = {
+        "name": name,
+        "status": "missing",
+        "source": source,
+        "env_var": env_var,
+        "configured": bool(override),
+        "rule_count": 0,
+    }
+    if not path.exists():
+        return details
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            **details,
+            "status": "error",
+            "error": type(exc).__name__,
+        }
+    rules = raw.get("rules") if isinstance(raw, dict) else None
+    targets = raw.get("targets") if isinstance(raw, dict) else None
+    items = rules if isinstance(rules, list) else targets if isinstance(targets, list) else []
+    return {
+        **details,
+        "status": "ok",
+        "rule_count": len(items),
+    }
 
 
 def _directory_write_probe(path: Path) -> dict[str, Any]:

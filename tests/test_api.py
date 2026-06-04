@@ -1185,6 +1185,12 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert body["retrieval"]["diversity_enabled"] is True
         assert body["retrieval"]["diversity_lambda"] == 0.6
         assert body["retrieval"]["hnsw_ef_search"] == 150
+        rule_packs = {pack["name"]: pack for pack in body["retrieval"]["rule_packs"]}
+        assert rule_packs["query_expansion"]["status"] == "ok"
+        assert rule_packs["query_expansion"]["rule_count"] > 0
+        assert rule_packs["query_diagnostics"]["status"] == "ok"
+        assert rule_packs["query_diagnostics"]["env_var"] == "OJT_QUERY_DIAGNOSTIC_RULES_PATH"
+        assert rule_packs["query_diagnostics"]["source"] == "knowledge"
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text

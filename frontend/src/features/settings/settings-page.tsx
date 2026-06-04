@@ -41,6 +41,7 @@ import type {
   RuntimeAssistantSettingsPayload,
   RuntimeConfig,
   RuntimeReadiness,
+  RuntimeRetrievalRulePack,
   RuntimeRetrievalSettings,
   RuntimeRetrievalSettingsPayload,
 } from "../../types";
@@ -795,6 +796,8 @@ function RetrievalSettingsForm({
               </label>
             </div>
 
+            <RetrievalRulePackInventory packs={runtime?.retrieval?.rule_packs ?? []} />
+
             <Button disabled={mutation.isPending} type="submit">
               {mutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -807,6 +810,56 @@ function RetrievalSettingsForm({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function RetrievalRulePackInventory({ packs }: { packs: RuntimeRetrievalRulePack[] }) {
+  if (!packs.length) {
+    return (
+      <Notice title="Retrieval rule packs unavailable">
+        Runtime config has not returned retrieval rule-pack inventory.
+      </Notice>
+    );
+  }
+  const issueCount = packs.filter((pack) => pack.status !== "ok").length;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Retrieval rule packs
+        </div>
+        <Badge variant={issueCount ? "warning" : "success"}>
+          {issueCount ? `${issueCount} issue` : "loaded"}
+        </Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {packs.map((pack) => (
+          <div
+            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
+            key={`${pack.name}-${pack.env_var}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{humanizeSettingLabel(pack.name)}</span>
+              <Badge variant={runtimeRulePackVariant(pack.status)}>
+                {pack.status}
+              </Badge>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              <Badge variant="muted">{pack.rule_count} rules</Badge>
+              <Badge variant={pack.configured ? "success" : "muted"}>
+                {pack.source}
+              </Badge>
+            </div>
+            <code className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px] text-muted-foreground">
+              {pack.env_var}
+            </code>
+            {pack.error ? (
+              <div className="break-words font-semibold text-red-700">{pack.error}</div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -923,6 +976,14 @@ function numberField(raw: string, label: string, min: number, max: number) {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function runtimeRulePackVariant(
+  status: RuntimeRetrievalRulePack["status"],
+): React.ComponentProps<typeof Badge>["variant"] {
+  if (status === "ok") return "success";
+  if (status === "error") return "destructive";
+  return "warning";
 }
 
 function readinessLabel(readiness: RuntimeReadiness | undefined) {
@@ -1213,6 +1274,10 @@ function formatDetailLabel(value: string) {
 }
 
 function humanizeCheckName(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function humanizeSettingLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 

@@ -754,6 +754,16 @@ export type RuntimeRetrievalSettingsUpdate = {
   reloaded: boolean;
 };
 
+export type RuntimeRetrievalRulePack = {
+  name: string;
+  status: "ok" | "missing" | "error";
+  source: "knowledge" | "override" | string;
+  env_var: string;
+  configured: boolean;
+  rule_count: number;
+  error?: string;
+};
+
 export type RuntimeAssistantSettings = {
   llm_provider: "disabled" | "openai";
   llm_model: string;
@@ -827,6 +837,7 @@ export type RuntimeConfig = {
     hnsw_ef_search?: number;
     runtime_settings_configured?: boolean;
     runtime_settings?: RuntimeRetrievalSettings;
+    rule_packs?: RuntimeRetrievalRulePack[];
   };
   upload: {
     max_upload_bytes: number;
