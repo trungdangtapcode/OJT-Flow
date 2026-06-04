@@ -40,6 +40,7 @@ import type {
   RetrievalGraphContext,
   RetrievalHit,
   RetrievalPackage,
+  RetrievalCoverage,
   RetrievalFacets,
   RetrievalSource,
   RuntimeConfig,
@@ -585,6 +586,7 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
   const stack = packageData ? rankingStackFromPackage(packageData) : null;
   const diversity = packageData ? diversityFromPackage(packageData) : null;
   const queryAnalysis = packageData ? queryAnalysisFromPackage(packageData) : null;
+  const coverage = packageData?.coverage;
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="border-b border-border bg-card/70">
@@ -618,6 +620,7 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
               value={Object.keys(trace.filters_applied).length ? JSON.stringify(trace.filters_applied) : "none"}
             />
             <QueryAnalysisBlock analysis={queryAnalysis} />
+            <CoverageDiagnosticsBlock coverage={coverage} />
             <TokenList items={trace.query_variants} title="Query variants" />
             <TokenList items={trace.safety_flags.map(humanize)} title="Safety flags" tone="warning" />
             <TokenList items={trace.warnings} title="Warnings" tone="warning" />
@@ -625,6 +628,46 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CoverageDiagnosticsBlock({
+  coverage,
+}: {
+  coverage: RetrievalCoverage | null | undefined;
+}) {
+  const items = coverage?.standard_system ?? [];
+  const warningCount = coverage?.warnings.length ?? 0;
+  if (!items.length) {
+    return <TokenList items={[]} title="Standard coverage" />;
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Standard coverage
+        </div>
+        <Badge variant={warningCount ? "warning" : "success"}>
+          {warningCount ? `${warningCount} gap` : "covered"}
+        </Badge>
+      </div>
+      <div className="grid gap-2">
+        {items.map((item) => (
+          <div
+            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
+            key={`${item.field}-${item.value}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{item.value}</span>
+              <Badge variant={item.status === "covered" ? "success" : "warning"}>
+                {item.status} / {item.selected_count}
+              </Badge>
+            </div>
+            <div className="break-words text-muted-foreground">{item.reason}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

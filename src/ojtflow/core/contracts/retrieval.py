@@ -50,6 +50,24 @@ class RetrievalFacets(ContractModel):
     trust_level: list[RetrievalFacetBucket] = Field(default_factory=list)
 
 
+class RetrievalCoverageItem(ContractModel):
+    """Coverage diagnostic for an expected retrieval metadata value."""
+
+    field: NonBlankStr
+    value: NonBlankStr
+    selected_count: int = Field(ge=0)
+    status: NonBlankStr
+    severity: NonBlankStr
+    reason: NonBlankStr
+
+
+class RetrievalCoverage(ContractModel):
+    """Coverage diagnostics for final selected retrieval hits."""
+
+    standard_system: list[RetrievalCoverageItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RetrievalHit(ContractModel):
     """One ranked retrieval candidate with transparent scoring components."""
 
@@ -103,6 +121,7 @@ class RetrievalPackage(ContractModel):
 
     hits: list[RetrievalHit] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
+    coverage: RetrievalCoverage | None = None
     facets: RetrievalFacets | None = None
     trace: RetrievalTrace
     handoff_context: dict[str, Any] = Field(default_factory=dict)

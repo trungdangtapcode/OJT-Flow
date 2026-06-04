@@ -924,6 +924,7 @@ Response data is a `RetrievalPackage`:
 - `hits[].matched_terms`
 - `hits[].snippet`
 - `evidence`
+- `coverage`
 - `facets`
 - `trace.strategy`
 - `trace.query_variants`
@@ -948,6 +949,10 @@ of deterministic metadata filter recommendations with `field`, `value`,
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.
+`coverage` reports whether standards inferred from query analysis, such as
+`FHIR`, `LOINC`, and `UCUM`, are represented in the final selected evidence.
+Missing expected standards are returned as `coverage.warnings` and copied into
+`trace.warnings`.
 `facets` summarizes the final selected hits into buckets for `source_type`,
 `clinical_domain`, `standard_system`, and `trust_level`.
 

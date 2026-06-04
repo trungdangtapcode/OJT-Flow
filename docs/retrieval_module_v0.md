@@ -172,6 +172,50 @@ Research basis:
 - Elasticsearch bucket aggregations:
   `https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket.html`
 
+## Standard Coverage Diagnostics
+
+`RetrievalPackage.coverage` compares standards inferred by query analysis with
+the standards represented in final selected evidence:
+
+```json
+{
+  "standard_system": [
+    {
+      "field": "standard_system",
+      "value": "UCUM",
+      "selected_count": 1,
+      "status": "covered",
+      "severity": "info",
+      "reason": "Selected evidence includes UCUM grounding."
+    },
+    {
+      "field": "standard_system",
+      "value": "FHIR",
+      "selected_count": 0,
+      "status": "missing",
+      "severity": "warning",
+      "reason": "Query analysis expected FHIR grounding, but no selected evidence used that standard."
+    }
+  ],
+  "warnings": [
+    "Query analysis expected FHIR grounding, but no selected evidence used that standard."
+  ]
+}
+```
+
+The diagnostic is deterministic and metadata-based. It does not claim clinical
+adequacy; it tells operators when the selected retrieval package is missing a
+standard cue that the query analysis expected. Missing coverage warnings are
+also copied into `RetrievalTrace.warnings` so existing audit views continue to
+surface them.
+
+Research basis:
+
+- RAGAS context recall/precision as a retrieval evaluation lens:
+  `https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/context_precision/`
+- RAGAS context recall:
+  `https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/context_recall/`
+
 ## API
 
 The React operations console exposes these contracts through `/retrieval`.

@@ -23,6 +23,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
     build_query_variants,
+    coverage_from_chunks,
     rank_chunks,
     retrieval_safety_flags,
     snippet_from_chunk,
@@ -125,6 +126,8 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.facets is not None
     assert _bucket_counts(package.facets.trust_level) == {"approved": 5}
     assert "terminology_system" in _bucket_counts(package.facets.source_type)
+    assert package.coverage is not None
+    assert any(item.value == "UCUM" for item in package.coverage.standard_system)
     analysis = package.handoff_context["query_analysis"]
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
@@ -166,6 +169,27 @@ def test_static_retrieval_filters_by_source_type() -> None:
     )
     assert package.facets is not None
     assert _bucket_counts(package.facets.source_type) == {"terminology_system": 3}
+
+
+def test_retrieval_coverage_reports_missing_expected_standard() -> None:
+    analysis = analyze_query(RetrievalQuery(query="FHIR valueQuantity UCUM unit"))
+    chunk = KnowledgeChunk(
+        chunk_id="fhir_only",
+        source_id="standard:fhir_observation",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        title="FHIR Observation",
+        content="FHIR Observation requires resourceType and valueQuantity structure.",
+        standard_system="FHIR",
+    )
+
+    coverage = coverage_from_chunks([chunk], analysis)
+    coverage_by_standard = {item.value: item for item in coverage.standard_system}
+
+    assert coverage_by_standard["FHIR"].status == "covered"
+    assert coverage_by_standard["FHIR"].selected_count == 1
+    assert coverage_by_standard["UCUM"].status == "missing"
+    assert coverage_by_standard["UCUM"].selected_count == 0
+    assert coverage.warnings == [coverage_by_standard["UCUM"].reason]
 
 
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:

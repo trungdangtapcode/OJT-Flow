@@ -143,6 +143,20 @@ export type RetrievalFacets = {
   trust_level: RetrievalFacetBucket[];
 };
 
+export type RetrievalCoverageItem = {
+  field: string;
+  value: string;
+  selected_count: number;
+  status: string;
+  severity: string;
+  reason: string;
+};
+
+export type RetrievalCoverage = {
+  standard_system: RetrievalCoverageItem[];
+  warnings: string[];
+};
+
 export type RetrievalGraphNode = {
   id: string;
   label: string;
@@ -193,6 +207,7 @@ export type RetrievalFilterSuggestion = {
 export type RetrievalPackage = {
   hits: RetrievalHit[];
   evidence: Evidence[];
+  coverage?: RetrievalCoverage | null;
   facets?: RetrievalFacets | null;
   trace: RetrievalTrace;
   handoff_context: {

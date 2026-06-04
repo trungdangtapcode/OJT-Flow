@@ -15,6 +15,8 @@ from typing import Any
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
+    RetrievalCoverage,
+    RetrievalCoverageItem,
     RetrievalFacetBucket,
     RetrievalFacets,
     RetrievalHit,
@@ -245,7 +247,10 @@ def rank_chunks(
         lambda_mult=diversity_lambda,
     )
     top_hits = [hit for _, hit in selected_ranked_hits]
-    facets = facets_from_chunks([chunk for chunk, _ in selected_ranked_hits])
+    selected_chunks = [chunk for chunk, _ in selected_ranked_hits]
+    facets = facets_from_chunks(selected_chunks)
+    coverage = coverage_from_chunks(selected_chunks, query_analysis)
+    trace_warnings.extend(coverage.warnings)
     if diversity_metadata["duplicate_selected_source_count"]:
         trace_warnings.append(
             "Retrieval results include repeated source IDs after diversity selection."
@@ -262,6 +267,7 @@ def rank_chunks(
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
+        coverage=coverage,
         facets=facets,
         trace=trace,
         handoff_context={
@@ -276,6 +282,25 @@ def rank_chunks(
             "query_analysis": query_analysis.model_dump(),
         },
     )
+
+
+def coverage_from_chunks(
+    chunks: list[KnowledgeChunk],
+    query_analysis: RetrievalQueryAnalysis,
+) -> RetrievalCoverage:
+    """Report whether final hits cover standards inferred from the query."""
+
+    standard_counts = Counter(chunk.standard_system for chunk in chunks if chunk.standard_system)
+    items = [
+        _standard_coverage_item(standard, standard_counts)
+        for standard in _expected_standard_values(query_analysis.standards)
+    ]
+    warnings = [
+        item.reason
+        for item in items
+        if item.status == "missing" and item.severity == "warning"
+    ]
+    return RetrievalCoverage(standard_system=items, warnings=warnings)
 
 
 def facets_from_chunks(chunks: list[KnowledgeChunk]) -> RetrievalFacets:
@@ -596,6 +621,52 @@ def _facet_buckets(values: Iterable[object | None]) -> list[RetrievalFacetBucket
             key=lambda item: (-item[1], item[0]),
         )
     ]
+
+
+def _expected_standard_values(standards: list[str]) -> list[str]:
+    mapped: list[str] = []
+    for standard in standards:
+        if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP"}:
+            mapped.append(standard)
+        elif standard == "OJTFlow policy":
+            mapped.append("ojtflow_policy")
+        elif standard == "OJTFlow schema":
+            mapped.append("ojtflow_schema")
+    return _dedupe_strings(mapped)
+
+
+def _standard_coverage_item(
+    standard: str,
+    counts: Counter,
+) -> RetrievalCoverageItem:
+    selected_count = int(counts.get(standard, 0))
+    if selected_count:
+        return RetrievalCoverageItem(
+            field="standard_system",
+            value=standard,
+            selected_count=selected_count,
+            status="covered",
+            severity="info",
+            reason=f"Selected evidence includes {standard} grounding.",
+        )
+    return RetrievalCoverageItem(
+        field="standard_system",
+        value=standard,
+        selected_count=0,
+        status="missing",
+        severity="warning",
+        reason=f"Query analysis expected {standard} grounding, but no selected evidence used that standard.",
+    )
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            deduped.append(value)
+    return deduped
 
 
 def _snippet_source_text(content: str) -> str:
