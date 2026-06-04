@@ -119,7 +119,9 @@ separate required step for `docker compose up`.
 
 The API image installs Python dependencies with `constraints.txt` so Docker
 rebuilds of the same commit resolve to the same runtime dependency versions.
-Keep `pyproject.toml` ranges compatible for local development, and refresh
+The image includes the `ojtflow[parsing]` extra, which enables MarkItDown-backed
+PDF, DOCX, XLSX/XLS, and PPTX extraction in the local Compose runtime. Keep
+`pyproject.toml` ranges compatible for local development, and refresh
 `constraints.txt` only after the full release check passes.
 
 The default backend storage is Postgres plus local file artifacts:

@@ -19,7 +19,7 @@ RUN python -m pip install --no-cache-dir "pip==${PIP_VERSION}" \
     && python -m pip install --no-cache-dir \
         --constraint /app/constraints.txt \
         --build-constraint /app/constraints.txt \
-        .
+        ".[parsing]"
 
 EXPOSE 8000
 
