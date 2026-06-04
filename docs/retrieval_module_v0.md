@@ -324,6 +324,9 @@ operators can understand coverage and refine filters. The Retrieval console
 renders supported facet buckets as explicit refinement controls. Selecting a
 bucket updates the query-builder filter state and reruns the same typed
 `/retrieval/search` request instead of filtering visible cards on the client.
+Applied refinements are shown as active chips next to the query builder; each
+chip can be removed independently, and operators can clear all metadata
+refinements before rerunning the typed search.
 In v0 these facets are computed over selected hits, not the full indexed corpus,
 so the counts match the evidence cards visible in the Retrieval console.
 

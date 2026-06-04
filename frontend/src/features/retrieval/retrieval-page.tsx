@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  X,
 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
@@ -65,6 +66,11 @@ const sourceTypeOptions = [
 const trustOptions = ["approved", "internal", "user_provided", "untrusted"];
 type SupportedFilterField = "clinical_domain" | "standard_system" | "source_type" | "trust_level";
 type ActiveFacetFilters = Partial<Record<SupportedFilterField, string>>;
+type ActiveFilterEntry = {
+  field: SupportedFilterField;
+  label: string;
+  displayValue: string;
+};
 type FacetSection = {
   field: SupportedFilterField;
   label: string;
@@ -160,6 +166,39 @@ export function RetrievalPage() {
       overrides.trust_level = value;
     }
     void executeSearch(overrides);
+  };
+
+  const clearSearchFilter = (field: SupportedFilterField) => {
+    const overrides: Partial<RetrievalSearchPayload> = {};
+    if (field === "clinical_domain") {
+      setClinicalDomain("");
+      overrides.clinical_domain = null;
+    } else if (field === "standard_system") {
+      setStandardSystem("");
+      overrides.standard_system = null;
+    } else if (field === "source_type") {
+      setSourceType("");
+      overrides.source_type = null;
+    } else if (field === "trust_level") {
+      setTrustLevel("");
+      overrides.trust_level = null;
+    }
+    if (packageData) void executeSearch(overrides);
+  };
+
+  const clearAllSearchFilters = () => {
+    setClinicalDomain("");
+    setStandardSystem("");
+    setSourceType("");
+    setTrustLevel("");
+    if (packageData) {
+      void executeSearch({
+        clinical_domain: null,
+        standard_system: null,
+        source_type: null,
+        trust_level: null,
+      });
+    }
   };
 
   const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
@@ -343,6 +382,13 @@ export function RetrievalPage() {
                   </Select>
                 </Label>
               </div>
+
+              <ActiveFilterBar
+                filters={activeFilterEntries(activeFacetFilters)}
+                isSearchPending={searchMutation.isPending}
+                onClearAll={clearAllSearchFilters}
+                onRemove={clearSearchFilter}
+              />
 
               <Button disabled={searchMutation.isPending} type="submit">
                 {searchMutation.isPending ? (
@@ -592,6 +638,83 @@ function ResultFacets({
       </div>
     </div>
   );
+}
+
+function ActiveFilterBar({
+  filters,
+  isSearchPending,
+  onClearAll,
+  onRemove,
+}: {
+  filters: ActiveFilterEntry[];
+  isSearchPending: boolean;
+  onClearAll: () => void;
+  onRemove: (field: SupportedFilterField) => void;
+}) {
+  if (!filters.length) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">Active filters</div>
+        <Button
+          disabled={isSearchPending}
+          onClick={onClearAll}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Clear all
+        </Button>
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {filters.map((filter) => (
+          <span
+            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2 py-1 text-xs font-bold text-foreground"
+            key={filter.field}
+          >
+            <span className="min-w-0 break-words">
+              {filter.label}: {filter.displayValue}
+            </span>
+            <button
+              aria-label={`Remove ${filter.label} filter`}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-ring disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSearchPending}
+              onClick={() => onRemove(filter.field)}
+              title={`Remove ${filter.label} filter`}
+              type="button"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function activeFilterEntries(filters: ActiveFacetFilters): ActiveFilterEntry[] {
+  return Array.from(supportedSuggestionFilterFields)
+    .map((field) => {
+      const value = filters[field];
+      if (!value) return null;
+      return {
+        field,
+        label: filterFieldLabel(field),
+        displayValue: formatFilterValue(field, value),
+      };
+    })
+    .filter((entry): entry is ActiveFilterEntry => entry !== null);
+}
+
+function filterFieldLabel(field: SupportedFilterField): string {
+  if (field === "clinical_domain") return "Domain";
+  if (field === "standard_system") return "Standard";
+  if (field === "source_type") return "Source";
+  return "Trust";
+}
+
+function formatFilterValue(field: SupportedFilterField, value: string): string {
+  return field === "standard_system" ? value : humanize(value);
 }
 
 function isSupportedFilterField(value: string): value is SupportedFilterField {
