@@ -154,9 +154,13 @@ controls; the UI must not silently apply suggested filters before users can see
 the reason, confidence, and existing applied state. Result facets should also be
 actionable refinements: applying a visible facet bucket must update the query
 builder filter state and rerun the typed retrieval search instead of mutating
-results locally. Selected refinements should remain visible as removable chips
-with a clear-all action so operators can audit and undo the active search
-constraints. If the query builder changes after a search, the results panel
+results locally. Standard coverage gaps should use
+`coverage.standard_system[].suggested_filter` to render explicit remediation
+buttons for supported fields, keeping the backend responsible for what action is
+appropriate and the UI responsible for operator confirmation. Selected
+refinements should remain visible as removable chips with a clear-all action so
+operators can audit and undo the active search constraints. If the query builder
+changes after a search, the results panel
 must show that ranked evidence has pending changes until the current request
 state is submitted again. The ranked-results panel should also render the last
 submitted request summary and use that submitted payload to mark result facets

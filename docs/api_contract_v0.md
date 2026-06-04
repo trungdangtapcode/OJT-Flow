@@ -1222,8 +1222,10 @@ label/adverse-event search. Current targets include `pubmed`, `fhir`,
 `hits[].evidence.claim`.
 `coverage` reports whether standards inferred from query analysis, such as
 `FHIR`, `LOINC`, and `UCUM`, are represented in the final selected evidence.
-Missing expected standards are returned as `coverage.warnings` and copied into
-`trace.warnings`.
+Each `coverage.standard_system[]` item includes `suggested_action` and
+`suggested_filter` so clients can present explicit remediation controls for
+missing expected standards. Missing expected standards are returned as
+`coverage.warnings` and copied into `trace.warnings`.
 `facets` summarizes the final selected hits into buckets for `source_type`,
 `clinical_domain`, `standard_system`, and `trust_level`.
 

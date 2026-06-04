@@ -254,6 +254,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "aria-pressed={applied}" in retrieval_page
     assert "supportedSuggestionFilterFields" in retrieval_page
     assert "onApplyFilterSuggestion" in retrieval_page
+    assert "coverageSuggestedFilter" in retrieval_page
+    assert "coverageSuggestedAction" in retrieval_page
+    assert "suggested_filter" in retrieval_page
+    assert "onApplyCoverageFilter" in retrieval_page
     assert "Copy medical search hint" in retrieval_page
     assert "Open medical search hint" in retrieval_page
     assert "launchable hint" in retrieval_page

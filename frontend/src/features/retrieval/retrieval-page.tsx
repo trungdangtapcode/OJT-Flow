@@ -68,6 +68,10 @@ type ActiveFilterEntry = {
   label: string;
   displayValue: string;
 };
+type CoverageFilterAction = {
+  field: SupportedFilterField;
+  value: string;
+};
 type RetrievalFormState = {
   query: string;
   fields: string;
@@ -574,6 +578,7 @@ export function RetrievalPage() {
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
             <TracePanel
               isSearchPending={searchMutation.isPending}
+              onApplyCoverageFilter={applySearchFilter}
               onApplyFilterSuggestion={applyFilterSuggestion}
               packageData={packageData}
             />
@@ -1131,6 +1136,21 @@ function formatFilterValue(field: SupportedFilterField, value: string): string {
   return field === "standard_system" ? value : humanize(value);
 }
 
+function coverageSuggestedFilter(
+  item: RetrievalCoverage["standard_system"][number],
+): CoverageFilterAction | null {
+  const suggestedFilter = recordValue(item.suggested_filter);
+  for (const [field, rawValue] of Object.entries(suggestedFilter)) {
+    const value = stringValue(rawValue, "");
+    if (value && isSupportedFilterField(field)) return { field, value };
+  }
+  return null;
+}
+
+function coverageSuggestedAction(item: RetrievalCoverage["standard_system"][number]): string {
+  return stringValue(item.suggested_action, item.reason);
+}
+
 function isSupportedFilterField(value: string): value is SupportedFilterField {
   return supportedSuggestionFilterFields.has(value as SupportedFilterField);
 }
@@ -1368,10 +1388,12 @@ function DiversitySelectionExplanation({
 
 function TracePanel({
   isSearchPending,
+  onApplyCoverageFilter,
   onApplyFilterSuggestion,
   packageData,
 }: {
   isSearchPending: boolean;
+  onApplyCoverageFilter: (field: SupportedFilterField, value: string) => void;
   onApplyFilterSuggestion: (suggestion: FilterSuggestionStack) => void;
   packageData: RetrievalPackage | undefined;
 }) {
@@ -1421,7 +1443,11 @@ function TracePanel({
               isSearchPending={isSearchPending}
               onApplyFilterSuggestion={onApplyFilterSuggestion}
             />
-            <CoverageDiagnosticsBlock coverage={coverage} />
+            <CoverageDiagnosticsBlock
+              coverage={coverage}
+              isSearchPending={isSearchPending}
+              onApplyCoverageFilter={onApplyCoverageFilter}
+            />
             <QueryVariantList variants={queryVariantsFromTrace(trace)} />
             <TokenList items={trace.safety_flags.map(humanize)} title="Safety flags" tone="warning" />
             <TokenList items={trace.warnings} title="Warnings" tone="warning" />
@@ -1434,8 +1460,12 @@ function TracePanel({
 
 function CoverageDiagnosticsBlock({
   coverage,
+  isSearchPending,
+  onApplyCoverageFilter,
 }: {
   coverage: RetrievalCoverage | null | undefined;
+  isSearchPending: boolean;
+  onApplyCoverageFilter: (field: SupportedFilterField, value: string) => void;
 }) {
   const items = coverage?.standard_system ?? [];
   const warningCount = coverage?.warnings.length ?? 0;
@@ -1453,20 +1483,51 @@ function CoverageDiagnosticsBlock({
         </Badge>
       </div>
       <div className="grid gap-2">
-        {items.map((item) => (
-          <div
-            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
-            key={`${item.field}-${item.value}`}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-bold">{item.value}</span>
-              <Badge variant={item.status === "covered" ? "success" : "warning"}>
-                {item.status} / {item.selected_count}
-              </Badge>
+        {items.map((item) => {
+          const suggestedFilter = coverageSuggestedFilter(item);
+          const actionable = item.status !== "covered" && suggestedFilter !== null;
+          return (
+            <div
+              className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs"
+              key={`${item.field}-${item.value}`}
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="break-words font-bold">{item.value}</span>
+                <Badge variant={item.status === "covered" ? "success" : "warning"}>
+                  {item.status} / {item.selected_count}
+                </Badge>
+              </div>
+              <div className="break-words text-muted-foreground">{item.reason}</div>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
+                <span className="min-w-0 flex-1 break-words font-semibold text-foreground">
+                  {coverageSuggestedAction(item)}
+                </span>
+                {actionable ? (
+                  <Button
+                    disabled={isSearchPending}
+                    onClick={() =>
+                      onApplyCoverageFilter(suggestedFilter.field, suggestedFilter.value)
+                    }
+                    size="sm"
+                    title={`Apply ${filterFieldLabel(suggestedFilter.field)}=${formatFilterValue(
+                      suggestedFilter.field,
+                      suggestedFilter.value,
+                    )}`}
+                    type="button"
+                    variant="outline"
+                  >
+                    {isSearchPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ListFilter className="h-4 w-4" />
+                    )}
+                    Apply {filterFieldLabel(suggestedFilter.field)}
+                  </Button>
+                ) : null}
+              </div>
             </div>
-            <div className="break-words text-muted-foreground">{item.reason}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

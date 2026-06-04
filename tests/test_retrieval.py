@@ -826,8 +826,12 @@ def test_retrieval_coverage_reports_missing_expected_standard() -> None:
 
     assert coverage_by_standard["FHIR"].status == "covered"
     assert coverage_by_standard["FHIR"].selected_count == 1
+    assert coverage_by_standard["FHIR"].suggested_filter == {}
+    assert "already includes FHIR grounding" in coverage_by_standard["FHIR"].suggested_action
     assert coverage_by_standard["UCUM"].status == "missing"
     assert coverage_by_standard["UCUM"].selected_count == 0
+    assert coverage_by_standard["UCUM"].suggested_filter == {"standard_system": "UCUM"}
+    assert "standard_system=UCUM" in coverage_by_standard["UCUM"].suggested_action
     assert coverage.warnings == [coverage_by_standard["UCUM"].reason]
 
 

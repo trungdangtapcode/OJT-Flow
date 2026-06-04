@@ -168,6 +168,8 @@ export type RetrievalCoverageItem = {
   status: string;
   severity: string;
   reason: string;
+  suggested_action?: string | null;
+  suggested_filter?: Record<string, unknown> | null;
 };
 
 export type RetrievalCoverage = {

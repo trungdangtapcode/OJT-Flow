@@ -869,6 +869,10 @@ def _standard_coverage_item(
             status="covered",
             severity="info",
             reason=f"Selected evidence includes {standard} grounding.",
+            suggested_action=(
+                "Keep the current retrieval scope; selected evidence already includes "
+                f"{standard} grounding."
+            ),
         )
     return RetrievalCoverageItem(
         field="standard_system",
@@ -877,6 +881,11 @@ def _standard_coverage_item(
         status="missing",
         severity="warning",
         reason=f"Query analysis expected {standard} grounding, but no selected evidence used that standard.",
+        suggested_action=(
+            f"Apply standard_system={standard} or broaden the query to retrieve "
+            f"{standard}-grounded evidence."
+        ),
+        suggested_filter={"standard_system": standard},
     )
 
 

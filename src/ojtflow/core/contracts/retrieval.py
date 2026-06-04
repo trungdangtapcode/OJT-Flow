@@ -79,6 +79,8 @@ class RetrievalCoverageItem(ContractModel):
     status: NonBlankStr
     severity: NonBlankStr
     reason: NonBlankStr
+    suggested_action: NonBlankStr
+    suggested_filter: dict[str, str] = Field(default_factory=dict)
 
 
 class RetrievalCoverage(ContractModel):

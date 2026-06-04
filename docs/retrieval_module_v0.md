@@ -455,7 +455,9 @@ the standards represented in final selected evidence:
       "selected_count": 1,
       "status": "covered",
       "severity": "info",
-      "reason": "Selected evidence includes UCUM grounding."
+      "reason": "Selected evidence includes UCUM grounding.",
+      "suggested_action": "Keep the current retrieval scope; selected evidence already includes UCUM grounding.",
+      "suggested_filter": {}
     },
     {
       "field": "standard_system",
@@ -463,7 +465,11 @@ the standards represented in final selected evidence:
       "selected_count": 0,
       "status": "missing",
       "severity": "warning",
-      "reason": "Query analysis expected FHIR grounding, but no selected evidence used that standard."
+      "reason": "Query analysis expected FHIR grounding, but no selected evidence used that standard.",
+      "suggested_action": "Apply standard_system=FHIR or broaden the query to retrieve FHIR-grounded evidence.",
+      "suggested_filter": {
+        "standard_system": "FHIR"
+      }
     }
   ],
   "warnings": [
@@ -476,10 +482,17 @@ The diagnostic is deterministic and metadata-based. It does not claim clinical
 adequacy; it tells operators when the selected retrieval package is missing a
 standard cue that the query analysis expected. Missing coverage warnings are
 also copied into `RetrievalTrace.warnings` so existing audit views continue to
-surface them.
+surface them. Missing diagnostics also include `suggested_action` and
+`suggested_filter` so the Retrieval console can offer an explicit
+operator-controlled refinement, such as applying `standard_system=FHIR`, instead
+of silently mutating the query.
 
 Research basis:
 
+- Azure AI Search faceted navigation and filters:
+  `https://learn.microsoft.com/en-us/azure/search/search-filters`
+- Algolia faceting and filtering:
+  `https://www.algolia.com/doc/guides/managing-results/refine-results/faceting`
 - RAGAS context recall/precision as a retrieval evaluation lens:
   `https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/context_precision/`
 - RAGAS context recall:
