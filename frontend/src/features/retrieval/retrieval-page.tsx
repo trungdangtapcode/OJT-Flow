@@ -1865,20 +1865,101 @@ function SourcesPanel({
   isLoading: boolean;
   sources: RetrievalSource[];
 }) {
+  const [sourceSearch, setSourceSearch] = React.useState("");
+  const [sourceTypeFilter, setSourceTypeFilter] = React.useState<string | null>(null);
+  const [sourceDomainFilter, setSourceDomainFilter] = React.useState<string | null>(null);
+  const [sourceStandardFilter, setSourceStandardFilter] = React.useState<string | null>(null);
+  const filteredSources = sources.filter((source) =>
+    sourceMatchesInventoryFilters(source, {
+      domain: sourceDomainFilter,
+      search: sourceSearch,
+      standard: sourceStandardFilter,
+      type: sourceTypeFilter,
+    }),
+  );
+  const sourceTypeOptions = uniqueValues(sources.map((source) => source.source_type));
+  const sourceDomainOptions = uniqueValues(sources.map((source) => source.clinical_domain));
+  const sourceStandardOptions = uniqueValues(sources.map((source) => source.standard_system));
+  const hasSourceFilters = Boolean(
+    sourceSearch.trim() ||
+      sourceTypeFilter ||
+      sourceDomainFilter ||
+      sourceStandardFilter,
+  );
+  const clearSourceFilters = () => {
+    setSourceSearch("");
+    setSourceTypeFilter(null);
+    setSourceDomainFilter(null);
+    setSourceStandardFilter(null);
+  };
+
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
-        <CardTitle>Trusted sources</CardTitle>
-        <CardDescription>{isLoading ? "Loading inventory" : formatCount(sources.length, "source")}</CardDescription>
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border bg-card/70">
+        <div className="min-w-0">
+          <CardTitle>Trusted sources</CardTitle>
+          <CardDescription>
+            {isLoading
+              ? "Loading inventory"
+              : `${formatCount(filteredSources.length, "source")} shown from ${sources.length}`}
+          </CardDescription>
+        </div>
+        {hasSourceFilters ? (
+          <Button onClick={clearSourceFilters} size="sm" type="button" variant="outline">
+            <X className="h-4 w-4" />
+            Clear filters
+          </Button>
+        ) : null}
       </CardHeader>
-      <CardContent className="pt-4">
+      <CardContent className="grid gap-3 pt-4">
+        <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-bold uppercase text-muted-foreground">
+              Source inventory filters
+            </div>
+            <Badge variant="muted">
+              {filteredSources.length}/{sources.length}
+            </Badge>
+          </div>
+          <Input
+            aria-label="Filter trusted sources"
+            onChange={(event) => setSourceSearch(event.target.value)}
+            placeholder="Filter sources by title, ID, type, domain, or standard"
+            value={sourceSearch}
+          />
+          <SourceFilterChips
+            activeValue={sourceTypeFilter}
+            formatter={humanize}
+            label="Source type"
+            onSelect={setSourceTypeFilter}
+            values={sourceTypeOptions}
+          />
+          <SourceFilterChips
+            activeValue={sourceDomainFilter}
+            formatter={humanize}
+            label="Domain"
+            onSelect={setSourceDomainFilter}
+            values={sourceDomainOptions}
+          />
+          <SourceFilterChips
+            activeValue={sourceStandardFilter}
+            formatter={(value) => value}
+            label="Standard"
+            onSelect={setSourceStandardFilter}
+            values={sourceStandardOptions}
+          />
+        </div>
         <div className="grid gap-3 md:hidden">
-          {sources.map((source) => (
+          {filteredSources.map((source) => (
             <SourceCard key={source.source_id} source={source} />
           ))}
-          {!sources.length ? (
+          {!filteredSources.length ? (
             <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
-              {isLoading ? "Loading sources." : "No retrieval sources indexed."}
+              {isLoading
+                ? "Loading sources."
+                : hasSourceFilters
+                  ? "No sources match the current filters."
+                  : "No retrieval sources indexed."}
             </div>
           ) : null}
         </div>
@@ -1893,7 +1974,7 @@ function SourcesPanel({
             </TR>
           </THead>
           <TBody>
-            {sources.map((source) => (
+            {filteredSources.map((source) => (
               <TR key={source.source_id}>
                 <TD className="min-w-64">
                   <div className="break-words font-bold">{source.title}</div>
@@ -1905,15 +1986,66 @@ function SourcesPanel({
                 <TD className="tabular-nums">{source.chunk_count}</TD>
               </TR>
             ))}
-            {!sources.length ? (
+            {!filteredSources.length ? (
               <TR>
-                <TD colSpan={5}>{isLoading ? "Loading sources." : "No retrieval sources indexed."}</TD>
+                <TD colSpan={5}>
+                  {isLoading
+                    ? "Loading sources."
+                    : hasSourceFilters
+                      ? "No sources match the current filters."
+                      : "No retrieval sources indexed."}
+                </TD>
               </TR>
             ) : null}
           </TBody>
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function SourceFilterChips({
+  activeValue,
+  formatter,
+  label,
+  onSelect,
+  values,
+}: {
+  activeValue: string | null;
+  formatter: (value: string) => string;
+  label: string;
+  onSelect: (value: string | null) => void;
+  values: string[];
+}) {
+  if (!values.length) return null;
+  return (
+    <div className="grid gap-1.5">
+      <div className="text-xs font-bold text-muted-foreground">{label}</div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        <button
+          aria-pressed={!activeValue}
+          className={sourceFilterChipClass(!activeValue)}
+          onClick={() => onSelect(null)}
+          type="button"
+        >
+          All
+        </button>
+        {values.map((value) => {
+          const active = activeValue === value;
+          return (
+            <button
+              aria-pressed={active}
+              className={sourceFilterChipClass(active)}
+              key={value}
+              onClick={() => onSelect(value)}
+              type="button"
+            >
+              {formatter(value)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -2432,6 +2564,41 @@ function presetMatchesSearch(preset: RetrievalSearchPreset, search: string) {
     ...preset.fields,
     ...preset.target_sources,
     ...preset.launch_hint_targets,
+  ].some((value) => value?.toLowerCase().includes(normalizedSearch));
+}
+
+function sourceFilterChipClass(active: boolean) {
+  return cn(
+    "rounded-full border px-2.5 py-1 text-xs font-bold transition-colors",
+    active
+      ? "border-primary bg-primary/10 text-primary"
+      : "border-border bg-background text-muted-foreground hover:bg-muted",
+  );
+}
+
+function sourceMatchesInventoryFilters(
+  source: RetrievalSource,
+  filters: {
+    domain: string | null;
+    search: string;
+    standard: string | null;
+    type: string | null;
+  },
+) {
+  if (filters.type && source.source_type !== filters.type) return false;
+  if (filters.domain && source.clinical_domain !== filters.domain) return false;
+  if (filters.standard && source.standard_system !== filters.standard) return false;
+
+  const normalizedSearch = filters.search.trim().toLowerCase();
+  if (!normalizedSearch) return true;
+  return [
+    source.source_id,
+    source.title,
+    source.source_type,
+    source.clinical_domain,
+    source.standard_system,
+    source.source_version,
+    source.trust_level,
   ].some((value) => value?.toLowerCase().includes(normalizedSearch));
 }
 

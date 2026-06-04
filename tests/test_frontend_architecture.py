@@ -225,6 +225,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "presetMatchesSearch" in retrieval_page
     assert "Filter retrieval presets" in retrieval_page
     assert "Preset categories" in retrieval_page
+    assert "sourceSearch" in retrieval_page
+    assert "sourceTypeFilter" in retrieval_page
+    assert "sourceMatchesInventoryFilters" in retrieval_page
+    assert "Filter trusted sources" in retrieval_page
+    assert "Source inventory filters" in retrieval_page
     assert '<option value="csv">CSV</option>' not in retrieval_page
     assert '<option value="fhir_like">FHIR-like</option>' not in retrieval_page
     assert "defaultQuery" not in retrieval_page
@@ -250,6 +255,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "/retrieval/search-options" in frontend_architecture
     assert "trusted knowledge data" in frontend_architecture
     assert "Preset category filters" in frontend_architecture
+    assert "trusted source inventory" in frontend_architecture
+    assert "searchable and filterable" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:
