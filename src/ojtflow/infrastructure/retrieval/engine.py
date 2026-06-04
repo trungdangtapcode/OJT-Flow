@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from collections import Counter
 from collections.abc import Iterable
@@ -35,6 +36,9 @@ SNIPPET_SEGMENT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n{2,}|\r\n{2,}")
 DEFAULT_EMBEDDING_DIMENSIONS = 64
 RRF_K = 60
 SNIPPET_MAX_CHARS = 280
+DEFAULT_RANKING_BOOST_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "ranking_boost_rules.json"
+)
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,33 @@ class KnowledgeChunk:
     standard_system: str | None = None
     locator: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RankingBoostCondition:
+    """One allowlisted ranking-rule condition."""
+
+    query_schema_id_in_source_id: bool = False
+    any_query_fields_in_matched_terms: bool = False
+    query_detected_format_present: bool = False
+    filter_clinical_domain_matches_chunk: bool = False
+    chunk_trust_levels: tuple[str, ...] = ()
+    chunk_source_types: tuple[str, ...] = ()
+    chunk_standard_systems: tuple[str, ...] = ()
+    any_matched_terms: tuple[str, ...] = ()
+    any_concepts: tuple[str, ...] = ()
+    any_rule_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RankingBoostRule:
+    """One auditable deterministic ranking boost rule."""
+
+    rule_id: str
+    weight: float
+    reason: str
+    match: RankingBoostCondition
+    any_of: tuple[RankingBoostCondition, ...] = ()
 
 
 class DeterministicEmbeddingProvider:
@@ -204,7 +235,7 @@ def rank_chunks(
     for chunk in chunks:
         lexical_rrf = 1.0 / (RRF_K + lexical_positions[chunk.chunk_id])
         vector_rrf = 1.0 / (RRF_K + vector_positions[chunk.chunk_id])
-        rerank = _rerank_boost(
+        rerank, applied_boost_rules = _ranking_boost(
             chunk,
             query,
             matched_terms[chunk.chunk_id],
@@ -222,7 +253,10 @@ def rank_chunks(
                     vector_score=round(vector_scores[chunk.chunk_id], 6),
                     rerank_score=round(rerank, 6),
                     matched_terms=matched_terms[chunk.chunk_id][:12],
-                    source_locator=chunk.locator,
+                    source_locator=_hit_source_locator(
+                        chunk,
+                        applied_boost_rules=applied_boost_rules,
+                    ),
                     snippet=snippet_from_chunk(
                         chunk,
                         query_tokens=query_tokens,
@@ -629,6 +663,15 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             "ojtflow_retrieval",
         ),
         (
+            "chunk_dictionary_ranking_boost_rules_v1",
+            "dictionary:ranking_boost_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Ranking Boost Rule Registry",
+            knowledge_root / "retrieval/ranking_boost_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
             "chunk_dictionary_search_hint_targets_v1",
             "dictionary:search_hint_targets_v1",
             EvidenceSourceType.DATA_DICTIONARY,
@@ -809,6 +852,11 @@ def _dedupe_strings(values: list[str]) -> list[str]:
     return deduped
 
 
+def _has_intersection(left: Iterable[str], right: Iterable[str]) -> bool:
+    right_set = {value.lower() for value in right}
+    return bool(right_set and {value.lower() for value in left}.intersection(right_set))
+
+
 def _snippet_source_text(content: str) -> str:
     text = re.sub(r"^#{1,6}\s+", "", content, flags=re.MULTILINE)
     text = re.sub(r"`([^`]+)`", r"\1", text)
@@ -878,47 +926,287 @@ def _crop_snippet(
     return start_char + local_start + leading_trim, raw.strip()
 
 
-def _rerank_boost(
+def _ranking_boost(
     chunk: KnowledgeChunk,
     query: RetrievalQuery,
     matched_terms: list[str],
     *,
     query_analysis: RetrievalQueryAnalysis,
-) -> float:
+) -> tuple[float, list[str]]:
     boost = 0.0
-    if query.schema_id and query.schema_id in chunk.source_id:
-        boost += 0.08
-    if query.fields and any(field.lower() in matched_terms for field in query.fields):
-        boost += 0.035
-    if chunk.trust_level == TrustLevel.APPROVED:
-        boost += 0.025
-    if chunk.standard_system in {"FHIR", "LOINC", "UCUM"} and {
-        "lab",
-        "unit",
-        "fhir",
-    }.intersection(matched_terms):
-        boost += 0.02
-    concepts = set(query_analysis.detected_concepts)
-    if chunk.standard_system == "LOINC" and "hba1c_laboratory_test" in concepts:
-        boost += 0.08
-    if chunk.standard_system == "UCUM" and "unit_normalization" in concepts:
-        boost += 0.05
-    if chunk.standard_system == "FHIR" and "fhir_observation_profile" in concepts:
-        boost += 0.05
-    if chunk.standard_system == "ClinicalTrials.gov" and "clinical_trial_search" in concepts:
-        boost += 0.08
-    if chunk.standard_system == "openFDA" and "regulatory_drug_safety_search" in concepts:
-        boost += 0.08
-    if chunk.source_type == EvidenceSourceType.TRANSFORMATION_EXAMPLE and (
-        "csv_tabular_quality" in concepts
-        or query.detected_format
-        or {"convert", "conversion", "transformation", "example"}.intersection(matched_terms)
+    applied_rule_ids: list[str] = []
+    for rule in _ranking_boost_rules():
+        if _ranking_boost_rule_matches(
+            rule,
+            chunk=chunk,
+            query=query,
+            matched_terms=matched_terms,
+            query_analysis=query_analysis,
+        ):
+            boost += rule.weight
+            applied_rule_ids.append(rule.rule_id)
+    return boost, applied_rule_ids
+
+
+def _ranking_boost_rule_matches(
+    rule: RankingBoostRule,
+    *,
+    chunk: KnowledgeChunk,
+    query: RetrievalQuery,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> bool:
+    if not _ranking_boost_condition_matches(
+        rule.match,
+        chunk=chunk,
+        query=query,
+        matched_terms=matched_terms,
+        query_analysis=query_analysis,
     ):
-        boost += 0.09
-    filter_domain = query.filters.get("clinical_domain")
-    if filter_domain and filter_domain == chunk.clinical_domain:
-        boost += 0.03
-    return boost
+        return False
+    if not rule.any_of:
+        return True
+    return any(
+        _ranking_boost_condition_matches(
+            condition,
+            chunk=chunk,
+            query=query,
+            matched_terms=matched_terms,
+            query_analysis=query_analysis,
+        )
+        for condition in rule.any_of
+    )
+
+
+def _ranking_boost_condition_matches(
+    condition: RankingBoostCondition,
+    *,
+    chunk: KnowledgeChunk,
+    query: RetrievalQuery,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> bool:
+    if condition.query_schema_id_in_source_id and not (
+        query.schema_id and query.schema_id in chunk.source_id
+    ):
+        return False
+    if condition.any_query_fields_in_matched_terms and not (
+        query.fields and {field.lower() for field in query.fields}.intersection(matched_terms)
+    ):
+        return False
+    if condition.query_detected_format_present and not query.detected_format:
+        return False
+    if condition.filter_clinical_domain_matches_chunk and not (
+        query.filters.get("clinical_domain") and query.filters.get("clinical_domain") == chunk.clinical_domain
+    ):
+        return False
+    if condition.chunk_trust_levels and chunk.trust_level.value not in condition.chunk_trust_levels:
+        return False
+    if condition.chunk_source_types and chunk.source_type.value not in condition.chunk_source_types:
+        return False
+    if condition.chunk_standard_systems and chunk.standard_system not in condition.chunk_standard_systems:
+        return False
+    if condition.any_matched_terms and not _has_intersection(matched_terms, condition.any_matched_terms):
+        return False
+    if condition.any_concepts and not _has_intersection(
+        query_analysis.detected_concepts,
+        condition.any_concepts,
+    ):
+        return False
+    if condition.any_rule_ids and not _has_intersection(query_analysis.rule_ids, condition.any_rule_ids):
+        return False
+    return True
+
+
+def _ranking_boost_rules() -> tuple[RankingBoostRule, ...]:
+    path = os.environ.get("OJT_RANKING_BOOST_RULES_PATH")
+    return _load_ranking_boost_rules(path or str(DEFAULT_RANKING_BOOST_RULE_REGISTRY))
+
+
+def _load_ranking_boost_rules(path_text: str) -> tuple[RankingBoostRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid ranking boost registry at {path}: expected rules list")
+    rules = tuple(_ranking_boost_rule(record, path=path) for record in records)
+    _ensure_unique_ranking_boost_rule_ids(rules, path=path)
+    return rules
+
+
+def _ranking_boost_rule(record: Any, *, path: Path) -> RankingBoostRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid ranking boost registry at {path}: rule must be an object")
+    required = ("rule_id", "weight", "reason", "match")
+    missing = [field_name for field_name in required if field_name not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(f"Invalid ranking boost registry at {path}: missing {missing_text}")
+    any_of = record.get("any_of", [])
+    if not isinstance(any_of, list):
+        raise ValueError(f"Invalid ranking boost registry at {path}: any_of must be a list")
+    return RankingBoostRule(
+        rule_id=_required_ranking_boost_text(record["rule_id"], field="rule_id", path=path),
+        weight=_ranking_boost_weight(record["weight"], path=path),
+        reason=_required_ranking_boost_text(record["reason"], field="reason", path=path),
+        match=_ranking_boost_condition(record["match"], path=path),
+        any_of=tuple(_ranking_boost_condition(condition, path=path) for condition in any_of),
+    )
+
+
+def _ranking_boost_condition(record: Any, *, path: Path) -> RankingBoostCondition:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid ranking boost registry at {path}: condition must be an object")
+    condition = RankingBoostCondition(
+        query_schema_id_in_source_id=_optional_bool(
+            record.get("query_schema_id_in_source_id"),
+            field="query_schema_id_in_source_id",
+            path=path,
+        ),
+        any_query_fields_in_matched_terms=_optional_bool(
+            record.get("any_query_fields_in_matched_terms"),
+            field="any_query_fields_in_matched_terms",
+            path=path,
+        ),
+        query_detected_format_present=_optional_bool(
+            record.get("query_detected_format_present"),
+            field="query_detected_format_present",
+            path=path,
+        ),
+        filter_clinical_domain_matches_chunk=_optional_bool(
+            record.get("filter_clinical_domain_matches_chunk"),
+            field="filter_clinical_domain_matches_chunk",
+            path=path,
+        ),
+        chunk_trust_levels=_enum_values(
+            record.get("chunk_trust_levels"),
+            field="chunk_trust_levels",
+            path=path,
+            enum_type=TrustLevel,
+        ),
+        chunk_source_types=_enum_values(
+            record.get("chunk_source_types"),
+            field="chunk_source_types",
+            path=path,
+            enum_type=EvidenceSourceType,
+        ),
+        chunk_standard_systems=_optional_text_tuple(
+            record.get("chunk_standard_systems"),
+            field="chunk_standard_systems",
+            path=path,
+        ),
+        any_matched_terms=_optional_text_tuple(
+            record.get("any_matched_terms"),
+            field="any_matched_terms",
+            path=path,
+        ),
+        any_concepts=_optional_text_tuple(record.get("any_concepts"), field="any_concepts", path=path),
+        any_rule_ids=_optional_text_tuple(record.get("any_rule_ids"), field="any_rule_ids", path=path),
+    )
+    if not _ranking_condition_has_criterion(condition):
+        raise ValueError(
+            f"Invalid ranking boost registry at {path}: condition must include at least one criterion"
+        )
+    return condition
+
+
+def _ranking_condition_has_criterion(condition: RankingBoostCondition) -> bool:
+    return any(
+        (
+            condition.query_schema_id_in_source_id,
+            condition.any_query_fields_in_matched_terms,
+            condition.query_detected_format_present,
+            condition.filter_clinical_domain_matches_chunk,
+            condition.chunk_trust_levels,
+            condition.chunk_source_types,
+            condition.chunk_standard_systems,
+            condition.any_matched_terms,
+            condition.any_concepts,
+            condition.any_rule_ids,
+        )
+    )
+
+
+def _ranking_boost_weight(value: Any, *, path: Path) -> float:
+    try:
+        weight = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid ranking boost registry at {path}: weight must be a number") from exc
+    if weight < 0.0 or weight > 1.0:
+        raise ValueError(f"Invalid ranking boost registry at {path}: weight must be between 0 and 1")
+    return weight
+
+
+def _optional_bool(value: Any, *, field: str, path: Path) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise ValueError(f"Invalid ranking boost registry at {path}: {field} must be a boolean")
+    return value
+
+
+def _enum_values(value: Any, *, field: str, path: Path, enum_type: Any) -> tuple[str, ...]:
+    values = _optional_text_tuple(value, field=field, path=path)
+    normalized: list[str] = []
+    for item in values:
+        try:
+            normalized.append(enum_type(item).value)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid ranking boost registry at {path}: unsupported {field} value {item}"
+            ) from exc
+    return tuple(normalized)
+
+
+def _optional_text_tuple(value: Any, *, field: str, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid ranking boost registry at {path}: {field} must be a list")
+    return tuple(
+        normalized
+        for item in value
+        for normalized in [" ".join(str(item).split())]
+        if normalized
+    )
+
+
+def _required_ranking_boost_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid ranking boost registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _ensure_unique_ranking_boost_rule_ids(
+    rules: tuple[RankingBoostRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid ranking boost registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
+def _hit_source_locator(
+    chunk: KnowledgeChunk,
+    *,
+    applied_boost_rules: list[str],
+) -> dict[str, Any]:
+    locator = dict(chunk.locator)
+    if applied_boost_rules:
+        locator["ranking_boost_rules"] = applied_boost_rules
+    return locator
 
 
 def _reranker_enabled(reranker: Any | None) -> bool:

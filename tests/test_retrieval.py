@@ -478,6 +478,99 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert "UCUM" in analysis["standards"]
 
 
+def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch) -> None:
+    registry_path = tmp_path / "ranking_boost_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_ranking_boost_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_boost_standard",
+                        "weight": 0.5,
+                        "reason": "Custom ranking boost",
+                        "match": {
+                            "chunk_standard_systems": ["CustomStandard"],
+                            "any_matched_terms": ["needle"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_RANKING_BOOST_RULES_PATH", str(registry_path))
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="general",
+            source_id="source:general",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Needle general",
+            content="needle evidence",
+        ),
+        KnowledgeChunk(
+            chunk_id="custom",
+            source_id="source:custom",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Needle custom",
+            content="needle evidence",
+            standard_system="CustomStandard",
+        ),
+    ]
+
+    package = rank_chunks(
+        chunks,
+        RetrievalQuery(query="needle", top_k=2),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        diversity_enabled=False,
+    )
+
+    assert package.hits[0].evidence.source_id == "source:custom"
+    assert package.hits[0].source_locator["ranking_boost_rules"] == [
+        "custom_boost_standard"
+    ]
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_ranking_boost_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "reloaded_boost_general",
+                        "weight": 0.5,
+                        "reason": "Reloaded ranking boost",
+                        "match": {
+                            "chunk_standard_systems": ["GeneralStandard"],
+                            "any_matched_terms": ["needle"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    chunks[0] = KnowledgeChunk(
+        chunk_id="general",
+        source_id="source:general",
+        source_type=EvidenceSourceType.DATA_DICTIONARY,
+        title="Needle general",
+        content="needle evidence",
+        standard_system="GeneralStandard",
+    )
+
+    reloaded = rank_chunks(
+        chunks,
+        RetrievalQuery(query="needle", top_k=2),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        diversity_enabled=False,
+    )
+
+    assert reloaded.hits[0].evidence.source_id == "source:general"
+    assert reloaded.hits[0].source_locator["ranking_boost_rules"] == [
+        "reloaded_boost_general"
+    ]
+
+
 def test_static_retrieval_ranks_pubmed_mesh_search_evidence() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
     package = repository.search(
@@ -538,6 +631,7 @@ def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
     assert sources["dictionary:medical_search_playbook_v1"].clinical_domain == "retrieval"
     assert sources["dictionary:query_expansion_rules_v1"].standard_system == "ojtflow_retrieval"
     assert sources["dictionary:filter_suggestion_rules_v1"].standard_system == "ojtflow_retrieval"
+    assert sources["dictionary:ranking_boost_rules_v1"].standard_system == "ojtflow_retrieval"
     assert sources["dictionary:search_hint_targets_v1"].standard_system == "ojtflow_retrieval"
 
 
@@ -600,6 +694,7 @@ def test_knowledge_json_sources_are_valid() -> None:
         ROOT / "knowledge/terminologies/fhir_search_parameters.json",
         ROOT / "knowledge/retrieval/query_expansion_rules.json",
         ROOT / "knowledge/retrieval/filter_suggestion_rules.json",
+        ROOT / "knowledge/retrieval/ranking_boost_rules.json",
         ROOT / "knowledge/retrieval/search_hint_targets.json",
         ROOT / "knowledge/source_catalog/official_healthcare_sources.json",
     ]:

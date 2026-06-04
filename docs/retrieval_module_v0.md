@@ -67,7 +67,8 @@ The retrieval pipeline is auditable in v0:
    for CPU-safe production-like retrieval, or Hugging Face/SentenceTransformers
    embeddings for local GPU retrieval.
 7. Reciprocal Rank Fusion combines lexical and vector rankings.
-8. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
+8. Data-driven ranking boost rules favor schema matches, field matches,
+   approved sources, and relevant healthcare standards.
 9. Each ranked hit gets a deterministic extractive snippet: the most
    query-relevant sentence/window from the source chunk, with matched terms and
    normalized source offsets.
@@ -116,6 +117,7 @@ Seeded v0 sources include:
 - MeSH/PubMed biomedical literature-search direction
 - query expansion rule registry for deterministic healthcare retrieval variants
 - filter suggestion rule registry for deterministic self-query metadata suggestions
+- ranking boost rule registry for deterministic domain-aware first-stage ranking policy
 - medical search hint target registry for external target rationale and warnings
 - an official healthcare source catalog covering MeSH, RxNorm/RxNav, LOINC,
   FHIR R4, UCUM, MedlinePlus, openFDA, and ClinicalTrials.gov
@@ -139,6 +141,9 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/filter_suggestion_rules.json`: deterministic metadata
   filter suggestion rules for fields such as `clinical_domain` and
   `standard_system`.
+- `knowledge/retrieval/ranking_boost_rules.json`: deterministic ranking boost
+  rules for schema, field, trust-level, source-type, concept, and healthcare
+  standard matches.
 - `knowledge/retrieval/search_hint_targets.json`: target metadata for
   external medical search hints, including operator rationale and warnings.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
@@ -269,6 +274,18 @@ Diagnostics are deterministic query-quality checks. They flag low-specificity
 queries, missing healthcare concept matches, and standard filters that conflict
 with the standards inferred from query content. Warning diagnostics are copied
 into `RetrievalTrace.warnings` for audit and UI visibility.
+
+Ranking boost rules are loaded from `knowledge/retrieval/ranking_boost_rules.json`,
+not hardcoded into the ranking engine. Each rule defines `rule_id`, `weight`,
+`reason`, a required `match` condition, and optional `any_of` alternatives.
+Supported match operators are intentionally narrow: schema ID in source ID,
+requested fields in matched terms, detected format presence, applied
+clinical-domain filter match, chunk trust level, source type, standard system,
+matched query terms, detected concepts, and query-expansion rule IDs.
+`OJT_RANKING_BOOST_RULES_PATH` can point the runtime to a deployment-specific
+ranking policy. Applied boost rule IDs are copied into each hit's
+`source_locator.ranking_boost_rules` so ranking influence is visible in API
+payloads and the Retrieval console's locator details.
 
 Search hints are syntax scaffolds for medical search workflows outside the
 local retrieval index. PubMed hints prefer a conservative combination of
@@ -549,9 +566,10 @@ Retrieval is a two-stage architecture with deterministic defaults:
    candidate list. It keeps relevance as the primary signal while penalizing
    redundant chunks from sources already selected, which reduces repeated
    same-document evidence in operator review.
-4. The final package preserves `lexical_score`, `vector_score`, and
-   `rerank_score` per hit so workflow explanations can show why evidence was
-   selected instead of hiding relevance behind a single opaque score.
+4. The final package preserves `lexical_score`, `vector_score`, `rerank_score`,
+   and `source_locator.ranking_boost_rules` per hit so workflow explanations can
+   show why evidence was selected instead of hiding relevance behind a single
+   opaque score.
 
 Second-stage reranking is disabled by default because it downloads a model and
 adds inference latency. Enable it only in environments that intentionally
