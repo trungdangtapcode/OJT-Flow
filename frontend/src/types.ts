@@ -363,6 +363,16 @@ export type RetrievalJudgmentEvaluationPayload = {
   cutoff?: number | null;
 };
 
+export type RetrievalEvaluationRecommendation = {
+  rule_id: string;
+  severity: string;
+  metric: string;
+  message: string;
+  suggested_action: string;
+  evidence_ids: string[];
+  metadata: Record<string, unknown>;
+};
+
 export type RetrievalJudgmentEvaluationResult = {
   query: string;
   ranked_evidence_ids: string[];
@@ -380,6 +390,7 @@ export type RetrievalJudgmentEvaluationResult = {
   average_rating?: number | null;
   unjudged_evidence_ids: string[];
   judgment_ids: string[];
+  recommendations: RetrievalEvaluationRecommendation[];
 };
 
 export type RetrievalJudgmentPayload = {

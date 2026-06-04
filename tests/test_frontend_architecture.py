@@ -287,6 +287,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "nDCG@k" in retrieval_page
     assert "Server MAP@k" in retrieval_page
     assert "Server nDCG@k" in retrieval_page
+    assert "Evaluation recommendations" in retrieval_page
+    assert "recommendations" in (REPO_ROOT / "frontend/src/types.ts").read_text(
+        encoding="utf-8"
+    )
     assert "persistedJudgmentEvaluation" in retrieval_page
     assert "average_precision_at_k" in retrieval_page
     assert "judgmentCoverage" in retrieval_page

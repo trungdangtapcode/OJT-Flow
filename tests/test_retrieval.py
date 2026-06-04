@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
@@ -19,6 +20,9 @@ from ojtflow.infrastructure.retrieval.embeddings import (
 from ojtflow.infrastructure.retrieval.evaluation import (
     evaluate_retrieval_repository,
     load_eval_cases,
+)
+from ojtflow.infrastructure.retrieval.evaluation_policy import (
+    load_retrieval_evaluation_policy,
 )
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
@@ -44,7 +48,21 @@ def test_retrieval_query_rejects_blank_query() -> None:
 
 
 def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None:
-    service = RetrievalJudgmentService(InMemoryRetrievalJudgmentRepository())
+    service = RetrievalJudgmentService(
+        InMemoryRetrievalJudgmentRepository(),
+        evaluation_policy_rules=(
+            RetrievalEvaluationPolicyRule(
+                rule_id="label_unjudged_top_results",
+                metric="coverage_at_k",
+                operator="lt",
+                threshold=0.8,
+                severity="warning",
+                message="{judged_count}/{cutoff} hits are judged.",
+                suggested_action="Label unjudged evidence before tuning.",
+                include_unjudged_evidence_ids=True,
+            ),
+        ),
+    )
 
     first = service.upsert(
         owner_user_id="usr_a",
@@ -101,6 +119,9 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     assert evaluation.average_precision_at_k == 1.0
     assert evaluation.ndcg_at_k == 1.0
     assert evaluation.unjudged_evidence_ids == ["ev_unjudged"]
+    assert len(evaluation.recommendations) == 1
+    assert evaluation.recommendations[0].rule_id == "label_unjudged_top_results"
+    assert evaluation.recommendations[0].evidence_ids == ["ev_unjudged"]
 
 
 def test_query_variants_include_fields_schema_and_format() -> None:
@@ -738,6 +759,7 @@ def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
     assert sources["dictionary:query_expansion_rules_v1"].standard_system == "ojtflow_retrieval"
     assert sources["dictionary:filter_suggestion_rules_v1"].standard_system == "ojtflow_retrieval"
     assert sources["dictionary:ranking_boost_rules_v1"].standard_system == "ojtflow_retrieval"
+    assert sources["dictionary:retrieval_evaluation_policy_v1"].standard_system == "ojtflow_retrieval"
     assert sources["dictionary:search_hint_targets_v1"].standard_system == "ojtflow_retrieval"
 
 
@@ -801,11 +823,15 @@ def test_knowledge_json_sources_are_valid() -> None:
         ROOT / "knowledge/retrieval/query_expansion_rules.json",
         ROOT / "knowledge/retrieval/filter_suggestion_rules.json",
         ROOT / "knowledge/retrieval/ranking_boost_rules.json",
+        ROOT / "knowledge/retrieval/evaluation_policy.json",
         ROOT / "knowledge/retrieval/search_hint_targets.json",
         ROOT / "knowledge/source_catalog/official_healthcare_sources.json",
     ]:
         parsed = json.loads(path.read_text(encoding="utf-8"))
         assert isinstance(parsed, dict)
+
+    policy_rules = load_retrieval_evaluation_policy(ROOT / "knowledge")
+    assert any(rule.rule_id == "label_unjudged_top_results" for rule in policy_rules)
 
 
 def test_static_retrieval_filters_by_standard_system() -> None:

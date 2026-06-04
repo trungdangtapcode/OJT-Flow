@@ -78,6 +78,7 @@ OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160
 OJT_RETRIEVAL_DIVERSITY_ENABLED=true
 OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72
 OJT_RETRIEVAL_FRAMEWORK=custom
+OJT_RETRIEVAL_EVALUATION_POLICY_PATH=
 ```
 
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
@@ -189,6 +190,12 @@ LlamaIndex adapter behind the same retrieval port and requires
 `pip install -e '.[rag-framework]'` or a Docker build with
 `OJT_PYTHON_EXTRAS=parsing,rag-framework`. The response envelope and
 `RetrievalPackage` schema remain unchanged.
+
+Runtime retrieval tuning recommendations are data-driven. By default,
+`POST /api/v1/retrieval/judgments/evaluate` loads policy rules from
+`knowledge/retrieval/evaluation_policy.json`; set
+`OJT_RETRIEVAL_EVALUATION_POLICY_PATH` to use a deployment-specific policy file
+without changing application code.
 
 Boundary string fields that drive tool behavior must remain non-blank after
 trimming. Whitespace-only workflow instructions, workflow data, direct
@@ -1290,9 +1297,11 @@ query:
 
 Response data includes `coverage_at_k`, `precision_at_k`, `judged_precision`,
 `average_precision_at_k`, `ndcg_at_k`, per-value counts, unjudged evidence IDs,
-and the judgment IDs that contributed to the score. This endpoint is intended
-for operator-facing evaluation of the current ranked result list; it does not
-mutate judgments or workflow state.
+the judgment IDs that contributed to the score, and policy-driven
+`recommendations[]` with severity, metric, message, suggested action, evidence
+IDs, and rule metadata. This endpoint is intended for operator-facing
+evaluation of the current ranked result list; it does not mutate judgments or
+workflow state.
 
 `PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
 judgment:

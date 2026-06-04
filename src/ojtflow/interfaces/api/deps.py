@@ -21,6 +21,9 @@ from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
 from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
+from ojtflow.infrastructure.retrieval.evaluation_policy import (
+    load_retrieval_evaluation_policy,
+)
 from ojtflow.infrastructure.retrieval.llamaindex_adapter import LlamaIndexRetrievalRepository
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.reranking import build_reranker
@@ -173,7 +176,10 @@ def _build_retrieval_judgment_service() -> RetrievalJudgmentService:
         repository = PostgresRetrievalJudgmentRepository(backbone)
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
-    return RetrievalJudgmentService(repository)
+    return RetrievalJudgmentService(
+        repository,
+        evaluation_policy_rules=load_retrieval_evaluation_policy(settings.resolved_knowledge_dir),
+    )
 
 
 def _build_retrieval_repository(

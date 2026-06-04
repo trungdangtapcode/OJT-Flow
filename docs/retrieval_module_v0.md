@@ -144,6 +144,9 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/ranking_boost_rules.json`: deterministic ranking boost
   rules for schema, field, trust-level, source-type, concept, and healthcare
   standard matches.
+- `knowledge/retrieval/evaluation_policy.json`: runtime retrieval evaluation
+  policy that converts durable judgment metrics into operator-facing tuning
+  recommendations.
 - `knowledge/retrieval/search_hint_targets.json`: target metadata for
   external medical search hints, including operator rationale and warnings.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
@@ -812,9 +815,12 @@ limit for the active user/query.
 `POST /api/v1/retrieval/judgments/evaluate` accepts the active query, ranked
 evidence IDs, and optional cutoff, then scores that ranked list against stored
 judgments. It returns Coverage@k, Precision@k, judged precision, MAP@k, nDCG@k,
-per-value counts, contributing judgment IDs, and unjudged evidence IDs. This is
-the runtime counterpart to the offline evaluation harness: it makes current
-operator searches measurable without copying labels into fixture files.
+per-value counts, contributing judgment IDs, unjudged evidence IDs, and
+policy-driven `recommendations[]`. The recommendation rules are loaded from
+`knowledge/retrieval/evaluation_policy.json` by default and can be overridden
+with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime counterpart to
+the offline evaluation harness: it makes current operator searches measurable
+and actionable without copying labels into fixture files.
 
 Each durable judgment stores:
 

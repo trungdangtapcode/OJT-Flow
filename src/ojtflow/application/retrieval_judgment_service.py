@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 from ojtflow.application.ports import RetrievalJudgmentRepository
+from ojtflow.application.retrieval_evaluation_policy import (
+    RetrievalEvaluationPolicyRule,
+    recommendations_from_policy,
+)
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import (
     RetrievalJudgmentEvaluationResult,
@@ -19,8 +24,13 @@ from ojtflow.data_tools.hashing import sha256_text
 class RetrievalJudgmentService:
     """Coordinates user-scoped relevance judgments for retrieval evaluation."""
 
-    def __init__(self, repository: RetrievalJudgmentRepository) -> None:
+    def __init__(
+        self,
+        repository: RetrievalJudgmentRepository,
+        evaluation_policy_rules: Iterable[RetrievalEvaluationPolicyRule] = (),
+    ) -> None:
         self.repository = repository
+        self.evaluation_policy_rules = tuple(evaluation_policy_rules)
 
     def upsert(
         self,
@@ -165,6 +175,40 @@ class RetrievalJudgmentService:
             reverse=True,
         )[:top_k]
         ideal_dcg = _discounted_cumulative_gain(ideal_ratings)
+        coverage_at_k = round(judged_count / top_k, 6)
+        precision_at_k = round(positive_count / top_k, 6)
+        judged_precision = (
+            round(positive_count / judged_count, 6) if judged_count else None
+        )
+        average_precision_at_k = round(
+            _average_precision_at_k(top_ids, judgments_by_evidence, positive_judgments_total),
+            6,
+        )
+        ndcg_at_k = (
+            round(_discounted_cumulative_gain(ranked_ratings) / ideal_dcg, 6)
+            if ideal_dcg
+            else None
+        )
+        average_rating = (
+            round(sum(judgment.rating for judgment in ranked_judgments) / judged_count, 6)
+            if judged_count
+            else None
+        )
+        recommendation_context = {
+            "average_precision_at_k": average_precision_at_k,
+            "average_rating": average_rating,
+            "coverage_at_k": coverage_at_k,
+            "cutoff": top_k,
+            "judged_count": judged_count,
+            "judged_precision": judged_precision,
+            "ndcg_at_k": ndcg_at_k,
+            "not_relevant_count": not_relevant_count,
+            "partial_count": partial_count,
+            "positive_count": positive_count,
+            "precision_at_k": precision_at_k,
+            "relevant_count": relevant_count,
+            "unjudged_count": len(unjudged_ids),
+        }
         return RetrievalJudgmentEvaluationResult(
             query=query,
             ranked_evidence_ids=top_ids,
@@ -174,27 +218,19 @@ class RetrievalJudgmentService:
             relevant_count=relevant_count,
             partial_count=partial_count,
             not_relevant_count=not_relevant_count,
-            coverage_at_k=round(judged_count / top_k, 6),
-            precision_at_k=round(positive_count / top_k, 6),
-            judged_precision=(
-                round(positive_count / judged_count, 6) if judged_count else None
-            ),
-            average_precision_at_k=round(
-                _average_precision_at_k(top_ids, judgments_by_evidence, positive_judgments_total),
-                6,
-            ),
-            ndcg_at_k=(
-                round(_discounted_cumulative_gain(ranked_ratings) / ideal_dcg, 6)
-                if ideal_dcg
-                else None
-            ),
-            average_rating=(
-                round(sum(judgment.rating for judgment in ranked_judgments) / judged_count, 6)
-                if judged_count
-                else None
-            ),
+            coverage_at_k=coverage_at_k,
+            precision_at_k=precision_at_k,
+            judged_precision=judged_precision,
+            average_precision_at_k=average_precision_at_k,
+            ndcg_at_k=ndcg_at_k,
+            average_rating=average_rating,
             unjudged_evidence_ids=unjudged_ids,
             judgment_ids=[judgment.judgment_id for judgment in ranked_judgments],
+            recommendations=recommendations_from_policy(
+                rules=self.evaluation_policy_rules,
+                context=recommendation_context,
+                unjudged_evidence_ids=unjudged_ids,
+            ),
         )
 
     def delete(self, *, owner_user_id: str, judgment_id: str) -> None:

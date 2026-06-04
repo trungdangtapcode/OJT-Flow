@@ -869,6 +869,15 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             "ojtflow_retrieval",
         ),
         (
+            "chunk_dictionary_evaluation_policy_v1",
+            "dictionary:retrieval_evaluation_policy_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Retrieval Evaluation Policy Registry",
+            knowledge_root / "retrieval/evaluation_policy.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
             "chunk_dictionary_search_hint_targets_v1",
             "dictionary:search_hint_targets_v1",
             EvidenceSourceType.DATA_DICTIONARY,

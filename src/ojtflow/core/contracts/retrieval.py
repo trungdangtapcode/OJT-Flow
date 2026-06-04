@@ -68,6 +68,18 @@ class RetrievalRelevanceJudgmentSummary(ContractModel):
     value_counts: dict[RetrievalJudgmentValue, int] = Field(default_factory=dict)
 
 
+class RetrievalEvaluationRecommendation(ContractModel):
+    """Actionable retrieval tuning recommendation derived from judged results."""
+
+    rule_id: NonBlankStr
+    severity: NonBlankStr
+    metric: NonBlankStr
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+    evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalJudgmentEvaluationResult(ContractModel):
     """Judgment-aware evaluation for one ranked retrieval result set."""
 
@@ -87,6 +99,7 @@ class RetrievalJudgmentEvaluationResult(ContractModel):
     average_rating: float | None = None
     unjudged_evidence_ids: list[NonBlankStr] = Field(default_factory=list)
     judgment_ids: list[NonBlankStr] = Field(default_factory=list)
+    recommendations: list[RetrievalEvaluationRecommendation] = Field(default_factory=list)
 
 
 class RetrievalSnippet(ContractModel):
