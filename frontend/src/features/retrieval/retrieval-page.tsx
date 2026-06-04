@@ -113,12 +113,19 @@ type RetrievalRunComparison = {
   candidateDelta: number;
   hitDelta: number;
   qualityWarningDelta: number;
+  rankChanges: RetrievalRankChange[];
   removedEvidenceIds: string[];
   retainedEvidenceIds: string[];
   topSourceAfter: string | null;
   topSourceBefore: string | null;
   topSourceChanged: boolean;
   warningDelta: number;
+};
+type RetrievalRankChange = {
+  evidenceId: string;
+  fromRank: number;
+  rankDelta: number;
+  toRank: number;
 };
 
 const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
@@ -878,6 +885,7 @@ function SearchRunComparison({ comparison }: { comparison: RetrievalRunCompariso
         />
       </div>
       <div className="grid gap-2">
+        <RunComparisonRankChanges rankChanges={comparison.rankChanges} />
         <RunComparisonEvidenceChange
           evidenceIds={comparison.addedEvidenceIds}
           label="Added evidence"
@@ -917,6 +925,52 @@ function RunComparisonMetric({
       <Badge variant={deltaBadgeVariant(delta, positiveIsGood)}>
         {formatSignedDelta(delta)}
       </Badge>
+    </div>
+  );
+}
+
+function RunComparisonRankChanges({
+  rankChanges,
+}: {
+  rankChanges: RetrievalRankChange[];
+}) {
+  if (!rankChanges.length) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <span className="text-xs font-bold text-muted-foreground">Rank movement</span>
+        <Badge variant="success">stable</Badge>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-muted-foreground">Rank movement</span>
+        <Badge variant="warning">{formatCount(rankChanges.length, "changed rank")}</Badge>
+      </div>
+      <div className="grid gap-1">
+        {rankChanges.slice(0, 4).map((change) => (
+          <div
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
+            key={change.evidenceId}
+          >
+            <span className="break-words font-bold">{change.evidenceId}</span>
+            <span className="flex min-w-0 flex-wrap gap-1.5 text-muted-foreground">
+              <Badge variant={change.rankDelta < 0 ? "success" : "warning"}>
+                {change.rankDelta < 0 ? "up" : "down"} {Math.abs(change.rankDelta)}
+              </Badge>
+              <span>
+                #{change.fromRank} to #{change.toRank}
+              </span>
+            </span>
+          </div>
+        ))}
+        {rankChanges.length > 4 ? (
+          <div className="text-xs font-semibold text-muted-foreground">
+            +{formatCount(rankChanges.length - 4, "more changed rank")}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -3282,6 +3336,7 @@ function compareSearchRuns(
     hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
     qualityWarningDelta:
       activeRun.summary.qualityWarningCount - baselineRun.summary.qualityWarningCount,
+    rankChanges: rankChangesBetweenRuns(activeRun, baselineRun),
     removedEvidenceIds: baselineEvidenceIds.filter(
       (evidenceId) => !activeEvidenceIdSet.has(evidenceId),
     ),
@@ -3294,6 +3349,33 @@ function compareSearchRuns(
       activeRun.summary.topSourceId !== baselineRun.summary.topSourceId,
     warningDelta: activeRun.summary.warningCount - baselineRun.summary.warningCount,
   };
+}
+
+function rankChangesBetweenRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalRankChange[] {
+  const baselineRanks = new Map(
+    baselineRun.packageData.hits.map((hit, index) => [
+      hit.evidence.evidence_id,
+      index + 1,
+    ]),
+  );
+  return activeRun.packageData.hits
+    .map((hit, index) => {
+      const evidenceId = hit.evidence.evidence_id;
+      const fromRank = baselineRanks.get(evidenceId);
+      const toRank = index + 1;
+      if (!fromRank || fromRank === toRank) return null;
+      return {
+        evidenceId,
+        fromRank,
+        rankDelta: toRank - fromRank,
+        toRank,
+      };
+    })
+    .filter((change): change is RetrievalRankChange => Boolean(change))
+    .sort((left, right) => Math.abs(right.rankDelta) - Math.abs(left.rankDelta));
 }
 
 function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {
