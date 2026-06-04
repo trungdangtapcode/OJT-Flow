@@ -221,6 +221,22 @@ export function RetrievalPage() {
     }
   };
 
+  const restoreSubmittedSearch = () => {
+    if (!submittedSearchPayload) return;
+
+    setQuery(submittedSearchPayload.query);
+    setFields(submittedSearchPayload.fields.join(", "));
+    setSchemaId(submittedSearchPayload.schema_id ?? "");
+    setDetectedFormat(submittedSearchPayload.detected_format ?? "");
+    setResourceType(submittedSearchPayload.resource_type ?? "");
+    setClinicalDomain(submittedSearchPayload.clinical_domain ?? "");
+    setStandardSystem(submittedSearchPayload.standard_system ?? "");
+    setSourceType(submittedSearchPayload.source_type ?? "");
+    setTrustLevel(submittedSearchPayload.trust_level ?? "");
+    setTopK(submittedSearchPayload.top_k);
+    setFormError(null);
+  };
+
   const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
     if (!isSupportedFilterField(suggestion.field)) return;
     applySearchFilter(suggestion.field, suggestion.value);
@@ -434,6 +450,7 @@ export function RetrievalPage() {
             isSearchPending={searchMutation.isPending}
             isStale={isSearchResultStale}
             onApplyFacet={applySearchFilter}
+            onRestoreSubmittedSearch={restoreSubmittedSearch}
             packageData={packageData}
             submittedSearchPayload={submittedSearchPayload}
           />
@@ -536,6 +553,7 @@ function SearchResults({
   isSearchPending,
   isStale,
   onApplyFacet,
+  onRestoreSubmittedSearch,
   packageData,
   submittedSearchPayload,
 }: {
@@ -543,6 +561,7 @@ function SearchResults({
   isSearchPending: boolean;
   isStale: boolean;
   onApplyFacet: (field: SupportedFilterField, value: string) => void;
+  onRestoreSubmittedSearch: () => void;
   packageData: RetrievalPackage | undefined;
   submittedSearchPayload: RetrievalSearchPayload | null;
 }) {
@@ -585,7 +604,12 @@ function SearchResults({
       </CardHeader>
       <CardContent className="grid gap-3 pt-4">
         {submittedSearchPayload ? (
-          <SubmittedSearchSummary isStale={isStale} payload={submittedSearchPayload} />
+          <SubmittedSearchSummary
+            isRestoreDisabled={isSearchPending}
+            isStale={isStale}
+            onRestore={onRestoreSubmittedSearch}
+            payload={submittedSearchPayload}
+          />
         ) : null}
         <ResultFacets
           activeFilters={resultFilters}
@@ -681,10 +705,14 @@ function ResultFacets({
 }
 
 function SubmittedSearchSummary({
+  isRestoreDisabled,
   isStale,
+  onRestore,
   payload,
 }: {
+  isRestoreDisabled: boolean;
   isStale: boolean;
+  onRestore: () => void;
   payload: RetrievalSearchPayload;
 }) {
   const filters = activeFilterEntries(activeFacetFiltersFromPayload(payload));
@@ -692,9 +720,24 @@ function SubmittedSearchSummary({
     <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-bold uppercase text-muted-foreground">Submitted search</div>
-        <Badge variant={isStale ? "warning" : "success"}>
-          {isStale ? "displayed request" : "current request"}
-        </Badge>
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          <Badge variant={isStale ? "warning" : "success"}>
+            {isStale ? "displayed request" : "current request"}
+          </Badge>
+          {isStale ? (
+            <Button
+              disabled={isRestoreDisabled}
+              onClick={onRestore}
+              size="sm"
+              title="Restore submitted search"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Restore
+            </Button>
+          ) : null}
+        </div>
       </div>
       <div className="grid gap-2 text-sm">
         <div className="break-words font-semibold">{payload.query}</div>

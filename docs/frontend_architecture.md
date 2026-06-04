@@ -141,7 +141,9 @@ must show that ranked evidence has pending changes until the current request
 state is submitted again. The ranked-results panel should also render the last
 submitted request summary and use that submitted payload to mark result facets
 as applied, so displayed evidence remains auditable even while the builder is
-being edited.
+being edited. When displayed evidence is stale, operators must be able to
+restore the query builder to the submitted request without changing the result
+package or issuing another search.
 The assistant route is the operator shortcut over those same backend contracts.
 It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
 write-gate state, executed tool calls, and compact evidence/output previews.

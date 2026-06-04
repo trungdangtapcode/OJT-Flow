@@ -208,6 +208,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "submittedSearchPayload" in retrieval_page
     assert "SubmittedSearchSummary" in retrieval_page
     assert "Submitted search" in retrieval_page
+    assert "restoreSubmittedSearch" in retrieval_page
+    assert "onRestoreSubmittedSearch" in retrieval_page
+    assert "Restore submitted search" in retrieval_page
     assert "displayed request" in retrieval_page
     assert "activeFacetFiltersFromPayload" in retrieval_page
     assert "onApplyFacet" in retrieval_page
@@ -221,6 +224,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "removable chips" in frontend_architecture
     assert "pending changes" in frontend_architecture
     assert "submitted request summary" in frontend_architecture
+    assert "restore the query builder" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:

@@ -333,7 +333,10 @@ results header is marked with pending changes until the current request shape is
 submitted again. Ranked evidence also shows a submitted-search summary with the
 query, target size, schema, format, resource, fields, and metadata constraints
 that produced the displayed result set. Result facet applied states are based on
-that submitted request, not unsaved edits in the query builder.
+that submitted request, not unsaved edits in the query builder. When the query
+builder has drifted, the summary exposes a restore action that syncs the builder
+back to the submitted request without mutating displayed evidence or rerunning
+retrieval.
 In v0 these facets are computed over selected hits, not the full indexed corpus,
 so the counts match the evidence cards visible in the Retrieval console.
 
