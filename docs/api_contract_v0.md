@@ -57,6 +57,12 @@ OJT_EMBEDDING_DIMENSIONS=64
 OJT_OPENAI_API_KEY=
 OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1
 OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0
+OJT_HF_EMBEDDING_DEVICE=auto
+OJT_HF_EMBEDDING_BATCH_SIZE=32
+OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface
+OJT_RETRIEVAL_CORPUS_DIRS=knowledge/corpus
+OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200
+OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160
 ```
 
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
@@ -116,14 +122,14 @@ Values may include or omit the leading dot and are normalized to lowercase.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, path-like values,
 wildcards, or extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER` supports `deterministic` and `openai`. Deterministic
-mode is for offline tests and demos. OpenAI mode uses `OJT_OPENAI_API_KEY` or,
-when that is blank, `OPENAI_API_KEY`. The recommended semantic retrieval
-configuration is `OJT_EMBEDDING_PROVIDER=openai`,
-`OJT_EMBEDDING_MODEL=text-embedding-3-small`, and
-`OJT_EMBEDDING_DIMENSIONS=384`, matching the Postgres `embedding vector(384)`
-schema. Other provider names, incompatible deterministic model IDs, and invalid
-dimension values are rejected during settings load.
+`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
+Deterministic mode is for offline tests and demos. OpenAI mode uses
+`OJT_OPENAI_API_KEY` or, when that is blank, `OPENAI_API_KEY`. Hugging Face mode
+uses SentenceTransformers and can run on GPU with `OJT_HF_EMBEDDING_DEVICE=cuda`.
+The recommended semantic retrieval dimension is `384`, matching the Postgres
+`embedding vector(384)` schema. Other provider names, incompatible deterministic
+model IDs, invalid device values, and invalid dimension values are rejected
+during settings load.
 
 Boundary string fields that drive tool behavior must remain non-blank after
 trimming. Whitespace-only workflow instructions, workflow data, direct
@@ -347,6 +353,8 @@ FHIR-like workflow behavior:
 - `handoff_context.fhir_profile` records resource type counts, minimal shape
   issues, and evidence IDs.
 - `handoff_context.fhir_handoff` records Graph-NER/RAG handoff terms.
+- `handoff_context.retrieval_handoff.graph_context` records extracted evidence
+  graph nodes, edges, and triples for retrieval-grounded explanation.
 - The retrieval query receives `resource_type`, so standard evidence such as
   FHIR Observation guidance can be ranked with the workflow context.
 
@@ -649,6 +657,12 @@ Response data includes:
 - `embedding.dimensions`
 - `embedding.openai_configured`
 - `embedding.openai_base_url_configured`
+- `embedding.hf_device`
+- `embedding.hf_batch_size`
+- `embedding.hf_cache_dir_configured`
+- `retrieval.corpus_dir_count`
+- `retrieval.chunk_max_chars`
+- `retrieval.chunk_overlap_chars`
 - `upload.max_upload_bytes`
 - `upload.max_inline_data_bytes`
 - `upload.allowed_extensions`
@@ -678,7 +692,15 @@ Example:
       "model": "text-embedding-3-small",
       "dimensions": 384,
       "openai_configured": true,
-      "openai_base_url_configured": true
+      "openai_base_url_configured": true,
+      "hf_device": "auto",
+      "hf_batch_size": 32,
+      "hf_cache_dir_configured": true
+    },
+    "retrieval": {
+      "corpus_dir_count": 1,
+      "chunk_max_chars": 1200,
+      "chunk_overlap_chars": 160
     },
     "upload": {
       "max_upload_bytes": 26214400,
@@ -876,6 +898,7 @@ Response data is a `RetrievalPackage`:
 - `trace.safety_flags`
 - `trace.warnings`
 - `handoff_context`
+- `handoff_context.graph_context`
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
@@ -891,6 +914,21 @@ when supplied.
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,
 and chunk count.
+
+`POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from
+seeded knowledge and configured local corpus directories:
+
+```json
+{
+  "include_seeded": true,
+  "include_corpus": true
+}
+```
+
+Response data includes repository type, indexed chunk count, embedding provider
+metadata, and local corpus indexing stats. The endpoint requires an
+authenticated session and does not accept arbitrary document text; corpus
+content comes from trusted runtime directories configured by operators.
 
 ## Upload Workflow
 

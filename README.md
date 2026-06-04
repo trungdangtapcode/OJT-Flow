@@ -188,10 +188,11 @@ lowercase, and must be simple supported suffixes such as `.csv` or `.pdf`.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, paths, wildcards, or
 extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER` supports `deterministic` and `openai`. Deterministic
-mode is for offline tests and demos. OpenAI mode uses the Embeddings API with
-`OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY` when the project-specific
-variable is not set. Recommended CPU-safe semantic retrieval settings are:
+`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
+Deterministic mode is for offline tests and demos. OpenAI mode uses the
+Embeddings API with `OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY` when
+the project-specific variable is not set. Recommended CPU-safe semantic
+retrieval settings are:
 
 ```text
 OJT_EMBEDDING_PROVIDER=openai
@@ -199,10 +200,25 @@ OJT_EMBEDDING_MODEL=text-embedding-3-small
 OJT_EMBEDDING_DIMENSIONS=384
 ```
 
+For local GPU retrieval, install the optional dependency group and use:
+
+```bash
+uv pip install -e '.[embeddings-local]'
+```
+
+```text
+OJT_EMBEDDING_PROVIDER=huggingface
+OJT_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+OJT_EMBEDDING_DIMENSIONS=384
+OJT_HF_EMBEDDING_DEVICE=cuda
+```
+
 The Postgres semantic vector schema uses `embedding vector(384)`. Retrieval
 still stores JSON embeddings and performs Python reranking if pgvector is not
 available or if the configured provider dimension does not match the vector
-column.
+column. Operator-provided trusted corpus files are indexed from
+`OJT_RETRIEVAL_CORPUS_DIRS` and can be refreshed through
+`POST /api/v1/retrieval/reindex`.
 
 The frontend container proxies `/api/*` and `/health` requests to the API
 container in Docker. No API keys or ADC credential files are committed; pass
@@ -345,6 +361,7 @@ Useful routes:
 - `POST /api/v1/fhir/profile`
 - `POST /api/v1/ocr/evidence`
 - `POST /api/v1/retrieval/search`
+- `POST /api/v1/retrieval/reindex`
 - `GET /api/v1/retrieval/sources`
 - `POST /api/v1/parse/extract`
 - `POST /api/v1/parse/upload/workflow`

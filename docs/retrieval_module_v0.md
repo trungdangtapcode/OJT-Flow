@@ -19,8 +19,9 @@ Production Docker uses Postgres with:
 - optional pgvector `vector(384)` and HNSW index when the extension is available
 - JSON embeddings as a portable fallback
 
-Memory and SQLite modes use the deterministic static retrieval repository so
-tests and local demos do not require external services.
+Memory and SQLite modes use the static retrieval repository so tests and local
+demos do not require database state. The static adapter still accepts configured
+embedding providers for parity with Postgres mode.
 
 ## Ranking
 
@@ -30,16 +31,18 @@ The retrieval pipeline is auditable in v0:
 2. Candidate chunks are filtered by trust level, clinical domain, standard system, or source type.
 3. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
 4. Vector score uses the configured embedding provider:
-   deterministic hash embeddings for offline tests, or OpenAI semantic
-   embeddings for CPU-safe production-like retrieval.
+   deterministic hash embeddings for offline tests, OpenAI semantic embeddings
+   for CPU-safe production-like retrieval, or Hugging Face/SentenceTransformers
+   embeddings for local GPU retrieval.
 5. Reciprocal Rank Fusion combines lexical and vector rankings.
 6. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
 7. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
-This is intentionally compatible with later Hugging Face local embeddings, HyDE,
-GraphRAG, RAPTOR, and terminology-service adapters without changing workflow
-contracts.
+The retrieval package now includes a `graph_context` handoff that extracts
+entities and evidence triples from the retrieved claims. This is a
+GraphRAG-lite context for validation/explanation workflows, not diagnosis,
+treatment, triage, or medication advice.
 
 ## Healthcare Sources
 
@@ -82,6 +85,19 @@ List sources:
 GET /api/v1/retrieval/sources
 ```
 
+Refresh indexed retrieval sources:
+
+```http
+POST /api/v1/retrieval/reindex
+```
+
+```json
+{
+  "include_seeded": true,
+  "include_corpus": true
+}
+```
+
 Direct retrieval requires an authenticated session. Requests without
 `workflow_id` search the approved knowledge inventory. Requests with
 `workflow_id` are scoped to the authenticated workflow owner and return
@@ -92,6 +108,14 @@ Workflow output includes:
 - `retrieved_context`
 - `handoff_context.retrieval_trace`
 - `handoff_context.retrieval_handoff`
+- `handoff_context.retrieval_handoff.graph_context`
+
+`graph_context` uses contract `graph_ner_handoff.v0` and includes:
+
+- `nodes`: query, evidence, healthcare standard, clinical concept, and data-field nodes.
+- `edges`: auditable relationships such as `supports`, `mentions_field`, and
+  `requests_resource`.
+- `triples`: source/evidence triples for downstream Graph-NER/RAG handoff.
 
 `retrieval_trace.safety_flags` is deterministic and auditable. Current flags are:
 
@@ -112,10 +136,11 @@ OJT_EMBEDDING_MODEL=deterministic-hash-v0
 OJT_EMBEDDING_DIMENSIONS=64
 ```
 
-`OJT_EMBEDDING_PROVIDER` supports `deterministic` and `openai`.
+`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
 Deterministic mode is for tests and offline demos only. OpenAI mode uses the
 Embeddings API and reads `OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY`
-when the project-specific variable is not set.
+when the project-specific variable is not set. Hugging Face mode uses
+SentenceTransformers locally and can run on GPU with `OJT_HF_EMBEDDING_DEVICE=cuda`.
 
 Recommended OpenAI semantic retrieval settings:
 
@@ -131,6 +156,29 @@ OJT_OPENAI_API_KEY=...
 model's default 1536-dimensional output. Both provider and model are validated
 during settings load so runtime diagnostics cannot claim a provider that the
 retrieval adapter is not actually using.
+
+Recommended local GPU retrieval settings:
+
+```text
+OJT_EMBEDDING_PROVIDER=huggingface
+OJT_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+OJT_EMBEDDING_DIMENSIONS=384
+OJT_HF_EMBEDDING_DEVICE=cuda
+OJT_HF_EMBEDDING_BATCH_SIZE=32
+OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface
+```
+
+Install local embedding dependencies with:
+
+```bash
+uv pip install -e '.[embeddings-local]'
+```
+
+Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
+to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,
+`.json`, `.yaml`, `.yml`, and `.csv`. Reindexing is explicit through
+`POST /api/v1/retrieval/reindex` so operators can control when model downloads,
+embedding computation, and database vector updates happen.
 
 `OJT_KNOWLEDGE_DIR` points at the trusted healthcare knowledge inventory used to
 seed retrieval sources and schema evidence. Relative paths resolve from the

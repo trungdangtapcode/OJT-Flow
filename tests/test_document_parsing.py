@@ -48,7 +48,7 @@ def make_service() -> WorkflowService:
 
 async def _client() -> httpx.AsyncClient:
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
@@ -77,6 +77,10 @@ def _authenticated_session() -> AuthenticatedSession:
             last_seen_at=now,
         ),
     )
+
+
+async def _authenticated_dependency() -> AuthenticatedSession:
+    return _authenticated_session()
 
 
 def test_sanitize_upload_filename_rejects_path_traversal() -> None:
@@ -262,8 +266,12 @@ async def test_api_upload_workflow_normalizes_form_text(monkeypatch) -> None:
 
     fake_service = FakeWorkflowService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:

@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
-EmbeddingProvider = Literal["deterministic", "openai"]
+EmbeddingProvider = Literal["deterministic", "openai", "huggingface"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
 DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
     ".pdf",
@@ -42,12 +42,20 @@ COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 DNS_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 UPLOAD_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9][a-z0-9-]{0,15}$")
 ALLOWED_STORAGE_BACKENDS: tuple[StorageBackend, ...] = ("postgres", "sqlite", "memory")
-ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = ("deterministic", "openai")
+ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = (
+    "deterministic",
+    "openai",
+    "huggingface",
+)
 DETERMINISTIC_EMBEDDING_MODEL = "deterministic-hash-v0"
 DETERMINISTIC_EMBEDDING_DIMENSIONS = 64
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDING_DIMENSIONS = 384
 OPENAI_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
+HUGGINGFACE_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+HUGGINGFACE_EMBEDDING_DIMENSIONS = 384
+DEFAULT_HF_EMBEDDING_CACHE_DIR = Path("var/huggingface")
+DEFAULT_RETRIEVAL_CORPUS_DIRS = (Path("knowledge/corpus"),)
 DEFAULT_STORAGE_BACKEND: StorageBackend = "postgres"
 DEFAULT_POSTGRES_DSN = "postgresql://ojtflow:ojtflow@localhost:5432/ojtflow"
 DEFAULT_DATABASE_PATH = Path("var/ojtflow.db")
@@ -155,6 +163,39 @@ class Settings(BaseModel):
         alias="OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS",
         gt=0,
     )
+    hf_embedding_device: str = Field(default="auto", alias="OJT_HF_EMBEDDING_DEVICE")
+    hf_embedding_batch_size: int = Field(
+        default=32,
+        alias="OJT_HF_EMBEDDING_BATCH_SIZE",
+        gt=0,
+    )
+    hf_embedding_cache_dir: Path = Field(
+        default=DEFAULT_HF_EMBEDDING_CACHE_DIR,
+        alias="OJT_HF_EMBEDDING_CACHE_DIR",
+    )
+    retrieval_corpus_dirs: tuple[Path, ...] = Field(
+        default=DEFAULT_RETRIEVAL_CORPUS_DIRS,
+        alias="OJT_RETRIEVAL_CORPUS_DIRS",
+    )
+    retrieval_chunk_max_chars: int = Field(
+        default=1200,
+        alias="OJT_RETRIEVAL_CHUNK_MAX_CHARS",
+        gt=0,
+    )
+    retrieval_chunk_overlap_chars: int = Field(
+        default=160,
+        alias="OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS",
+        ge=0,
+    )
+
+    @model_validator(mode="after")
+    def _validate_retrieval_chunking(self) -> "Settings":
+        if self.retrieval_chunk_overlap_chars >= self.retrieval_chunk_max_chars:
+            raise ValueError(
+                "OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS must be smaller than "
+                "OJT_RETRIEVAL_CHUNK_MAX_CHARS"
+            )
+        return self
 
     @property
     def repo_root(self) -> Path:
@@ -175,6 +216,14 @@ class Settings(BaseModel):
     @property
     def resolved_migrations_dir(self) -> Path:
         return _resolve_path(self.migrations_dir, self.repo_root)
+
+    @property
+    def resolved_hf_embedding_cache_dir(self) -> Path:
+        return _resolve_path(self.hf_embedding_cache_dir, self.repo_root)
+
+    @property
+    def resolved_retrieval_corpus_dirs(self) -> tuple[Path, ...]:
+        return tuple(_resolve_path(path, self.repo_root) for path in self.retrieval_corpus_dirs)
 
     @property
     def resolved_allowed_auth_redirect_uris(self) -> set[str]:
@@ -274,6 +323,23 @@ def get_settings() -> Settings:
         ),
         OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=float(
             os.getenv("OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS", "20.0")
+        ),
+        OJT_HF_EMBEDDING_DEVICE=_parse_hf_embedding_device(
+            os.getenv("OJT_HF_EMBEDDING_DEVICE")
+        ),
+        OJT_HF_EMBEDDING_BATCH_SIZE=int(os.getenv("OJT_HF_EMBEDDING_BATCH_SIZE", "32")),
+        OJT_HF_EMBEDDING_CACHE_DIR=Path(
+            os.getenv("OJT_HF_EMBEDDING_CACHE_DIR", str(DEFAULT_HF_EMBEDDING_CACHE_DIR))
+        ),
+        OJT_RETRIEVAL_CORPUS_DIRS=_parse_path_csv(
+            os.getenv("OJT_RETRIEVAL_CORPUS_DIRS"),
+            default=DEFAULT_RETRIEVAL_CORPUS_DIRS,
+        ),
+        OJT_RETRIEVAL_CHUNK_MAX_CHARS=int(
+            os.getenv("OJT_RETRIEVAL_CHUNK_MAX_CHARS", "1200")
+        ),
+        OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=int(
+            os.getenv("OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS", "160")
         ),
     )
 
@@ -526,6 +592,8 @@ def _parse_embedding_provider(value: str | None) -> EmbeddingProvider:
         return "deterministic"
     if normalized == "openai":
         return "openai"
+    if normalized in {"huggingface", "sentence-transformers", "sentence_transformers", "hf"}:
+        return "huggingface"
     allowed = ", ".join(ALLOWED_EMBEDDING_PROVIDERS)
     raise ValueError(
         f"Invalid embedding provider environment value: {value}. Expected one of: {allowed}"
@@ -537,18 +605,28 @@ def _parse_embedding_model(value: str | None, *, provider: str | None = None) ->
     default = (
         OPENAI_EMBEDDING_MODEL
         if parsed_provider == "openai"
+        else HUGGINGFACE_EMBEDDING_MODEL
+        if parsed_provider == "huggingface"
         else DETERMINISTIC_EMBEDDING_MODEL
     )
     normalized = default if value is None else value.strip()
     allowed = {
         "deterministic": {DETERMINISTIC_EMBEDDING_MODEL},
         "openai": {OPENAI_EMBEDDING_MODEL, "text-embedding-3-large"},
+        "huggingface": None,
     }[parsed_provider]
-    if normalized in allowed:
+    if allowed is None and _valid_model_identifier(normalized):
         return normalized
+    if allowed is not None and normalized in allowed:
+        return normalized
+    expected = (
+        "a non-blank Hugging Face model id or local model path"
+        if allowed is None
+        else f"one of: {', '.join(sorted(allowed))}"
+    )
     raise ValueError(
         "Invalid embedding model environment value: "
-        f"{value}. Expected one of: {', '.join(sorted(allowed))}"
+        f"{value}. Expected {expected}"
     )
 
 
@@ -563,6 +641,8 @@ def _parse_embedding_dimensions(
     default_dimensions = (
         OPENAI_EMBEDDING_DIMENSIONS
         if parsed_provider == "openai"
+        else HUGGINGFACE_EMBEDDING_DIMENSIONS
+        if parsed_provider == "huggingface"
         else DETERMINISTIC_EMBEDDING_DIMENSIONS
     )
     normalized = str(default_dimensions) if value is None else value.strip()
@@ -580,6 +660,8 @@ def _parse_embedding_dimensions(
             return dimensions
         if dimensions == 1536:
             return dimensions
+    if parsed_provider == "huggingface" and dimensions > 0:
+        return dimensions
     raise ValueError(
         "Invalid embedding dimensions environment value: "
         f"{value}. Expected a positive integer supported by {parsed_model}"
@@ -600,6 +682,37 @@ def _parse_openai_base_url(value: str | None) -> str:
     if parsed.fragment:
         raise ValueError("Invalid OpenAI embedding base URL: fragment is not allowed")
     return raw
+
+
+def _parse_hf_embedding_device(value: str | None) -> str:
+    normalized = "auto" if value is None else value.strip().lower()
+    if not normalized:
+        raise ValueError("Invalid Hugging Face embedding device: value is blank")
+    if normalized in {"auto", "cpu", "cuda", "mps"}:
+        return normalized
+    if re.fullmatch(r"cuda:\d+", normalized):
+        return normalized
+    raise ValueError(
+        "Invalid Hugging Face embedding device: expected auto, cpu, cuda, cuda:N, or mps"
+    )
+
+
+def _parse_path_csv(value: str | None, *, default: tuple[Path, ...]) -> tuple[Path, ...]:
+    if not value:
+        return default
+    paths: list[Path] = []
+    for item in value.split(","):
+        normalized = item.strip()
+        if not normalized:
+            continue
+        paths.append(Path(normalized))
+    return tuple(paths) or default
+
+
+def _valid_model_identifier(value: str) -> bool:
+    if not value or any(char in value for char in "\r\n\t"):
+        return False
+    return len(value) <= 200
 
 
 def _parse_cookie_name(value: str | None) -> str:

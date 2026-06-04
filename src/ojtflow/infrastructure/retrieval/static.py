@@ -9,6 +9,7 @@ from typing import Any
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
@@ -76,9 +77,15 @@ class StaticRetrievalRepository:
         self,
         root: Path | str,
         embedding_provider: Any | None = None,
+        corpus_dirs: tuple[Path, ...] | None = None,
+        chunk_max_chars: int = 1200,
+        chunk_overlap_chars: int = 160,
     ) -> None:
         self.root = Path(root)
         self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        self.corpus_dirs = corpus_dirs or (self.root / "corpus",)
+        self.chunk_max_chars = chunk_max_chars
+        self.chunk_overlap_chars = chunk_overlap_chars
         self._chunks = default_healthcare_chunks(self.root)
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
@@ -98,6 +105,28 @@ class StaticRetrievalRepository:
 
     def list_sources(self) -> list[RetrievalSource]:
         return sources_from_chunks(self._chunks)
+
+    def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
+        chunks: list[KnowledgeChunk] = []
+        result = None
+        if include_seeded:
+            chunks.extend(default_healthcare_chunks(self.root))
+        if include_corpus:
+            corpus_chunks, result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            chunks.extend(corpus_chunks)
+        self._chunks = chunks
+        return {
+            "repository": "static",
+            "include_seeded": include_seeded,
+            "include_corpus": include_corpus,
+            "chunks_indexed": len(chunks),
+            "corpus": result.__dict__ if result else None,
+        }
 
     def _filter_chunks(
         self,

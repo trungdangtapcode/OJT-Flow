@@ -8,6 +8,7 @@ from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
@@ -27,18 +28,65 @@ class PostgresRetrievalRepository:
         backbone: PostgresBackboneStore,
         knowledge_root: Path | str,
         embedding_provider: Any | None = None,
+        corpus_dirs: tuple[Path, ...] | None = None,
+        chunk_max_chars: int = 1200,
+        chunk_overlap_chars: int = 160,
         seed_defaults: bool = True,
     ) -> None:
         self.backbone = backbone
         self.knowledge_root = Path(knowledge_root)
         self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        self.corpus_dirs = corpus_dirs or (self.knowledge_root / "corpus",)
+        self.chunk_max_chars = chunk_max_chars
+        self.chunk_overlap_chars = chunk_overlap_chars
         if seed_defaults:
             self.seed_defaults()
 
     def seed_defaults(self) -> None:
         """Idempotently load bundled healthcare knowledge into retrieval tables."""
 
-        chunks = default_healthcare_chunks(self.knowledge_root)
+        self._upsert_chunks(default_healthcare_chunks(self.knowledge_root))
+
+    def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
+        """Refresh the trusted retrieval index from configured sources."""
+
+        chunks: list[KnowledgeChunk] = []
+        corpus_result = None
+        if include_seeded:
+            chunks.extend(default_healthcare_chunks(self.knowledge_root))
+        if include_corpus:
+            corpus_chunks, corpus_result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.knowledge_root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            chunks.extend(corpus_chunks)
+
+        if include_corpus:
+            with self.backbone.connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        delete from ojtflow.knowledge_documents
+                        where metadata #>> '{metadata,origin}' = 'local_corpus'
+                        """
+                    )
+                connection.commit()
+
+        self._upsert_chunks(chunks)
+        return {
+            "repository": "postgres",
+            "include_seeded": include_seeded,
+            "include_corpus": include_corpus,
+            "chunks_indexed": len(chunks),
+            "embedding": self.embedding_provider.metadata(),
+            "corpus": corpus_result.__dict__ if corpus_result else None,
+        }
+
+    def _upsert_chunks(self, chunks: list[KnowledgeChunk]) -> None:
+        if not chunks:
+            return
         vector_dimensions = self._vector_column_dimensions()
         chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
         embeddings = self.embedding_provider.embed_documents(chunk_texts)

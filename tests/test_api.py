@@ -60,6 +60,10 @@ def _authenticated_session(
     )
 
 
+async def _authenticated_dependency() -> AuthenticatedSession:
+    return _authenticated_session()
+
+
 class FakeAuthService:
     def __init__(self) -> None:
         self.logged_out_token: str | None = None
@@ -95,7 +99,7 @@ class FakeAuthService:
 
 async def _client() -> httpx.AsyncClient:
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
@@ -480,8 +484,12 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
 
     fake_service = FakeWorkflowService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -518,6 +526,56 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 },
             },
             "owner_user_id": "usr_api_test",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_reindex_route_delegates_to_workflow_service(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def reindex_retrieval(self, *, include_seeded=True, include_corpus=True):
+            self.calls.append(
+                {
+                    "include_seeded": include_seeded,
+                    "include_corpus": include_corpus,
+                }
+            )
+            return {
+                "repository": "fake",
+                "chunks_indexed": 3,
+                "include_seeded": include_seeded,
+                "include_corpus": include_corpus,
+            }
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/api/v1/retrieval/reindex",
+            json={"include_seeded": False, "include_corpus": True},
+        )
+
+    assert response.status_code == 200
+    assert _assert_success_envelope(response)["data"]["chunks_indexed"] == 3
+    assert fake_service.calls == [
+        {
+            "include_seeded": False,
+            "include_corpus": True,
         }
     ]
 
@@ -668,6 +726,10 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
             "/api/v1/retrieval/search",
             json={"query": "lab result schema", "top_k": 1},
         )
+        retrieval_reindex = await client.post(
+            "/api/v1/retrieval/reindex",
+            json={"include_seeded": True, "include_corpus": True},
+        )
         retrieval_sources = await client.get("/api/v1/retrieval/sources")
         review = await client.post(
             "/api/v1/review/rev_missing",
@@ -712,6 +774,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(runtime_readiness, expected_code="unauthorized")
     assert retrieval.status_code == 401
     _assert_error_envelope(retrieval, expected_code="unauthorized")
+    assert retrieval_reindex.status_code == 401
+    _assert_error_envelope(retrieval_reindex, expected_code="unauthorized")
     assert retrieval_sources.status_code == 401
     _assert_error_envelope(retrieval_sources, expected_code="unauthorized")
     assert review.status_code == 401
@@ -735,7 +799,7 @@ async def test_workflow_routes_resolve_authentication_once(monkeypatch) -> None:
     app = create_app()
     calls = 0
 
-    def authenticated_once() -> AuthenticatedSession:
+    async def authenticated_once() -> AuthenticatedSession:
         nonlocal calls
         calls += 1
         return _authenticated_session()
@@ -869,8 +933,12 @@ async def test_runtime_readiness_requires_trusted_schema_inventory(monkeypatch) 
             return Package()
 
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: EmptySchemaWorkflowService()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def empty_schema_workflow_service() -> EmptySchemaWorkflowService:
+        return EmptySchemaWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = empty_schema_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -923,8 +991,12 @@ async def test_runtime_readiness_requires_retrieval_sources(monkeypatch) -> None
             return Package()
 
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: MissingRetrievalWorkflowService()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def missing_retrieval_workflow_service() -> MissingRetrievalWorkflowService:
+        return MissingRetrievalWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = missing_retrieval_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1086,8 +1158,12 @@ async def test_runtime_readiness_service_failures_are_sanitized(monkeypatch) -> 
             raise RuntimeError("redis://secret-cache.example.test:6379/0 failed")
 
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: FailingWorkflowService()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def failing_workflow_service() -> FailingWorkflowService:
+        return FailingWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = failing_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1174,8 +1250,11 @@ async def test_inline_api_payloads_are_size_limited(monkeypatch) -> None:
 async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         callback = await client.get("/api/v1/auth/google/callback?code=code&state=state")
@@ -1206,7 +1285,10 @@ async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
 async def test_auth_callback_can_return_bearer_token_when_requested() -> None:
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1233,7 +1315,10 @@ async def test_auth_dependency_failures_return_service_unavailable_envelope() ->
             )
 
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: CacheUnavailableAuthService()
+    async def unavailable_auth_service() -> CacheUnavailableAuthService:
+        return CacheUnavailableAuthService()
+
+    app.dependency_overrides[get_auth_service] = unavailable_auth_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1251,8 +1336,11 @@ async def test_auth_dependency_failures_return_service_unavailable_envelope() ->
 async def test_auth_url_and_session_responses_are_not_cacheable() -> None:
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1285,8 +1373,11 @@ async def test_auth_cookie_samesite_none_forces_secure_cookie(monkeypatch) -> No
     clear_workflow_service_cache()
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
 
     try:
@@ -2118,12 +2209,13 @@ async def test_api_workflows_are_scoped_to_authenticated_user(monkeypatch) -> No
     csv_text = "date,patient_id,lab_name,value,unit\n2026-01-01,P001,HbA1c,7.4,%\n"
 
     def authenticate_as(user_id: str) -> None:
-        app.dependency_overrides[require_authentication] = (
-            lambda: _authenticated_session(
+        async def authenticated() -> AuthenticatedSession:
+            return _authenticated_session(
                 user_id=user_id,
                 email=f"{user_id}@example.com",
             )
-        )
+
+        app.dependency_overrides[require_authentication] = authenticated
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         authenticate_as("usr_owner_a")
@@ -2386,11 +2478,15 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             },
         )
         assert retrieval.status_code == 200
-        assert retrieval.json()["data"]["trace"]["strategy"] == "static_hybrid_rrf"
-        assert retrieval.json()["data"]["trace"]["safety_flags"] == [
+        retrieval_data = retrieval.json()["data"]
+        assert retrieval_data["trace"]["strategy"] == "static_hybrid_rrf"
+        assert retrieval_data["trace"]["safety_flags"] == [
             "sensitive_field_context"
         ]
-        assert retrieval.json()["data"]["evidence"]
+        assert retrieval_data["evidence"]
+        assert retrieval_data["handoff_context"]["graph_context"]["graph_contract"] == (
+            "graph_ner_handoff.v0"
+        )
 
         sources = await client.get("/api/v1/retrieval/sources")
         assert sources.status_code == 200
@@ -2438,8 +2534,12 @@ async def test_validate_route_uses_workflow_service_dependency(monkeypatch) -> N
 
     fake_service = FakeWorkflowService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
     transport = httpx.ASGITransport(app=app)
     source_data = " \na,b\n1,2\n "
 
@@ -2496,8 +2596,12 @@ async def test_convert_route_uses_workflow_service_dependency(monkeypatch) -> No
 
     fake_service = FakeWorkflowService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
     transport = httpx.ASGITransport(app=app)
     source_data = " \na,b\n1,2\n "
 
@@ -2552,8 +2656,12 @@ async def test_fhir_and_ocr_routes_use_medical_evidence_service_dependency(monke
 
     fake_service = FakeMedicalEvidenceService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_medical_evidence_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_medical_evidence_service() -> FakeMedicalEvidenceService:
+        return fake_service
+
+    app.dependency_overrides[get_medical_evidence_service] = fake_medical_evidence_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:

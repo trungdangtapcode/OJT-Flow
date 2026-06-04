@@ -66,6 +66,14 @@ async def runtime_config(
                 "dimensions": settings.embedding_dimensions,
                 "openai_configured": bool(settings.openai_api_key),
                 "openai_base_url_configured": bool(settings.openai_embedding_base_url),
+                "hf_device": settings.hf_embedding_device,
+                "hf_batch_size": settings.hf_embedding_batch_size,
+                "hf_cache_dir_configured": bool(settings.hf_embedding_cache_dir),
+            },
+            "retrieval": {
+                "corpus_dir_count": len(settings.retrieval_corpus_dirs),
+                "chunk_max_chars": settings.retrieval_chunk_max_chars,
+                "chunk_overlap_chars": settings.retrieval_chunk_overlap_chars,
             },
             "upload": {
                 "max_upload_bytes": settings.max_upload_bytes,

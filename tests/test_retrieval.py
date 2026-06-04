@@ -7,7 +7,12 @@ from pydantic import ValidationError
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import RetrievalQuery
-from ojtflow.infrastructure.retrieval.embeddings import OpenAIEmbeddingProvider
+from ojtflow.application.retrieval_service import RetrievalService
+from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
+from ojtflow.infrastructure.retrieval.embeddings import (
+    HuggingFaceEmbeddingProvider,
+    OpenAIEmbeddingProvider,
+)
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     build_query_variants,
@@ -157,3 +162,107 @@ def test_openai_embedding_provider_requires_api_key() -> None:
             base_url="https://api.openai.test/v1",
             timeout_seconds=1,
         )
+
+
+def test_huggingface_embedding_provider_uses_query_and_document_methods(tmp_path: Path) -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def encode_query(self, texts, **kwargs):
+            self.calls.append(f"query:{kwargs['batch_size']}")
+            return [[3.0, 4.0, 0.0] for _ in texts]
+
+        def encode_document(self, texts, **kwargs):
+            self.calls.append(f"document:{kwargs['batch_size']}")
+            return [[0.0, 5.0, 0.0] for _ in texts]
+
+    model = FakeModel()
+    provider = HuggingFaceEmbeddingProvider(
+        model="BAAI/bge-small-en-v1.5",
+        dimensions=3,
+        device="cuda",
+        batch_size=16,
+        cache_dir=tmp_path,
+        model_instance=model,
+    )
+
+    assert provider.embed_query("lab units") == [0.6, 0.8, 0.0]
+    assert provider.embed_documents(["FHIR Observation", "UCUM units"]) == [
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ]
+    assert model.calls == ["query:16", "document:16"]
+    assert provider.metadata()["device"] == "cuda"
+
+
+def test_local_corpus_loader_chunks_trusted_healthcare_docs(tmp_path: Path) -> None:
+    corpus_dir = tmp_path / "knowledge" / "corpus"
+    corpus_dir.mkdir(parents=True)
+    (corpus_dir / "fhir_labs.md").write_text(
+        "# FHIR Lab Grounding\n\n"
+        "FHIR Observation should preserve HbA1c value and UCUM unit evidence.\n\n"
+        "LOINC may be used for laboratory coding evidence.",
+        encoding="utf-8",
+    )
+
+    chunks, result = load_local_corpus_chunks(
+        (corpus_dir,),
+        knowledge_root=tmp_path / "knowledge",
+        max_chars=80,
+        overlap_chars=10,
+    )
+
+    assert result.files_indexed == 1
+    assert result.chunks_indexed >= 2
+    assert chunks[0].source_id.startswith("corpus:")
+    assert chunks[0].source_type == EvidenceSourceType.TERMINOLOGY_SYSTEM
+    assert chunks[0].metadata["origin"] == "local_corpus"
+
+
+def test_retrieval_service_adds_graph_context() -> None:
+    class FakeRepository:
+        def search(self, query):
+            return StaticRetrievalRepository(ROOT / "knowledge").search(query)
+
+        def list_sources(self):
+            return []
+
+        def reindex(self, *, include_seeded=True, include_corpus=True):
+            return {}
+
+    service = RetrievalService(FakeRepository())
+    package = service.search(
+        RetrievalQuery(
+            query="FHIR Observation HbA1c unit",
+            fields=["patient_id", "unit"],
+            top_k=3,
+        )
+    )
+
+    graph = package.handoff_context["graph_context"]
+    assert graph["graph_contract"] == "graph_ner_handoff.v0"
+    assert any(node["type"] == "evidence" for node in graph["nodes"])
+    assert any(edge["relation"] == "supports" for edge in graph["edges"])
+
+
+def test_static_retrieval_reindex_adds_local_corpus(tmp_path: Path) -> None:
+    knowledge = tmp_path / "knowledge"
+    corpus = knowledge / "corpus"
+    corpus.mkdir(parents=True)
+    (corpus / "local_lab_policy.md").write_text(
+        "# Local Lab Policy\n\nHbA1c rows without UCUM units require human review.",
+        encoding="utf-8",
+    )
+    repository = StaticRetrievalRepository(
+        knowledge,
+        corpus_dirs=(corpus,),
+        chunk_max_chars=200,
+        chunk_overlap_chars=20,
+    )
+
+    result = repository.reindex(include_seeded=False, include_corpus=True)
+    package = repository.search(RetrievalQuery(query="HbA1c UCUM human review", top_k=3))
+
+    assert result["corpus"]["files_indexed"] == 1
+    assert any(item.source_id.startswith("corpus:") for item in package.evidence)

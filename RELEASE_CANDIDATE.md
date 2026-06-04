@@ -74,7 +74,7 @@ complete all steps successfully:
       emits handoff context without claiming full HL7 validation.
 - [x] OCR evidence endpoint normalizes page/field/value/bounding-box/confidence
       payloads into evidence and gates low-confidence fields for review.
-- [x] Graph-NER/RAG remains a handoff contract in v0; do not claim a live graph
+- [x] Graph-NER/RAG emits an auditable GraphRAG-lite handoff; do not claim clinical decision support
       or LLM retrieval agent until implemented and tested.
 
 ## Retrieval Readiness

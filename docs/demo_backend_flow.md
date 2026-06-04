@@ -86,7 +86,9 @@ Expected behavior:
 5. Retrieval returns trusted lab evidence.
    In Postgres mode, retrieval uses seeded healthcare knowledge chunks with
    full-text search, configured vector scoring, fusion, and reranking. Use
-   `OJT_EMBEDDING_PROVIDER=openai` for CPU-safe semantic embeddings.
+   `OJT_EMBEDDING_PROVIDER=openai` for CPU-safe semantic embeddings or
+   `OJT_EMBEDDING_PROVIDER=huggingface` with `OJT_HF_EMBEDDING_DEVICE=cuda`
+   for local GPU embeddings.
 6. Validation flags PHI-like patient ID, date inconsistency, missing value, and missing unit.
 7. Transformation plan is created.
 8. Safety gate pauses the workflow for human review.
@@ -125,7 +127,8 @@ not disclose the workflow.
   with the same workflow and auth repository contracts.
 - FHIR and OCR are hook points, not overclaimed medical automation.
 - FHIR-like JSON workflow inputs are profiled inside the main workflow path and
-  emit `handoff_context.fhir_profile` plus `handoff_context.fhir_handoff` for
-  later Graph-NER/RAG integration.
+  emit `handoff_context.fhir_profile` plus `handoff_context.fhir_handoff`.
 - Retrieval evidence is traceable through `retrieved_context` and
-  `handoff_context.retrieval_trace`.
+  `handoff_context.retrieval_trace`. Retrieved evidence also emits
+  `handoff_context.retrieval_handoff.graph_context` for GraphRAG-lite nodes,
+  edges, and triples.
