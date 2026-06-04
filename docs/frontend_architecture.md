@@ -123,7 +123,10 @@ builder state, calls `/retrieval/search` through typed server-state hooks,
 lists trusted sources, refreshes the retrieval index, and renders rank signals,
 trace warnings, safety flags, and Graph-NER handoff context. It should stay an
 inspection console, not a separate workflow executor: workflow creation remains
-in Workbench and workflow-scoped evidence remains in Workflow Detail.
+in Workbench and workflow-scoped evidence remains in Workflow Detail. The route
+must surface embedding and rerank provider metadata from runtime config and
+retrieval handoff context so operators can distinguish first-stage hybrid
+searches from searches refined by second-stage reranking.
 Settings is an operator readiness surface, not a prose documentation page. It
 should show status facts first, then group runtime configuration into compact
 sections, summarize readiness/security/inventory counts before detailed rows,

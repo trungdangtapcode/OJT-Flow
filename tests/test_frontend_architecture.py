@@ -54,6 +54,9 @@ WORKFLOW_DETAIL_SPLIT_FILES = [
 WORKBENCH_PAGE = (
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-page.tsx"
 )
+RETRIEVAL_PAGE = (
+    REPO_ROOT / "frontend" / "src" / "features" / "retrieval" / "retrieval-page.tsx"
+)
 WORKBENCH_SPLIT_FILES = [
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-controls.tsx",
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-examples.ts",
@@ -167,6 +170,19 @@ def test_workbench_shell_stays_split_by_responsibility() -> None:
     )
     for split_file in [WORKBENCH_PAGE, *WORKBENCH_SPLIT_FILES]:
         assert split_file.name in frontend_architecture
+
+
+def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
+    retrieval_page = RETRIEVAL_PAGE.read_text(encoding="utf-8")
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "rankingStackFromPackage" in retrieval_page
+    assert "RerankBadge" in retrieval_page
+    assert "packageData.handoff_context.reranker" in retrieval_page
+    assert "runtime?.rerank?.enabled" in retrieval_page
+    assert "Embedding and rerank provider state" in frontend_architecture
 
 
 def test_frontend_browser_storage_is_not_used_for_auth_or_state() -> None:
