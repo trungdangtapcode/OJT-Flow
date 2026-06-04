@@ -60,6 +60,7 @@ OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0
 OJT_HF_EMBEDDING_DEVICE=auto
 OJT_HF_EMBEDDING_BATCH_SIZE=32
 OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface
+OJT_PYTHON_EXTRAS=parsing
 OJT_RERANK_PROVIDER=none
 OJT_RERANK_MODEL=BAAI/bge-reranker-base
 OJT_RERANK_DEVICE=auto
@@ -136,6 +137,11 @@ The recommended semantic retrieval dimension is `384`, matching the Postgres
 `embedding vector(384)` schema. Other provider names, incompatible deterministic
 model IDs, invalid device values, and invalid dimension values are rejected
 during settings load.
+
+`OJT_PYTHON_EXTRAS` is a Docker build-time setting, not a runtime secret. Keep
+the default `parsing` for the standard API image, or build with
+`parsing,embeddings-local` when the container should include local
+SentenceTransformers embeddings and CrossEncoder reranking dependencies.
 
 `OJT_RERANK_PROVIDER` supports `none` and `huggingface`. When enabled, retrieval
 uses a SentenceTransformers CrossEncoder over the top

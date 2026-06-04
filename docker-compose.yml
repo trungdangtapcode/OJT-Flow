@@ -28,6 +28,8 @@ services:
   api:
     build:
       context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
     environment:
       OJT_STORAGE_BACKEND: postgres
       OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}

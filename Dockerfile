@@ -9,6 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 ARG PIP_VERSION=26.1.2
+ARG OJT_PYTHON_EXTRAS=parsing
 
 COPY pyproject.toml README.md constraints.txt ./
 COPY src ./src
@@ -19,7 +20,7 @@ RUN python -m pip install --no-cache-dir "pip==${PIP_VERSION}" \
     && python -m pip install --no-cache-dir \
         --constraint /app/constraints.txt \
         --build-constraint /app/constraints.txt \
-        ".[parsing]"
+        ".[${OJT_PYTHON_EXTRAS}]"
 
 EXPOSE 8000
 

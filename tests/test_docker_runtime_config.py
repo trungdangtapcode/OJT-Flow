@@ -24,6 +24,7 @@ def test_compose_uses_separate_api_and_frontend_build_contexts() -> None:
 
     assert "build:" in api_section
     assert "\n      context: .\n" in api_section
+    assert "OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}" in api_section
     assert "\n      context: ./frontend\n" in frontend_section
     assert "\n      context: .\n" not in frontend_section
 
@@ -38,6 +39,7 @@ def test_api_container_includes_runtime_contracts_without_dev_server() -> None:
     assert "pythonunbuffered=1" in normalized
     assert "pythonpath=/app/src" in normalized
     assert "arg pip_version=" in normalized
+    assert "arg ojt_python_extras=parsing" in normalized
     assert "copy pyproject.toml readme.md constraints.txt" in normalized
     assert "copy src ./src" in normalized
     assert "copy knowledge ./knowledge" in normalized
@@ -45,7 +47,7 @@ def test_api_container_includes_runtime_contracts_without_dev_server() -> None:
     assert "pip==" in normalized
     assert "--constraint /app/constraints.txt" in normalized
     assert "--build-constraint /app/constraints.txt" in normalized
-    assert '".[parsing]"' in normalized
+    assert '".[${ojt_python_extras}]"' in normalized
     assert "python -m pip install --no-cache-dir" in normalized
     assert "markitdown==0.1.6" in constraints
     assert "pdfminer-six==20251230" in constraints
@@ -187,6 +189,7 @@ def test_env_example_exposes_compose_and_upload_runtime_knobs() -> None:
         "OJT_API_PORT=8000",
         "OJT_FRONTEND_PORT=5173",
         "VITE_API_BASE_URL=/api/v1",
+        "OJT_PYTHON_EXTRAS=parsing",
         "OJT_KNOWLEDGE_DIR=knowledge",
         "OJT_MIGRATIONS_DIR=sql/postgres/migrations",
         "OJT_MAX_UPLOAD_BYTES=26214400",

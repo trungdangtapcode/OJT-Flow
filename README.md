@@ -121,10 +121,13 @@ separate required step for `docker compose up`.
 
 The API image installs Python dependencies with `constraints.txt` so Docker
 rebuilds of the same commit resolve to the same runtime dependency versions.
-The image includes the `ojtflow[parsing]` extra, which enables MarkItDown-backed
-PDF, DOCX, XLSX/XLS, and PPTX extraction in the local Compose runtime. Keep
-`pyproject.toml` ranges compatible for local development, and refresh
-`constraints.txt` only after the full release check passes.
+The image includes the `ojtflow[parsing]` extra by default, which enables
+MarkItDown-backed PDF, DOCX, XLSX/XLS, and PPTX extraction in the local Compose
+runtime. Set `OJT_PYTHON_EXTRAS=parsing,embeddings-local` before building the
+API image when Docker should include local SentenceTransformers embeddings and
+CrossEncoder reranking. Keep `pyproject.toml` ranges compatible for local
+development, and refresh `constraints.txt` only after the full release check
+passes.
 
 The default backend storage is Postgres plus local file artifacts:
 
@@ -154,6 +157,7 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_EMBEDDING_PROVIDER=deterministic`
 - `OJT_EMBEDDING_MODEL=deterministic-hash-v0`
 - `OJT_EMBEDDING_DIMENSIONS=64`
+- `OJT_PYTHON_EXTRAS=parsing`
 - `OJT_OPENAI_API_KEY=` or `OPENAI_API_KEY=`
 - `OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1`
 - `OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0`
@@ -212,6 +216,13 @@ For local GPU retrieval, install the optional dependency group and use:
 
 ```bash
 uv pip install -e '.[embeddings-local]'
+```
+
+For Docker GPU/local-model runs, build the API image with the same optional
+dependency group included:
+
+```bash
+OJT_PYTHON_EXTRAS=parsing,embeddings-local docker compose build api
 ```
 
 ```text

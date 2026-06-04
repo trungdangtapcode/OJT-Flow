@@ -200,6 +200,13 @@ Install local embedding dependencies with:
 uv pip install -e '.[embeddings-local]'
 ```
 
+For Docker runs that need local Hugging Face embeddings or CrossEncoder
+reranking inside the API container, build with:
+
+```bash
+OJT_PYTHON_EXTRAS=parsing,embeddings-local docker compose build api
+```
+
 Recommended local CrossEncoder reranking settings:
 
 ```text
