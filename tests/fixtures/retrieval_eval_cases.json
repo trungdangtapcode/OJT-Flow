@@ -1,0 +1,39 @@
+[
+  {
+    "case_id": "lab_required_fields",
+    "description": "Lab result validation should retrieve the schema evidence.",
+    "query": "lab result required fields date patient_id value unit",
+    "fields": ["date", "patient_id", "value", "unit"],
+    "schema_id": "lab_result_v1",
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["schema:lab_result_v1"]
+  },
+  {
+    "case_id": "missing_units",
+    "description": "Missing unit review should retrieve UCUM evidence.",
+    "query": "missing UCUM units lab human review",
+    "fields": ["unit"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["terminology:ucum"]
+  },
+  {
+    "case_id": "fhir_observation",
+    "description": "FHIR-like lab observation should retrieve the Observation profile evidence.",
+    "query": "FHIR Observation laboratory value unit subject code effective date",
+    "resource_type": "Observation",
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["standard:fhir_observation_r4"]
+  },
+  {
+    "case_id": "csv_json_transformation",
+    "description": "CSV to JSON conversion should retrieve the transformation example.",
+    "query": "CSV lab rows convert to JSON records transformation example",
+    "detected_format": "csv",
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["example:csv_lab_to_json_records_v1"]
+  }
+]

@@ -57,6 +57,7 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m pytest
+python scripts/evaluate-retrieval.py
 ```
 
 Run the real-browser Playwright suite against the Docker stack:
@@ -72,6 +73,8 @@ Release evidence is tracked in `RELEASE_CANDIDATE.md` and
 `docs/release_verification_matrix.md`. Keep those documents aligned with the
 release script whenever backend contracts, storage, auth, retrieval, OCR/FHIR
 handoffs, frontend behavior, or deployment checks change.
+The release script also runs the deterministic retrieval quality eval so search
+changes are checked against known healthcare evidence cases before demo freeze.
 
 Run the full local release check against the Docker stack:
 
