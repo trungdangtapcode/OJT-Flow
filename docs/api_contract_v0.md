@@ -1036,6 +1036,7 @@ Current checks:
 - `settings`
 - `artifact_directory`
 - `session_cache`
+- `retrieval_rule_packs`: data-driven retrieval policy/rule-pack availability.
 - `workflow_repository`
 - `schema_inventory`
 - `retrieval_inventory`: source inventory plus a bounded retrieval search probe.
@@ -1050,6 +1051,11 @@ types, never local filesystem paths.
 For schemas, `schema_inventory` must load at least one trusted profile. If the
 configured knowledge directory yields zero schemas, readiness returns
 `status = "not_ready"` because default schema-backed workflows cannot run.
+For retrieval rule packs, `retrieval_rule_packs` verifies that data-driven
+query expansion, filter suggestion, query diagnostic, ranking boost, evaluation
+policy, and search-hint target files are loadable. If any pack is missing or
+malformed, readiness returns `status = "not_ready"` and exposes only sanitized
+pack metadata such as name, status, source, env var, and rule count.
 For retrieval, `retrieval_inventory` runs a small approved-source query through
 the same workflow retrieval service path and reports only operational metadata:
 `source_count`, `probe_hit_count`, `probe_strategy`, `probe_candidates_seen`, and

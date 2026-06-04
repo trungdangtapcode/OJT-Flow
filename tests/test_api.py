@@ -1322,6 +1322,9 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         checks = {check["name"]: check for check in body["checks"]}
         assert checks["settings"]["status"] == "ok"
         assert checks["artifact_directory"]["status"] == "ok"
+        assert checks["retrieval_rule_packs"]["status"] == "ok"
+        assert checks["retrieval_rule_packs"]["details"]["pack_count"] >= 6
+        assert checks["retrieval_rule_packs"]["details"]["issue_count"] == 0
         assert checks["workflow_repository"]["status"] == "ok"
         assert checks["schema_inventory"]["details"]["schema_count"] >= 1
         assert checks["retrieval_inventory"]["details"]["source_count"] >= 1
@@ -1335,6 +1338,40 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         assert "secret@example" not in response_text
         assert "secret-cache" not in response_text
         assert "/home/" not in response_text
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+
+@pytest.mark.asyncio
+async def test_runtime_readiness_requires_retrieval_rule_packs(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    missing_registry = tmp_path / "missing_query_expansion_rules.json"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_QUERY_EXPANSION_RULES_PATH", str(missing_registry))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/readiness")
+
+        assert response.status_code == 200
+        body = _assert_success_envelope(response)["data"]
+        checks = {check["name"]: check for check in body["checks"]}
+
+        assert body["status"] == "not_ready"
+        assert checks["retrieval_rule_packs"]["status"] == "error"
+        assert checks["retrieval_rule_packs"]["details"]["issue_count"] == 1
+        issue = checks["retrieval_rule_packs"]["details"]["packs"][0]
+        assert issue["name"] == "query_expansion"
+        assert issue["status"] == "missing"
+        assert issue["source"] == "override"
+        assert issue["env_var"] == "OJT_QUERY_EXPANSION_RULES_PATH"
+        response_text = response.text
+        assert str(missing_registry) not in response_text
     finally:
         clear_settings_cache()
         clear_workflow_service_cache()

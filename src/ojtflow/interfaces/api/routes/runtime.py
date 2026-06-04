@@ -211,6 +211,7 @@ async def runtime_readiness(
 
     checks.append(_artifact_directory_check(settings))
     checks.append(_session_cache_check(settings.storage_backend, settings.redis_url))
+    checks.append(_retrieval_rule_pack_readiness_check(settings))
 
     try:
         stats = service.workflows.stats(owner_user_id=authenticated.user.user_id)
@@ -375,6 +376,23 @@ def _retrieval_rule_pack(
         "status": "ok",
         "rule_count": len(items),
     }
+
+
+def _retrieval_rule_pack_readiness_check(settings: Settings) -> dict[str, Any]:
+    packs = _retrieval_rule_packs(settings)
+    issues = [pack for pack in packs if pack["status"] != "ok"]
+    return _check(
+        "retrieval_rule_packs",
+        "ok" if not issues else "error",
+        "Retrieval rule packs are loadable."
+        if not issues
+        else "One or more retrieval rule packs are missing or malformed.",
+        {
+            "pack_count": len(packs),
+            "issue_count": len(issues),
+            "packs": packs,
+        },
+    )
 
 
 def _directory_write_probe(path: Path) -> dict[str, Any]:
