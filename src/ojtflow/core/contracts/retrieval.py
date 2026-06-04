@@ -118,6 +118,7 @@ class RetrievalSearchHint(ContractModel):
 
     target: NonBlankStr
     query: NonBlankStr
+    url: str | None = None
     rationale: NonBlankStr
     warnings: list[str] = Field(default_factory=list)
 

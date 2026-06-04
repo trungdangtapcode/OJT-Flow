@@ -144,6 +144,9 @@ as applied, so displayed evidence remains auditable even while the builder is
 being edited. When displayed evidence is stale, operators must be able to
 restore the query builder to the submitted request without changing the result
 package or issuing another search.
+Medical search hints in the trace should be copyable and launchable when the
+backend provides a vetted URL, so PubMed, ClinicalTrials.gov, and openFDA
+workflows remain backend-owned and data-driven instead of hardcoded in React.
 The assistant route is the operator shortcut over those same backend contracts.
 It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
 write-gate state, executed tool calls, and compact evidence/output previews.

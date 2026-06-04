@@ -209,9 +209,12 @@ def test_query_analysis_builds_medical_search_hints() -> None:
     assert "pubmed" in literature_hints
     assert "hba1c" in literature_hints["pubmed"].query.lower()
     assert "[tiab]" in literature_hints["pubmed"].query
+    assert literature_hints["pubmed"].url is not None
+    assert literature_hints["pubmed"].url.startswith("https://pubmed.ncbi.nlm.nih.gov/?term=")
     assert literature_hints["pubmed"].warnings
     assert "fhir" in fhir_hints
     assert fhir_hints["fhir"].query.startswith("Observation?")
+    assert fhir_hints["fhir"].url is None
     assert "subject=Patient/<id>" in fhir_hints["fhir"].query
 
 
@@ -230,6 +233,8 @@ def test_query_analysis_uses_mesh_seed_concepts_in_pubmed_hint() -> None:
     assert "pubmed" in hints
     assert '"Hypertension"[mh]' in hints["pubmed"].query
     assert '"Hypertension"[tiab]' in hints["pubmed"].query
+    assert hints["pubmed"].url is not None
+    assert "%22Hypertension%22%5Bmh%5D" in hints["pubmed"].url
 
 
 def test_query_analysis_builds_clinicaltrials_gov_hint() -> None:
@@ -244,6 +249,7 @@ def test_query_analysis_builds_clinicaltrials_gov_hint() -> None:
     assert hints["clinicaltrials_gov"].query.startswith(
         "https://clinicaltrials.gov/api/v2/studies?"
     )
+    assert hints["clinicaltrials_gov"].url == hints["clinicaltrials_gov"].query
     assert "query.cond=Diabetes+Mellitus" in hints["clinicaltrials_gov"].query
     assert "query.intr=Metformin" in hints["clinicaltrials_gov"].query
     assert "filter.overallStatus=" in hints["clinicaltrials_gov"].query
@@ -263,9 +269,11 @@ def test_query_analysis_builds_openfda_drug_hints() -> None:
     assert hints["openfda_drug_label"].query.startswith(
         "https://api.fda.gov/drug/label.json?"
     )
+    assert hints["openfda_drug_label"].url == hints["openfda_drug_label"].query
     assert "openfda.generic_name:%22Metformin%22" in hints["openfda_drug_label"].query
     assert "_exists_:boxed_warning" in hints["openfda_drug_label"].query
     assert "patient.drug.openfda.generic_name:%22Metformin%22" in hints["openfda_drug_event"].query
+    assert hints["openfda_drug_event"].url == hints["openfda_drug_event"].query
     assert hints["openfda_drug_event"].warnings
 
 

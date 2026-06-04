@@ -232,11 +232,15 @@ search templates such as `Observation?code=...&subject=...&date=...`;
 ClinicalTrials.gov hints produce API v2 study searches by condition,
 intervention, and recruitment status; openFDA hints produce public drug-label
 and adverse-event endpoint queries. These hints are never executed
-automatically and are not clinical recommendations.
+automatically and are not clinical recommendations. Each hint carries the
+search syntax in `query` and may include a launchable `url` when the target has
+a stable public endpoint. The React trace renders those hints with copy/open
+actions from backend data instead of hardcoding external search URLs in the UI.
 For example, `PubMed systematic review HbA1c units` produces a `pubmed` hint
 that combines HbA1c title/abstract terms, unit terms, and publication-type
-terms, while warning operators to confirm preferred MeSH headings before using
-the query as a final literature strategy.
+terms, plus a PubMed URL using the same encoded search statement, while warning
+operators to confirm preferred MeSH headings before using the query as a final
+literature strategy.
 
 For example, `ClinicalTrials.gov diabetes metformin recruiting eligibility`
 produces a `clinicaltrials_gov` hint shaped like

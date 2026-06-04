@@ -229,6 +229,7 @@ export type RetrievalQueryDiagnostic = {
 export type RetrievalSearchHint = {
   target: string;
   query: string;
+  url?: string | null;
   rationale: string;
   warnings: string[];
 };

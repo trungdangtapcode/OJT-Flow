@@ -652,6 +652,7 @@ def _pubmed_search_hint(
     return RetrievalSearchHint(
         target="pubmed",
         query=text_query,
+        url=f"https://pubmed.ncbi.nlm.nih.gov/?term={quote_plus(text_query)}",
         rationale=(
             "Use PubMed automatic term mapping for broad discovery, then verify "
             "MeSH translations and title/abstract text-word coverage."
@@ -723,9 +724,11 @@ def _clinicaltrials_search_hint(
         ]
     )
     query_string = "&".join(f"{key}={quote_plus(value)}" for key, value in params)
+    url = f"https://clinicaltrials.gov/api/v2/studies?{query_string}"
     return RetrievalSearchHint(
         target="clinicaltrials_gov",
-        query=f"https://clinicaltrials.gov/api/v2/studies?{query_string}",
+        query=url,
+        url=url,
         rationale=(
             "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, "
             "intervention, recruitment status, and eligibility fields."
@@ -749,13 +752,19 @@ def _openfda_search_hints(
     label_search = f"openfda.generic_name:{encoded_drug}"
     if "boxed warning" in query.query.lower():
         label_search = f"{label_search}+AND+_exists_:boxed_warning"
+    label_url = (
+        "https://api.fda.gov/drug/label.json?"
+        f"search={label_search}&sort=effective_time:desc&limit=5"
+    )
+    event_url = (
+        "https://api.fda.gov/drug/event.json?"
+        f"search=patient.drug.openfda.generic_name:{encoded_drug}&limit=10"
+    )
     return [
         RetrievalSearchHint(
             target="openfda_drug_label",
-            query=(
-                "https://api.fda.gov/drug/label.json?"
-                f"search={label_search}&sort=effective_time:desc&limit=5"
-            ),
+            query=label_url,
+            url=label_url,
             rationale=(
                 "Use openFDA drug labeling for public regulatory label context, "
                 "boxed-warning review, and current label text retrieval."
@@ -767,10 +776,8 @@ def _openfda_search_hints(
         ),
         RetrievalSearchHint(
             target="openfda_drug_event",
-            query=(
-                "https://api.fda.gov/drug/event.json?"
-                f"search=patient.drug.openfda.generic_name:{encoded_drug}&limit=10"
-            ),
+            query=event_url,
+            url=event_url,
             rationale=(
                 "Use openFDA adverse event reports for public FAERS signal context "
                 "after medication identity is normalized."

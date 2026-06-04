@@ -217,6 +217,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "aria-pressed={applied}" in retrieval_page
     assert "supportedSuggestionFilterFields" in retrieval_page
     assert "onApplyFilterSuggestion" in retrieval_page
+    assert "Copy medical search hint" in retrieval_page
+    assert "Open medical search hint" in retrieval_page
+    assert "launchable hint" in retrieval_page
+    assert "copyTextToClipboard" in retrieval_page
     assert "Embedding and rerank provider state" in frontend_architecture
     assert "source coverage" in frontend_architecture
     assert "explicit operator apply" in frontend_architecture
@@ -225,6 +229,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "pending changes" in frontend_architecture
     assert "submitted request summary" in frontend_architecture
     assert "restore the query builder" in frontend_architecture
+    assert "copyable and launchable" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:

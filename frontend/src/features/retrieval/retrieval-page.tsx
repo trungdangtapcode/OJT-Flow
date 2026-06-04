@@ -3,7 +3,9 @@ import {
   AlertTriangle,
   BrainCircuit,
   CheckCircle2,
+  Clipboard,
   Database,
+  ExternalLink,
   FileSearch,
   Gauge,
   ListFilter,
@@ -1187,6 +1189,23 @@ function ConceptCandidateList({
 }
 
 function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
+  const [copiedHintKey, setCopiedHintKey] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!copiedHintKey) return;
+    const timer = window.setTimeout(() => setCopiedHintKey(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [copiedHintKey]);
+
+  const copyHintQuery = async (hintKey: string, query: string) => {
+    try {
+      await copyTextToClipboard(query);
+      setCopiedHintKey(hintKey);
+    } catch {
+      setCopiedHintKey(null);
+    }
+  };
+
   if (!hints.length) {
     return <TokenList items={[]} title="Medical search hints" />;
   }
@@ -1196,24 +1215,54 @@ function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
         Medical search hints
       </div>
       <div className="grid gap-2">
-        {hints.map((hint) => (
-          <div
-            className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
-            key={`${hint.target}-${hint.query}`}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-bold">{humanize(hint.target)}</span>
-              <Badge variant="muted">syntax hint</Badge>
+        {hints.map((hint) => {
+          const hintKey = `${hint.target}-${hint.query}`;
+          const copied = copiedHintKey === hintKey;
+          return (
+            <div
+              className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
+              key={hintKey}
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="break-words font-bold">{humanize(hint.target)}</span>
+                <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                  <Badge variant={hint.url ? "success" : "muted"}>
+                    {hint.url ? "launchable hint" : "syntax hint"}
+                  </Badge>
+                  <Button
+                    onClick={() => void copyHintQuery(hintKey, hint.query)}
+                    size="sm"
+                    title="Copy medical search hint"
+                    type="button"
+                    variant="outline"
+                  >
+                    {copied ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : (
+                      <Clipboard className="h-4 w-4" />
+                    )}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                  {hint.url ? (
+                    <Button asChild size="sm" title="Open medical search hint" variant="outline">
+                      <a href={hint.url} rel="noopener noreferrer" target="_blank">
+                        <ExternalLink className="h-4 w-4" />
+                        Open
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <code className="block max-h-24 overflow-auto break-words rounded bg-muted px-2 py-1 font-mono text-xs">
+                {hint.query}
+              </code>
+              <div className="break-words text-muted-foreground">{hint.rationale}</div>
+              {hint.warnings.length ? (
+                <TokenList items={hint.warnings} title="Hint warnings" tone="warning" />
+              ) : null}
             </div>
-            <code className="block max-h-24 overflow-auto break-words rounded bg-muted px-2 py-1 font-mono text-xs">
-              {hint.query}
-            </code>
-            <div className="break-words text-muted-foreground">{hint.rationale}</div>
-            {hint.warnings.length ? (
-              <TokenList items={hint.warnings} title="Hint warnings" tone="warning" />
-            ) : null}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1753,6 +1802,7 @@ type SearchHintStack = {
   query: string;
   rationale: string;
   target: string;
+  url: string | null;
   warnings: string[];
 };
 
@@ -1963,9 +2013,27 @@ function searchHintsValue(value: unknown): SearchHintStack[] {
       query: stringValue(item.query, ""),
       rationale: stringValue(item.rationale, "Generated from deterministic query analysis."),
       target: stringValue(item.target, "medical_search"),
+      url: optionalStringValue(item.url),
       warnings: stringArrayValue(item.warnings),
     }))
     .filter((item) => item.query.length > 0 && item.target !== "medical_search");
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 }
 
 function diagnosticBadgeVariant(
