@@ -15,6 +15,7 @@ from ojtflow.interfaces.api.responses import (
 )
 from ojtflow.interfaces.api.deps import require_authentication
 from ojtflow.interfaces.api.routes import (
+    ai,
     auth,
     convert,
     fhir,
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(parse.router, prefix="/api/v1")
     app.include_router(retrieval.router, prefix="/api/v1")
     app.include_router(runtime.router, prefix="/api/v1")
+    app.include_router(ai.router, prefix="/api/v1")
     return app
 
 

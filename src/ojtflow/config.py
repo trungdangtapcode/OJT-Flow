@@ -12,6 +12,12 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 EmbeddingProvider = Literal["deterministic"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
@@ -142,6 +148,8 @@ class Settings(BaseModel):
         alias="OJT_EMBEDDING_DIMENSIONS",
         gt=0,
     )
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
 
     @property
     def repo_root(self) -> Path:
@@ -250,6 +258,8 @@ def get_settings() -> Settings:
         OJT_EMBEDDING_DIMENSIONS=_parse_embedding_dimensions(
             os.getenv("OJT_EMBEDDING_DIMENSIONS")
         ),
+        GROQ_API_KEY=os.getenv("GROQ_API_KEY", ""),
+        GROQ_MODEL=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
     )
 
 
