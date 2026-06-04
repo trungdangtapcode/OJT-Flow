@@ -33,9 +33,14 @@ contract remains `RetrievalPackage`, so workflow state, UI rendering, assistant
 tools, and audit/explanation paths do not depend on LlamaIndex types.
 The LlamaIndex adapter builds a reusable in-process index for the current
 trusted chunk generation and invalidates it on `reindex()`. Retrieval still
-applies OJTFlow metadata filters before returning evidence and reports
-`handoff_context.framework_components` with node count, candidate pool size,
-BM25 availability, and index generation.
+applies OJTFlow metadata filters before returning evidence. For framework
+retrieval, those filters are also passed into LlamaIndex vector/BM25 retrievers
+before ranking so healthcare metadata constraints such as `standard_system`,
+`clinical_domain`, `source_type`, and `trust_level` shape the candidate pool
+instead of being only a post-hoc UI filter. The trace reports
+`handoff_context.framework_components` with full node count, filtered node
+count, metadata filter count, candidate pool size, BM25 availability, and index
+generation.
 Candidate-pool sizing and fusion weights are configuration-backed through
 `OJT_RETRIEVAL_CANDIDATE_MULTIPLIER`, `OJT_RETRIEVAL_MIN_CANDIDATES`,
 `OJT_RETRIEVAL_VECTOR_WEIGHT`, and `OJT_RETRIEVAL_BM25_WEIGHT`. They can be
@@ -53,19 +58,22 @@ The retrieval pipeline is auditable in v0:
 3. Postgres mode retrieves separate lexical and vector candidate pools before
    fusion so exact-term evidence and semantic-neighbor evidence cannot starve
    each other inside a single bounded SQL result set.
-4. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
-5. Vector score uses the configured embedding provider:
+4. LlamaIndex mode applies equivalent metadata filters to framework retrievers
+   before fusion, then keeps a post-filter safety check before evidence is
+   emitted.
+5. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
+6. Vector score uses the configured embedding provider:
    deterministic hash embeddings for offline tests, OpenAI semantic embeddings
    for CPU-safe production-like retrieval, or Hugging Face/SentenceTransformers
    embeddings for local GPU retrieval.
-6. Reciprocal Rank Fusion combines lexical and vector rankings.
-7. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
-8. Each ranked hit gets a deterministic extractive snippet: the most
+7. Reciprocal Rank Fusion combines lexical and vector rankings.
+8. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
+9. Each ranked hit gets a deterministic extractive snippet: the most
    query-relevant sentence/window from the source chunk, with matched terms and
    normalized source offsets.
-9. Final selected hits are summarized into result facets by source type,
+10. Final selected hits are summarized into result facets by source type,
    clinical domain, standard system, and trust level.
-10. Trace safety flags mark prompt-injection-like query text and sensitive field
+11. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
 The retrieval package now includes a `graph_context` handoff that extracts

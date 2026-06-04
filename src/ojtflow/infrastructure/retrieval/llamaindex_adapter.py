@@ -91,9 +91,13 @@ class LlamaIndexRetrievalRepository:
             query.top_k * self.candidate_multiplier,
             self.min_candidates,
         )
+        metadata_filters = _metadata_filters_for_query(query)
+        filtered_node_count = len(_filter_nodes_for_query(cache.nodes, query))
         retriever, retriever_warnings = self._build_retriever(
             cache=cache,
             top_k=candidate_top_k,
+            query=query,
+            metadata_filters=metadata_filters,
         )
         warnings.extend(retriever_warnings)
 
@@ -117,7 +121,7 @@ class LlamaIndexRetrievalRepository:
             strategy="llamaindex_hybrid_rrf",
             query_variants=query_analysis.query_variants,
             filters_applied=query.filters,
-            candidates_seen=len(cache.nodes),
+            candidates_seen=filtered_node_count,
             final_hit_ids=[hit.evidence.evidence_id for hit in hits],
             safety_flags=safety_flags,
             warnings=warnings,
@@ -134,9 +138,13 @@ class LlamaIndexRetrievalRepository:
                 "strategy": "hybrid_vector_bm25_rrf",
                 "framework_components": {
                     "node_count": len(cache.nodes),
+                    "filtered_node_count": filtered_node_count,
                     "candidate_top_k": candidate_top_k,
                     "candidate_multiplier": self.candidate_multiplier,
                     "min_candidates": self.min_candidates,
+                    "metadata_filter_count": len(metadata_filters.filters)
+                    if metadata_filters is not None
+                    else 0,
                     "bm25_enabled": cache.bm25_available,
                     "vector_weight": self.vector_weight,
                     "bm25_weight": self.bm25_weight,
@@ -259,15 +267,32 @@ class LlamaIndexRetrievalRepository:
             embed_model=_OJTFlowLlamaIndexEmbedding(self.embedding_provider),
         )
 
-    def _build_retriever(self, *, cache: "_LlamaIndexCache", top_k: int) -> tuple[Any, list[str]]:
+    def _build_retriever(
+        self,
+        *,
+        cache: "_LlamaIndexCache",
+        top_k: int,
+        query: RetrievalQuery,
+        metadata_filters: Any | None,
+    ) -> tuple[Any, list[str]]:
         try:
             from llama_index.core.retrievers import QueryFusionRetriever
         except ModuleNotFoundError as exc:  # pragma: no cover - exercised by config path.
             raise _llamaindex_dependency_error() from exc
 
         warnings: list[str] = []
-        retrievers = [cache.index.as_retriever(similarity_top_k=top_k)]
-        bm25 = _bm25_retriever(index=cache.index, nodes=cache.nodes, top_k=top_k)
+        retrievers = [
+            cache.index.as_retriever(
+                similarity_top_k=top_k,
+                filters=metadata_filters,
+            )
+        ]
+        bm25 = _bm25_retriever(
+            index=cache.index,
+            nodes=_filter_nodes_for_query(cache.nodes, query),
+            top_k=top_k,
+            filters=metadata_filters,
+        )
         if bm25 is not None:
             retrievers.append(bm25)
         else:
@@ -355,7 +380,13 @@ class _OJTFlowLlamaIndexEmbedding(_base_embedding_class()):
         return self._get_text_embedding(text)
 
 
-def _bm25_retriever(*, index: Any, nodes: list[Any], top_k: int) -> Any | None:
+def _bm25_retriever(
+    *,
+    index: Any,
+    nodes: list[Any],
+    top_k: int,
+    filters: Any | None,
+) -> Any | None:
     try:
         from llama_index.retrievers.bm25 import BM25Retriever
     except ModuleNotFoundError:
@@ -364,6 +395,7 @@ def _bm25_retriever(*, index: Any, nodes: list[Any], top_k: int) -> Any | None:
         return BM25Retriever.from_defaults(
             nodes=nodes,
             similarity_top_k=top_k,
+            filters=filters,
         )
     except TypeError:
         return BM25Retriever.from_defaults(
@@ -402,6 +434,35 @@ class _LlamaIndexCache:
         self.bm25_available = bm25_available
 
 
+def _metadata_filters_for_query(query: RetrievalQuery) -> Any | None:
+    values = _metadata_filter_values(query)
+    if not values:
+        return None
+    try:
+        from llama_index.core.vector_stores import (
+            FilterCondition,
+            MetadataFilter,
+            MetadataFilters,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover - exercised by config path.
+        raise _llamaindex_dependency_error() from exc
+    return MetadataFilters(
+        filters=[
+            MetadataFilter(key=key, value=value)
+            for key, value in values.items()
+        ],
+        condition=FilterCondition.AND,
+    )
+
+
+def _filter_nodes_for_query(nodes: list[Any], query: RetrievalQuery) -> list[Any]:
+    return [
+        node
+        for node in nodes
+        if _metadata_matches_query(dict(getattr(node, "metadata", {}) or {}), query)
+    ]
+
+
 def _filter_node_results(
     results: list[Any],
     *,
@@ -420,17 +481,29 @@ def _filter_node_results(
 
 
 def _metadata_matches_query(metadata: dict[str, Any], query: RetrievalQuery) -> bool:
-    filters = query.filters
-    expected = {
-        "trust_level": filters.get("trust_level"),
-        "clinical_domain": filters.get("clinical_domain"),
-        "standard_system": filters.get("standard_system"),
-        "source_type": filters.get("source_type"),
-    }
+    expected = _metadata_filter_values(query)
     return all(
         not value or str(metadata.get(key) or "") == str(value)
         for key, value in expected.items()
     )
+
+
+def _metadata_filter_values(query: RetrievalQuery) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for key in ("trust_level", "clinical_domain", "standard_system", "source_type"):
+        value = _normalized_metadata_filter_value(query.filters.get(key))
+        if value:
+            values[key] = value
+    return values
+
+
+def _normalized_metadata_filter_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "value"):
+        value = value.value
+    normalized = str(value).strip()
+    return normalized or None
 
 
 def _hits_from_nodes(

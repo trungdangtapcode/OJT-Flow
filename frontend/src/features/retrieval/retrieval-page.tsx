@@ -1270,6 +1270,8 @@ type RankingStack = {
     bm25Enabled: boolean | null;
     bm25Weight: number | null;
     candidateTopK: number | null;
+    filteredNodeCount: number | null;
+    metadataFilterCount: number | null;
     name: string;
     nodeCount: number | null;
     vectorWeight: number | null;
@@ -1351,6 +1353,8 @@ function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
       bm25Enabled: optionalBooleanValue(frameworkComponents.bm25_enabled),
       bm25Weight: numberValue(frameworkComponents.bm25_weight),
       candidateTopK: numberValue(frameworkComponents.candidate_top_k),
+      filteredNodeCount: numberValue(frameworkComponents.filtered_node_count),
+      metadataFilterCount: numberValue(frameworkComponents.metadata_filter_count),
       name: stringValue(packageData.handoff_context.framework, "custom"),
       nodeCount: numberValue(frameworkComponents.node_count),
       vectorWeight: numberValue(frameworkComponents.vector_weight),
@@ -1403,6 +1407,14 @@ function formatFrameworkStack(stack: RankingStack): string {
     return stack.framework.name;
   }
   const nodeText = stack.framework.nodeCount === null ? "unknown nodes" : `${stack.framework.nodeCount} nodes`;
+  const filterText =
+    stack.framework.filteredNodeCount === null
+      ? "filtered scope unknown"
+      : `${stack.framework.filteredNodeCount} filtered`;
+  const metadataFilterText =
+    stack.framework.metadataFilterCount === null
+      ? "filters unknown"
+      : `${stack.framework.metadataFilterCount} metadata filters`;
   const candidateText =
     stack.framework.candidateTopK === null ? "candidate pool unknown" : `top ${stack.framework.candidateTopK}`;
   const bm25Text =
@@ -1415,7 +1427,7 @@ function formatFrameworkStack(stack: RankingStack): string {
     stack.framework.vectorWeight === null || stack.framework.bm25Weight === null
       ? "weights unknown"
       : `weights ${stack.framework.vectorWeight.toFixed(2)}:${stack.framework.bm25Weight.toFixed(2)}`;
-  return `${stack.framework.name} / ${nodeText} / ${candidateText} / ${bm25Text} / ${weights}`;
+  return `${stack.framework.name} / ${nodeText} / ${filterText} / ${metadataFilterText} / ${candidateText} / ${bm25Text} / ${weights}`;
 }
 
 function formatRerankerStack(stack: RankingStack): string {

@@ -460,6 +460,33 @@ def test_static_retrieval_filters_by_source_type() -> None:
     assert _bucket_counts(package.facets.source_type) == {"terminology_system": 4}
 
 
+def test_llamaindex_retrieval_applies_metadata_filters_before_ranking() -> None:
+    pytest.importorskip("llama_index.core")
+    from ojtflow.infrastructure.retrieval.llamaindex_adapter import (
+        LlamaIndexRetrievalRepository,
+    )
+
+    repository = LlamaIndexRetrievalRepository(
+        ROOT / "knowledge",
+        candidate_multiplier=1,
+        min_candidates=1,
+    )
+
+    package = repository.search(
+        RetrievalQuery(
+            query="FHIR Observation laboratory units",
+            top_k=3,
+            filters={"standard_system": "UCUM", "trust_level": "approved"},
+        )
+    )
+    framework_components = package.handoff_context["framework_components"]
+
+    assert [hit.evidence.source_id for hit in package.hits] == ["terminology:ucum"]
+    assert package.trace.candidates_seen == 1
+    assert framework_components["filtered_node_count"] == 1
+    assert framework_components["metadata_filter_count"] == 2
+
+
 def test_retrieval_coverage_reports_missing_expected_standard() -> None:
     analysis = analyze_query(RetrievalQuery(query="FHIR valueQuantity UCUM unit"))
     chunk = KnowledgeChunk(
