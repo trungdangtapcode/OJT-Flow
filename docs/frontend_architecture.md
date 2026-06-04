@@ -187,7 +187,9 @@ hydrate prior labels for matching evidence. Comparison reports should include
 the available judgments as imported-judgment scaffolding.
 The results panel should summarize judgment-aware metrics from current
 in-session judgments, including coverage, Precision@k, judged precision, and
-nDCG@k.
+nDCG@k. It should also surface the persisted judgment summary from
+`/retrieval/judgments/summary`, including stored label count and sync state, so
+operators can distinguish transient local labels from durable evaluation data.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.

@@ -343,6 +343,20 @@ export type RetrievalRelevanceJudgment = {
   updated_at: string;
 };
 
+export type RetrievalRelevanceJudgmentSummary = {
+  total_count: number;
+  query_count: number;
+  evidence_count: number;
+  source_count: number;
+  relevant_count: number;
+  partial_count: number;
+  not_relevant_count: number;
+  average_rating?: number | null;
+  latest_updated_at?: string | null;
+  sample_limit: number;
+  value_counts: Record<RetrievalJudgmentValue, number>;
+};
+
 export type RetrievalJudgmentPayload = {
   query: string;
   evidence_id: string;

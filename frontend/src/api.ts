@@ -10,6 +10,7 @@ import type {
   RetrievalJudgmentPayload,
   RetrievalPackage,
   RetrievalRelevanceJudgment,
+  RetrievalRelevanceJudgmentSummary,
   RetrievalReindexPayload,
   RetrievalReindexResult,
   RetrievalSearchPayload,
@@ -390,6 +391,15 @@ export function listRetrievalJudgments(params: {
 }): Promise<RetrievalRelevanceJudgment[]> {
   return request<RetrievalRelevanceJudgment[]>(
     `/retrieval/judgments${queryString(params)}`,
+  );
+}
+
+export function getRetrievalJudgmentSummary(params: {
+  query?: string | null;
+  limit?: number;
+}): Promise<RetrievalRelevanceJudgmentSummary> {
+  return request<RetrievalRelevanceJudgmentSummary>(
+    `/retrieval/judgments/summary${queryString(params)}`,
   );
 }
 

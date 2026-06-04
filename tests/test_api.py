@@ -575,6 +575,26 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 }
             ]
 
+        def summary(self, **kwargs):
+            self.calls.append({"method": "summary", **kwargs})
+            return {
+                "total_count": 1,
+                "query_count": 1,
+                "evidence_count": 1,
+                "source_count": 1,
+                "relevant_count": 1,
+                "partial_count": 0,
+                "not_relevant_count": 0,
+                "average_rating": 3.0,
+                "latest_updated_at": "2026-06-04T00:00:00+00:00",
+                "sample_limit": kwargs["limit"],
+                "value_counts": {
+                    "relevant": 1,
+                    "partial": 0,
+                    "not_relevant": 0,
+                },
+            }
+
         def upsert(self, **kwargs):
             self.calls.append({"method": "upsert", **kwargs})
             return {
@@ -613,6 +633,10 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
             "/api/v1/retrieval/judgments",
             params={"query": "FHIR Observation HbA1c", "run_id": "run_1"},
         )
+        summary = await client.get(
+            "/api/v1/retrieval/judgments/summary",
+            params={"query": "FHIR Observation HbA1c", "limit": 100},
+        )
         saved = await client.put(
             "/api/v1/retrieval/judgments",
             json={
@@ -631,6 +655,8 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
 
     assert listed.status_code == 200
     assert listed.json()["data"][0]["judgment_id"] == "rj_existing"
+    assert summary.status_code == 200
+    assert summary.json()["data"]["total_count"] == 1
     assert saved.status_code == 200
     assert saved.json()["data"]["judgment_id"] == "rj_saved"
     assert deleted.status_code == 200
@@ -643,11 +669,17 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
         "evidence_id": None,
         "limit": 500,
     }
-    assert fake_service.calls[1]["method"] == "upsert"
-    assert fake_service.calls[1]["owner_user_id"] == "usr_api_test"
-    assert fake_service.calls[1]["value"] == "relevant"
-    assert fake_service.calls[1]["metadata"] == {"review_surface": "retrieval_console"}
-    assert fake_service.calls[2] == {
+    assert fake_service.calls[1] == {
+        "method": "summary",
+        "owner_user_id": "usr_api_test",
+        "query": "FHIR Observation HbA1c",
+        "limit": 100,
+    }
+    assert fake_service.calls[2]["method"] == "upsert"
+    assert fake_service.calls[2]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[2]["value"] == "relevant"
+    assert fake_service.calls[2]["metadata"] == {"review_surface": "retrieval_console"}
+    assert fake_service.calls[3] == {
         "method": "delete",
         "owner_user_id": "usr_api_test",
         "judgment_id": "rj_saved",

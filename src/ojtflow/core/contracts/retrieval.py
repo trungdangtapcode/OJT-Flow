@@ -52,6 +52,22 @@ class RetrievalRelevanceJudgment(RetrievalRelevanceJudgmentWrite):
     updated_at: NonBlankStr
 
 
+class RetrievalRelevanceJudgmentSummary(ContractModel):
+    """Aggregate inventory summary for durable retrieval judgments."""
+
+    total_count: int = Field(ge=0)
+    query_count: int = Field(ge=0)
+    evidence_count: int = Field(ge=0)
+    source_count: int = Field(ge=0)
+    relevant_count: int = Field(ge=0)
+    partial_count: int = Field(ge=0)
+    not_relevant_count: int = Field(ge=0)
+    average_rating: float | None = None
+    latest_updated_at: NonBlankStr | None = None
+    sample_limit: int = Field(ge=1)
+    value_counts: dict[RetrievalJudgmentValue, int] = Field(default_factory=dict)
+
+
 class RetrievalSnippet(ContractModel):
     """Query-focused extractive snippet from a retrieved evidence chunk."""
 

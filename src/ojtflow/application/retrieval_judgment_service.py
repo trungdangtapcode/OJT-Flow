@@ -7,6 +7,7 @@ from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import (
     RetrievalJudgmentValue,
     RetrievalRelevanceJudgment,
+    RetrievalRelevanceJudgmentSummary,
     RetrievalRelevanceJudgmentWrite,
 )
 from ojtflow.data_tools.hashing import sha256_text
@@ -66,6 +67,50 @@ class RetrievalJudgmentService:
             run_id=run_id,
             evidence_id=evidence_id,
             limit=limit,
+        )
+
+    def summary(
+        self,
+        *,
+        owner_user_id: str,
+        query: str | None = None,
+        limit: int = 1000,
+    ) -> RetrievalRelevanceJudgmentSummary:
+        sample_limit = max(1, min(limit, 1000))
+        judgments = self.list(
+            owner_user_id=owner_user_id,
+            query=query,
+            limit=sample_limit,
+        )
+        value_counts = {
+            "relevant": sum(1 for judgment in judgments if judgment.value == "relevant"),
+            "partial": sum(1 for judgment in judgments if judgment.value == "partial"),
+            "not_relevant": sum(
+                1 for judgment in judgments if judgment.value == "not_relevant"
+            ),
+        }
+        source_ids = {
+            judgment.source_id
+            for judgment in judgments
+            if judgment.source_id is not None
+        }
+        latest = max((judgment.updated_at for judgment in judgments), default=None)
+        return RetrievalRelevanceJudgmentSummary(
+            total_count=len(judgments),
+            query_count=len({judgment.query_hash for judgment in judgments}),
+            evidence_count=len({judgment.evidence_id for judgment in judgments}),
+            source_count=len(source_ids),
+            relevant_count=value_counts["relevant"],
+            partial_count=value_counts["partial"],
+            not_relevant_count=value_counts["not_relevant"],
+            average_rating=(
+                round(sum(judgment.rating for judgment in judgments) / len(judgments), 6)
+                if judgments
+                else None
+            ),
+            latest_updated_at=latest,
+            sample_limit=sample_limit,
+            value_counts=value_counts,
         )
 
     def delete(self, *, owner_user_id: str, judgment_id: str) -> None:

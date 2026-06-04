@@ -8,6 +8,7 @@ import {
   createWorkflow,
   deleteRetrievalJudgment,
   getExtractorInventory,
+  getRetrievalJudgmentSummary,
   getRetrievalIntegrity,
   getRetrievalSearchOptions,
   getRuntimeConfig,
@@ -53,6 +54,8 @@ export const queryKeys = {
   retrievalSources: ["retrieval-sources"] as const,
   retrievalJudgments: (params: Record<string, unknown>) =>
     ["retrieval-judgments", params] as const,
+  retrievalJudgmentSummary: (params: Record<string, unknown>) =>
+    ["retrieval-judgment-summary", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
@@ -219,12 +222,24 @@ export function useRetrievalJudgmentsQuery(params: {
   });
 }
 
+export function useRetrievalJudgmentSummaryQuery(params: {
+  query?: string | null;
+  limit?: number;
+}) {
+  return useQuery({
+    enabled: Boolean(params.query),
+    queryKey: queryKeys.retrievalJudgmentSummary(params),
+    queryFn: () => getRetrievalJudgmentSummary(params),
+  });
+}
+
 export function useRetrievalJudgmentMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: RetrievalJudgmentPayload) => upsertRetrievalJudgment(payload),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
     },
   });
 }
@@ -235,6 +250,7 @@ export function useDeleteRetrievalJudgmentMutation() {
     mutationFn: (judgmentId: string) => deleteRetrievalJudgment(judgmentId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
     },
   });
 }

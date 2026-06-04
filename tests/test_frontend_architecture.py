@@ -263,9 +263,13 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "relevanceJudgments" in retrieval_page
     assert "useRetrievalJudgmentsQuery" in retrieval_page
     assert "useRetrievalJudgmentMutation" in retrieval_page
+    assert "useRetrievalJudgmentSummaryQuery" in retrieval_page
     assert "useDeleteRetrievalJudgmentMutation" in retrieval_page
     assert "relevanceJudgmentFromPersisted" in retrieval_page
     assert "/retrieval/judgments" in (REPO_ROOT / "frontend/src/api.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "/retrieval/judgments/summary" in (REPO_ROOT / "frontend/src/api.ts").read_text(
         encoding="utf-8"
     )
     assert "judgmentsForComparison" in retrieval_page
@@ -282,6 +286,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "not_relevant" in retrieval_page
     assert "judgment-aware metrics" in frontend_architecture
     assert "/retrieval/judgments" in frontend_architecture
+    assert "/retrieval/judgments/summary" in frontend_architecture
+    assert "stored label" in retrieval_page
+    assert "isJudgmentSyncing" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page

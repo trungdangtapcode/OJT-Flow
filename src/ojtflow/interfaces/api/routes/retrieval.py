@@ -109,6 +109,22 @@ async def list_retrieval_judgments(
     )
 
 
+@router.get("/retrieval/judgments/summary")
+async def summarize_retrieval_judgments(
+    query_text: str | None = Query(default=None, alias="query"),
+    limit: int = Query(default=1000, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalJudgmentService = Depends(get_retrieval_judgment_service),
+) -> dict:
+    return ok(
+        service.summary(
+            owner_user_id=authenticated.user.user_id,
+            query=_optional_query_value(query_text),
+            limit=limit,
+        )
+    )
+
+
 @router.put("/retrieval/judgments")
 async def upsert_retrieval_judgment(
     request: RetrievalJudgmentRequest,

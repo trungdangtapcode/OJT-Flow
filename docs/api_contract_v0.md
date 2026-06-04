@@ -1271,6 +1271,11 @@ authenticated user. Optional query parameters:
 - `evidence_id`: evidence item identifier.
 - `limit`: default `500`, maximum `1000`.
 
+`GET /api/v1/retrieval/judgments/summary` returns aggregate label inventory for
+the authenticated user, optionally filtered by `query`. Response data includes
+`total_count`, `query_count`, `evidence_count`, `source_count`, per-value counts,
+`average_rating`, `latest_updated_at`, and `sample_limit`.
+
 `PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
 judgment:
 

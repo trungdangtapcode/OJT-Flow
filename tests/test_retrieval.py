@@ -72,12 +72,21 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     )
 
     listed = service.list(owner_user_id="usr_a", query="FHIR Observation HbA1c unit")
+    summary = service.summary(owner_user_id="usr_a", query="FHIR Observation HbA1c unit")
 
     assert first.judgment_id == updated.judgment_id
     assert updated.rating == 3
     assert updated.run_id == "run_2"
     assert other_user.judgment_id != updated.judgment_id
     assert [judgment.judgment_id for judgment in listed] == [updated.judgment_id]
+    assert summary.total_count == 1
+    assert summary.query_count == 1
+    assert summary.evidence_count == 1
+    assert summary.source_count == 1
+    assert summary.relevant_count == 1
+    assert summary.partial_count == 0
+    assert summary.not_relevant_count == 0
+    assert summary.average_rating == 3.0
 
 
 def test_query_variants_include_fields_schema_and_format() -> None:

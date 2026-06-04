@@ -38,6 +38,7 @@ import {
   useDeleteRetrievalJudgmentMutation,
   useRetrievalIntegrityQuery,
   useRetrievalJudgmentMutation,
+  useRetrievalJudgmentSummaryQuery,
   useRetrievalJudgmentsQuery,
   useRetrievalPresetsQuery,
   useRetrievalSearchOptionsQuery,
@@ -60,6 +61,7 @@ import type {
   RetrievalQualitySignal,
   RetrievalQueryVariant,
   RetrievalRelevanceJudgment,
+  RetrievalRelevanceJudgmentSummary,
   RetrievalScoreComponent,
   RetrievalSearchPayload,
   RetrievalSearchOption,
@@ -255,6 +257,10 @@ export function RetrievalPage() {
     query: activeRun?.payload.query ?? null,
     limit: 500,
   });
+  const persistedJudgmentSummaryQuery = useRetrievalJudgmentSummaryQuery({
+    query: activeRun?.payload.query ?? null,
+    limit: 1000,
+  });
   const activeRunComparison = React.useMemo(() => {
     if (!activeRun) return null;
     const baselineRun = comparisonRunForActive(
@@ -272,6 +278,13 @@ export function RetrievalPage() {
     [activeRunComparison, relevanceJudgments],
   );
   const packageData = activeRun?.packageData ?? searchMutation.data;
+  const isJudgmentSyncing = Boolean(
+    activeRun &&
+      (persistedJudgmentsQuery.isFetching ||
+        persistedJudgmentSummaryQuery.isFetching ||
+        upsertJudgmentMutation.isPending ||
+        deleteJudgmentMutation.isPending),
+  );
   const presets = presetsQuery.data ?? [];
   const searchOptions = searchOptionsQuery.data;
   const sources = sourcesQuery.data ?? [];
@@ -876,6 +889,8 @@ export function RetrievalPage() {
             packageData={packageData}
             relevanceJudgments={relevanceJudgments}
             runId={activeRun?.runId ?? null}
+            persistedJudgmentSummary={persistedJudgmentSummaryQuery.data ?? null}
+            isJudgmentSyncing={isJudgmentSyncing}
             submittedSearchPayload={submittedSearchPayload}
           />
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
@@ -1497,6 +1512,8 @@ function SearchResults({
   onSetJudgment,
   onRestoreSubmittedSearch,
   packageData,
+  persistedJudgmentSummary,
+  isJudgmentSyncing,
   relevanceJudgments,
   runId,
   submittedSearchPayload,
@@ -1508,6 +1525,8 @@ function SearchResults({
   onSetJudgment: (evidence: Evidence, value: RelevanceJudgmentValue) => void;
   onRestoreSubmittedSearch: () => void;
   packageData: RetrievalPackage | undefined;
+  persistedJudgmentSummary: RetrievalRelevanceJudgmentSummary | null;
+  isJudgmentSyncing: boolean;
   relevanceJudgments: RelevanceJudgmentIndex;
   runId: string | null;
   submittedSearchPayload: RetrievalSearchPayload | null;
@@ -1563,7 +1582,11 @@ function SearchResults({
             payload={submittedSearchPayload}
           />
         ) : null}
-        <RelevanceJudgmentSummary metrics={judgmentMetrics} />
+        <RelevanceJudgmentSummary
+          isSyncing={isJudgmentSyncing}
+          metrics={judgmentMetrics}
+          persistedSummary={persistedJudgmentSummary}
+        />
         <ResultFacets
           activeFilters={resultFilters}
           facets={packageData.facets}
@@ -1670,16 +1693,32 @@ function ResultFacets({
   );
 }
 
-function RelevanceJudgmentSummary({ metrics }: { metrics: RelevanceJudgmentMetrics }) {
+function RelevanceJudgmentSummary({
+  isSyncing,
+  metrics,
+  persistedSummary,
+}: {
+  isSyncing: boolean;
+  metrics: RelevanceJudgmentMetrics;
+  persistedSummary: RetrievalRelevanceJudgmentSummary | null;
+}) {
   return (
     <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-bold uppercase text-muted-foreground">
           Judgment metrics
         </div>
-        <Badge variant={metrics.judgedCount ? "success" : "muted"}>
-          {formatCount(metrics.judgedCount, "judged hit")}
-        </Badge>
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          <Badge variant={metrics.judgedCount ? "success" : "muted"}>
+            {formatCount(metrics.judgedCount, "judged hit")}
+          </Badge>
+          {persistedSummary ? (
+            <Badge variant={persistedSummary.total_count ? "success" : "muted"}>
+              {formatCount(persistedSummary.total_count, "stored label")}
+            </Badge>
+          ) : null}
+          {isSyncing ? <Badge variant="warning">syncing</Badge> : null}
+        </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <JudgmentMetricCard
@@ -1713,6 +1752,11 @@ function RelevanceJudgmentSummary({ metrics }: { metrics: RelevanceJudgmentMetri
           <Badge variant="muted">
             average rating {formatNullableDecimal(metrics.averageRating)}
           </Badge>
+          {persistedSummary?.latest_updated_at ? (
+            <Badge variant="muted">
+              stored avg {formatNullableDecimal(persistedSummary.average_rating ?? null)}
+            </Badge>
+          ) : null}
         </div>
       ) : null}
     </div>

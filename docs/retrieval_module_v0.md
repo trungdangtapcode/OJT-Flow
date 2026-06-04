@@ -806,6 +806,9 @@ persists those labels through `PUT /api/v1/retrieval/judgments`, lists them with
 authenticated `owner_user_id` and keyed by `(owner_user_id, query_hash,
 evidence_id)`, so rerunning the same query can hydrate prior labels for the
 same evidence even when browser-local run IDs change.
+`GET /api/v1/retrieval/judgments/summary` returns the same stored label
+inventory as aggregate counts, average rating, latest update time, and sample
+limit for the active user/query.
 
 Each durable judgment stores:
 
