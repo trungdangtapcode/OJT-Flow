@@ -37,6 +37,7 @@ import {
   useRetrievalReindexMutation,
   useDeleteRetrievalJudgmentMutation,
   useRetrievalIntegrityQuery,
+  useRetrievalJudgmentEvaluationQuery,
   useRetrievalJudgmentMutation,
   useRetrievalJudgmentSummaryQuery,
   useRetrievalJudgmentsQuery,
@@ -58,6 +59,7 @@ import type {
   RetrievalPackage,
   RetrievalCoverage,
   RetrievalFacets,
+  RetrievalJudgmentEvaluationResult,
   RetrievalQualitySignal,
   RetrievalQueryVariant,
   RetrievalRelevanceJudgment,
@@ -261,6 +263,19 @@ export function RetrievalPage() {
     query: activeRun?.payload.query ?? null,
     limit: 1000,
   });
+  const activeRunEvidenceIds = React.useMemo(
+    () => activeRun?.packageData.hits.map((hit) => hit.evidence.evidence_id) ?? [],
+    [activeRun],
+  );
+  const persistedJudgmentEvaluationQuery = useRetrievalJudgmentEvaluationQuery(
+    activeRun
+      ? {
+          query: activeRun.payload.query,
+          ranked_evidence_ids: activeRunEvidenceIds,
+          cutoff: activeRun.packageData.hits.length,
+        }
+      : null,
+  );
   const activeRunComparison = React.useMemo(() => {
     if (!activeRun) return null;
     const baselineRun = comparisonRunForActive(
@@ -282,6 +297,7 @@ export function RetrievalPage() {
     activeRun &&
       (persistedJudgmentsQuery.isFetching ||
         persistedJudgmentSummaryQuery.isFetching ||
+        persistedJudgmentEvaluationQuery.isFetching ||
         upsertJudgmentMutation.isPending ||
         deleteJudgmentMutation.isPending),
   );
@@ -890,6 +906,7 @@ export function RetrievalPage() {
             relevanceJudgments={relevanceJudgments}
             runId={activeRun?.runId ?? null}
             persistedJudgmentSummary={persistedJudgmentSummaryQuery.data ?? null}
+            persistedJudgmentEvaluation={persistedJudgmentEvaluationQuery.data ?? null}
             isJudgmentSyncing={isJudgmentSyncing}
             submittedSearchPayload={submittedSearchPayload}
           />
@@ -1513,6 +1530,7 @@ function SearchResults({
   onRestoreSubmittedSearch,
   packageData,
   persistedJudgmentSummary,
+  persistedJudgmentEvaluation,
   isJudgmentSyncing,
   relevanceJudgments,
   runId,
@@ -1526,6 +1544,7 @@ function SearchResults({
   onRestoreSubmittedSearch: () => void;
   packageData: RetrievalPackage | undefined;
   persistedJudgmentSummary: RetrievalRelevanceJudgmentSummary | null;
+  persistedJudgmentEvaluation: RetrievalJudgmentEvaluationResult | null;
   isJudgmentSyncing: boolean;
   relevanceJudgments: RelevanceJudgmentIndex;
   runId: string | null;
@@ -1585,6 +1604,7 @@ function SearchResults({
         <RelevanceJudgmentSummary
           isSyncing={isJudgmentSyncing}
           metrics={judgmentMetrics}
+          persistedEvaluation={persistedJudgmentEvaluation}
           persistedSummary={persistedJudgmentSummary}
         />
         <ResultFacets
@@ -1696,10 +1716,12 @@ function ResultFacets({
 function RelevanceJudgmentSummary({
   isSyncing,
   metrics,
+  persistedEvaluation,
   persistedSummary,
 }: {
   isSyncing: boolean;
   metrics: RelevanceJudgmentMetrics;
+  persistedEvaluation: RetrievalJudgmentEvaluationResult | null;
   persistedSummary: RetrievalRelevanceJudgmentSummary | null;
 }) {
   return (
@@ -1715,6 +1737,11 @@ function RelevanceJudgmentSummary({
           {persistedSummary ? (
             <Badge variant={persistedSummary.total_count ? "success" : "muted"}>
               {formatCount(persistedSummary.total_count, "stored label")}
+            </Badge>
+          ) : null}
+          {persistedEvaluation ? (
+            <Badge variant={persistedEvaluation.judged_count ? "success" : "warning"}>
+              server eval {formatCount(persistedEvaluation.judged_count, "judged")}
             </Badge>
           ) : null}
           {isSyncing ? <Badge variant="warning">syncing</Badge> : null}
@@ -1742,6 +1769,30 @@ function RelevanceJudgmentSummary({
           value={formatNullableDecimal(metrics.ndcgAtK)}
         />
       </div>
+      {persistedEvaluation ? (
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <JudgmentMetricCard
+            label="Server coverage"
+            tone={persistedEvaluation.coverage_at_k >= 0.5 ? "success" : "warning"}
+            value={formatPercent(persistedEvaluation.coverage_at_k)}
+          />
+          <JudgmentMetricCard
+            label="Server MAP@k"
+            tone={persistedEvaluation.average_precision_at_k >= 0.5 ? "success" : "warning"}
+            value={formatDecimal(persistedEvaluation.average_precision_at_k)}
+          />
+          <JudgmentMetricCard
+            label="Server nDCG@k"
+            tone={(persistedEvaluation.ndcg_at_k ?? 0) >= 0.5 ? "success" : "warning"}
+            value={formatNullableDecimal(persistedEvaluation.ndcg_at_k ?? null)}
+          />
+          <JudgmentMetricCard
+            label="Server unjudged"
+            tone={persistedEvaluation.unjudged_count ? "warning" : "success"}
+            value={formatCount(persistedEvaluation.unjudged_count, "hit")}
+          />
+        </div>
+      ) : null}
       {metrics.judgedCount ? (
         <div className="flex min-w-0 flex-wrap gap-1.5">
           <Badge variant="success">{formatCount(metrics.relevantCount, "relevant")}</Badge>

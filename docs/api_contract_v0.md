@@ -1276,6 +1276,24 @@ the authenticated user, optionally filtered by `query`. Response data includes
 `total_count`, `query_count`, `evidence_count`, `source_count`, per-value counts,
 `average_rating`, `latest_updated_at`, and `sample_limit`.
 
+`POST /api/v1/retrieval/judgments/evaluate` evaluates one ranked retrieval
+result list against the authenticated user's stored judgments for the submitted
+query:
+
+```json
+{
+  "query": "FHIR Observation HbA1c unit",
+  "ranked_evidence_ids": ["ev_schema_lab_result_v1", "ev_ucum_unit_policy"],
+  "cutoff": 2
+}
+```
+
+Response data includes `coverage_at_k`, `precision_at_k`, `judged_precision`,
+`average_precision_at_k`, `ndcg_at_k`, per-value counts, unjudged evidence IDs,
+and the judgment IDs that contributed to the score. This endpoint is intended
+for operator-facing evaluation of the current ranked result list; it does not
+mutate judgments or workflow state.
+
 `PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
 judgment:
 

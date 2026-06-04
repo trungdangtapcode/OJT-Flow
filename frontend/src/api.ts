@@ -6,6 +6,8 @@ import type {
   AuthLoginResponse,
   AuthSessionResponse,
   ExtractorInventory,
+  RetrievalJudgmentEvaluationPayload,
+  RetrievalJudgmentEvaluationResult,
   RetrievalIntegrityReport,
   RetrievalJudgmentPayload,
   RetrievalPackage,
@@ -401,6 +403,15 @@ export function getRetrievalJudgmentSummary(params: {
   return request<RetrievalRelevanceJudgmentSummary>(
     `/retrieval/judgments/summary${queryString(params)}`,
   );
+}
+
+export function evaluateRetrievalJudgments(
+  payload: RetrievalJudgmentEvaluationPayload,
+): Promise<RetrievalJudgmentEvaluationResult> {
+  return request<RetrievalJudgmentEvaluationResult>("/retrieval/judgments/evaluate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function upsertRetrievalJudgment(

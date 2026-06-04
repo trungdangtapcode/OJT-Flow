@@ -264,12 +264,16 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "useRetrievalJudgmentsQuery" in retrieval_page
     assert "useRetrievalJudgmentMutation" in retrieval_page
     assert "useRetrievalJudgmentSummaryQuery" in retrieval_page
+    assert "useRetrievalJudgmentEvaluationQuery" in retrieval_page
     assert "useDeleteRetrievalJudgmentMutation" in retrieval_page
     assert "relevanceJudgmentFromPersisted" in retrieval_page
     assert "/retrieval/judgments" in (REPO_ROOT / "frontend/src/api.ts").read_text(
         encoding="utf-8"
     )
     assert "/retrieval/judgments/summary" in (REPO_ROOT / "frontend/src/api.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "/retrieval/judgments/evaluate" in (REPO_ROOT / "frontend/src/api.ts").read_text(
         encoding="utf-8"
     )
     assert "judgmentsForComparison" in retrieval_page
@@ -281,12 +285,17 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "discountedCumulativeGain" in retrieval_page
     assert "Precision@k" in retrieval_page
     assert "nDCG@k" in retrieval_page
+    assert "Server MAP@k" in retrieval_page
+    assert "Server nDCG@k" in retrieval_page
+    assert "persistedJudgmentEvaluation" in retrieval_page
+    assert "average_precision_at_k" in retrieval_page
     assert "judgmentCoverage" in retrieval_page
     assert "judgedPrecision" in retrieval_page
     assert "not_relevant" in retrieval_page
     assert "judgment-aware metrics" in frontend_architecture
     assert "/retrieval/judgments" in frontend_architecture
     assert "/retrieval/judgments/summary" in frontend_architecture
+    assert "/retrieval/judgments/evaluate" in frontend_architecture
     assert "stored label" in retrieval_page
     assert "isJudgmentSyncing" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page

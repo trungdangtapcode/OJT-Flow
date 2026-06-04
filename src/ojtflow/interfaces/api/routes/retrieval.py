@@ -25,6 +25,7 @@ from ojtflow.interfaces.api.deps import (
 from ojtflow.interfaces.api.limits import enforce_inline_json_limit
 from ojtflow.interfaces.api.responses import ok
 from ojtflow.interfaces.api.schemas import (
+    RetrievalJudgmentEvaluationRequest,
     RetrievalJudgmentRequest,
     RetrievalReindexRequest,
     RetrievalSearchRequest,
@@ -121,6 +122,24 @@ async def summarize_retrieval_judgments(
             owner_user_id=authenticated.user.user_id,
             query=_optional_query_value(query_text),
             limit=limit,
+        )
+    )
+
+
+@router.post("/retrieval/judgments/evaluate")
+async def evaluate_retrieval_judgments(
+    request: RetrievalJudgmentEvaluationRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalJudgmentService = Depends(get_retrieval_judgment_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    enforce_inline_json_limit(request, settings, field_name="retrieval_judgment_evaluation")
+    return ok(
+        service.evaluate_ranked_results(
+            owner_user_id=authenticated.user.user_id,
+            query=request.query,
+            ranked_evidence_ids=request.ranked_evidence_ids,
+            cutoff=request.cutoff,
         )
     )
 

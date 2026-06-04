@@ -73,6 +73,12 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
 
     listed = service.list(owner_user_id="usr_a", query="FHIR Observation HbA1c unit")
     summary = service.summary(owner_user_id="usr_a", query="FHIR Observation HbA1c unit")
+    evaluation = service.evaluate_ranked_results(
+        owner_user_id="usr_a",
+        query="FHIR Observation HbA1c unit",
+        ranked_evidence_ids=["ev_fhir_observation", "ev_unjudged"],
+        cutoff=2,
+    )
 
     assert first.judgment_id == updated.judgment_id
     assert updated.rating == 3
@@ -87,6 +93,14 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     assert summary.partial_count == 0
     assert summary.not_relevant_count == 0
     assert summary.average_rating == 3.0
+    assert evaluation.judged_count == 1
+    assert evaluation.unjudged_count == 1
+    assert evaluation.coverage_at_k == 0.5
+    assert evaluation.precision_at_k == 0.5
+    assert evaluation.judged_precision == 1.0
+    assert evaluation.average_precision_at_k == 1.0
+    assert evaluation.ndcg_at_k == 1.0
+    assert evaluation.unjudged_evidence_ids == ["ev_unjudged"]
 
 
 def test_query_variants_include_fields_schema_and_format() -> None:

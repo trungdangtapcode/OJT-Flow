@@ -7,6 +7,7 @@ import {
   chatWithAssistant,
   createWorkflow,
   deleteRetrievalJudgment,
+  evaluateRetrievalJudgments,
   getExtractorInventory,
   getRetrievalJudgmentSummary,
   getRetrievalIntegrity,
@@ -35,6 +36,7 @@ import {
 } from "../api";
 import type {
   AssistantChatPayload,
+  RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentPayload,
   RetrievalReindexPayload,
   RetrievalSearchPayload,
@@ -56,6 +58,8 @@ export const queryKeys = {
     ["retrieval-judgments", params] as const,
   retrievalJudgmentSummary: (params: Record<string, unknown>) =>
     ["retrieval-judgment-summary", params] as const,
+  retrievalJudgmentEvaluation: (params: Record<string, unknown>) =>
+    ["retrieval-judgment-evaluation", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
@@ -233,6 +237,16 @@ export function useRetrievalJudgmentSummaryQuery(params: {
   });
 }
 
+export function useRetrievalJudgmentEvaluationQuery(
+  payload: RetrievalJudgmentEvaluationPayload | null,
+) {
+  return useQuery({
+    enabled: Boolean(payload && payload.ranked_evidence_ids.length),
+    queryKey: queryKeys.retrievalJudgmentEvaluation(payload ?? {}),
+    queryFn: () => evaluateRetrievalJudgments(payload!),
+  });
+}
+
 export function useRetrievalJudgmentMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -240,6 +254,7 @@ export function useRetrievalJudgmentMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-evaluation"] });
     },
   });
 }
@@ -251,6 +266,7 @@ export function useDeleteRetrievalJudgmentMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-evaluation"] });
     },
   });
 }

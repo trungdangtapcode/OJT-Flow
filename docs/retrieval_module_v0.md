@@ -809,6 +809,12 @@ same evidence even when browser-local run IDs change.
 `GET /api/v1/retrieval/judgments/summary` returns the same stored label
 inventory as aggregate counts, average rating, latest update time, and sample
 limit for the active user/query.
+`POST /api/v1/retrieval/judgments/evaluate` accepts the active query, ranked
+evidence IDs, and optional cutoff, then scores that ranked list against stored
+judgments. It returns Coverage@k, Precision@k, judged precision, MAP@k, nDCG@k,
+per-value counts, contributing judgment IDs, and unjudged evidence IDs. This is
+the runtime counterpart to the offline evaluation harness: it makes current
+operator searches measurable without copying labels into fixture files.
 
 Each durable judgment stores:
 

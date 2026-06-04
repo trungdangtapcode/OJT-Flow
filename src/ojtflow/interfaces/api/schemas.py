@@ -240,6 +240,27 @@ class RetrievalJudgmentRequest(ContractModel):
     }
 
 
+class RetrievalJudgmentEvaluationRequest(ContractModel):
+    query: NonBlankStr
+    ranked_evidence_ids: list[NonBlankStr] = Field(min_length=1, max_length=100)
+    cutoff: int | None = Field(default=None, ge=1, le=100)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "query": "FHIR Observation HbA1c unit",
+                    "ranked_evidence_ids": [
+                        "ev_schema_lab_result_v1",
+                        "ev_terminology_ucum",
+                    ],
+                    "cutoff": 5,
+                }
+            ]
+        }
+    }
+
+
 class RetrievalReindexRequest(ContractModel):
     include_seeded: bool = True
     include_corpus: bool = True

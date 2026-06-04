@@ -68,6 +68,27 @@ class RetrievalRelevanceJudgmentSummary(ContractModel):
     value_counts: dict[RetrievalJudgmentValue, int] = Field(default_factory=dict)
 
 
+class RetrievalJudgmentEvaluationResult(ContractModel):
+    """Judgment-aware evaluation for one ranked retrieval result set."""
+
+    query: NonBlankStr
+    ranked_evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    cutoff: int = Field(ge=1)
+    judged_count: int = Field(ge=0)
+    unjudged_count: int = Field(ge=0)
+    relevant_count: int = Field(ge=0)
+    partial_count: int = Field(ge=0)
+    not_relevant_count: int = Field(ge=0)
+    coverage_at_k: float = Field(ge=0.0, le=1.0)
+    precision_at_k: float = Field(ge=0.0, le=1.0)
+    judged_precision: float | None = Field(default=None, ge=0.0, le=1.0)
+    average_precision_at_k: float = Field(ge=0.0, le=1.0)
+    ndcg_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
+    average_rating: float | None = None
+    unjudged_evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    judgment_ids: list[NonBlankStr] = Field(default_factory=list)
+
+
 class RetrievalSnippet(ContractModel):
     """Query-focused extractive snippet from a retrieved evidence chunk."""
 

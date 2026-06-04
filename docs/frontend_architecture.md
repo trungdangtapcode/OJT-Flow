@@ -190,6 +190,10 @@ in-session judgments, including coverage, Precision@k, judged precision, and
 nDCG@k. It should also surface the persisted judgment summary from
 `/retrieval/judgments/summary`, including stored label count and sync state, so
 operators can distinguish transient local labels from durable evaluation data.
+For the active ranked result list, the panel should also call
+`/retrieval/judgments/evaluate` and show server-computed Coverage@k, MAP@k,
+nDCG@k, and unjudged-hit count. This keeps rank-aware evaluation tied to the
+durable judgment store rather than browser-local state.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.

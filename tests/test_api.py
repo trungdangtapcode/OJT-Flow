@@ -595,6 +595,27 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 },
             }
 
+        def evaluate_ranked_results(self, **kwargs):
+            self.calls.append({"method": "evaluate", **kwargs})
+            return {
+                "query": kwargs["query"],
+                "ranked_evidence_ids": kwargs["ranked_evidence_ids"],
+                "cutoff": kwargs["cutoff"],
+                "judged_count": 1,
+                "unjudged_count": 1,
+                "relevant_count": 1,
+                "partial_count": 0,
+                "not_relevant_count": 0,
+                "coverage_at_k": 0.5,
+                "precision_at_k": 0.5,
+                "judged_precision": 1.0,
+                "average_precision_at_k": 1.0,
+                "ndcg_at_k": 1.0,
+                "average_rating": 3.0,
+                "unjudged_evidence_ids": ["ev_missing"],
+                "judgment_ids": ["rj_existing"],
+            }
+
         def upsert(self, **kwargs):
             self.calls.append({"method": "upsert", **kwargs})
             return {
@@ -637,6 +658,14 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
             "/api/v1/retrieval/judgments/summary",
             params={"query": "FHIR Observation HbA1c", "limit": 100},
         )
+        evaluated = await client.post(
+            "/api/v1/retrieval/judgments/evaluate",
+            json={
+                "query": "FHIR Observation HbA1c",
+                "ranked_evidence_ids": ["ev_schema", "ev_missing"],
+                "cutoff": 2,
+            },
+        )
         saved = await client.put(
             "/api/v1/retrieval/judgments",
             json={
@@ -657,6 +686,9 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
     assert listed.json()["data"][0]["judgment_id"] == "rj_existing"
     assert summary.status_code == 200
     assert summary.json()["data"]["total_count"] == 1
+    assert evaluated.status_code == 200
+    assert evaluated.json()["data"]["coverage_at_k"] == 0.5
+    assert evaluated.json()["data"]["ndcg_at_k"] == 1.0
     assert saved.status_code == 200
     assert saved.json()["data"]["judgment_id"] == "rj_saved"
     assert deleted.status_code == 200
@@ -675,11 +707,18 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
         "query": "FHIR Observation HbA1c",
         "limit": 100,
     }
-    assert fake_service.calls[2]["method"] == "upsert"
-    assert fake_service.calls[2]["owner_user_id"] == "usr_api_test"
-    assert fake_service.calls[2]["value"] == "relevant"
-    assert fake_service.calls[2]["metadata"] == {"review_surface": "retrieval_console"}
-    assert fake_service.calls[3] == {
+    assert fake_service.calls[2] == {
+        "method": "evaluate",
+        "owner_user_id": "usr_api_test",
+        "query": "FHIR Observation HbA1c",
+        "ranked_evidence_ids": ["ev_schema", "ev_missing"],
+        "cutoff": 2,
+    }
+    assert fake_service.calls[3]["method"] == "upsert"
+    assert fake_service.calls[3]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[3]["value"] == "relevant"
+    assert fake_service.calls[3]["metadata"] == {"review_surface": "retrieval_console"}
+    assert fake_service.calls[4] == {
         "method": "delete",
         "owner_user_id": "usr_api_test",
         "judgment_id": "rj_saved",

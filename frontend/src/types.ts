@@ -357,6 +357,31 @@ export type RetrievalRelevanceJudgmentSummary = {
   value_counts: Record<RetrievalJudgmentValue, number>;
 };
 
+export type RetrievalJudgmentEvaluationPayload = {
+  query: string;
+  ranked_evidence_ids: string[];
+  cutoff?: number | null;
+};
+
+export type RetrievalJudgmentEvaluationResult = {
+  query: string;
+  ranked_evidence_ids: string[];
+  cutoff: number;
+  judged_count: number;
+  unjudged_count: number;
+  relevant_count: number;
+  partial_count: number;
+  not_relevant_count: number;
+  coverage_at_k: number;
+  precision_at_k: number;
+  judged_precision?: number | null;
+  average_precision_at_k: number;
+  ndcg_at_k?: number | null;
+  average_rating?: number | null;
+  unjudged_evidence_ids: string[];
+  judgment_ids: string[];
+};
+
 export type RetrievalJudgmentPayload = {
   query: string;
   evidence_id: string;

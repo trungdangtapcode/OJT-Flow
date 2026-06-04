@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import math
+
 from ojtflow.application.ports import RetrievalJudgmentRepository
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalJudgmentEvaluationResult,
     RetrievalJudgmentValue,
     RetrievalRelevanceJudgment,
     RetrievalRelevanceJudgmentSummary,
@@ -113,6 +116,87 @@ class RetrievalJudgmentService:
             value_counts=value_counts,
         )
 
+    def evaluate_ranked_results(
+        self,
+        *,
+        owner_user_id: str,
+        query: str,
+        ranked_evidence_ids: list[str],
+        cutoff: int | None = None,
+    ) -> RetrievalJudgmentEvaluationResult:
+        normalized_ranked_ids = _ordered_unique(
+            evidence_id.strip() for evidence_id in ranked_evidence_ids if evidence_id.strip()
+        )
+        top_k = max(
+            1,
+            min(cutoff or len(normalized_ranked_ids) or 1, len(normalized_ranked_ids) or 1, 100),
+        )
+        top_ids = normalized_ranked_ids[:top_k]
+        judgments = self.list(
+            owner_user_id=owner_user_id,
+            query=query,
+            limit=1000,
+        )
+        judgments_by_evidence = {judgment.evidence_id: judgment for judgment in judgments}
+        ranked_judgments = [
+            judgments_by_evidence[evidence_id]
+            for evidence_id in top_ids
+            if evidence_id in judgments_by_evidence
+        ]
+        ranked_ratings = [
+            judgments_by_evidence[evidence_id].rating
+            if evidence_id in judgments_by_evidence
+            else 0
+            for evidence_id in top_ids
+        ]
+        relevant_count = sum(1 for judgment in ranked_judgments if judgment.value == "relevant")
+        partial_count = sum(1 for judgment in ranked_judgments if judgment.value == "partial")
+        not_relevant_count = sum(
+            1 for judgment in ranked_judgments if judgment.value == "not_relevant"
+        )
+        positive_count = relevant_count + partial_count
+        judged_count = len(ranked_judgments)
+        unjudged_ids = [
+            evidence_id for evidence_id in top_ids if evidence_id not in judgments_by_evidence
+        ]
+        positive_judgments_total = sum(1 for judgment in judgments if judgment.rating > 0)
+        ideal_ratings = sorted(
+            (judgment.rating for judgment in judgments),
+            reverse=True,
+        )[:top_k]
+        ideal_dcg = _discounted_cumulative_gain(ideal_ratings)
+        return RetrievalJudgmentEvaluationResult(
+            query=query,
+            ranked_evidence_ids=top_ids,
+            cutoff=top_k,
+            judged_count=judged_count,
+            unjudged_count=len(unjudged_ids),
+            relevant_count=relevant_count,
+            partial_count=partial_count,
+            not_relevant_count=not_relevant_count,
+            coverage_at_k=round(judged_count / top_k, 6),
+            precision_at_k=round(positive_count / top_k, 6),
+            judged_precision=(
+                round(positive_count / judged_count, 6) if judged_count else None
+            ),
+            average_precision_at_k=round(
+                _average_precision_at_k(top_ids, judgments_by_evidence, positive_judgments_total),
+                6,
+            ),
+            ndcg_at_k=(
+                round(_discounted_cumulative_gain(ranked_ratings) / ideal_dcg, 6)
+                if ideal_dcg
+                else None
+            ),
+            average_rating=(
+                round(sum(judgment.rating for judgment in ranked_judgments) / judged_count, 6)
+                if judged_count
+                else None
+            ),
+            unjudged_evidence_ids=unjudged_ids,
+            judgment_ids=[judgment.judgment_id for judgment in ranked_judgments],
+        )
+
     def delete(self, *, owner_user_id: str, judgment_id: str) -> None:
         self.repository.delete(owner_user_id=owner_user_id, judgment_id=judgment_id)
 
@@ -131,3 +215,34 @@ def rating_from_judgment_value(value: RetrievalJudgmentValue) -> int:
     if value == "partial":
         return 1
     return 0
+
+
+def _average_precision_at_k(
+    ranked_evidence_ids: list[str],
+    judgments_by_evidence: dict[str, RetrievalRelevanceJudgment],
+    positive_judgment_count: int,
+) -> float:
+    if positive_judgment_count == 0:
+        return 0.0
+    seen_relevant = 0
+    precision_sum = 0.0
+    for rank, evidence_id in enumerate(ranked_evidence_ids, start=1):
+        judgment = judgments_by_evidence.get(evidence_id)
+        if not judgment or judgment.rating <= 0:
+            continue
+        seen_relevant += 1
+        precision_sum += seen_relevant / rank
+    return precision_sum / positive_judgment_count
+
+
+def _discounted_cumulative_gain(ratings: list[int]) -> float:
+    total = 0.0
+    for index, rating in enumerate(ratings, start=1):
+        if rating <= 0:
+            continue
+        total += (2**rating - 1) / math.log2(index + 1)
+    return total
+
+
+def _ordered_unique(values) -> list[str]:
+    return list(dict.fromkeys(values))
