@@ -119,6 +119,7 @@ type RetrievalRunComparison = {
   baselineSummary: RetrievalRunSummary;
   candidateDelta: number;
   hitDelta: number;
+  metrics: RetrievalRunComparisonMetrics;
   qualityWarningDelta: number;
   rankChanges: RetrievalRankChange[];
   removedEvidenceIds: string[];
@@ -127,6 +128,14 @@ type RetrievalRunComparison = {
   topSourceBefore: string | null;
   topSourceChanged: boolean;
   warningDelta: number;
+};
+type RetrievalRunComparisonMetrics = {
+  changedRankCount: number;
+  churnRate: number;
+  meanAbsoluteRankDelta: number;
+  overlapRatio: number;
+  sharedCount: number;
+  unionCount: number;
 };
 type RetrievalRankChange = {
   evidenceId: string;
@@ -887,6 +896,7 @@ function SearchRunComparison({ comparison }: { comparison: RetrievalRunCompariso
       <div className="break-words text-xs leading-5 text-muted-foreground">
         Compared with: {comparison.baselineQuery}
       </div>
+      <RunComparisonMetrics metrics={comparison.metrics} />
       <div className="grid gap-2 sm:grid-cols-2">
         <RunComparisonMetric
           delta={comparison.hitDelta}
@@ -931,6 +941,54 @@ function SearchRunComparison({ comparison }: { comparison: RetrievalRunCompariso
         Top source: {comparison.topSourceBefore ?? "none"} to{" "}
         {comparison.topSourceAfter ?? "none"}
       </div>
+    </div>
+  );
+}
+
+function RunComparisonMetrics({
+  metrics,
+}: {
+  metrics: RetrievalRunComparisonMetrics;
+}) {
+  return (
+    <div aria-label="Search comparison metrics" className="grid gap-2 sm:grid-cols-2">
+      <RunComparisonMetricCard
+        label="Overlap"
+        tone={metrics.overlapRatio >= 0.5 ? "success" : "warning"}
+        value={formatPercent(metrics.overlapRatio)}
+      />
+      <RunComparisonMetricCard
+        label="Result churn"
+        tone={metrics.churnRate > 0.5 ? "warning" : "success"}
+        value={formatPercent(metrics.churnRate)}
+      />
+      <RunComparisonMetricCard
+        label="Shared evidence"
+        tone={metrics.sharedCount ? "success" : "warning"}
+        value={`${metrics.sharedCount}/${metrics.unionCount}`}
+      />
+      <RunComparisonMetricCard
+        label="Mean rank delta"
+        tone={metrics.meanAbsoluteRankDelta > 1 ? "warning" : "success"}
+        value={formatDecimal(metrics.meanAbsoluteRankDelta)}
+      />
+    </div>
+  );
+}
+
+function RunComparisonMetricCard({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "success" | "warning";
+  value: string;
+}) {
+  return (
+    <div className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2">
+      <span className="text-xs font-bold text-muted-foreground">{label}</span>
+      <Badge variant={tone}>{value}</Badge>
     </div>
   );
 }
@@ -3350,11 +3408,19 @@ function compareSearchRuns(
   const baselineEvidenceIds = evidenceIdsFromRun(baselineRun);
   const activeEvidenceIdSet = new Set(activeEvidenceIds);
   const baselineEvidenceIdSet = new Set(baselineEvidenceIds);
+  const addedEvidenceIds = activeEvidenceIds.filter(
+    (evidenceId) => !baselineEvidenceIdSet.has(evidenceId),
+  );
+  const removedEvidenceIds = baselineEvidenceIds.filter(
+    (evidenceId) => !activeEvidenceIdSet.has(evidenceId),
+  );
+  const retainedEvidenceIds = activeEvidenceIds.filter((evidenceId) =>
+    baselineEvidenceIdSet.has(evidenceId),
+  );
+  const rankChanges = rankChangesBetweenRuns(activeRun, baselineRun);
 
   return {
-    addedEvidenceIds: activeEvidenceIds.filter(
-      (evidenceId) => !baselineEvidenceIdSet.has(evidenceId),
-    ),
+    addedEvidenceIds,
     activePayload: activeRun.payload,
     activeQuery: activeRun.payload.query,
     activeSubmittedAt: activeRun.submittedAt,
@@ -3366,15 +3432,19 @@ function compareSearchRuns(
     candidateDelta:
       activeRun.summary.candidateCount - baselineRun.summary.candidateCount,
     hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
+    metrics: comparisonMetrics({
+      addedCount: addedEvidenceIds.length,
+      baselineCount: baselineEvidenceIds.length,
+      rankChanges,
+      retainedCount: retainedEvidenceIds.length,
+      removedCount: removedEvidenceIds.length,
+      activeCount: activeEvidenceIds.length,
+    }),
     qualityWarningDelta:
       activeRun.summary.qualityWarningCount - baselineRun.summary.qualityWarningCount,
-    rankChanges: rankChangesBetweenRuns(activeRun, baselineRun),
-    removedEvidenceIds: baselineEvidenceIds.filter(
-      (evidenceId) => !activeEvidenceIdSet.has(evidenceId),
-    ),
-    retainedEvidenceIds: activeEvidenceIds.filter((evidenceId) =>
-      baselineEvidenceIdSet.has(evidenceId),
-    ),
+    rankChanges,
+    removedEvidenceIds,
+    retainedEvidenceIds,
     topSourceAfter: activeRun.summary.topSourceId,
     topSourceBefore: baselineRun.summary.topSourceId,
     topSourceChanged:
@@ -3406,6 +3476,7 @@ function comparisonReportFromComparison(comparison: RetrievalRunComparison) {
       quality_warnings: comparison.qualityWarningDelta,
       warnings: comparison.warningDelta,
     },
+    metrics: comparison.metrics,
     evidence: {
       added_ids: comparison.addedEvidenceIds,
       removed_ids: comparison.removedEvidenceIds,
@@ -3417,6 +3488,38 @@ function comparisonReportFromComparison(comparison: RetrievalRunComparison) {
       after: comparison.topSourceAfter,
       changed: comparison.topSourceChanged,
     },
+  };
+}
+
+function comparisonMetrics({
+  activeCount,
+  addedCount,
+  baselineCount,
+  rankChanges,
+  retainedCount,
+  removedCount,
+}: {
+  activeCount: number;
+  addedCount: number;
+  baselineCount: number;
+  rankChanges: RetrievalRankChange[];
+  retainedCount: number;
+  removedCount: number;
+}): RetrievalRunComparisonMetrics {
+  const unionCount = Math.max(0, activeCount + baselineCount - retainedCount);
+  const totalRankDelta = rankChanges.reduce(
+    (total, change) => total + Math.abs(change.rankDelta),
+    0,
+  );
+  return {
+    changedRankCount: rankChanges.length,
+    churnRate: unionCount ? (addedCount + removedCount) / unionCount : 0,
+    meanAbsoluteRankDelta: rankChanges.length
+      ? totalRankDelta / rankChanges.length
+      : 0,
+    overlapRatio: unionCount ? retainedCount / unionCount : 1,
+    sharedCount: retainedCount,
+    unionCount,
   };
 }
 
@@ -3486,6 +3589,16 @@ function deltaBadgeVariant(
 
 function formatSignedDelta(delta: number): string {
   return delta > 0 ? `+${delta}` : String(delta);
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return "n/a";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDecimal(value: number): string {
+  if (!Number.isFinite(value)) return "n/a";
+  return value.toFixed(1);
 }
 
 function formatRunTime(submittedAt: string): string {

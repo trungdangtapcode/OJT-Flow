@@ -248,6 +248,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copy retrieval comparison report" in retrieval_page
     assert "comparisonReportFromComparison" in retrieval_page
     assert "retrieval_run_comparison" in retrieval_page
+    assert "RunComparisonMetrics" in retrieval_page
+    assert "Search comparison metrics" in retrieval_page
+    assert "comparisonMetrics" in retrieval_page
+    assert "overlapRatio" in retrieval_page
+    assert "churnRate" in retrieval_page
+    assert "meanAbsoluteRankDelta" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page
@@ -297,6 +303,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "compare recent search packages" in frontend_architecture
     assert "rank movement" in frontend_architecture
     assert "copyable JSON report" in frontend_architecture
+    assert "overlap and churn metrics" in frontend_architecture
     assert "restore the query builder" in frontend_architecture
     assert "copyable and launchable" in frontend_architecture
     assert "/retrieval/presets" in frontend_architecture
