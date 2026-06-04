@@ -203,3 +203,37 @@ class RetrievalReindexRequest(ContractModel):
             ]
         }
     }
+
+
+class AssistantChatRequest(ContractModel):
+    message: NonBlankStr
+    context: dict[str, Any] = Field(default_factory=dict)
+    execute_write_actions: bool = False
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "message": "Find trusted evidence for HbA1c CSV rows with missing units.",
+                    "context": {
+                        "schema_id": "lab_result_v1",
+                        "fields": ["lab_name", "value", "unit"],
+                        "clinical_domain": "laboratory",
+                    },
+                    "execute_write_actions": False,
+                },
+                {
+                    "message": "Validate this messy lab CSV.",
+                    "context": {
+                        "data": (
+                            "date,patient_id,lab_name,value,unit\n"
+                            "2026/01/02,P002,HbA1c,,\n"
+                        ),
+                        "input_format": "csv",
+                        "schema_id": "lab_result_v1",
+                    },
+                    "execute_write_actions": False,
+                },
+            ]
+        }
+    }

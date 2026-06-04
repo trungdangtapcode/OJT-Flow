@@ -11,6 +11,7 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
+from ojtflow.core.contracts.assistant import AssistantPlan, AssistantToolSpec
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
@@ -162,3 +163,17 @@ class RetrievalRepository(Protocol):
         include_seeded: bool = True,
         include_corpus: bool = False,
     ) -> RetrievalIntegrityReport: ...
+
+
+class AssistantPlanner(Protocol):
+    @property
+    def model_name(self) -> str: ...
+
+    async def plan(
+        self,
+        *,
+        message: str,
+        context: dict,
+        tools: list[AssistantToolSpec],
+        max_tool_calls: int,
+    ) -> AssistantPlan: ...

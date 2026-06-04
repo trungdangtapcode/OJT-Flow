@@ -315,6 +315,39 @@ export type RetrievalReindexResult = {
   } | null;
 };
 
+export type AssistantChatPayload = {
+  message: string;
+  context?: Record<string, unknown>;
+  execute_write_actions?: boolean;
+};
+
+export type AssistantToolResult = {
+  tool_name: string;
+  status: "completed" | "failed" | "requires_approval" | "skipped";
+  arguments: Record<string, unknown>;
+  output: Record<string, unknown>;
+  summary: string;
+  error?: string | null;
+  requires_approval: boolean;
+};
+
+export type AssistantResponse = {
+  message: string;
+  mode: "deterministic" | "llm";
+  model?: string | null;
+  tool_calls: AssistantToolResult[];
+  suggestions: string[];
+  warnings: string[];
+};
+
+export type AssistantTranscriptItem = {
+  id: string;
+  message: string;
+  context: Record<string, unknown>;
+  response?: AssistantResponse;
+  error?: string;
+};
+
 export type HumanReview = {
   review_id: string;
   workflow_id: string;
@@ -536,6 +569,14 @@ export type RuntimeConfig = {
     hf_device?: string;
     hf_batch_size?: number;
     hf_cache_dir_configured?: boolean;
+  };
+  llm?: {
+    provider: string;
+    model: string;
+    openai_configured: boolean;
+    base_url_configured: boolean;
+    timeout_seconds: number;
+    max_tool_calls: number;
   };
   rerank?: {
     provider: string;

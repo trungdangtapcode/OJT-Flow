@@ -57,6 +57,11 @@ OJT_EMBEDDING_DIMENSIONS=64
 OJT_OPENAI_API_KEY=
 OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1
 OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0
+OJT_LLM_PROVIDER=disabled
+OJT_LLM_MODEL=chat-latest
+OJT_LLM_BASE_URL=https://api.openai.com/v1
+OJT_LLM_TIMEOUT_SECONDS=30.0
+OJT_LLM_MAX_TOOL_CALLS=4
 OJT_HF_EMBEDDING_DEVICE=auto
 OJT_HF_EMBEDDING_BATCH_SIZE=32
 OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface
@@ -118,7 +123,8 @@ domain allowlists do not accept leading dots; cookie domains may use either
 Inline JSON/text payloads are capped by `OJT_MAX_INLINE_DATA_BYTES` for
 `POST /api/v1/workflows`, `POST /api/v1/convert`,
 `POST /api/v1/validate`, `POST /api/v1/fhir/profile`,
-`POST /api/v1/ocr/evidence`, and `POST /api/v1/retrieval/search`.
+`POST /api/v1/ocr/evidence`, `POST /api/v1/retrieval/search`, and
+`POST /api/v1/assistant/chat`.
 Multipart uploads are capped by
 `OJT_MAX_UPLOAD_BYTES`, read in `OJT_UPLOAD_READ_CHUNK_BYTES` chunks, and
 filtered by `OJT_ALLOWED_UPLOAD_EXTENSIONS`. Larger inline inputs should use the
@@ -139,6 +145,14 @@ The recommended semantic retrieval dimension is `384`, matching the Postgres
 `embedding vector(384)` schema. Other provider names, incompatible deterministic
 model IDs, invalid device values, and invalid dimension values are rejected
 during settings load.
+
+`OJT_LLM_PROVIDER` supports `disabled` and `openai`. Disabled mode keeps the
+assistant deterministic and token-free. OpenAI mode uses the Responses API to
+produce a structured tool plan, but the backend still executes only known
+allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest`; set it to a pinned
+snapshot when release reproducibility is more important than tracking the
+current model alias. `OJT_LLM_BASE_URL` must be an HTTP(S) OpenAI-compatible API
+base URL. `OJT_LLM_MAX_TOOL_CALLS` bounds assistant tool execution per request.
 
 `OJT_PYTHON_EXTRAS` is a Docker build-time setting, not a runtime secret. Keep
 the default `parsing` for the standard API image, or build with
@@ -610,6 +624,54 @@ If `schema_id` names a profile that is not available in the configured
 knowledge directory, direct validation returns `not_found`; `schema_id: null`
 is the explicit mode for validation without a schema profile.
 
+## Assistant Chat
+
+`POST /api/v1/assistant/chat`
+
+```json
+{
+  "message": "Find trusted evidence for HbA1c CSV rows with missing units.",
+  "context": {
+    "schema_id": "lab_result_v1",
+    "fields": ["lab_name", "value", "unit"],
+    "clinical_domain": "laboratory"
+  },
+  "execute_write_actions": false
+}
+```
+
+The assistant is an operator convenience layer over existing backend tools. It
+does not replace workflow state, retrieval trace, validation reports, or human
+review. Response data includes:
+
+- `message`
+- `mode`
+- `model`
+- `tool_calls[].tool_name`
+- `tool_calls[].status`
+- `tool_calls[].arguments`
+- `tool_calls[].output`
+- `tool_calls[].summary`
+- `tool_calls[].requires_approval`
+- `suggestions`
+- `warnings`
+
+The assistant can call:
+
+- `retrieval_search`
+- `validate_data`
+- `convert_data`
+- `fhir_profile`
+- `list_workflows`
+- `list_reviews`
+- `get_workflow`
+- `start_workflow`
+
+`start_workflow` is a write action. It returns `status="requires_approval"`
+unless the request explicitly sets `execute_write_actions=true`. The assistant
+does not expose review approval, rejection, cancellation, or destructive
+artifact actions in v0.
+
 ## FHIR-Like Profile
 
 `POST /api/v1/fhir/profile`
@@ -693,6 +755,10 @@ Response data includes:
 - `embedding.hf_device`
 - `embedding.hf_batch_size`
 - `embedding.hf_cache_dir_configured`
+- `llm.provider`
+- `llm.model`
+- `llm.openai_configured`
+- `llm.max_tool_calls`
 - `retrieval.corpus_dir_count`
 - `retrieval.chunk_max_chars`
 - `retrieval.chunk_overlap_chars`
@@ -730,6 +796,14 @@ Example:
       "hf_device": "auto",
       "hf_batch_size": 32,
       "hf_cache_dir_configured": true
+    },
+    "llm": {
+      "provider": "openai",
+      "model": "chat-latest",
+      "openai_configured": true,
+      "base_url_configured": true,
+      "timeout_seconds": 30.0,
+      "max_tool_calls": 4
     },
     "retrieval": {
       "corpus_dir_count": 1,

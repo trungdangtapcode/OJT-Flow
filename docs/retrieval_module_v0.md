@@ -30,19 +30,22 @@ The retrieval pipeline is auditable in v0:
 1. Analyze the query and build variants from instruction, fields, schema,
    format, resource type, and deterministic clinical-standard expansion rules.
 2. Candidate chunks are filtered by trust level, clinical domain, standard system, or source type.
-3. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
-4. Vector score uses the configured embedding provider:
+3. Postgres mode retrieves separate lexical and vector candidate pools before
+   fusion so exact-term evidence and semantic-neighbor evidence cannot starve
+   each other inside a single bounded SQL result set.
+4. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
+5. Vector score uses the configured embedding provider:
    deterministic hash embeddings for offline tests, OpenAI semantic embeddings
    for CPU-safe production-like retrieval, or Hugging Face/SentenceTransformers
    embeddings for local GPU retrieval.
-5. Reciprocal Rank Fusion combines lexical and vector rankings.
-6. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
-7. Each ranked hit gets a deterministic extractive snippet: the most
+6. Reciprocal Rank Fusion combines lexical and vector rankings.
+7. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
+8. Each ranked hit gets a deterministic extractive snippet: the most
    query-relevant sentence/window from the source chunk, with matched terms and
    normalized source offsets.
-8. Final selected hits are summarized into result facets by source type,
+9. Final selected hits are summarized into result facets by source type,
    clinical domain, standard system, and trust level.
-9. Trace safety flags mark prompt-injection-like query text and sensitive field
+10. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
 The retrieval package now includes a `graph_context` handoff that extracts
@@ -532,13 +535,13 @@ candidate source count, selected source count, and duplicate selected source
 count under `handoff_context.diversity`.
 
 `OJT_RETRIEVAL_HNSW_EF_SEARCH` controls the per-query pgvector HNSW search
-candidate depth for Postgres vector retrieval. pgvector defaults this value to
-40; OJTFlow defaults to 100 for healthcare evidence retrieval where missing a
-relevant source is usually worse than a small latency increase. The adapter sets
-it transaction-locally before vector candidate retrieval, so the setting affects
-only the current search query and does not leak into other database sessions.
-Increase it when recall is weak; lower it when latency is the stricter
-constraint.
+candidate depth for the Postgres vector candidate pool. pgvector defaults this
+value to 40; OJTFlow defaults to 100 for healthcare evidence retrieval where
+missing a relevant source is usually worse than a small latency increase. The
+adapter sets it transaction-locally before vector candidate retrieval, so the
+setting affects only the current search query and does not leak into other
+database sessions. Increase it when recall is weak; lower it when latency is the
+stricter constraint.
 
 Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
 to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 EmbeddingProvider = Literal["deterministic", "openai", "huggingface"]
+LLMProvider = Literal["disabled", "openai"]
 RerankProvider = Literal["none", "huggingface"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
 DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
@@ -48,12 +49,14 @@ ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = (
     "openai",
     "huggingface",
 )
+ALLOWED_LLM_PROVIDERS: tuple[LLMProvider, ...] = ("disabled", "openai")
 ALLOWED_RERANK_PROVIDERS: tuple[RerankProvider, ...] = ("none", "huggingface")
 DETERMINISTIC_EMBEDDING_MODEL = "deterministic-hash-v0"
 DETERMINISTIC_EMBEDDING_DIMENSIONS = 64
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDING_DIMENSIONS = 384
 OPENAI_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
+OPENAI_LLM_MODEL = "chat-latest"
 HUGGINGFACE_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 HUGGINGFACE_EMBEDDING_DIMENSIONS = 384
 HUGGINGFACE_RERANK_MODEL = "BAAI/bge-reranker-base"
@@ -166,6 +169,23 @@ class Settings(BaseModel):
         default=20.0,
         alias="OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS",
         gt=0,
+    )
+    llm_provider: LLMProvider = Field(default="disabled", alias="OJT_LLM_PROVIDER")
+    llm_model: str = Field(default=OPENAI_LLM_MODEL, alias="OJT_LLM_MODEL")
+    llm_base_url: str = Field(
+        default=OPENAI_EMBEDDING_BASE_URL,
+        alias="OJT_LLM_BASE_URL",
+    )
+    llm_timeout_seconds: float = Field(
+        default=30.0,
+        alias="OJT_LLM_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    llm_max_tool_calls: int = Field(
+        default=4,
+        alias="OJT_LLM_MAX_TOOL_CALLS",
+        gt=0,
+        le=12,
     )
     hf_embedding_device: str = Field(default="auto", alias="OJT_HF_EMBEDDING_DEVICE")
     hf_embedding_batch_size: int = Field(
@@ -362,6 +382,14 @@ def get_settings() -> Settings:
         OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=float(
             os.getenv("OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS", "20.0")
         ),
+        OJT_LLM_PROVIDER=_parse_llm_provider(os.getenv("OJT_LLM_PROVIDER")),
+        OJT_LLM_MODEL=_parse_llm_model(os.getenv("OJT_LLM_MODEL")),
+        OJT_LLM_BASE_URL=_parse_openai_base_url(
+            os.getenv("OJT_LLM_BASE_URL"),
+            setting_name="OpenAI LLM base URL",
+        ),
+        OJT_LLM_TIMEOUT_SECONDS=float(os.getenv("OJT_LLM_TIMEOUT_SECONDS", "30.0")),
+        OJT_LLM_MAX_TOOL_CALLS=int(os.getenv("OJT_LLM_MAX_TOOL_CALLS", "4")),
         OJT_HF_EMBEDDING_DEVICE=_parse_hf_embedding_device(
             os.getenv("OJT_HF_EMBEDDING_DEVICE")
         ),
@@ -669,6 +697,27 @@ def _parse_rerank_provider(value: str | None) -> RerankProvider:
     )
 
 
+def _parse_llm_provider(value: str | None) -> LLMProvider:
+    normalized = "disabled" if value is None else value.strip().lower()
+    if normalized in {"", "none", "off", "disabled"}:
+        return "disabled"
+    if normalized == "openai":
+        return "openai"
+    allowed = ", ".join(ALLOWED_LLM_PROVIDERS)
+    raise ValueError(
+        f"Invalid LLM provider environment value: {value}. Expected one of: {allowed}"
+    )
+
+
+def _parse_llm_model(value: str | None) -> str:
+    normalized = OPENAI_LLM_MODEL if value is None else value.strip()
+    if _valid_model_identifier(normalized):
+        return normalized
+    raise ValueError(
+        f"Invalid LLM model environment value: {value}. Expected a non-blank model id"
+    )
+
+
 def _parse_embedding_model(value: str | None, *, provider: str | None = None) -> str:
     parsed_provider = _parse_embedding_provider(provider)
     default = (
@@ -747,19 +796,23 @@ def _parse_rerank_model(value: str | None) -> str:
     )
 
 
-def _parse_openai_base_url(value: str | None) -> str:
+def _parse_openai_base_url(
+    value: str | None,
+    *,
+    setting_name: str = "OpenAI embedding base URL",
+) -> str:
     raw = OPENAI_EMBEDDING_BASE_URL if value is None else value.strip().rstrip("/")
     if not raw:
-        raise ValueError("Invalid OpenAI embedding base URL: value is blank")
+        raise ValueError(f"Invalid {setting_name}: value is blank")
     parsed = urlparse(raw)
     if parsed.scheme not in {"http", "https"}:
-        raise ValueError("Invalid OpenAI embedding base URL: scheme must be http or https")
+        raise ValueError(f"Invalid {setting_name}: scheme must be http or https")
     if not parsed.hostname:
-        raise ValueError("Invalid OpenAI embedding base URL: host is required")
+        raise ValueError(f"Invalid {setting_name}: host is required")
     if parsed.username or parsed.password:
-        raise ValueError("Invalid OpenAI embedding base URL: user info is not allowed")
+        raise ValueError(f"Invalid {setting_name}: user info is not allowed")
     if parsed.fragment:
-        raise ValueError("Invalid OpenAI embedding base URL: fragment is not allowed")
+        raise ValueError(f"Invalid {setting_name}: fragment is not allowed")
     return raw
 
 

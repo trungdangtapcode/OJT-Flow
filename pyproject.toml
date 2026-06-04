@@ -30,6 +30,9 @@ parsing-full = [
 embeddings-local = [
   "sentence-transformers>=3.0,<4",
 ]
+mcp = [
+  "mcp[cli]>=1.13,<2",
+]
 
 [build-system]
 requires = ["setuptools>=69"]

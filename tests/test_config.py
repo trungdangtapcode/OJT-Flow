@@ -52,6 +52,9 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.google_frontend_redirect_uri == "http://localhost:5173/auth/callback"
     assert settings.max_inline_data_bytes == 1048576
     assert settings.embedding_model == "deterministic-hash-v0"
+    assert settings.llm_provider == "disabled"
+    assert settings.llm_model == "chat-latest"
+    assert settings.llm_max_tool_calls == 4
     assert settings.retrieval_hnsw_ef_search == 100
     assert settings.resolved_knowledge_dir == REPO_ROOT / "knowledge"
     assert settings.resolved_migrations_dir == REPO_ROOT / "sql/postgres/migrations"
@@ -505,6 +508,40 @@ def test_rerank_settings_accept_huggingface_provider(monkeypatch) -> None:
     assert settings.rerank_batch_size == 4
     assert settings.rerank_candidate_limit == 12
     assert settings.rerank_score_weight == 0.2
+
+
+def test_llm_settings_accept_openai_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_LLM_PROVIDER", " OPENAI ")
+    monkeypatch.setenv("OJT_LLM_MODEL", " chat-latest ")
+    monkeypatch.setenv("OJT_LLM_BASE_URL", " https://api.openai.com/v1/ ")
+    monkeypatch.setenv("OJT_LLM_TIMEOUT_SECONDS", " 12.5 ")
+    monkeypatch.setenv("OJT_LLM_MAX_TOOL_CALLS", " 3 ")
+    monkeypatch.setenv("OPENAI_API_KEY", "host-key")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.llm_provider == "openai"
+    assert settings.llm_model == "chat-latest"
+    assert settings.llm_base_url == "https://api.openai.com/v1"
+    assert settings.llm_timeout_seconds == 12.5
+    assert settings.llm_max_tool_calls == 3
+    assert settings.openai_api_key == "host-key"
+
+
+@pytest.mark.parametrize("bad_provider", ["anthropic", "ollama", "responses"])
+def test_llm_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
+    monkeypatch.setenv("OJT_LLM_PROVIDER", bad_provider)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid LLM provider"):
+            get_settings()
+    finally:
+        clear_settings_cache()
 
 
 @pytest.mark.parametrize("bad_provider", ["vertex", "openai", "crossencoder"])

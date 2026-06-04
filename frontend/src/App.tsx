@@ -9,6 +9,7 @@ import {
 import { AuthGate } from "./app/auth";
 import { AppProviders } from "./app/providers";
 import { AppShell } from "./components/layout/app-shell";
+import { AssistantPage } from "./features/assistant/assistant-page";
 import { AuditPage } from "./features/audit/audit-page";
 import { RetrievalPage } from "./features/retrieval/retrieval-page";
 import { ReviewsPage } from "./features/reviews/reviews-page";
@@ -35,6 +36,12 @@ const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflows",
   component: () => <WorkflowsPage />,
+});
+
+const assistantRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/assistant",
+  component: AssistantPage,
 });
 
 const workflowDetailRoute = createRoute({
@@ -90,6 +97,7 @@ const authCallbackRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  assistantRoute,
   workflowsRoute,
   workflowDetailRoute,
   reviewsRoute,

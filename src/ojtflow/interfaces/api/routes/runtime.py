@@ -70,6 +70,14 @@ async def runtime_config(
                 "hf_batch_size": settings.hf_embedding_batch_size,
                 "hf_cache_dir_configured": bool(settings.hf_embedding_cache_dir),
             },
+            "llm": {
+                "provider": settings.llm_provider,
+                "model": settings.llm_model,
+                "openai_configured": bool(settings.openai_api_key),
+                "base_url_configured": bool(settings.llm_base_url),
+                "timeout_seconds": settings.llm_timeout_seconds,
+                "max_tool_calls": settings.llm_max_tool_calls,
+            },
             "rerank": {
                 "provider": settings.rerank_provider,
                 "enabled": settings.rerank_provider != "none",

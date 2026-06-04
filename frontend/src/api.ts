@@ -1,5 +1,7 @@
 import type {
   ApiEnvelope,
+  AssistantChatPayload,
+  AssistantResponse,
   AuthLoginResponse,
   AuthSessionResponse,
   ExtractorInventory,
@@ -358,6 +360,15 @@ export function listSchemas(): Promise<SchemaEntry[]> {
 
 export function searchRetrieval(payload: RetrievalSearchPayload): Promise<RetrievalPackage> {
   return request<RetrievalPackage>("/retrieval/search", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function chatWithAssistant(
+  payload: AssistantChatPayload,
+): Promise<AssistantResponse> {
+  return request<AssistantResponse>("/assistant/chat", {
     method: "POST",
     body: JSON.stringify(payload),
   });

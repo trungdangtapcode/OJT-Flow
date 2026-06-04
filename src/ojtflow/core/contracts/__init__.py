@@ -1,6 +1,13 @@
 """Public contract exports for the OJTFlow backbone."""
 
 from ojtflow.core.contracts.agent import AgentResult
+from ojtflow.core.contracts.assistant import (
+    AssistantPlan,
+    AssistantResponse,
+    AssistantToolPlan,
+    AssistantToolResult,
+    AssistantToolSpec,
+)
 from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.data import (
     DataProfile,
@@ -43,6 +50,11 @@ __all__ = [
     "ActorType",
     "AgentResult",
     "AgentStatus",
+    "AssistantPlan",
+    "AssistantResponse",
+    "AssistantToolPlan",
+    "AssistantToolResult",
+    "AssistantToolSpec",
     "AuditRecord",
     "DataFormat",
     "DataProfile",

@@ -25,8 +25,8 @@ that do not claim runtime state unavailable to the auth gate.
 - `src/components/ui` contains reusable low-level UI primitives.
 - `src/components/domain` contains reusable domain presentation components such
   as workflow status and validation severity badges.
-- `src/features/*` contains product workflows: workbench, workflows, retrieval,
-  reviews, schemas, audit, and settings.
+- `src/features/*` contains product workflows: assistant, workbench, workflows,
+  retrieval, reviews, schemas, audit, and settings.
 - `src/api.ts` is the frontend API boundary. Feature components call query hooks,
   not raw fetch logic. It parses response bodies through text-first JSON parsing
   so malformed upstream JSON becomes a structured `ApiRequestError` instead of a
@@ -129,6 +129,12 @@ retrieval handoff context so operators can distinguish first-stage hybrid
 searches from searches refined by second-stage reranking. It must also surface
 source coverage from retrieval diversity metadata so redundant single-source
 results are visible during evidence review.
+The assistant route is the operator shortcut over those same backend contracts.
+It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
+write-gate state, executed tool calls, and compact evidence/output previews.
+It must not duplicate workflow detail, retrieval console, or review-decision
+logic; it should route users into the underlying workflow/retrieval artifacts
+once a command has produced durable state or evidence.
 Settings is an operator readiness surface, not a prose documentation page. It
 should show status facts first, then group runtime configuration into compact
 sections, summarize readiness/security/inventory counts before detailed rows,

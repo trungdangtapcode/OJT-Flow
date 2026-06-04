@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Bot,
   ClipboardCheck,
   Database,
   FileCode,
@@ -24,6 +25,7 @@ const navGroups = [
   {
     label: "Operations",
     items: [
+      { to: "/assistant", label: "Assistant", icon: Bot },
       { to: "/workflows", label: "Workflows", icon: Layers },
       { to: "/reviews", label: "Reviews", icon: ClipboardCheck },
       { to: "/retrieval", label: "Retrieval", icon: Search },
@@ -172,22 +174,37 @@ function UserAvatar({
   displayName?: string | null;
   email?: string | null;
 }) {
-  const [failedUrl, setFailedUrl] = React.useState<string | null>(null);
-  const usableAvatarUrl = avatarUrl && avatarUrl !== failedUrl ? avatarUrl : null;
+  const normalizedAvatarUrl = normalizeAvatarUrl(avatarUrl);
+  const [loadedAvatarUrl, setLoadedAvatarUrl] = React.useState<string | null>(null);
   const initials = userInitials(displayName, email);
 
   React.useEffect(() => {
-    setFailedUrl(null);
-  }, [avatarUrl]);
+    setLoadedAvatarUrl(null);
+    if (!normalizedAvatarUrl) return;
 
-  if (usableAvatarUrl) {
+    let cancelled = false;
+    const image = new Image();
+    image.referrerPolicy = "no-referrer";
+    image.onload = () => {
+      if (!cancelled) setLoadedAvatarUrl(normalizedAvatarUrl);
+    };
+    image.onerror = () => {
+      if (!cancelled) setLoadedAvatarUrl(null);
+    };
+    image.src = normalizedAvatarUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedAvatarUrl]);
+
+  if (loadedAvatarUrl) {
     return (
-      <img
-        alt={displayName || email || "User avatar"}
-        className="h-6 w-6 shrink-0 rounded-full border border-border bg-muted object-cover"
-        onError={() => setFailedUrl(usableAvatarUrl)}
-        referrerPolicy="no-referrer"
-        src={usableAvatarUrl}
+      <span
+        aria-label={displayName || email || "User avatar"}
+        className="h-6 w-6 shrink-0 rounded-full border border-border bg-muted bg-cover bg-center"
+        role="img"
+        style={{ backgroundImage: `url("${escapeCssUrl(loadedAvatarUrl)}")` }}
       />
     );
   }
@@ -219,4 +236,18 @@ function userInitials(displayName?: string | null, email?: string | null) {
 
 function firstGrapheme(value: string) {
   return Array.from(value)[0] ?? "";
+}
+
+function normalizeAvatarUrl(value?: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function escapeCssUrl(value: string) {
+  return value.replace(/["\\]/g, "\\$&");
 }

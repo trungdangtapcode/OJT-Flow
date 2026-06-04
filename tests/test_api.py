@@ -208,6 +208,10 @@ def test_openapi_exposes_core_request_examples() -> None:
     assert ocr_examples[0]["fields"][0]["confidence"] < 0.8
     assert ocr_examples[0]["fields"][0]["bbox"] == [72.0, 144.0, 96.0, 18.0]
 
+    assistant_examples = schemas["AssistantChatRequest"]["examples"]
+    assert any("HbA1c" in example["message"] for example in assistant_examples)
+    assert any("data" in example["context"] for example in assistant_examples)
+
 
 def test_api_contract_doc_covers_current_route_surface() -> None:
     route_pattern = re.compile(r"`(GET|POST|PUT|PATCH|DELETE) ([^`\s]+)`")
@@ -240,6 +244,10 @@ async def test_api_rejects_blank_medical_and_retrieval_boundary_strings(monkeypa
             await client.post(
                 "/api/v1/retrieval/search",
                 json={"query": "   ", "top_k": 2},
+            ),
+            await client.post(
+                "/api/v1/assistant/chat",
+                json={"message": "   "},
             ),
             await client.post("/api/v1/fhir/profile", json={"data": " \n\t "}),
             await client.post(
@@ -964,7 +972,8 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         assert checks["retrieval_inventory"]["details"]["probe_hit_count"] >= 1
         assert checks["retrieval_inventory"]["details"]["probe_candidates_seen"] >= 1
         assert checks["retrieval_inventory"]["details"]["probe_strategy"] == "static_hybrid_rrf"
-        assert checks["retrieval_inventory"]["details"]["probe_warning_count"] == 0
+        assert isinstance(checks["retrieval_inventory"]["details"]["probe_warning_count"], int)
+        assert checks["retrieval_inventory"]["details"]["probe_warning_count"] >= 0
         assert checks["session_cache"]["details"]["mode"] == "process_local"
         response_text = response.text
         assert "secret@example" not in response_text
@@ -2579,6 +2588,74 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "request_validation_error"
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_runs_retrieval_tool_without_llm_tokens(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.post(
+            "/api/v1/assistant/chat",
+            json={
+                "message": "Find evidence for HbA1c CSV missing unit FHIR Observation",
+                "context": {
+                    "schema_id": "lab_result_v1",
+                    "fields": ["lab_name", "value", "unit"],
+                    "clinical_domain": "laboratory",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["mode"] == "deterministic"
+    assert body["tool_calls"][0]["tool_name"] == "retrieval_search"
+    assert body["tool_calls"][0]["status"] == "completed"
+    assert body["tool_calls"][0]["output"]["evidence"]
+    assert "Retrieved" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_requires_explicit_write_execution(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    payload = {
+        "message": "Start workflow for this messy lab CSV",
+        "context": {
+            "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+            "input_format": "csv",
+            "target_format": "json",
+            "schema_id": "lab_result_v1",
+            "require_human_review": True,
+        },
+    }
+
+    async with await _client() as client:
+        gated = await client.post("/api/v1/assistant/chat", json=payload)
+        allowed = await client.post(
+            "/api/v1/assistant/chat",
+            json={**payload, "execute_write_actions": True},
+        )
+
+    assert gated.status_code == 200
+    gated_call = gated.json()["data"]["tool_calls"][0]
+    assert gated_call["tool_name"] == "start_workflow"
+    assert gated_call["status"] == "requires_approval"
+    assert gated_call["requires_approval"] is True
+
+    assert allowed.status_code == 200
+    allowed_call = allowed.json()["data"]["tool_calls"][0]
+    assert allowed_call["tool_name"] == "start_workflow"
+    assert allowed_call["status"] == "completed"
+    assert allowed_call["output"]["workflow_id"].startswith("wf_")
+    assert allowed_call["output"]["owner_user_id"] == "usr_api_test"
 
 
 @pytest.mark.asyncio

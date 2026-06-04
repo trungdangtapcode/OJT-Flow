@@ -26,6 +26,9 @@ from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
 from ojtflow.infrastructure.storage.postgres import PostgresBackboneStore
 
 
+POSTGRES_CANDIDATE_POOL_LIMIT = 200
+
+
 class PostgresRetrievalRepository:
     """Stores trusted knowledge chunks in Postgres and ranks them for workflows."""
 
@@ -286,15 +289,29 @@ class PostgresRetrievalRepository:
         if vector_dimensions == self.embedding_provider.dimensions:
             vector_literal = _vector_literal(self.embedding_provider.embed_query(query_text))
 
-        params: list[Any] = [query_text, query_text]
         if vector_literal is not None:
-            params.append(vector_literal)
-        params.extend(filter_params)
-        vector_select = (
-            ", embedding <=> %s::vector as vector_distance"
-            if vector_literal is not None
-            else ", null::double precision as vector_distance"
-        )
+            sql = _hybrid_candidate_sql(where_sql)
+            params: list[Any] = [
+                query_text,
+                query_text,
+                vector_literal,
+                *filter_params,
+                POSTGRES_CANDIDATE_POOL_LIMIT,
+                query_text,
+                query_text,
+                vector_literal,
+                *filter_params,
+                POSTGRES_CANDIDATE_POOL_LIMIT,
+            ]
+        else:
+            sql = _lexical_candidate_sql(where_sql)
+            params = [
+                query_text,
+                query_text,
+                *filter_params,
+                POSTGRES_CANDIDATE_POOL_LIMIT,
+            ]
+
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
                 if vector_literal is not None:
@@ -302,37 +319,7 @@ class PostgresRetrievalRepository:
                         "select set_config('hnsw.ef_search', %s, true)",
                         (str(self.hnsw_ef_search),),
                     )
-                cursor.execute(
-                    f"""
-                    select
-                        chunk_id,
-                        source_id,
-                        source_type,
-                        title,
-                        source_version,
-                        trust_level,
-                        clinical_domain,
-                        standard_system,
-                        content,
-                        locator,
-                        metadata,
-                        ts_rank_cd(
-                            search_vector,
-                            websearch_to_tsquery('english', %s)
-                        ) as lexical_rank,
-                        search_vector @@ websearch_to_tsquery('english', %s) as lexical_match
-                        {vector_select}
-                    from ojtflow.knowledge_chunks
-                    {where_sql}
-                    order by
-                        lexical_match desc,
-                        lexical_rank desc,
-                        vector_distance asc nulls last,
-                        updated_at desc
-                    limit 200
-                    """,
-                    tuple(params),
-                )
+                cursor.execute(sql, tuple(params))
                 rows = cursor.fetchall()
 
         warnings: list[str] = []
@@ -414,6 +401,133 @@ def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     if not clauses:
         return "", params
     return "where " + " and ".join(clauses), params
+
+
+def _lexical_candidate_sql(where_sql: str) -> str:
+    return f"""
+        select
+            chunk_id,
+            source_id,
+            source_type,
+            title,
+            source_version,
+            trust_level,
+            clinical_domain,
+            standard_system,
+            content,
+            locator,
+            metadata,
+            ts_rank_cd(
+                search_vector,
+                websearch_to_tsquery('english', %s)
+            ) as lexical_rank,
+            search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
+            null::double precision as vector_distance,
+            updated_at
+        from ojtflow.knowledge_chunks
+        {where_sql}
+        order by
+            lexical_match desc,
+            lexical_rank desc,
+            updated_at desc
+        limit %s
+    """
+
+
+def _hybrid_candidate_sql(where_sql: str) -> str:
+    vector_where_sql = _append_where_clause(where_sql, "embedding is not null")
+    return f"""
+        with lexical_candidates as (
+            select
+                chunk_id,
+                source_id,
+                source_type,
+                title,
+                source_version,
+                trust_level,
+                clinical_domain,
+                standard_system,
+                content,
+                locator,
+                metadata,
+                ts_rank_cd(
+                    search_vector,
+                    websearch_to_tsquery('english', %s)
+                ) as lexical_rank,
+                search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
+                embedding <=> %s::vector as vector_distance,
+                updated_at
+            from ojtflow.knowledge_chunks
+            {where_sql}
+            order by
+                lexical_match desc,
+                lexical_rank desc,
+                updated_at desc
+            limit %s
+        ),
+        vector_candidates as (
+            select
+                chunk_id,
+                source_id,
+                source_type,
+                title,
+                source_version,
+                trust_level,
+                clinical_domain,
+                standard_system,
+                content,
+                locator,
+                metadata,
+                ts_rank_cd(
+                    search_vector,
+                    websearch_to_tsquery('english', %s)
+                ) as lexical_rank,
+                search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
+                embedding <=> %s::vector as vector_distance,
+                updated_at
+            from ojtflow.knowledge_chunks
+            {vector_where_sql}
+            order by
+                vector_distance asc nulls last,
+                lexical_match desc,
+                lexical_rank desc,
+                updated_at desc
+            limit %s
+        )
+        select distinct on (chunk_id)
+            chunk_id,
+            source_id,
+            source_type,
+            title,
+            source_version,
+            trust_level,
+            clinical_domain,
+            standard_system,
+            content,
+            locator,
+            metadata,
+            lexical_rank,
+            lexical_match,
+            vector_distance,
+            updated_at
+        from (
+            select * from lexical_candidates
+            union all
+            select * from vector_candidates
+        ) candidates
+        order by
+            chunk_id,
+            lexical_match desc,
+            lexical_rank desc,
+            vector_distance asc nulls last,
+            updated_at desc
+    """
+
+
+def _append_where_clause(where_sql: str, clause: str) -> str:
+    if where_sql.strip():
+        return f"{where_sql} and {clause}"
+    return f"where {clause}"
 
 
 def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:

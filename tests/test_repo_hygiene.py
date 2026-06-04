@@ -239,7 +239,7 @@ def test_readme_architecture_tree_matches_repo_boundaries() -> None:
 
     assert "src/ojtflow/" in readme
     assert "  medical/          OCR/DICOM/visual evidence extension contracts" in readme
-    assert "  mcp_servers/      planned MCP wrapper boundary" in readme
+    assert "  mcp_servers/      local MCP wrappers for allowlisted OJTFlow tools" in readme
     assert "frontend/\n  src/              React product UI and API client" in readme
     assert "frontend/\n  src/              React product UI and API client\n  medical/" not in readme
     assert "frontend/\n  src/              React product UI and API client\n  mcp_servers/" not in readme

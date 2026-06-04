@@ -9,6 +9,8 @@ from fastapi import Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ojtflow.application.auth_service import AuthService
+from ojtflow.application.assistant_service import AssistantService
+from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings, get_settings
@@ -16,6 +18,7 @@ from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
+from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.reranking import build_reranker
@@ -108,7 +111,6 @@ def _build_workflow_service() -> WorkflowService:
             corpus_dirs=settings.resolved_retrieval_corpus_dirs,
             chunk_max_chars=settings.retrieval_chunk_max_chars,
             chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
-            hnsw_ef_search=settings.retrieval_hnsw_ef_search,
         )
     elif settings.storage_backend == "sqlite":
         backbone = SQLiteBackboneStore(
@@ -168,6 +170,27 @@ def _build_medical_evidence_service() -> MedicalEvidenceService:
     return MedicalEvidenceService()
 
 
+@lru_cache(maxsize=1)
+def _build_assistant_service() -> AssistantService:
+    settings = get_settings()
+    planner = None
+    if settings.llm_provider == "openai":
+        planner = OpenAIResponsesPlanner(
+            api_key=settings.openai_api_key,
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
+    return AssistantService(
+        OJTFlowToolExecutor(
+            workflow_service=_build_workflow_service(),
+            medical_evidence_service=_build_medical_evidence_service(),
+        ),
+        planner=planner,
+        max_tool_calls=settings.llm_max_tool_calls,
+    )
+
+
 async def get_workflow_service() -> WorkflowService:
     """Return the cached workflow service without FastAPI threadpool dispatch."""
 
@@ -178,6 +201,12 @@ async def get_medical_evidence_service() -> MedicalEvidenceService:
     """Return healthcare evidence service."""
 
     return _build_medical_evidence_service()
+
+
+async def get_assistant_service() -> AssistantService:
+    """Return natural-language assistant service."""
+
+    return _build_assistant_service()
 
 
 async def get_auth_service() -> AuthService:
@@ -298,3 +327,4 @@ def clear_workflow_service_cache() -> None:
     _build_workflow_service.cache_clear()
     _build_auth_service.cache_clear()
     _build_medical_evidence_service.cache_clear()
+    _build_assistant_service.cache_clear()

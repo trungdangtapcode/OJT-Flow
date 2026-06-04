@@ -113,7 +113,41 @@ def test_postgres_retrieval_sets_hnsw_ef_search_for_vector_queries(tmp_path: Pat
         "select set_config('hnsw.ef_search', %s, true)",
         ("175",),
     )
-    assert "from ojtflow.knowledge_chunks" in backbone.cursor.executed[1][0]
+    query_sql, query_params = backbone.cursor.executed[1]
+    assert "with lexical_candidates as" in query_sql
+    assert "vector_candidates as" in query_sql
+    assert "union all" in query_sql
+    assert "embedding is not null" in query_sql
+    assert "from ojtflow.knowledge_chunks" in query_sql
+    assert query_params.count(200) == 2
+
+
+def test_postgres_retrieval_uses_lexical_pool_when_vector_column_mismatches(
+    tmp_path: Path,
+) -> None:
+    backbone = _FakeRetrievalBackbone(tmp_path / "var")
+    repository = PostgresRetrievalRepository(
+        backbone,
+        ROOT / "knowledge",
+        seed_defaults=False,
+    )
+    repository._vector_column_dimensions = lambda: 384
+
+    chunks, warnings = repository._load_candidate_chunks(
+        RetrievalQuery(query="FHIR Observation lab evidence", top_k=3)
+    )
+
+    assert chunks == []
+    assert warnings == [
+        "Postgres pgvector dimension does not match the configured embedding provider; "
+        "retrieval used full-text candidates and JSON/Python vector reranking."
+    ]
+    assert len(backbone.cursor.executed) == 1
+    query_sql, query_params = backbone.cursor.executed[0]
+    assert "with lexical_candidates as" not in query_sql
+    assert "vector_candidates as" not in query_sql
+    assert "null::double precision as vector_distance" in query_sql
+    assert query_params[-1] == 200
 
 
 @pytest.mark.skipif(

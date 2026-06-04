@@ -5,6 +5,8 @@ OJTFlow is a governed healthcare data workflow scaffold. The current implementat
 The product UI is a React/TypeScript operations console for both daily end users and B2B evaluators:
 
 - Workbench for messy healthcare data intake.
+- Assistant for natural-language access to retrieval, validation, conversion,
+  FHIR profiling, review/workflow inspection, and gated workflow creation.
 - Workflow detail for status, steps, validation issues, review, output, explanation, evidence, and audit events.
 - Retrieval console for trusted healthcare search, reindexing, ranking trace, and graph handoff inspection.
 - Review queue for pending human decisions.
@@ -24,7 +26,7 @@ src/ojtflow/
   infrastructure/   Postgres, SQLite, in-memory, and static knowledge adapters
   interfaces/api/   FastAPI routes and request schemas
   medical/          OCR/DICOM/visual evidence extension contracts
-  mcp_servers/      planned MCP wrapper boundary
+  mcp_servers/      local MCP wrappers for allowlisted OJTFlow tools
 frontend/
   src/              React product UI and API client
 ```
@@ -47,10 +49,12 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 - Evidence-grounded explanation report with medical intended-use limitation.
 - Healthcare-aware retrieval module with Postgres full-text search, pgvector-ready
   storage, OpenAI semantic embeddings, deterministic test embeddings, and static fallback.
-- FastAPI routes for workflows, review, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
+- FastAPI routes for workflows, review, assistant chat, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
+- Optional OpenAI Responses planner for assistant tool selection, with deterministic fallback.
+- Local MCP server wrappers for retrieval, validation, conversion, FHIR profiling, workflow reads, review reads, and gated workflow creation.
 - Authenticated runtime diagnostics for sanitized configuration and readiness
   checks.
-- React product console for workflow intake, review, schema, audit, and settings surfaces.
+- React product console for assistant commands, workflow intake, review, schema, audit, and settings surfaces.
 - React retrieval console for direct evidence search, source inventory, and corpus reindexing.
 
 ## Run Tests
@@ -164,6 +168,11 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_OPENAI_API_KEY=` or `OPENAI_API_KEY=`
 - `OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1`
 - `OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0`
+- `OJT_LLM_PROVIDER=disabled`
+- `OJT_LLM_MODEL=chat-latest`
+- `OJT_LLM_BASE_URL=https://api.openai.com/v1`
+- `OJT_LLM_TIMEOUT_SECONDS=30.0`
+- `OJT_LLM_MAX_TOOL_CALLS=4`
 - `OJT_RERANK_PROVIDER=none`
 - `OJT_RERANK_MODEL=BAAI/bge-reranker-base`
 - `OJT_RERANK_DEVICE=auto`

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   ApiRequestError,
   API_BASE_URL,
+  chatWithAssistant,
   createWorkflow,
   getExtractorInventory,
   getRetrievalIntegrity,
@@ -24,6 +25,7 @@ import {
   uploadFileWorkflow,
 } from "../api";
 import type {
+  AssistantChatPayload,
   RetrievalReindexPayload,
   RetrievalSearchPayload,
   StartWorkflowPayload,
@@ -144,6 +146,22 @@ export function useRetrievalIntegrityQuery(params: {
 export function useRetrievalSearchMutation() {
   return useMutation({
     mutationFn: (payload: RetrievalSearchPayload) => searchRetrieval(payload),
+  });
+}
+
+export function useAssistantChatMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AssistantChatPayload) => chatWithAssistant(payload),
+    onSuccess: async (response) => {
+      if (
+        response.tool_calls.some(
+          (call) => call.tool_name === "start_workflow" && call.status === "completed",
+        )
+      ) {
+        await invalidateWorkflowCollections(queryClient);
+      }
+    },
   });
 }
 
