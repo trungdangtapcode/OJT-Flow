@@ -30,6 +30,7 @@ def test_compose_uses_separate_api_and_frontend_build_contexts() -> None:
 
 def test_api_container_includes_runtime_contracts_without_dev_server() -> None:
     dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    constraints = (REPO_ROOT / "constraints.txt").read_text(encoding="utf-8")
     normalized = dockerfile.lower()
 
     assert "from python:3.12-slim" in normalized
@@ -44,7 +45,11 @@ def test_api_container_includes_runtime_contracts_without_dev_server() -> None:
     assert "pip==" in normalized
     assert "--constraint /app/constraints.txt" in normalized
     assert "--build-constraint /app/constraints.txt" in normalized
+    assert '".[parsing]"' in normalized
     assert "python -m pip install --no-cache-dir" in normalized
+    assert "markitdown==0.1.6" in constraints
+    assert "pdfminer-six==20251230" in constraints
+    assert "pdfplumber==0.11.9" in constraints
     assert "pip_constraint" not in normalized
     assert "--upgrade pip" not in normalized
     assert 'cmd ["python", "-m", "uvicorn"' in normalized

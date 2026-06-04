@@ -43,13 +43,17 @@ rejected before the API starts accepting traffic.
 
 `python-multipart` is a base dependency because FastAPI validates multipart route parameters when the app is built.
 
-Document extraction dependencies remain optional:
+The Docker API image installs the lightweight parsing extra by default, so
+MarkItDown is available for PDF, DOCX, XLSX/XLS, and PPTX extraction in the
+local Compose runtime.
+
+For local non-Docker Python runs, install the same lightweight extractor set:
 
 ```bash
 pip install 'ojtflow[parsing]'
 ```
 
-adds MarkItDown for lightweight extraction. For heavier PDF/image extraction experiments:
+For heavier PDF/image extraction experiments:
 
 ```bash
 pip install 'ojtflow[parsing-full]'
