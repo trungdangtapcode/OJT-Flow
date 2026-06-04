@@ -10,6 +10,7 @@ from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 
 
 AssistantToolStatus = Literal["completed", "failed", "requires_approval", "skipped"]
+AssistantFindingSeverity = Literal["info", "warning", "error", "action_required"]
 
 
 class AssistantToolSpec(ContractModel):
@@ -42,6 +43,25 @@ class AssistantToolResult(ContractModel):
     requires_approval: bool = False
 
 
+class AssistantFinding(ContractModel):
+    """Operator-ready finding synthesized from tool outputs."""
+
+    title: str
+    detail: str
+    severity: AssistantFindingSeverity = "info"
+    source_tool: str | None = None
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class AssistantEvidenceSummary(ContractModel):
+    """Compact evidence item for assistant answers."""
+
+    source_id: str
+    claim: str
+    trust_level: str
+    confidence: float | None = None
+
+
 class AssistantPlan(ContractModel):
     """Validated LLM/deterministic plan before backend execution."""
 
@@ -56,6 +76,8 @@ class AssistantResponse(ContractModel):
     message: str
     mode: Literal["deterministic", "llm"]
     model: str | None = None
+    findings: list[AssistantFinding] = Field(default_factory=list)
+    evidence_summary: list[AssistantEvidenceSummary] = Field(default_factory=list)
     tool_calls: list[AssistantToolResult] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

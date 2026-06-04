@@ -61,8 +61,10 @@ Tool execution remains deterministic:
 }
 ```
 
-The response includes mode (`deterministic` or `llm`), model, tool calls,
-summaries, suggestions, and warnings.
+The response includes mode (`deterministic` or `llm`), model, synthesized
+operator findings, compact evidence summaries, raw tool calls, suggestions, and
+warnings. Feature clients should render `findings` and `evidence_summary`
+first, then expose raw tool output only as supporting detail.
 
 ## MCP Entry Point
 

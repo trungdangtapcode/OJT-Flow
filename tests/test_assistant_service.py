@@ -55,6 +55,7 @@ async def test_assistant_service_uses_planner_but_backend_executor_owns_tools() 
     assert response.model == "fake-model"
     assert response.tool_calls[0].tool_name == "retrieval_search"
     assert response.tool_calls[0].status == "completed"
+    assert response.findings[0].title == "Trusted evidence retrieved"
 
 
 @pytest.mark.asyncio

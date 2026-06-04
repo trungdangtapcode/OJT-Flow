@@ -331,10 +331,27 @@ export type AssistantToolResult = {
   requires_approval: boolean;
 };
 
+export type AssistantFinding = {
+  title: string;
+  detail: string;
+  severity: "info" | "warning" | "error" | "action_required";
+  source_tool?: string | null;
+  source_ids: string[];
+};
+
+export type AssistantEvidenceSummary = {
+  source_id: string;
+  claim: string;
+  trust_level: string;
+  confidence?: number | null;
+};
+
 export type AssistantResponse = {
   message: string;
   mode: "deterministic" | "llm";
   model?: string | null;
+  findings: AssistantFinding[];
+  evidence_summary: AssistantEvidenceSummary[];
   tool_calls: AssistantToolResult[];
   suggestions: string[];
   warnings: string[];

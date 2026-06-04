@@ -647,6 +647,15 @@ review. Response data includes:
 - `message`
 - `mode`
 - `model`
+- `findings[].title`
+- `findings[].detail`
+- `findings[].severity`
+- `findings[].source_tool`
+- `findings[].source_ids`
+- `evidence_summary[].source_id`
+- `evidence_summary[].claim`
+- `evidence_summary[].trust_level`
+- `evidence_summary[].confidence`
 - `tool_calls[].tool_name`
 - `tool_calls[].status`
 - `tool_calls[].arguments`

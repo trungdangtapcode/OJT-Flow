@@ -2,6 +2,8 @@
 
 from ojtflow.core.contracts.agent import AgentResult
 from ojtflow.core.contracts.assistant import (
+    AssistantEvidenceSummary,
+    AssistantFinding,
     AssistantPlan,
     AssistantResponse,
     AssistantToolPlan,
@@ -51,6 +53,8 @@ __all__ = [
     "AgentResult",
     "AgentStatus",
     "AssistantPlan",
+    "AssistantEvidenceSummary",
+    "AssistantFinding",
     "AssistantResponse",
     "AssistantToolPlan",
     "AssistantToolResult",

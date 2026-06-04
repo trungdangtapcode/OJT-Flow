@@ -23,6 +23,8 @@ import { Notice } from "../../components/ui/notice";
 import { useAssistantChatMutation, useRuntimeConfigQuery, workflowErrorMessage } from "../../lib/server-state";
 import { cn, humanize } from "../../lib/utils";
 import type {
+  AssistantEvidenceSummary,
+  AssistantFinding,
   AssistantResponse,
   AssistantToolResult,
   AssistantTranscriptItem,
@@ -223,6 +225,12 @@ function TranscriptCard({ item }: { item: AssistantTranscriptItem }) {
                 {item.response.warnings.join(" ")}
               </Notice>
             ) : null}
+            {item.response.findings.length > 0 ? (
+              <FindingsPanel findings={item.response.findings} />
+            ) : null}
+            {item.response.evidence_summary.length > 0 ? (
+              <EvidenceSummaryPanel evidence={item.response.evidence_summary} />
+            ) : null}
             <div className="grid gap-3">
               {item.response.tool_calls.map((call, index) => (
                 <ToolResultCard call={call} key={`${call.tool_name}-${index}`} />
@@ -242,6 +250,55 @@ function TranscriptCard({ item }: { item: AssistantTranscriptItem }) {
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function FindingsPanel({ findings }: { findings: AssistantFinding[] }) {
+  return (
+    <div className="grid gap-2">
+      {findings.map((finding, index) => (
+        <div
+          className={cn(
+            "rounded-md border p-3",
+            finding.severity === "error"
+              ? "border-red-200 bg-red-50"
+              : finding.severity === "warning" || finding.severity === "action_required"
+                ? "border-amber-200 bg-amber-50"
+                : "border-border bg-muted/35",
+          )}
+          key={`${finding.title}-${index}`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-black">{finding.title}</div>
+            <Badge variant={findingBadgeVariant(finding.severity)}>
+              {humanize(finding.severity)}
+            </Badge>
+            {finding.source_tool ? <Badge variant="muted">{humanize(finding.source_tool)}</Badge> : null}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{finding.detail}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EvidenceSummaryPanel({ evidence }: { evidence: AssistantEvidenceSummary[] }) {
+  return (
+    <div className="grid gap-2">
+      <div className="text-xs font-black uppercase text-muted-foreground">Evidence summary</div>
+      {evidence.map((item) => (
+        <div className="rounded-md border border-border bg-muted/35 p-3" key={`${item.source_id}-${item.claim}`}>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-black">{item.source_id}</div>
+            <Badge variant="muted">{humanize(item.trust_level)}</Badge>
+            {typeof item.confidence === "number" ? (
+              <Badge variant="default">{Math.round(item.confidence * 100)}%</Badge>
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.claim}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -328,4 +385,10 @@ function badgeVariant(status: AssistantToolResult["status"]) {
   if (status === "failed") return "destructive";
   if (status === "requires_approval") return "warning";
   return "muted";
+}
+
+function findingBadgeVariant(severity: AssistantFinding["severity"]) {
+  if (severity === "error") return "destructive";
+  if (severity === "warning" || severity === "action_required") return "warning";
+  return "success";
 }

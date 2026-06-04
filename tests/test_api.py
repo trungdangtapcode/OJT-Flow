@@ -2616,6 +2616,8 @@ async def test_assistant_chat_runs_retrieval_tool_without_llm_tokens(monkeypatch
     assert body["tool_calls"][0]["tool_name"] == "retrieval_search"
     assert body["tool_calls"][0]["status"] == "completed"
     assert body["tool_calls"][0]["output"]["evidence"]
+    assert body["findings"][0]["title"] == "Trusted evidence retrieved"
+    assert body["evidence_summary"][0]["source_id"]
     assert "Retrieved" in body["message"]
 
 
@@ -2649,6 +2651,7 @@ async def test_assistant_chat_requires_explicit_write_execution(monkeypatch) -> 
     assert gated_call["tool_name"] == "start_workflow"
     assert gated_call["status"] == "requires_approval"
     assert gated_call["requires_approval"] is True
+    assert gated.json()["data"]["findings"][0]["severity"] == "action_required"
 
     assert allowed.status_code == 200
     allowed_call = allowed.json()["data"]["tool_calls"][0]
@@ -2656,6 +2659,7 @@ async def test_assistant_chat_requires_explicit_write_execution(monkeypatch) -> 
     assert allowed_call["status"] == "completed"
     assert allowed_call["output"]["workflow_id"].startswith("wf_")
     assert allowed_call["output"]["owner_user_id"] == "usr_api_test"
+    assert allowed.json()["data"]["findings"][0]["title"] == "Workflow created"
 
 
 @pytest.mark.asyncio
