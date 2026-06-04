@@ -159,6 +159,26 @@ class OcrEvidenceRequest(ContractModel):
     }
 
 
+class RetrievalSearchFilters(ContractModel):
+    trust_level: TrustLevel | None = None
+    clinical_domain: NonBlankStr | None = None
+    standard_system: NonBlankStr | None = None
+    source_type: EvidenceSourceType | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "trust_level": "approved",
+                    "clinical_domain": "laboratory",
+                    "standard_system": "UCUM",
+                    "source_type": "terminology_system",
+                }
+            ]
+        }
+    }
+
+
 class RetrievalSearchRequest(ContractModel):
     query: NonBlankStr
     top_k: int = Field(default=5, ge=1, le=20)
@@ -171,7 +191,7 @@ class RetrievalSearchRequest(ContractModel):
     standard_system: NonBlankStr | None = None
     trust_level: TrustLevel | None = TrustLevel.APPROVED
     source_type: EvidenceSourceType | None = None
-    filters: dict[str, Any] = Field(default_factory=dict)
+    filters: RetrievalSearchFilters = Field(default_factory=RetrievalSearchFilters)
 
     model_config = {
         "json_schema_extra": {

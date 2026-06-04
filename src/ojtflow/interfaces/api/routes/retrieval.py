@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query
 
 from ojtflow.application.workflow_service import WorkflowService
@@ -25,7 +27,7 @@ async def search_retrieval(
 ) -> dict:
     enforce_inline_json_limit(request, settings, field_name="retrieval_request")
     filters = {
-        **request.filters,
+        **request.filters.model_dump(exclude_none=True, mode="json"),
         **{
             key: value
             for key, value in {
@@ -37,6 +39,7 @@ async def search_retrieval(
             if value
         },
     }
+    filters = {key: _filter_value(value) for key, value in filters.items()}
     package = service.search_retrieval(
         RetrievalQuery(
             query=request.query,
@@ -91,3 +94,9 @@ async def retrieval_integrity(
             include_corpus=include_corpus,
         )
     )
+
+
+def _filter_value(value: Any) -> Any:
+    if hasattr(value, "value"):
+        return value.value
+    return value

@@ -513,6 +513,9 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "clinical_domain": "  laboratory  ",
                 "standard_system": "  UCUM  ",
                 "trust_level": "approved",
+                "filters": {
+                    "source_type": "terminology_system",
+                },
             },
         )
 
@@ -530,12 +533,61 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "filters": {
                     "clinical_domain": "laboratory",
                     "standard_system": "UCUM",
+                    "source_type": "terminology_system",
                     "trust_level": "approved",
                 },
             },
             "owner_user_id": "usr_api_test",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_route_rejects_unknown_or_invalid_filter_keys(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search_retrieval(self, query, owner_user_id=None):
+            del query, owner_user_id
+            self.calls += 1
+            return {}
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        unknown_filter = await client.post(
+            "/api/v1/retrieval/search",
+            json={
+                "query": "lab result schema",
+                "filters": {"unsupported": "value"},
+            },
+        )
+        invalid_filter_enum = await client.post(
+            "/api/v1/retrieval/search",
+            json={
+                "query": "lab result schema",
+                "filters": {"trust_level": "not_a_trust_level"},
+            },
+        )
+
+    assert unknown_filter.status_code == 422
+    _assert_error_envelope(unknown_filter, expected_code="request_validation_error")
+    assert invalid_filter_enum.status_code == 422
+    _assert_error_envelope(invalid_filter_enum, expected_code="request_validation_error")
+    assert fake_service.calls == 0
 
 
 @pytest.mark.asyncio

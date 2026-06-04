@@ -1087,7 +1087,11 @@ Structured unauthorized response:
   "schema_id": "lab_result_v1",
   "fields": ["date", "patient_id", "lab_name", "value", "unit"],
   "clinical_domain": "laboratory",
-  "trust_level": "approved"
+  "trust_level": "approved",
+  "filters": {
+    "standard_system": "UCUM",
+    "source_type": "terminology_system"
+  }
 }
 ```
 
@@ -1150,6 +1154,11 @@ Retrieval endpoints require an authenticated session. Searches without
 another user's workflow by guessing an ID.
 The `query` field and optional context fields are trimmed and must be non-blank
 when supplied.
+`filters` is a typed metadata filter object, not an arbitrary JSON bag. Current
+supported keys are `trust_level`, `clinical_domain`, `standard_system`, and
+`source_type`. Unsupported filter keys or invalid enum values return
+`request_validation_error` before the retrieval repository runs, so the API does
+not silently accept filters that the ranking layer cannot enforce.
 
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,

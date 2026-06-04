@@ -258,7 +258,14 @@ export type RetrievalSearchPayload = {
   standard_system?: string | null;
   trust_level?: string | null;
   source_type?: string | null;
-  filters: Record<string, unknown>;
+  filters: RetrievalSearchFilters;
+};
+
+export type RetrievalSearchFilters = {
+  trust_level?: string | null;
+  clinical_domain?: string | null;
+  standard_system?: string | null;
+  source_type?: string | null;
 };
 
 export type RetrievalSource = {
