@@ -18,6 +18,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalQueryDiagnostic,
+    RetrievalQueryVariant,
     RetrievalSearchHint,
 )
 
@@ -91,7 +92,7 @@ class SearchHintTarget:
 def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
     """Return deterministic query analysis and healthcare-aware variants."""
 
-    base_variants = _base_query_variants(query)
+    base_variants = _base_query_variant_details(query)
     haystack = _query_haystack(query)
     tokens = set(_tokens(haystack))
     concept_candidates = _concept_candidates(haystack=haystack, tokens=tokens)
@@ -120,15 +121,28 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         ]
     )
     rule_ids = _dedupe(rule.rule_id for rule in matched_rules)
-    variants = _dedupe(
+    variant_details = _dedupe_query_variant_details(
         [
             *base_variants,
-            *(rule.variant for rule in matched_rules),
-            *_concept_candidate_variants(concept_candidates),
-            _standards_variant(standards),
-            _expanded_terms_variant(expanded_terms),
+            *(
+                RetrievalQueryVariant(
+                    variant=rule.variant,
+                    source="query_expansion_rule",
+                    reason=f"Matched query expansion rule {rule.rule_id}.",
+                    metadata={
+                        "rule_id": rule.rule_id,
+                        "concept": rule.concept,
+                        "standards": list(rule.standards),
+                    },
+                )
+                for rule in matched_rules
+            ),
+            *_concept_candidate_variant_details(concept_candidates),
+            *_standards_variant_details(standards),
+            *_expanded_terms_variant_details(expanded_terms),
         ]
     )
+    variants = [detail.variant for detail in variant_details]
     return RetrievalQueryAnalysis(
         detected_concepts=concepts,
         concept_candidates=concept_candidates,
@@ -136,6 +150,7 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         standards=standards,
         rule_ids=rule_ids,
         query_variants=variants,
+        query_variant_details=variant_details,
         filter_suggestions=_filter_suggestions(
             query,
             concepts,
@@ -190,20 +205,30 @@ def _concept_candidates(
     return candidates
 
 
-def _concept_candidate_variants(
+def _concept_candidate_variant_details(
     candidates: list[RetrievalConceptCandidate],
-) -> list[str]:
+) -> list[RetrievalQueryVariant]:
     return [
-        " ".join(
-            value
-            for value in [
-                candidate.display_name,
-                candidate.standard_system,
-                candidate.code or "",
-                " ".join(candidate.matched_aliases),
-                candidate.clinical_domain or "",
-            ]
-            if value
+        RetrievalQueryVariant(
+            variant=" ".join(
+                value
+                for value in [
+                    candidate.display_name,
+                    candidate.standard_system,
+                    candidate.code or "",
+                    " ".join(candidate.matched_aliases),
+                    candidate.clinical_domain or "",
+                ]
+                if value
+            ),
+            source="concept_registry",
+            reason=f"Matched controlled-vocabulary concept {candidate.concept_id}.",
+            metadata={
+                "concept_id": candidate.concept_id,
+                "standard_system": candidate.standard_system,
+                "code": candidate.code,
+                "confidence": candidate.confidence,
+            },
         )
         for candidate in candidates
     ]
@@ -569,18 +594,59 @@ def _medical_concept_registry() -> tuple[dict[str, Any], ...]:
     return _load_medical_concept_registry(path or str(DEFAULT_MEDICAL_CONCEPT_REGISTRY))
 
 
-def _base_query_variants(query: RetrievalQuery) -> list[str]:
-    variants = [query.query]
+def _base_query_variant_details(query: RetrievalQuery) -> list[RetrievalQueryVariant]:
+    variants = [
+        RetrievalQueryVariant(
+            variant=query.query,
+            source="user_query",
+            reason="Original operator search text.",
+        )
+    ]
     if query.fields:
         fields_text = " ".join(query.fields)
-        variants.append(fields_text)
-        variants.append(f"healthcare fields {fields_text} validation units terminology")
+        variants.append(
+            RetrievalQueryVariant(
+                variant=fields_text,
+                source="requested_fields",
+                reason="Requested input/output fields.",
+                metadata={"fields": query.fields},
+            )
+        )
+        variants.append(
+            RetrievalQueryVariant(
+                variant=f"healthcare fields {fields_text} validation units terminology",
+                source="requested_fields",
+                reason="Healthcare field validation and terminology context.",
+                metadata={"fields": query.fields},
+            )
+        )
     if query.schema_id:
-        variants.append(f"{query.schema_id} schema required fields validation")
+        variants.append(
+            RetrievalQueryVariant(
+                variant=f"{query.schema_id} schema required fields validation",
+                source="schema_id",
+                reason="Schema-specific required-field and validation context.",
+                metadata={"schema_id": query.schema_id},
+            )
+        )
     if query.resource_type:
-        variants.append(f"FHIR {query.resource_type} resource profile required shape")
+        variants.append(
+            RetrievalQueryVariant(
+                variant=f"FHIR {query.resource_type} resource profile required shape",
+                source="resource_type",
+                reason="FHIR-like resource profile context.",
+                metadata={"resource_type": query.resource_type},
+            )
+        )
     if query.detected_format:
-        variants.append(f"{query.detected_format} parsing conversion data quality")
+        variants.append(
+            RetrievalQueryVariant(
+                variant=f"{query.detected_format} parsing conversion data quality",
+                source="detected_format",
+                reason="Input format parsing and conversion context.",
+                metadata={"detected_format": query.detected_format},
+            )
+        )
     return variants
 
 
@@ -622,16 +688,46 @@ def _tokens(text: str) -> list[str]:
     return [match.group(0).lower() for match in QUERY_TOKEN_PATTERN.finditer(text)]
 
 
-def _standards_variant(standards: list[str]) -> str:
+def _standards_variant_details(standards: list[str]) -> list[RetrievalQueryVariant]:
     if not standards:
-        return ""
-    return f"healthcare standards grounding {' '.join(standards)}"
+        return []
+    return [
+        RetrievalQueryVariant(
+            variant=f"healthcare standards grounding {' '.join(standards)}",
+            source="standard_inference",
+            reason="Healthcare standards inferred from query analysis.",
+            metadata={"standards": standards},
+        )
+    ]
 
 
-def _expanded_terms_variant(expanded_terms: list[str]) -> str:
+def _expanded_terms_variant_details(
+    expanded_terms: list[str],
+) -> list[RetrievalQueryVariant]:
     if not expanded_terms:
-        return ""
-    return " ".join(expanded_terms)
+        return []
+    return [
+        RetrievalQueryVariant(
+            variant=" ".join(expanded_terms),
+            source="expanded_terms",
+            reason="Expanded terms from rules and controlled-vocabulary matches.",
+            metadata={"term_count": len(expanded_terms)},
+        )
+    ]
+
+
+def _dedupe_query_variant_details(
+    variants: Iterable[RetrievalQueryVariant],
+) -> list[RetrievalQueryVariant]:
+    seen: set[str] = set()
+    deduped: list[RetrievalQueryVariant] = []
+    for variant in variants:
+        key = variant.variant.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(variant)
+    return deduped
 
 
 def _filter_suggestions(

@@ -1184,6 +1184,8 @@ Response data is a `RetrievalPackage`:
 - `facets`
 - `trace.strategy`
 - `trace.query_variants`
+- `trace.query_variant_details[]` with `variant`, `source`, `reason`, and
+  `metadata`
 - `trace.filters_applied`
 - `trace.candidates_seen`
 - `trace.final_hit_ids`

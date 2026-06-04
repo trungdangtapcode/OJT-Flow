@@ -52,6 +52,7 @@ import type {
   RetrievalPackage,
   RetrievalCoverage,
   RetrievalFacets,
+  RetrievalQueryVariant,
   RetrievalScoreComponent,
   RetrievalSearchPayload,
   RetrievalSearchOption,
@@ -1371,7 +1372,7 @@ function TracePanel({
               onApplyFilterSuggestion={onApplyFilterSuggestion}
             />
             <CoverageDiagnosticsBlock coverage={coverage} />
-            <TokenList items={trace.query_variants} title="Query variants" />
+            <QueryVariantList variants={queryVariantsFromTrace(trace)} />
             <TokenList items={trace.safety_flags.map(humanize)} title="Safety flags" tone="warning" />
             <TokenList items={trace.warnings} title="Warnings" tone="warning" />
           </>
@@ -1414,6 +1415,37 @@ function CoverageDiagnosticsBlock({
               </Badge>
             </div>
             <div className="break-words text-muted-foreground">{item.reason}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QueryVariantList({ variants }: { variants: RetrievalQueryVariant[] }) {
+  if (!variants.length) {
+    return <TokenList items={[]} title="Query rewrites" />;
+  }
+  return (
+    <div className="grid gap-1.5">
+      <div className="text-xs font-bold uppercase text-muted-foreground">
+        Query rewrites
+      </div>
+      <div className="grid gap-2">
+        {variants.map((variant, index) => (
+          <div
+            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
+            key={`${variant.source}-${variant.variant}-${index}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <code className="min-w-0 break-words rounded bg-muted px-2 py-1 font-mono">
+                {variant.variant}
+              </code>
+              <Badge variant="muted">{humanize(variant.source)}</Badge>
+            </div>
+            <div className="break-words font-semibold text-muted-foreground">
+              {variant.reason}
+            </div>
           </div>
         ))}
       </div>
@@ -2391,6 +2423,30 @@ function formatDiversityTrace(diversity: DiversityStack): string {
   const lambda = diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2);
   const duplicateText = `${diversity.duplicateSelectedSourceCount} duplicate selected`;
   return `${diversity.selectionMode} / lambda ${lambda} / ${formatSourceCoverage(diversity)} sources / ${duplicateText}`;
+}
+
+function queryVariantsFromTrace(trace: RetrievalPackage["trace"]): RetrievalQueryVariant[] {
+  const detailedVariants = queryVariantDetailsValue(trace.query_variant_details);
+  if (detailedVariants.length) return detailedVariants;
+  return trace.query_variants.map((variant) => ({
+    metadata: {},
+    reason: "Legacy query variant from retrieval trace.",
+    source: "legacy_trace",
+    variant,
+  }));
+}
+
+function queryVariantDetailsValue(value: unknown): RetrievalQueryVariant[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      metadata: recordValue(item.metadata),
+      reason: stringValue(item.reason, "Query variant used for retrieval."),
+      source: stringValue(item.source, "unknown"),
+      variant: stringValue(item.variant, ""),
+    }))
+    .filter((item) => item.variant);
 }
 
 function scoreComponentsFromHit(hit: RetrievalHit): RetrievalScoreComponent[] {

@@ -34,6 +34,15 @@ class RetrievalSnippet(ContractModel):
     extraction_strategy: str = "deterministic_sentence_window_v0"
 
 
+class RetrievalQueryVariant(ContractModel):
+    """One query variant with provenance for query-rewrite transparency."""
+
+    variant: NonBlankStr
+    source: NonBlankStr
+    reason: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalScoreComponent(ContractModel):
     """One auditable contribution to a retrieval hit's final score."""
 
@@ -98,6 +107,7 @@ class RetrievalTrace(ContractModel):
 
     strategy: str
     query_variants: list[str] = Field(default_factory=list)
+    query_variant_details: list[RetrievalQueryVariant] = Field(default_factory=list)
     filters_applied: dict[str, Any] = Field(default_factory=dict)
     candidates_seen: int = 0
     final_hit_ids: list[str] = Field(default_factory=list)
@@ -196,6 +206,7 @@ class RetrievalQueryAnalysis(ContractModel):
     standards: list[str] = Field(default_factory=list)
     rule_ids: list[str] = Field(default_factory=list)
     query_variants: list[str] = Field(default_factory=list)
+    query_variant_details: list[RetrievalQueryVariant] = Field(default_factory=list)
     filter_suggestions: list[RetrievalFilterSuggestion] = Field(default_factory=list)
     diagnostics: list[RetrievalQueryDiagnostic] = Field(default_factory=list)
     search_hints: list[RetrievalSearchHint] = Field(default_factory=list)

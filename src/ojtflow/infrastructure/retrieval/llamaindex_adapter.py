@@ -121,6 +121,7 @@ class LlamaIndexRetrievalRepository:
         trace = RetrievalTrace(
             strategy="llamaindex_hybrid_rrf",
             query_variants=query_analysis.query_variants,
+            query_variant_details=query_analysis.query_variant_details,
             filters_applied=query.filters,
             candidates_seen=filtered_node_count,
             final_hit_ids=[hit.evidence.evidence_id for hit in hits],
@@ -605,6 +606,7 @@ def _empty_package(
         trace=RetrievalTrace(
             strategy=strategy,
             query_variants=query_analysis.query_variants,
+            query_variant_details=query_analysis.query_variant_details,
             filters_applied=query.filters,
             candidates_seen=0,
             final_hit_ids=[],

@@ -105,11 +105,19 @@ export type Evidence = {
 export type RetrievalTrace = {
   strategy: string;
   query_variants: string[];
+  query_variant_details?: RetrievalQueryVariant[];
   filters_applied: Record<string, unknown>;
   candidates_seen: number;
   final_hit_ids: string[];
   safety_flags: string[];
   warnings: string[];
+};
+
+export type RetrievalQueryVariant = {
+  variant: string;
+  source: string;
+  reason: string;
+  metadata: Record<string, unknown>;
 };
 
 export type RetrievalHit = {

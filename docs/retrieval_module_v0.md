@@ -297,6 +297,13 @@ description, and metadata such as raw score, RRF `k`, or ranking-rule IDs. This
 keeps the final score inspectable without requiring clients to reconstruct
 ranking math from separate fields.
 
+Query analysis also emits `query_variant_details` alongside the legacy
+`query_variants` list. Each detail records the variant text, source, reason,
+and metadata such as matched rule IDs, schema ID, detected format, or controlled
+vocabulary concept. The trace copies those details to
+`trace.query_variant_details` so operator review can inspect query rewrites
+without guessing why a variant was used.
+
 Search hints are syntax scaffolds for medical search workflows outside the
 local retrieval index. PubMed hints prefer a conservative combination of
 title/abstract text words and MeSH-review warnings; FHIR hints produce resource

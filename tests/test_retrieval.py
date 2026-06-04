@@ -42,19 +42,30 @@ def test_retrieval_query_rejects_blank_query() -> None:
 
 
 def test_query_variants_include_fields_schema_and_format() -> None:
-    variants = build_query_variants(
-        RetrievalQuery(
-            query="Clean lab CSV",
-            fields=["date", "unit"],
-            schema_id="lab_result_v1",
-            detected_format="csv",
-        )
+    query = RetrievalQuery(
+        query="Clean lab CSV",
+        fields=["date", "unit"],
+        schema_id="lab_result_v1",
+        detected_format="csv",
     )
+    variants = build_query_variants(query)
+    analysis = analyze_query(query)
 
     assert variants[0] == "Clean lab CSV"
     assert any("date unit" in variant for variant in variants)
     assert any("lab_result_v1 schema" in variant for variant in variants)
     assert any("csv parsing conversion" in variant for variant in variants)
+    assert [detail.variant for detail in analysis.query_variant_details] == variants
+    assert analysis.query_variant_details[0].source == "user_query"
+    assert any(
+        detail.source == "schema_id" and detail.metadata["schema_id"] == "lab_result_v1"
+        for detail in analysis.query_variant_details
+    )
+    assert any(
+        detail.source == "detected_format"
+        and detail.metadata["detected_format"] == "csv"
+        for detail in analysis.query_variant_details
+    )
 
 
 def test_query_analysis_expands_clinical_standard_terms() -> None:
@@ -75,6 +86,15 @@ def test_query_analysis_expands_clinical_standard_terms() -> None:
     assert "UCUM computable unit" in analysis.expanded_terms
     assert any("LOINC laboratory observation" in variant for variant in analysis.query_variants)
     assert any("FHIR Observation" in variant for variant in analysis.query_variants)
+    assert any(
+        detail.source == "query_expansion_rule"
+        and detail.metadata["rule_id"] == "fhir_observation_profile"
+        for detail in analysis.query_variant_details
+    )
+    assert any(
+        detail.source == "concept_registry"
+        for detail in analysis.query_variant_details
+    )
     suggestions = {
         (suggestion.field, suggestion.value): suggestion
         for suggestion in analysis.filter_suggestions
