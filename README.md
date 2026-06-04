@@ -167,6 +167,8 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_RERANK_BATCH_SIZE=16`
 - `OJT_RERANK_CANDIDATE_LIMIT=20`
 - `OJT_RERANK_SCORE_WEIGHT=0.08`
+- `OJT_RETRIEVAL_DIVERSITY_ENABLED=true`
+- `OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72`
 
 `OJT_STORAGE_BACKEND` must be one of `postgres`, `sqlite`, or `memory`.
 Postgres is the production-like default. SQLite is a local single-file fallback.
@@ -255,6 +257,11 @@ OJT_RERANK_BATCH_SIZE=16
 OJT_RERANK_CANDIDATE_LIMIT=20
 OJT_RERANK_SCORE_WEIGHT=0.08
 ```
+
+Final selection uses source-aware MMR by default to avoid returning only
+near-duplicate chunks from one source. `OJT_RETRIEVAL_DIVERSITY_LAMBDA` controls
+the relevance/novelty balance from `0` to `1`; the default `0.72` keeps
+relevance dominant while improving selected source coverage.
 
 The frontend container proxies `/api/*` and `/health` requests to the API
 container in Docker. No API keys or ADC credential files are committed; pass

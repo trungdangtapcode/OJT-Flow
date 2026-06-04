@@ -313,6 +313,7 @@ function RetrievalSummary({
 }) {
   const graph = packageData?.handoff_context.graph_context;
   const packageRuntime = packageData ? rankingStackFromPackage(packageData) : null;
+  const diversity = packageData ? diversityFromPackage(packageData) : null;
   const rerankerEnabled = Boolean(
     packageRuntime?.reranker.enabled ?? runtime?.rerank?.enabled,
   );
@@ -343,10 +344,16 @@ function RetrievalSummary({
       />
       <SummaryStripItem
         icon={Network}
-        label="Graph nodes"
-        supporting={embeddingProvider ? `${embeddingProvider} embeddings` : "Runtime loading"}
+        label="Coverage"
+        supporting={
+          diversity
+            ? `${diversity.selectedSourceCount} selected unique sources`
+            : embeddingProvider
+              ? `${embeddingProvider} embeddings`
+              : "Runtime loading"
+        }
         tone="success"
-        value={graph?.nodes.length ?? 0}
+        value={diversity ? formatSourceCoverage(diversity) : graph?.nodes.length ?? 0}
       />
       <SummaryStripItem
         icon={BrainCircuit}
@@ -394,6 +401,7 @@ function SearchResults({ packageData }: { packageData: RetrievalPackage | undefi
         </div>
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
           <Badge variant="muted">{packageData.trace.strategy}</Badge>
+          <DiversityBadge packageData={packageData} />
           <RerankBadge packageData={packageData} />
         </div>
       </CardHeader>
@@ -497,6 +505,7 @@ function ScoreMeter({ label, value }: { label: string; value: number }) {
 function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined }) {
   const trace = packageData?.trace;
   const stack = packageData ? rankingStackFromPackage(packageData) : null;
+  const diversity = packageData ? diversityFromPackage(packageData) : null;
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="border-b border-border bg-card/70">
@@ -522,6 +531,10 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
               value={stack ? formatRerankerStack(stack) : "unknown"}
             />
             <TraceFact
+              label="Diversity"
+              value={diversity ? formatDiversityTrace(diversity) : "unknown"}
+            />
+            <TraceFact
               label="Filters"
               value={Object.keys(trace.filters_applied).length ? JSON.stringify(trace.filters_applied) : "none"}
             />
@@ -533,6 +546,14 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
       </CardContent>
     </Card>
   );
+}
+
+function DiversityBadge({ packageData }: { packageData: RetrievalPackage }) {
+  const diversity = diversityFromPackage(packageData);
+  if (!diversity.enabled) {
+    return <Badge variant="muted">score order</Badge>;
+  }
+  return <Badge variant="success">{formatSourceCoverage(diversity)} sources</Badge>;
 }
 
 function RerankBadge({ packageData }: { packageData: RetrievalPackage }) {
@@ -744,6 +765,15 @@ type RankingStack = {
   };
 };
 
+type DiversityStack = {
+  candidateSourceCount: number;
+  duplicateSelectedSourceCount: number;
+  enabled: boolean;
+  lambda: number | null;
+  selectedSourceCount: number;
+  selectionMode: string;
+};
+
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   const embedding = recordValue(packageData.handoff_context.embedding);
   const reranker = recordValue(packageData.handoff_context.reranker);
@@ -763,6 +793,19 @@ function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   };
 }
 
+function diversityFromPackage(packageData: RetrievalPackage): DiversityStack {
+  const diversity = recordValue(packageData.handoff_context.diversity);
+  return {
+    candidateSourceCount: numberValue(diversity.candidate_source_count) ?? 0,
+    duplicateSelectedSourceCount:
+      numberValue(diversity.duplicate_selected_source_count) ?? 0,
+    enabled: booleanValue(diversity.enabled),
+    lambda: numberValue(diversity.lambda),
+    selectedSourceCount: numberValue(diversity.selected_source_count) ?? 0,
+    selectionMode: stringValue(diversity.selection_mode, "unknown"),
+  };
+}
+
 function formatEmbeddingStack(stack: RankingStack): string {
   const dimensions = stack.embedding.dimensions ? ` / ${stack.embedding.dimensions}d` : "";
   return `${stack.embedding.provider} / ${stack.embedding.model}${dimensions}`;
@@ -774,6 +817,16 @@ function formatRerankerStack(stack: RankingStack): string {
   }
   const device = stack.reranker.device ? ` / ${stack.reranker.device}` : "";
   return `${stack.reranker.provider} / ${stack.reranker.model}${device}`;
+}
+
+function formatSourceCoverage(diversity: DiversityStack): string {
+  return `${diversity.selectedSourceCount}/${diversity.candidateSourceCount}`;
+}
+
+function formatDiversityTrace(diversity: DiversityStack): string {
+  const lambda = diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2);
+  const duplicateText = `${diversity.duplicateSelectedSourceCount} duplicate selected`;
+  return `${diversity.selectionMode} / lambda ${lambda} / ${formatSourceCoverage(diversity)} sources / ${duplicateText}`;
 }
 
 function recordValue(value: unknown): Record<string, unknown> {

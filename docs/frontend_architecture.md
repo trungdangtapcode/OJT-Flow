@@ -126,7 +126,9 @@ inspection console, not a separate workflow executor: workflow creation remains
 in Workbench and workflow-scoped evidence remains in Workflow Detail. The route
 must surface embedding and rerank provider metadata from runtime config and
 retrieval handoff context so operators can distinguish first-stage hybrid
-searches from searches refined by second-stage reranking.
+searches from searches refined by second-stage reranking. It must also surface
+source coverage from retrieval diversity metadata so redundant single-source
+results are visible during evidence review.
 Settings is an operator readiness surface, not a prose documentation page. It
 should show status facts first, then group runtime configuration into compact
 sections, summarize readiness/security/inventory counts before detailed rows,

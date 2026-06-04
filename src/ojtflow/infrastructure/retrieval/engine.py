@@ -152,6 +152,8 @@ def rank_chunks(
     reranker: Any | None = None,
     rerank_candidate_limit: int = 20,
     rerank_score_weight: float = 0.08,
+    diversity_enabled: bool = True,
+    diversity_lambda: float = 0.72,
     strategy: str = "deterministic_hybrid",
     warnings: list[str] | None = None,
 ) -> RetrievalPackage:
@@ -234,8 +236,17 @@ def rank_chunks(
                 hit.evidence.confidence = round(min(0.99, 0.55 + hit.score * 8), 4)
             ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
 
-    hits = [hit for _, hit in ranked_hits]
-    top_hits = hits[: query.top_k]
+    selected_ranked_hits, diversity_metadata = _select_diverse_hits(
+        ranked_hits,
+        top_k=query.top_k,
+        enabled=diversity_enabled,
+        lambda_mult=diversity_lambda,
+    )
+    top_hits = [hit for _, hit in selected_ranked_hits]
+    if diversity_metadata["duplicate_selected_source_count"]:
+        trace_warnings.append(
+            "Retrieval results include repeated source IDs after diversity selection."
+        )
     trace = RetrievalTrace(
         strategy=strategy,
         query_variants=variants,
@@ -257,6 +268,7 @@ def rank_chunks(
             "safety_flags": safety_flags,
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,
+            "diversity": diversity_metadata,
         },
     )
 
@@ -544,4 +556,99 @@ def _reranker_metadata(reranker: Any | None) -> dict[str, Any]:
         "provider": getattr(reranker, "provider_name", "unknown"),
         "model": getattr(reranker, "model", "unknown"),
         "enabled": _reranker_enabled(reranker),
+    }
+
+
+def _select_diverse_hits(
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]],
+    *,
+    top_k: int,
+    enabled: bool,
+    lambda_mult: float,
+) -> tuple[list[tuple[KnowledgeChunk, RetrievalHit]], dict[str, Any]]:
+    if not enabled or top_k <= 1 or len(ranked_hits) <= 1:
+        selected = ranked_hits[:top_k]
+        return selected, _diversity_metadata(
+            ranked_hits,
+            selected,
+            enabled=enabled,
+            lambda_mult=lambda_mult,
+        )
+
+    clamped_lambda = max(0.0, min(1.0, lambda_mult))
+    candidates = list(ranked_hits)
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]] = [candidates.pop(0)]
+    relevance = _normalized_hit_relevance(ranked_hits)
+
+    while candidates and len(selected) < top_k:
+        best_index = 0
+        best_score = float("-inf")
+        for index, candidate in enumerate(candidates):
+            chunk, hit = candidate
+            redundancy = max(
+                _chunk_redundancy(chunk, selected_chunk)
+                for selected_chunk, _ in selected
+            )
+            mmr_score = (
+                clamped_lambda * relevance[hit.evidence.evidence_id]
+                - (1.0 - clamped_lambda) * redundancy
+            )
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_index = index
+        selected.append(candidates.pop(best_index))
+
+    return selected, _diversity_metadata(
+        ranked_hits,
+        selected,
+        enabled=enabled,
+        lambda_mult=clamped_lambda,
+    )
+
+
+def _normalized_hit_relevance(
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]],
+) -> dict[str, float]:
+    scores = [hit.score for _, hit in ranked_hits]
+    minimum = min(scores)
+    maximum = max(scores)
+    if maximum == minimum:
+        return {hit.evidence.evidence_id: 1.0 for _, hit in ranked_hits}
+    span = maximum - minimum
+    return {
+        hit.evidence.evidence_id: (hit.score - minimum) / span
+        for _, hit in ranked_hits
+    }
+
+
+def _chunk_redundancy(left: KnowledgeChunk, right: KnowledgeChunk) -> float:
+    source_similarity = 1.0 if left.source_id == right.source_id else 0.0
+    left_tokens = set(tokenize(f"{left.title} {left.content}"))
+    right_tokens = set(tokenize(f"{right.title} {right.content}"))
+    token_similarity = _jaccard_similarity(left_tokens, right_tokens)
+    return max(source_similarity, token_similarity)
+
+
+def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left.intersection(right)) / len(left.union(right))
+
+
+def _diversity_metadata(
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]],
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]],
+    *,
+    enabled: bool,
+    lambda_mult: float,
+) -> dict[str, Any]:
+    candidate_sources = {chunk.source_id for chunk, _ in ranked_hits}
+    selected_sources = [chunk.source_id for chunk, _ in selected]
+    return {
+        "enabled": enabled,
+        "selection_mode": "mmr_source_diversity" if enabled else "score_order",
+        "lambda": round(lambda_mult, 4),
+        "candidate_source_count": len(candidate_sources),
+        "selected_source_count": len(set(selected_sources)),
+        "duplicate_selected_source_count": len(selected_sources) - len(set(selected_sources)),
     }

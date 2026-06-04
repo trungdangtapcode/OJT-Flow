@@ -179,10 +179,14 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     )
 
     assert "rankingStackFromPackage" in retrieval_page
+    assert "diversityFromPackage" in retrieval_page
     assert "RerankBadge" in retrieval_page
+    assert "DiversityBadge" in retrieval_page
     assert "packageData.handoff_context.reranker" in retrieval_page
+    assert "packageData.handoff_context.diversity" in retrieval_page
     assert "runtime?.rerank?.enabled" in retrieval_page
     assert "Embedding and rerank provider state" in frontend_architecture
+    assert "source coverage" in frontend_architecture
 
 
 def test_frontend_browser_storage_is_not_used_for_auth_or_state() -> None:
