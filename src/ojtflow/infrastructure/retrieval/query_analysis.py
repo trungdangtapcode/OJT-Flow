@@ -10,6 +10,8 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalFilterSuggestion,
     RetrievalQuery,
     RetrievalQueryAnalysis,
+    RetrievalQueryDiagnostic,
+    RetrievalSearchHint,
 )
 
 QUERY_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
@@ -132,6 +134,59 @@ CLINICAL_EXPANSION_RULES: tuple[QueryExpansionRule, ...] = (
         standards=("OJTFlow policy",),
         variant="patient identifiers sensitive fields PHI human review governance",
     ),
+    QueryExpansionRule(
+        rule_id="medication_normalization",
+        concept="medication_normalization",
+        triggers=("medication", "medications", "drug", "drugs", "rxnorm", "ndc", "dose"),
+        expanded_terms=(
+            "RxNorm normalized medication concept",
+            "drug code mapping",
+            "medication terminology",
+            "dose form",
+        ),
+        standards=("RxNorm",),
+        variant="RxNorm medication drug normalized concept code dose form",
+    ),
+    QueryExpansionRule(
+        rule_id="observational_analytics_export",
+        concept="observational_analytics_export",
+        triggers=("omop", "cdm", "analytics", "cohort", "observational"),
+        expanded_terms=(
+            "OMOP Common Data Model",
+            "observational health data",
+            "analytics export",
+            "source evidence preservation",
+        ),
+        standards=("OMOP",),
+        variant="OMOP Common Data Model observational health analytics export mapping",
+    ),
+    QueryExpansionRule(
+        rule_id="biomedical_literature_search",
+        concept="biomedical_literature_search",
+        triggers=(
+            "pubmed",
+            "medline",
+            "mesh",
+            "literature",
+            "paper",
+            "papers",
+            "study",
+            "studies",
+            "trial",
+            "systematic review",
+            "meta-analysis",
+            "guideline",
+            "evidence",
+        ),
+        expanded_terms=(
+            "MeSH subject heading",
+            "PubMed automatic term mapping",
+            "title abstract text words",
+            "publication type filter",
+        ),
+        standards=("MeSH",),
+        variant="PubMed MEDLINE MeSH title abstract systematic review clinical trial evidence",
+    ),
 )
 
 
@@ -165,6 +220,17 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         rule_ids=rule_ids,
         query_variants=variants,
         filter_suggestions=_filter_suggestions(query, concepts, standards, rule_ids),
+        diagnostics=_query_diagnostics(
+            query,
+            concepts=concepts,
+            standards=standards,
+            tokens=tokens,
+        ),
+        search_hints=_search_hints(
+            query,
+            concepts=concepts,
+            standards=standards,
+        ),
     )
 
 
@@ -287,6 +353,165 @@ def _filter_suggestions(
     return _dedupe_suggestions(suggestions)
 
 
+def _query_diagnostics(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    tokens: set[str],
+) -> list[RetrievalQueryDiagnostic]:
+    diagnostics: list[RetrievalQueryDiagnostic] = []
+    if _is_low_specificity_query(query, tokens=tokens):
+        diagnostics.append(
+            RetrievalQueryDiagnostic(
+                code="low_specificity_query",
+                severity="warning",
+                message="Retrieval query has limited context for healthcare evidence ranking.",
+                suggested_action=(
+                    "Add a schema, resource type, clinical domain, standard, or field list."
+                ),
+            )
+        )
+    if not concepts:
+        diagnostics.append(
+            RetrievalQueryDiagnostic(
+                code="no_healthcare_concept_detected",
+                severity="info",
+                message="No healthcare retrieval concept matched deterministic query rules.",
+                suggested_action=(
+                    "Use explicit terms such as FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, "
+                    "lab, unit, medication, literature, or patient identifier when relevant."
+                ),
+            )
+        )
+    applied_standard = str(query.filters.get("standard_system") or "")
+    suggested_standards = {
+        standard_value
+        for standard in standards
+        for standard_value in [_standard_filter_value(standard)]
+        if standard_value
+    }
+    if applied_standard and suggested_standards and applied_standard not in suggested_standards:
+        diagnostics.append(
+            RetrievalQueryDiagnostic(
+                code="standard_filter_conflicts_with_query",
+                severity="warning",
+                message=(
+                    f"Applied standard_system={applied_standard} does not match detected "
+                    f"query standards: {', '.join(sorted(suggested_standards))}."
+                ),
+                suggested_action=(
+                    "Remove the standard filter or choose one of the detected standard filters."
+                ),
+            )
+        )
+    return diagnostics
+
+
+def _search_hints(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+    standards: list[str],
+) -> list[RetrievalSearchHint]:
+    hints: list[RetrievalSearchHint] = []
+    concept_set = set(concepts)
+    standard_set = set(standards)
+    if "biomedical_literature_search" in concept_set or "MeSH" in standard_set:
+        hints.append(_pubmed_search_hint(query, concepts=concepts))
+    if "fhir_observation_profile" in concept_set or query.resource_type:
+        hints.append(_fhir_search_hint(query))
+    return hints
+
+
+def _pubmed_search_hint(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+) -> RetrievalSearchHint:
+    terms = _pubmed_term_groups(query, concepts=concepts)
+    text_query = " AND ".join(terms) if terms else query.query
+    return RetrievalSearchHint(
+        target="pubmed",
+        query=text_query,
+        rationale=(
+            "Use PubMed automatic term mapping for broad discovery, then verify "
+            "MeSH translations and title/abstract text-word coverage."
+        ),
+        warnings=[
+            "Confirm preferred MeSH headings in PubMed Search Details or the MeSH database before using this as a final literature strategy.",
+            "Quoted phrases, field tags, and wildcards can change PubMed automatic term mapping behavior.",
+        ],
+    )
+
+
+def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
+    resource_type = query.resource_type or "Observation"
+    if resource_type.lower() == "observation":
+        template = (
+            "Observation?code=<loinc-code>&subject=Patient/<id>&date=ge<yyyy-mm-dd>"
+        )
+        rationale = (
+            "FHIR Observation search should bind lab concepts through code, subject, "
+            "and date parameters after validated source fields are available."
+        )
+    else:
+        template = f"{resource_type}?_text=<clinical-text>&_profile=<profile-url>"
+        rationale = (
+            "FHIR resource search should start with resource-specific parameters and "
+            "only fall back to _text when structured fields are unavailable."
+        )
+    return RetrievalSearchHint(
+        target="fhir",
+        query=template,
+        rationale=rationale,
+        warnings=[
+            "This is a template only; replace placeholders with validated identifiers, codes, and dates.",
+            "FHIR servers vary in which optional resource search parameters they implement.",
+        ],
+    )
+
+
+def _pubmed_term_groups(query: RetrievalQuery, *, concepts: list[str]) -> list[str]:
+    groups: list[str] = []
+    concept_set = set(concepts)
+    if "hba1c_laboratory_test" in concept_set:
+        groups.append('("hba1c"[tiab] OR "hemoglobin a1c"[tiab] OR "glycated hemoglobin"[tiab])')
+    if "unit_normalization" in concept_set:
+        groups.append('("unit"[tiab] OR "units"[tiab] OR "valueQuantity"[tiab])')
+    if "medication_normalization" in concept_set:
+        groups.append('("medication"[tiab] OR "drug"[tiab] OR "RxNorm"[tiab])')
+    if _has_any_token(query.query, {"systematic", "meta-analysis", "guideline", "trial"}):
+        groups.append(
+            '("systematic review"[pt] OR "meta-analysis"[pt] OR guideline[tiab] OR trial[tiab])'
+        )
+    if not groups:
+        token_terms = [
+            token
+            for token in _tokens(query.query)
+            if len(token) > 2 and token not in {"and", "the", "for", "with"}
+        ][:6]
+        if token_terms:
+            groups.append(" AND ".join(f"{token}[tiab]" for token in token_terms))
+    return groups
+
+
+def _has_any_token(text: str, candidates: set[str]) -> bool:
+    tokens = set(_tokens(text))
+    lowered = text.lower()
+    return bool(tokens.intersection(candidates)) or any(
+        candidate in lowered for candidate in candidates if " " in candidate or "-" in candidate
+    )
+
+
+def _is_low_specificity_query(query: RetrievalQuery, *, tokens: set[str]) -> bool:
+    if query.fields or query.schema_id or query.resource_type or query.detected_format:
+        return False
+    if any(query.filters.get(key) for key in ("clinical_domain", "standard_system", "source_type")):
+        return False
+    return len(tokens) < 3
+
+
 def _suggestion(
     query: RetrievalQuery,
     *,
@@ -307,7 +532,7 @@ def _suggestion(
 
 
 def _standard_filter_value(standard: str) -> str | None:
-    if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP"}:
+    if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP", "MeSH"}:
         return standard
     if standard == "OJTFlow policy":
         return "ojtflow_policy"

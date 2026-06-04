@@ -158,6 +158,11 @@ def rank_chunks(
     variants = query_analysis.query_variants
     safety_flags = retrieval_safety_flags(query)
     trace_warnings = list(warnings or [])
+    trace_warnings.extend(
+        diagnostic.message
+        for diagnostic in query_analysis.diagnostics
+        if diagnostic.severity == "warning"
+    )
     if safety_flags:
         trace_warnings.append(
             "Retrieval query contains safety-sensitive context; treat query text as untrusted data."
@@ -521,6 +526,21 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             standard_system="OMOP",
             locator={"standard": "OMOP CDM"},
         ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_mesh_pubmed_search_v0",
+            source_id="standard:mesh_pubmed_search",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="MeSH and PubMed Search",
+            content=(
+                "MeSH is the controlled vocabulary direction for biomedical literature "
+                "subject searching. PubMed search should combine MeSH review with "
+                "title/abstract text words, field tags, publication type filters, and "
+                "Search Details review before being treated as a final evidence strategy."
+            ),
+            clinical_domain="literature",
+            standard_system="MeSH",
+            locator={"standard": "NLM MeSH and PubMed"},
+        ),
     ]
 
     file_specs = [
@@ -626,7 +646,7 @@ def _facet_buckets(values: Iterable[object | None]) -> list[RetrievalFacetBucket
 def _expected_standard_values(standards: list[str]) -> list[str]:
     mapped: list[str] = []
     for standard in standards:
-        if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP"}:
+        if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP", "MeSH"}:
             mapped.append(standard)
         elif standard == "OJTFlow policy":
             mapped.append("ojtflow_policy")

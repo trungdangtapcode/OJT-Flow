@@ -693,10 +693,81 @@ function QueryAnalysisBlock({
         <QueryAnalysisCounter label="Rules" value={analysis.ruleIds.length} />
         <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
       </div>
+      <QueryDiagnosticList diagnostics={analysis.diagnostics} />
+      <SearchHintList hints={analysis.searchHints} />
       <TokenList items={analysis.detectedConcepts.map(humanize)} title="Detected concepts" />
       <TokenList items={analysis.standards} title="Standard cues" />
       <FilterSuggestionList suggestions={analysis.filterSuggestions} />
       <TokenList items={analysis.expandedTerms} title="Expanded terms" />
+    </div>
+  );
+}
+
+function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
+  if (!hints.length) {
+    return <TokenList items={[]} title="Medical search hints" />;
+  }
+  return (
+    <div className="grid gap-1.5">
+      <div className="text-xs font-bold uppercase text-muted-foreground">
+        Medical search hints
+      </div>
+      <div className="grid gap-2">
+        {hints.map((hint) => (
+          <div
+            className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
+            key={`${hint.target}-${hint.query}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{humanize(hint.target)}</span>
+              <Badge variant="muted">syntax hint</Badge>
+            </div>
+            <code className="block max-h-24 overflow-auto break-words rounded bg-muted px-2 py-1 font-mono text-xs">
+              {hint.query}
+            </code>
+            <div className="break-words text-muted-foreground">{hint.rationale}</div>
+            {hint.warnings.length ? (
+              <TokenList items={hint.warnings} title="Hint warnings" tone="warning" />
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QueryDiagnosticList({
+  diagnostics,
+}: {
+  diagnostics: QueryDiagnosticStack[];
+}) {
+  if (!diagnostics.length) {
+    return <TokenList items={[]} title="Query diagnostics" />;
+  }
+  return (
+    <div className="grid gap-1.5">
+      <div className="text-xs font-bold uppercase text-muted-foreground">
+        Query diagnostics
+      </div>
+      <div className="grid gap-2">
+        {diagnostics.map((diagnostic) => (
+          <div
+            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
+            key={diagnostic.code}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{humanize(diagnostic.code)}</span>
+              <Badge variant={diagnosticBadgeVariant(diagnostic.severity)}>
+                {humanize(diagnostic.severity)}
+              </Badge>
+            </div>
+            <div className="break-words text-muted-foreground">{diagnostic.message}</div>
+            <div className="break-words font-semibold text-foreground">
+              {diagnostic.suggestedAction}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -977,12 +1048,28 @@ type DiversityStack = {
 
 type QueryAnalysisStack = {
   detectedConcepts: string[];
+  diagnostics: QueryDiagnosticStack[];
   expandedTerms: string[];
   filterSuggestions: FilterSuggestionStack[];
   ruleIds: string[];
+  searchHints: SearchHintStack[];
   standards: string[];
   strategy: string;
   variantCount: number;
+};
+
+type SearchHintStack = {
+  query: string;
+  rationale: string;
+  target: string;
+  warnings: string[];
+};
+
+type QueryDiagnosticStack = {
+  code: string;
+  message: string;
+  severity: string;
+  suggestedAction: string;
 };
 
 type FilterSuggestionStack = {
@@ -1016,9 +1103,11 @@ function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisS
   const queryAnalysis = recordValue(packageData.handoff_context.query_analysis);
   return {
     detectedConcepts: stringArrayValue(queryAnalysis.detected_concepts),
+    diagnostics: queryDiagnosticsValue(queryAnalysis.diagnostics),
     expandedTerms: stringArrayValue(queryAnalysis.expanded_terms),
     filterSuggestions: filterSuggestionsValue(queryAnalysis.filter_suggestions),
     ruleIds: stringArrayValue(queryAnalysis.rule_ids),
+    searchHints: searchHintsValue(queryAnalysis.search_hints),
     standards: stringArrayValue(queryAnalysis.standards),
     strategy: stringValue(queryAnalysis.strategy, "unknown"),
     variantCount: stringArrayValue(queryAnalysis.query_variants).length,
@@ -1100,6 +1189,41 @@ function filterSuggestionsValue(value: unknown): FilterSuggestionStack[] {
       value: stringValue(item.value, "unknown"),
     }))
     .filter((item) => item.field !== "filter" && item.value !== "unknown");
+}
+
+function queryDiagnosticsValue(value: unknown): QueryDiagnosticStack[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      code: stringValue(item.code, "query_diagnostic"),
+      message: stringValue(item.message, "Query diagnostic unavailable."),
+      severity: stringValue(item.severity, "info"),
+      suggestedAction: stringValue(item.suggested_action, "Review the retrieval query."),
+    }))
+    .filter((item) => item.code !== "query_diagnostic");
+}
+
+function searchHintsValue(value: unknown): SearchHintStack[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      query: stringValue(item.query, ""),
+      rationale: stringValue(item.rationale, "Generated from deterministic query analysis."),
+      target: stringValue(item.target, "medical_search"),
+      warnings: stringArrayValue(item.warnings),
+    }))
+    .filter((item) => item.query.length > 0 && item.target !== "medical_search");
+}
+
+function diagnosticBadgeVariant(
+  severity: string,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (severity === "warning") return "warning";
+  if (severity === "error") return "destructive";
+  if (severity === "info") return "muted";
+  return "default";
 }
 
 function highlightedParts(text: string, terms: string[]) {

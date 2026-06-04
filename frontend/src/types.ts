@@ -193,6 +193,8 @@ export type RetrievalQueryAnalysis = {
   rule_ids: string[];
   query_variants: string[];
   filter_suggestions: RetrievalFilterSuggestion[];
+  diagnostics: RetrievalQueryDiagnostic[];
+  search_hints: RetrievalSearchHint[];
 };
 
 export type RetrievalFilterSuggestion = {
@@ -202,6 +204,20 @@ export type RetrievalFilterSuggestion = {
   rule_id: string;
   confidence: number;
   applied: boolean;
+};
+
+export type RetrievalQueryDiagnostic = {
+  code: string;
+  severity: string;
+  message: string;
+  suggested_action: string;
+};
+
+export type RetrievalSearchHint = {
+  target: string;
+  query: string;
+  rationale: string;
+  warnings: string[];
 };
 
 export type RetrievalPackage = {

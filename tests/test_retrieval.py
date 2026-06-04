@@ -82,6 +82,7 @@ def test_query_analysis_expands_clinical_standard_terms() -> None:
     assert ("clinical_domain", "laboratory") in suggestions
     assert ("standard_system", "UCUM") in suggestions
     assert ("standard_system", "LOINC") in suggestions
+    assert analysis.diagnostics == []
 
 
 def test_query_analysis_marks_applied_filter_suggestions() -> None:
@@ -101,6 +102,65 @@ def test_query_analysis_marks_applied_filter_suggestions() -> None:
     assert suggestions[("clinical_domain", "laboratory")] is True
     assert suggestions[("standard_system", "FHIR")] is True
     assert suggestions[("standard_system", "UCUM")] is False
+
+
+def test_query_analysis_reports_quality_diagnostics() -> None:
+    analysis = analyze_query(RetrievalQuery(query="help"))
+
+    diagnostics = {diagnostic.code: diagnostic for diagnostic in analysis.diagnostics}
+
+    assert diagnostics["low_specificity_query"].severity == "warning"
+    assert diagnostics["no_healthcare_concept_detected"].severity == "info"
+
+
+def test_query_analysis_reports_conflicting_standard_filter() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="UCUM units",
+            filters={"standard_system": "LOINC"},
+        )
+    )
+
+    diagnostics = {diagnostic.code: diagnostic for diagnostic in analysis.diagnostics}
+
+    assert diagnostics["standard_filter_conflicts_with_query"].severity == "warning"
+    assert "LOINC" in diagnostics["standard_filter_conflicts_with_query"].message
+    assert "UCUM" in diagnostics["standard_filter_conflicts_with_query"].message
+
+
+def test_query_analysis_detects_medication_and_analytics_routes() -> None:
+    medication = analyze_query(RetrievalQuery(query="medication code normalization"))
+    analytics = analyze_query(RetrievalQuery(query="OMOP analytics export"))
+
+    assert "medication_normalization" in medication.detected_concepts
+    assert "RxNorm" in medication.standards
+    assert "observational_analytics_export" in analytics.detected_concepts
+    assert "OMOP" in analytics.standards
+
+
+def test_query_analysis_builds_medical_search_hints() -> None:
+    literature = analyze_query(
+        RetrievalQuery(query="PubMed systematic review HbA1c units")
+    )
+    fhir = analyze_query(
+        RetrievalQuery(
+            query="FHIR lab Observation",
+            resource_type="Observation",
+        )
+    )
+
+    literature_hints = {hint.target: hint for hint in literature.search_hints}
+    fhir_hints = {hint.target: hint for hint in fhir.search_hints}
+
+    assert "biomedical_literature_search" in literature.detected_concepts
+    assert "MeSH" in literature.standards
+    assert "pubmed" in literature_hints
+    assert "hba1c" in literature_hints["pubmed"].query.lower()
+    assert "[tiab]" in literature_hints["pubmed"].query
+    assert literature_hints["pubmed"].warnings
+    assert "fhir" in fhir_hints
+    assert fhir_hints["fhir"].query.startswith("Observation?")
+    assert "subject=Patient/<id>" in fhir_hints["fhir"].query
 
 
 def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
@@ -132,6 +192,24 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
     assert "UCUM" in analysis["standards"]
+
+
+def test_static_retrieval_ranks_pubmed_mesh_search_evidence() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    package = repository.search(
+        RetrievalQuery(
+            query="PubMed MeSH literature evidence search",
+            top_k=3,
+            filters={"trust_level": "approved"},
+        )
+    )
+
+    source_ids = [item.source_id for item in package.evidence]
+
+    assert "standard:mesh_pubmed_search" in source_ids
+    assert package.coverage is not None
+    assert any(item.value == "MeSH" for item in package.coverage.standard_system)
+    assert package.handoff_context["query_analysis"]["search_hints"][0]["target"] == "pubmed"
 
 
 def test_static_retrieval_filters_by_standard_system() -> None:

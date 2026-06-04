@@ -81,6 +81,9 @@ Current rules detect:
 - FHIR Observation profile cues.
 - CSV/tabular quality cues.
 - sensitive patient identifier context for human-review governance.
+- medication normalization cues and expand toward RxNorm terminology.
+- observational analytics/export cues and expand toward OMOP CDM evidence.
+- biomedical literature-search cues and expand toward MeSH/PubMed search.
 
 The public retrieval package exposes this under
 `handoff_context.query_analysis`:
@@ -102,6 +105,17 @@ The public retrieval package exposes this under
       "confidence": 0.86,
       "applied": false
     }
+  ],
+  "diagnostics": [],
+  "search_hints": [
+    {
+      "target": "fhir",
+      "query": "Observation?code=<loinc-code>&subject=Patient/<id>&date=ge<yyyy-mm-dd>",
+      "rationale": "FHIR Observation search should bind lab concepts through code, subject, and date parameters after validated source fields are available.",
+      "warnings": [
+        "This is a template only; replace placeholders with validated identifiers, codes, and dates."
+      ]
+    }
   ]
 }
 ```
@@ -111,11 +125,35 @@ metadata filters such as `clinical_domain=laboratory` or
 `standard_system=UCUM`, but do not apply them silently. The Retrieval console
 shows confidence and whether each suggestion is already applied.
 
+Diagnostics are deterministic query-quality checks. They flag low-specificity
+queries, missing healthcare concept matches, and standard filters that conflict
+with the standards inferred from query content. Warning diagnostics are copied
+into `RetrievalTrace.warnings` for audit and UI visibility.
+
+Search hints are syntax scaffolds for medical search workflows outside the
+local retrieval index. PubMed hints prefer a conservative combination of
+title/abstract text words and MeSH-review warnings; FHIR hints produce resource
+search templates such as `Observation?code=...&subject=...&date=...`. These
+hints are never executed automatically and are not clinical recommendations.
+For example, `PubMed systematic review HbA1c units` produces a `pubmed` hint
+that combines HbA1c title/abstract terms, unit terms, and publication-type
+terms, while warning operators to confirm preferred MeSH headings before using
+the query as a final literature strategy.
+
 Research basis:
 
-- RAG query transformation patterns: `https://github.com/NirDiamant/RAG_Techniques`
+- RAG query transformation patterns:
+  `https://github.com/NirDiamant/RAG_Techniques/blob/main/all_rag_techniques/query_transformations.ipynb`
 - Metadata-aware self-query retrieval:
-  `https://python.langchain.com/docs/how_to/self_query/`
+  `https://api.python.langchain.com/en/latest/langchain/retrievers/langchain.retrievers.self_query.base.SelfQueryRetriever.html`
+- Elasticsearch query rules for contextual search control:
+  `https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers/rule-retriever`
+- PubMed search, Automatic Term Mapping, field tags, and MeSH behavior:
+  `https://pubmed.ncbi.nlm.nih.gov/help/`
+- NLM MeSH retrieval usage:
+  `https://www.nlm.nih.gov/mesh/intro_retrieval.html`
+- HL7 FHIR R4 search semantics:
+  `https://hl7.org/fhir/R4/search.html`
 - FHIR Observation R4: `https://hl7.org/fhir/r4/observation.html`
 - LOINC laboratory terminology: `https://cdn.loinc.org/about/`
 - UCUM units: `https://ucum.nlm.nih.gov/`

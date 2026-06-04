@@ -104,6 +104,24 @@ class RetrievalFilterSuggestion(ContractModel):
     applied: bool = False
 
 
+class RetrievalQueryDiagnostic(ContractModel):
+    """Operator-facing query quality diagnostic before retrieval execution."""
+
+    code: NonBlankStr
+    severity: NonBlankStr
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+
+
+class RetrievalSearchHint(ContractModel):
+    """External medical search syntax hint derived from deterministic analysis."""
+
+    target: NonBlankStr
+    query: NonBlankStr
+    rationale: NonBlankStr
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RetrievalQueryAnalysis(ContractModel):
     """Auditable query understanding used before first-stage retrieval."""
 
@@ -114,6 +132,8 @@ class RetrievalQueryAnalysis(ContractModel):
     rule_ids: list[str] = Field(default_factory=list)
     query_variants: list[str] = Field(default_factory=list)
     filter_suggestions: list[RetrievalFilterSuggestion] = Field(default_factory=list)
+    diagnostics: list[RetrievalQueryDiagnostic] = Field(default_factory=list)
+    search_hints: list[RetrievalSearchHint] = Field(default_factory=list)
 
 
 class RetrievalPackage(ContractModel):
