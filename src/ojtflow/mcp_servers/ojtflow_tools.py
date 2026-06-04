@@ -16,6 +16,7 @@ from typing import Any
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.interfaces.api.deps import (
+    _build_assistant_service,
     _build_medical_evidence_service,
     _build_workflow_service,
 )
@@ -39,6 +40,22 @@ def create_server():
         workflow_service=_build_workflow_service(),
         medical_evidence_service=_build_medical_evidence_service(),
     )
+    assistant = _build_assistant_service()
+
+    @mcp.tool()
+    async def assistant_chat(
+        message: str,
+        context: dict[str, Any] | None = None,
+        execute_write_actions: bool = False,
+    ) -> dict[str, Any]:
+        """Run one natural-language OJTFlow assistant command over allowlisted tools."""
+
+        response = await assistant.chat(
+            message=message,
+            context=context or {},
+            execute_write_actions=execute_write_actions,
+        )
+        return response.model_dump(mode="json")
 
     @mcp.tool()
     def retrieval_search(
@@ -74,6 +91,33 @@ def create_server():
         return executor.execute_tool(
             "validate_data",
             {"data": data, "input_format": input_format, "schema_id": schema_id},
+        )
+
+    @mcp.tool()
+    def validate_with_evidence(
+        data: str,
+        input_format: str | None = None,
+        schema_id: str | None = "lab_result_v1",
+        fields: list[str] | None = None,
+        clinical_domain: str | None = "laboratory",
+        standard_system: str | None = None,
+        query: str | None = None,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+        """Validate healthcare data and retrieve standards evidence explaining issues."""
+
+        return executor.execute_tool(
+            "validate_with_evidence",
+            {
+                "data": data,
+                "input_format": input_format,
+                "schema_id": schema_id,
+                "fields": fields or [],
+                "clinical_domain": clinical_domain,
+                "standard_system": standard_system,
+                "query": query,
+                "top_k": top_k,
+            },
         )
 
     @mcp.tool()
@@ -122,6 +166,12 @@ def create_server():
         """Inspect one workflow by ID."""
 
         return executor.execute_tool("get_workflow", {"workflow_id": workflow_id})
+
+    @mcp.tool()
+    def workflow_summary(workflow_id: str) -> dict[str, Any]:
+        """Summarize one workflow for operator review and next action."""
+
+        return executor.execute_tool("workflow_summary", {"workflow_id": workflow_id})
 
     @mcp.tool()
     def start_workflow(

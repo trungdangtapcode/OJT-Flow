@@ -6,14 +6,22 @@ operations without forcing operators through every UI screen.
 The first server wraps the same allowlisted tool executor used by
 `POST /api/v1/assistant/chat`:
 
+- `assistant_chat`
 - `retrieval_search`
 - `validate_data`
+- `validate_with_evidence`
 - `convert_data`
 - `fhir_profile`
 - `list_workflows`
 - `list_reviews`
 - `get_workflow`
+- `workflow_summary`
 - `start_workflow`
+
+Use `assistant_chat` for normal natural-language operation. Use
+`validate_with_evidence` when the client already has a payload and wants issues
+plus standards evidence. Use `workflow_summary` when the client already has a
+workflow ID and wants a compact operator view.
 
 `start_workflow` is write-capable and returns `requires_approval` unless the
 caller explicitly passes `execute_write_actions=true`. The server does not

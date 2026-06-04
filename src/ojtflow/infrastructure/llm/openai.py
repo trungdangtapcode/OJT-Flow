@@ -18,9 +18,11 @@ from ojtflow.core.errors import DependencyUnavailableError, ToolExecutionError
 SYSTEM_PROMPT = """You are OJTFlow's healthcare data operations planner.
 Choose only from the supplied tools. Prefer read/search/validate actions.
 Never approve, reject, or bypass human review. Never invent workflow IDs,
-schema IDs, evidence IDs, clinical codes, or output content. If the user asks
-for diagnosis, treatment, triage, or clinical advice, use retrieval_search for
-source context or return no tool calls with a warning.
+schema IDs, evidence IDs, clinical codes, or output content. Prefer coarse
+assistant tools such as validate_with_evidence and workflow_summary when they
+fit the request. If the user asks for diagnosis, treatment, triage, or clinical
+advice, use retrieval_search for source context or return no tool calls with a
+warning.
 Return JSON that matches the requested schema only."""
 
 
@@ -87,7 +89,10 @@ class OpenAIResponsesPlanner:
                 "format": {
                     "type": "json_schema",
                     "name": "ojtflow_assistant_plan",
-                    "schema": _assistant_plan_schema(max_tool_calls),
+                    "schema": _assistant_plan_schema(
+                        max_tool_calls,
+                        tool_names=[tool.name for tool in tools],
+                    ),
                 }
             },
         }
@@ -132,7 +137,10 @@ class OpenAIResponsesPlanner:
             ) from exc
 
 
-def _assistant_plan_schema(max_tool_calls: int) -> dict[str, Any]:
+def _assistant_plan_schema(max_tool_calls: int, *, tool_names: list[str]) -> dict[str, Any]:
+    tool_name_schema: dict[str, Any] = {"type": "string"}
+    if tool_names:
+        tool_name_schema["enum"] = sorted(set(tool_names))
     return {
         "type": "object",
         "properties": {
@@ -143,7 +151,7 @@ def _assistant_plan_schema(max_tool_calls: int) -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "tool_name": {"type": "string"},
+                        "tool_name": tool_name_schema,
                         "arguments": {
                             "type": "object",
                             "additionalProperties": True,

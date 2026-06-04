@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
@@ -87,9 +88,23 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
     input_format = _context_optional_text(context, "input_format")
     target_format = _context_optional_text(context, "target_format") or "json"
     fields = context.get("fields") if isinstance(context.get("fields"), list) else []
+    workflow_id = _context_optional_text(
+        context,
+        "workflow_id",
+    ) or _workflow_id_from_message(message)
 
     tool_calls: list[AssistantToolPlan] = []
-    if "start" in normalized and "workflow" in normalized and data:
+    if workflow_id and "workflow" in normalized and any(
+        word in normalized for word in ("summary", "summarize", "explain", "inspect", "status")
+    ):
+        tool_calls.append(
+            AssistantToolPlan(
+                tool_name="workflow_summary",
+                arguments={"workflow_id": workflow_id},
+                rationale="The user asked for an operator-ready workflow summary.",
+            )
+        )
+    elif "start" in normalized and "workflow" in normalized and data:
         tool_calls.append(
             AssistantToolPlan(
                 tool_name="start_workflow",
@@ -105,14 +120,31 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
             )
         )
     elif ("validate" in normalized or "check" in normalized) and data:
+        validation_tool = (
+            "validate_with_evidence"
+            if any(
+                word in normalized
+                for word in ("evidence", "explain", "why", "standard", "clinical", "medical")
+            )
+            else "validate_data"
+        )
+        validation_args: dict[str, Any] = {
+            "data": data,
+            "input_format": input_format,
+            "schema_id": schema_id or "lab_result_v1",
+        }
+        if validation_tool == "validate_with_evidence":
+            validation_args.update(
+                {
+                    "fields": fields,
+                    "clinical_domain": context.get("clinical_domain"),
+                    "standard_system": context.get("standard_system"),
+                }
+            )
         tool_calls.append(
             AssistantToolPlan(
-                tool_name="validate_data",
-                arguments={
-                    "data": data,
-                    "input_format": input_format,
-                    "schema_id": schema_id or "lab_result_v1",
-                },
+                tool_name=validation_tool,
+                arguments=validation_args,
                 rationale="The user asked for data validation.",
             )
         )
@@ -144,7 +176,17 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
                 rationale="The user asked about human reviews.",
             )
         )
-    elif "workflow" in normalized and any(word in normalized for word in ("list", "show", "recent")):
+    elif workflow_id and "workflow" in normalized:
+        tool_calls.append(
+            AssistantToolPlan(
+                tool_name="get_workflow",
+                arguments={"workflow_id": workflow_id},
+                rationale="The user asked to inspect a specific workflow.",
+            )
+        )
+    elif "workflow" in normalized and any(
+        word in normalized for word in ("list", "show", "recent")
+    ):
         tool_calls.append(
             AssistantToolPlan(
                 tool_name="list_workflows",
@@ -227,6 +269,19 @@ def _findings(tool_results: list) -> list[AssistantFinding]:
             findings.extend(_retrieval_findings(result.output))
         elif result.tool_name == "validate_data":
             findings.extend(_validation_findings(result.output))
+        elif result.tool_name == "validate_with_evidence":
+            validation = (
+                result.output.get("validation")
+                if isinstance(result.output.get("validation"), dict)
+                else {}
+            )
+            retrieval = (
+                result.output.get("retrieval")
+                if isinstance(result.output.get("retrieval"), dict)
+                else {}
+            )
+            findings.extend(_validation_findings(validation))
+            findings.extend(_retrieval_findings(retrieval))
         elif result.tool_name == "convert_data":
             findings.extend(_conversion_findings(result.output))
         elif result.tool_name == "fhir_profile":
@@ -235,6 +290,8 @@ def _findings(tool_results: list) -> list[AssistantFinding]:
             findings.append(_list_finding(result.tool_name, result.output))
         elif result.tool_name == "get_workflow":
             findings.append(_workflow_finding(result.output))
+        elif result.tool_name == "workflow_summary":
+            findings.append(_workflow_summary_finding(result.output))
         elif result.tool_name == "start_workflow":
             findings.append(_workflow_finding(result.output, created=True))
     return findings
@@ -252,7 +309,11 @@ def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
                 f"{trace.get('strategy') or 'the configured retrieval strategy'}."
             ),
             source_tool="retrieval_search",
-            source_ids=[str(item.get("source_id")) for item in evidence[:5] if item.get("source_id")],
+            source_ids=[
+                str(item.get("source_id"))
+                for item in evidence[:5]
+                if item.get("source_id")
+            ],
         )
     ]
     for warning in coverage.get("warnings") or trace.get("warnings") or []:
@@ -279,7 +340,11 @@ def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
 
 
 def _validation_findings(output: dict[str, Any]) -> list[AssistantFinding]:
-    report = output.get("validation_report") if isinstance(output.get("validation_report"), dict) else {}
+    report = (
+        output.get("validation_report")
+        if isinstance(output.get("validation_report"), dict)
+        else {}
+    )
     issues = report.get("issues") if isinstance(report.get("issues"), list) else []
     requires_review = bool(report.get("requires_review"))
     if not issues:
@@ -323,19 +388,26 @@ def _conversion_findings(output: dict[str, Any]) -> list[AssistantFinding]:
 
 def _fhir_findings(output: dict[str, Any]) -> list[AssistantFinding]:
     profile = output.get("profile") if isinstance(output.get("profile"), dict) else {}
-    resource_type = profile.get("resource_type") or output.get("resource_type") or "submitted resource"
+    resource_type = (
+        profile.get("resource_type")
+        or output.get("resource_type")
+        or "submitted resource"
+    )
     issues = profile.get("issues") if isinstance(profile.get("issues"), list) else []
     return [
         AssistantFinding(
             title="FHIR-like profile completed",
-            detail=(
-                f"Profiled {resource_type}."
-                f" Found {len(issues)} FHIR-like shape issue(s)." if issues else f"Profiled {resource_type}."
-            ),
+            detail=_fhir_profile_detail(resource_type, len(issues)),
             severity="warning" if issues else "info",
             source_tool="fhir_profile",
         )
     ]
+
+
+def _fhir_profile_detail(resource_type: str, issue_count: int) -> str:
+    if issue_count:
+        return f"Profiled {resource_type}. Found {issue_count} FHIR-like shape issue(s)."
+    return f"Profiled {resource_type}."
 
 
 def _list_finding(tool_name: str, output: dict[str, Any]) -> AssistantFinding:
@@ -360,6 +432,30 @@ def _workflow_finding(output: dict[str, Any], *, created: bool = False) -> Assis
     )
 
 
+def _workflow_summary_finding(output: dict[str, Any]) -> AssistantFinding:
+    workflow_id = output.get("workflow_id") or "workflow"
+    status = output.get("status") or "unknown"
+    issue_summary = (
+        output.get("issue_summary") if isinstance(output.get("issue_summary"), dict) else {}
+    )
+    evidence_summary = (
+        output.get("evidence_summary")
+        if isinstance(output.get("evidence_summary"), dict)
+        else {}
+    )
+    return AssistantFinding(
+        title="Workflow summary ready",
+        detail=(
+            f"{workflow_id} is {status}. "
+            f"Issues: {issue_summary.get('total', 0)}. "
+            f"Evidence items: {evidence_summary.get('total', 0)}."
+        ),
+        severity="warning" if output.get("requires_review") else "info",
+        source_tool="workflow_summary",
+        source_ids=[str(workflow_id)],
+    )
+
+
 def _evidence_summary(tool_results: list) -> list[AssistantEvidenceSummary]:
     summaries: list[AssistantEvidenceSummary] = []
     seen: set[str] = set()
@@ -374,7 +470,11 @@ def _evidence_summary(tool_results: list) -> list[AssistantEvidenceSummary]:
                     source_id=str(item.get("source_id") or "unknown"),
                     claim=str(item.get("claim") or ""),
                     trust_level=str(item.get("trust_level") or "unknown"),
-                    confidence=item.get("confidence") if isinstance(item.get("confidence"), (int, float)) else None,
+                    confidence=(
+                        item.get("confidence")
+                        if isinstance(item.get("confidence"), (int, float))
+                        else None
+                    ),
                 )
             )
             if len(summaries) >= 5:
@@ -384,9 +484,23 @@ def _evidence_summary(tool_results: list) -> list[AssistantEvidenceSummary]:
 
 def _evidence_items(output: dict[str, Any]) -> list[dict[str, Any]]:
     evidence = output.get("evidence")
-    if not isinstance(evidence, list):
-        return []
-    return [item for item in evidence if isinstance(item, dict)]
+    if isinstance(evidence, list):
+        return [item for item in evidence if isinstance(item, dict)]
+    retrieved_context = output.get("retrieved_context")
+    if isinstance(retrieved_context, list):
+        return [item for item in retrieved_context if isinstance(item, dict)]
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        return _evidence_items(retrieval)
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        retrieved_context = workflow.get("retrieved_context")
+        if isinstance(retrieved_context, list):
+            return [item for item in retrieved_context if isinstance(item, dict)]
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _evidence_items(workflow_retrieval)
+    return []
 
 
 def _top_counts(values) -> str:
@@ -405,11 +519,24 @@ def _suggestions(tool_results: list) -> list[str]:
     suggestions: list[str] = []
     for result in tool_results:
         if result.status == "requires_approval":
-            suggestions.append("Confirm write execution by resending with execute_write_actions=true.")
+            suggestions.append(
+                "Confirm write execution by resending with execute_write_actions=true."
+            )
         if result.tool_name == "retrieval_search" and result.status == "completed":
-            suggestions.append("Open the retrieval trace to inspect source coverage and safety flags.")
-        if result.tool_name == "validate_data" and result.status == "completed":
-            suggestions.append("Start a governed workflow if validation issues need review-gated repair.")
+            suggestions.append(
+                "Open the retrieval trace to inspect source coverage and safety flags."
+            )
+        if (
+            result.tool_name in {"validate_data", "validate_with_evidence"}
+            and result.status == "completed"
+        ):
+            suggestions.append(
+                "Start a governed workflow if validation issues need review-gated repair."
+            )
+        if result.tool_name == "workflow_summary" and result.status == "completed":
+            for action in result.output.get("next_actions") or []:
+                if isinstance(action, str):
+                    suggestions.append(action)
     return _dedupe(suggestions)
 
 
@@ -425,6 +552,11 @@ def _context_text(context: dict[str, Any], key: str) -> str:
 def _context_optional_text(context: dict[str, Any], key: str) -> str | None:
     value = context.get(key)
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _workflow_id_from_message(message: str) -> str | None:
+    match = re.search(r"\bwf_[A-Za-z0-9_-]+\b", message)
+    return match.group(0) if match else None
 
 
 def _dedupe(values: list[str]) -> list[str]:

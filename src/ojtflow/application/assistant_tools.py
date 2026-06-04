@@ -51,6 +51,29 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
             "additionalProperties": False,
         },
     ),
+    "validate_with_evidence": AssistantToolSpec(
+        name="validate_with_evidence",
+        description=(
+            "Validate submitted healthcare data and retrieve trusted evidence that explains "
+            "schema, unit, date, PHI, and interoperability issues."
+        ),
+        permission_scope=ToolPermission.DATA_VALIDATE.value,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "data": {"type": "string"},
+                "input_format": {"type": ["string", "null"]},
+                "schema_id": {"type": ["string", "null"]},
+                "fields": {"type": "array", "items": {"type": "string"}},
+                "clinical_domain": {"type": ["string", "null"]},
+                "standard_system": {"type": ["string", "null"]},
+                "query": {"type": ["string", "null"]},
+                "top_k": {"type": "integer", "minimum": 1, "maximum": 20},
+            },
+            "required": ["data"],
+            "additionalProperties": False,
+        },
+    ),
     "convert_data": AssistantToolSpec(
         name="convert_data",
         description="Convert parsed JSON, YAML, CSV, or markdown text to a target format.",
@@ -114,6 +137,20 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
             "additionalProperties": False,
         },
     ),
+    "workflow_summary": AssistantToolSpec(
+        name="workflow_summary",
+        description=(
+            "Return an operator-ready workflow summary with status, step progress, "
+            "issue counts, evidence counts, review state, and next actions."
+        ),
+        permission_scope=ToolPermission.DATA_READ.value,
+        input_schema={
+            "type": "object",
+            "properties": {"workflow_id": {"type": "string"}},
+            "required": ["workflow_id"],
+            "additionalProperties": False,
+        },
+    ),
     "start_workflow": AssistantToolSpec(
         name="start_workflow",
         description="Create a governed workflow from supplied data and instruction.",
@@ -149,11 +186,13 @@ class OJTFlowToolExecutor:
         self._handlers: dict[str, Callable[[dict[str, Any], str | None], dict[str, Any]]] = {
             "retrieval_search": self._retrieval_search,
             "validate_data": self._validate_data,
+            "validate_with_evidence": self._validate_with_evidence,
             "convert_data": self._convert_data,
             "fhir_profile": self._fhir_profile,
             "list_workflows": self._list_workflows,
             "list_reviews": self._list_reviews,
             "get_workflow": self._get_workflow,
+            "workflow_summary": self._workflow_summary,
             "start_workflow": self._start_workflow,
         }
 
@@ -265,6 +304,48 @@ class OJTFlowToolExecutor:
             schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
         )
 
+    def _validate_with_evidence(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+        validation = self._validate_data(args, owner_user_id)
+        report = validation.get("validation_report") if isinstance(validation, dict) else {}
+        issues = (
+            report.get("issues")
+            if isinstance(report, dict) and isinstance(report.get("issues"), list)
+            else []
+        )
+        schema_id = _optional_str(args.get("schema_id")) or "lab_result_v1"
+        fields = _str_list(args.get("fields")) or _fields_from_validation(validation)
+        issue_kinds = _issue_kinds(issues)
+        query = _optional_str(args.get("query")) or _validation_evidence_query(
+            schema_id=schema_id,
+            fields=fields,
+            issue_kinds=issue_kinds,
+        )
+        retrieval = self._retrieval_search(
+            {
+                "query": query,
+                "top_k": _bounded_int(args.get("top_k"), default=5, minimum=1, maximum=20),
+                "schema_id": schema_id,
+                "fields": fields,
+                "clinical_domain": _optional_str(args.get("clinical_domain")) or "laboratory",
+                "standard_system": _optional_str(args.get("standard_system")),
+                "trust_level": "approved",
+            },
+            owner_user_id,
+        )
+        return {
+            "validation": validation,
+            "retrieval": retrieval,
+            "summary": {
+                "schema_id": schema_id,
+                "issue_count": len(issues),
+                "issue_kinds": issue_kinds,
+                "evidence_count": len(retrieval.get("evidence") or []),
+                "requires_review": (
+                    bool(report.get("requires_review")) if isinstance(report, dict) else False
+                ),
+            },
+        }
+
     def _convert_data(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
         del owner_user_id
         return self.workflow_service.convert_data(
@@ -301,6 +382,62 @@ class OJTFlowToolExecutor:
         )
         return workflow.model_dump(mode="json")
 
+    def _workflow_summary(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+        workflow = self._get_workflow(args, owner_user_id)
+        steps = workflow.get("steps") if isinstance(workflow.get("steps"), list) else []
+        validation_report = (
+            workflow.get("validation_report")
+            if isinstance(workflow.get("validation_report"), dict)
+            else {}
+        )
+        evidence = (
+            workflow.get("retrieved_context")
+            if isinstance(workflow.get("retrieved_context"), list)
+            else []
+        )
+        issues = (
+            validation_report.get("issues")
+            if isinstance(validation_report.get("issues"), list)
+            else []
+        )
+        return {
+            "workflow_id": workflow.get("workflow_id"),
+            "status": workflow.get("status"),
+            "instruction": workflow.get("user_instruction"),
+            "owner_user_id": workflow.get("owner_user_id"),
+            "review_id": (
+                workflow.get("review", {}).get("review_id")
+                if isinstance(workflow.get("review"), dict)
+                else None
+            ),
+            "requires_review": workflow.get("status") == WorkflowStatus.NEEDS_HUMAN_REVIEW.value,
+            "step_summary": {
+                "total": len(steps),
+                "completed": _count_step_status(steps, "completed"),
+                "failed": _count_step_status(steps, "failed"),
+                "running": _count_step_status(steps, "running"),
+            },
+            "issue_summary": {
+                "total": len(issues),
+                "by_kind": _count_dict(
+                    issue.get("kind") for issue in issues if isinstance(issue, dict)
+                ),
+                "by_severity": _count_dict(
+                    issue.get("severity") for issue in issues if isinstance(issue, dict)
+                ),
+            },
+            "evidence_summary": {
+                "total": len(evidence),
+                "source_ids": [
+                    str(item.get("source_id"))
+                    for item in evidence[:5]
+                    if isinstance(item, dict) and item.get("source_id")
+                ],
+            },
+            "next_actions": _workflow_next_actions(workflow, len(issues), len(evidence)),
+            "workflow": workflow,
+        }
+
     def _start_workflow(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
         workflow = self.workflow_service.start_workflow(
             instruction=_required_str(args, "instruction"),
@@ -322,15 +459,27 @@ def _tool_summary(tool_name: str, output: dict[str, Any]) -> str:
     if tool_name == "validate_data":
         issues = ((output.get("validation_report") or {}).get("issues")) or []
         return f"Validation completed with {len(issues)} issue(s)."
+    if tool_name == "validate_with_evidence":
+        summary = output.get("summary") if isinstance(output.get("summary"), dict) else {}
+        return (
+            f"Validation plus evidence completed with {summary.get('issue_count', 0)} "
+            f"issue(s) and {summary.get('evidence_count', 0)} evidence item(s)."
+        )
     if tool_name == "convert_data":
         return f"Converted input to {output.get('output_format', 'requested format')}."
     if tool_name == "fhir_profile":
-        resource_type = output.get("resource_type") or output.get("profile", {}).get("resource_type")
+        profile = output.get("profile") if isinstance(output.get("profile"), dict) else {}
+        resource_type = output.get("resource_type") or profile.get("resource_type")
         return f"FHIR-like profile completed for {resource_type or 'submitted data'}."
     if tool_name in {"list_workflows", "list_reviews"}:
         return f"Returned {len(output.get('items') or [])} item(s)."
     if tool_name == "get_workflow":
         return f"Loaded workflow {output.get('workflow_id', '')}."
+    if tool_name == "workflow_summary":
+        return (
+            f"Summarized workflow {output.get('workflow_id', '')} "
+            f"with status {output.get('status', 'unknown')}."
+        )
     if tool_name == "start_workflow":
         return (
             f"Created workflow {output.get('workflow_id', '')} "
@@ -386,3 +535,76 @@ def _data_format(value: Any, *, default: DataFormat | None) -> DataFormat:
 def _optional_workflow_status(value: Any) -> WorkflowStatus | None:
     normalized = _optional_str(value)
     return WorkflowStatus(normalized) if normalized else None
+
+
+def _fields_from_validation(validation: dict[str, Any]) -> list[str]:
+    profile = validation.get("profile") if isinstance(validation.get("profile"), dict) else {}
+    fields = profile.get("fields")
+    if isinstance(fields, list):
+        return [str(field) for field in fields if str(field).strip()]
+    return []
+
+
+def _issue_kinds(issues: list[Any]) -> list[str]:
+    kinds: list[str] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        kind = issue.get("kind")
+        if isinstance(kind, str) and kind.strip() and kind not in kinds:
+            kinds.append(kind.strip())
+    return kinds
+
+
+def _validation_evidence_query(
+    *,
+    schema_id: str,
+    fields: list[str],
+    issue_kinds: list[str],
+) -> str:
+    parts = [
+        "healthcare data validation evidence",
+        schema_id,
+        "FHIR Observation",
+        "LOINC UCUM ISO date patient identifier",
+    ]
+    if fields:
+        parts.append("fields " + " ".join(fields[:8]))
+    if issue_kinds:
+        parts.append("issues " + " ".join(issue_kinds[:8]))
+    return " ".join(parts)
+
+
+def _count_step_status(steps: list[Any], status: str) -> int:
+    return sum(
+        1
+        for step in steps
+        if isinstance(step, dict) and str(step.get("status") or "").lower() == status
+    )
+
+
+def _count_dict(values) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        if not value:
+            continue
+        key = str(value)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _workflow_next_actions(
+    workflow: dict[str, Any],
+    issue_count: int,
+    evidence_count: int,
+) -> list[str]:
+    actions: list[str] = []
+    if workflow.get("status") == WorkflowStatus.NEEDS_HUMAN_REVIEW.value:
+        actions.append("Review and approve, edit, reject, or clarify the gated workflow.")
+    if issue_count:
+        actions.append("Inspect validation issues before using transformed output.")
+    if evidence_count:
+        actions.append("Open retrieval evidence to confirm standards and limitations.")
+    if not actions:
+        actions.append("Workflow is ready for downstream inspection.")
+    return actions

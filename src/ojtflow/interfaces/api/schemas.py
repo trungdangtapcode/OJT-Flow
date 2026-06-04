@@ -223,7 +223,7 @@ class AssistantChatRequest(ContractModel):
                     "execute_write_actions": False,
                 },
                 {
-                    "message": "Validate this messy lab CSV.",
+                    "message": "Validate this messy lab CSV and explain it with trusted evidence.",
                     "context": {
                         "data": (
                             "date,patient_id,lab_name,value,unit\n"
@@ -231,6 +231,7 @@ class AssistantChatRequest(ContractModel):
                         ),
                         "input_format": "csv",
                         "schema_id": "lab_result_v1",
+                        "clinical_domain": "laboratory",
                     },
                     "execute_write_actions": False,
                 },

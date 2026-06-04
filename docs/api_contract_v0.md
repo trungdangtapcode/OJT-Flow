@@ -630,10 +630,12 @@ is the explicit mode for validation without a schema profile.
 
 ```json
 {
-  "message": "Find trusted evidence for HbA1c CSV rows with missing units.",
+  "message": "Validate this lab CSV and explain the issues with trusted evidence.",
   "context": {
+    "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+    "input_format": "csv",
     "schema_id": "lab_result_v1",
-    "fields": ["lab_name", "value", "unit"],
+    "fields": ["date", "patient_id", "lab_name", "value", "unit"],
     "clinical_domain": "laboratory"
   },
   "execute_write_actions": false
@@ -669,12 +671,19 @@ The assistant can call:
 
 - `retrieval_search`
 - `validate_data`
+- `validate_with_evidence`
 - `convert_data`
 - `fhir_profile`
 - `list_workflows`
 - `list_reviews`
 - `get_workflow`
+- `workflow_summary`
 - `start_workflow`
+
+`validate_with_evidence` is the preferred assistant path for healthcare data
+quality questions because it validates the payload and retrieves standards
+evidence in one response. `workflow_summary` is the preferred assistant path
+for chat-based workflow inspection.
 
 `start_workflow` is a write action. It returns `status="requires_approval"`
 unless the request explicitly sets `execute_write_actions=true`. The assistant

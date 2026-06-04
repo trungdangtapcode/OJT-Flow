@@ -40,6 +40,7 @@ Responses API for a JSON tool plan using `OJT_LLM_MODEL` and
 Tool execution remains deterministic:
 
 - Unknown tool names are skipped.
+- OpenAI planner output is constrained to the configured backend tool names.
 - Tool arguments are normalized by backend code.
 - Workflow ownership is enforced by the API route through authenticated user ID.
 - `start_workflow` requires `execute_write_actions=true`.
@@ -51,10 +52,12 @@ Tool execution remains deterministic:
 
 ```json
 {
-  "message": "Find trusted evidence for HbA1c CSV rows with missing units.",
+  "message": "Validate this lab CSV and explain the issues with trusted evidence.",
   "context": {
+    "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+    "input_format": "csv",
     "schema_id": "lab_result_v1",
-    "fields": ["lab_name", "value", "unit"],
+    "fields": ["date", "patient_id", "lab_name", "value", "unit"],
     "clinical_domain": "laboratory"
   },
   "execute_write_actions": false
@@ -82,14 +85,24 @@ PYTHONPATH=src python -m ojtflow.mcp_servers.ojtflow_tools
 
 Exposed MCP tools:
 
+- `assistant_chat`
 - `retrieval_search`
 - `validate_data`
+- `validate_with_evidence`
 - `convert_data`
 - `fhir_profile`
 - `list_workflows`
 - `list_reviews`
 - `get_workflow`
+- `workflow_summary`
 - `start_workflow`
+
+Use `assistant_chat` for the normal operator path. Use the lower-level tools
+when an automation client already knows the exact backend operation it needs.
+`validate_with_evidence` is the primary healthcare data quality tool: it runs
+validation and retrieval together so the response includes both issues and
+standards evidence. `workflow_summary` is the primary workflow inspection tool
+for chat clients.
 
 The MCP server is for trusted local/operator use in v0. For remote enterprise
 deployment, add OAuth/resource-indicator authorization, per-user tool scoping,

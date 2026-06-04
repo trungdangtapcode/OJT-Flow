@@ -31,16 +31,47 @@ import type {
   Evidence,
 } from "../../types";
 
-const defaultMessage = "Find trusted evidence for HbA1c CSV rows with missing units.";
+const defaultMessage = "Validate this lab CSV and explain the issues with trusted evidence.";
 const defaultContext = JSON.stringify(
   {
+    data:
+      "date,patient_id,lab_name,value,unit\n" +
+      "2026/01/02,P002,HbA1c,,\n" +
+      "2026-01-03,P003,Glucose,110,\n",
+    input_format: "csv",
     schema_id: "lab_result_v1",
-    fields: ["lab_name", "value", "unit"],
+    fields: ["date", "patient_id", "lab_name", "value", "unit"],
     clinical_domain: "laboratory",
   },
   null,
   2,
 );
+
+const assistantExamples = [
+  {
+    label: "Validate + evidence",
+    message: defaultMessage,
+    context: defaultContext,
+  },
+  {
+    label: "Find standards",
+    message: "Find trusted evidence for HbA1c CSV rows with missing units.",
+    context: JSON.stringify(
+      {
+        schema_id: "lab_result_v1",
+        fields: ["lab_name", "value", "unit"],
+        clinical_domain: "laboratory",
+      },
+      null,
+      2,
+    ),
+  },
+  {
+    label: "List reviews",
+    message: "Show pending human reviews.",
+    context: JSON.stringify({ status: "pending" }, null, 2),
+  },
+];
 
 export function AssistantPage() {
   const runtimeQuery = useRuntimeConfigQuery();
@@ -118,7 +149,7 @@ export function AssistantPage() {
               <Bot className="h-5 w-5 text-primary" />
               Command
             </CardTitle>
-            <CardDescription>Assistant actions are backed by typed OJTFlow tools.</CardDescription>
+            <CardDescription>Ask for validation, evidence, workflow status, or review work.</CardDescription>
           </CardHeader>
           <CardContent className="pt-4">
             <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
@@ -137,15 +168,39 @@ export function AssistantPage() {
                 />
               </Label>
 
-              <Label>
-                Context JSON
-                <Textarea
-                  className="min-h-48 resize-y font-mono text-xs"
-                  onChange={(event) => setContextText(event.target.value)}
-                  spellCheck={false}
-                  value={contextText}
-                />
-              </Label>
+              <div className="flex flex-wrap gap-2">
+                {assistantExamples.map((example) => (
+                  <Button
+                    key={example.label}
+                    onClick={() => {
+                      setMessage(example.message);
+                      setContextText(example.context);
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {example.label}
+                  </Button>
+                ))}
+              </div>
+
+              <details className="rounded-md border border-border bg-muted/25">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-black">
+                  Advanced context
+                </summary>
+                <div className="border-t border-border p-3">
+                  <Label>
+                    Context JSON
+                    <Textarea
+                      className="min-h-48 resize-y font-mono text-xs"
+                      onChange={(event) => setContextText(event.target.value)}
+                      spellCheck={false}
+                      value={contextText}
+                    />
+                  </Label>
+                </div>
+              </details>
 
               <label className="flex items-center gap-2 rounded-md border border-border bg-muted/35 px-3 py-2 text-sm font-semibold">
                 <input
