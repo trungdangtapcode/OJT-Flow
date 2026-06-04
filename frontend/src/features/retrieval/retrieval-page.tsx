@@ -108,14 +108,25 @@ type RetrievalRunSummary = {
   topSourceId: string | null;
   warningCount: number;
 };
+type RelevanceJudgmentValue = "relevant" | "partial" | "not_relevant";
+type RelevanceJudgment = {
+  evidenceId: string;
+  judgedAt: string;
+  query: string;
+  runId: string;
+  value: RelevanceJudgmentValue;
+};
+type RelevanceJudgmentIndex = Record<string, RelevanceJudgment>;
 type RetrievalRunComparison = {
   addedEvidenceIds: string[];
   activePayload: RetrievalSearchPayload;
   activeQuery: string;
+  activeRunId: string;
   activeSubmittedAt: string;
   activeSummary: RetrievalRunSummary;
   baselinePayload: RetrievalSearchPayload;
   baselineQuery: string;
+  baselineRunId: string;
   baselineSubmittedAt: string;
   baselineSummary: RetrievalRunSummary;
   candidateDelta: number;
@@ -152,6 +163,31 @@ const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
   "trust_level",
 ]);
 const searchRunHistoryLimit = 6;
+const relevanceJudgmentOptions: Array<{
+  activeVariant: "default" | "secondary" | "destructive";
+  description: string;
+  label: string;
+  value: RelevanceJudgmentValue;
+}> = [
+  {
+    activeVariant: "default",
+    description: "Mark this evidence as relevant for the submitted query.",
+    label: "Relevant",
+    value: "relevant",
+  },
+  {
+    activeVariant: "secondary",
+    description: "Mark this evidence as partially relevant for the submitted query.",
+    label: "Partial",
+    value: "partial",
+  },
+  {
+    activeVariant: "destructive",
+    description: "Mark this evidence as not relevant for the submitted query.",
+    label: "Not relevant",
+    value: "not_relevant",
+  },
+];
 
 export function RetrievalPage() {
   const presetsQuery = useRetrievalPresetsQuery();
@@ -186,6 +222,8 @@ export function RetrievalPage() {
   const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
   const [comparisonBaselineRunId, setComparisonBaselineRunId] =
     React.useState<string | null>(null);
+  const [relevanceJudgments, setRelevanceJudgments] =
+    React.useState<RelevanceJudgmentIndex>({});
 
   const activeRun = React.useMemo(
     () => searchRuns.find((run) => run.runId === activeRunId) ?? null,
@@ -200,6 +238,13 @@ export function RetrievalPage() {
     );
     return baselineRun ? compareSearchRuns(activeRun, baselineRun) : null;
   }, [activeRun, comparisonBaselineRunId, searchRuns]);
+  const comparisonJudgments = React.useMemo(
+    () =>
+      activeRunComparison
+        ? judgmentsForComparison(activeRunComparison, relevanceJudgments)
+        : [],
+    [activeRunComparison, relevanceJudgments],
+  );
   const packageData = activeRun?.packageData ?? searchMutation.data;
   const presets = presetsQuery.data ?? [];
   const searchOptions = searchOptionsQuery.data;
@@ -305,6 +350,16 @@ export function RetrievalPage() {
     setComparisonBaselineRunId(null);
   }, [comparisonBaselineRunId, searchRuns]);
 
+  React.useEffect(() => {
+    const runIds = new Set(searchRuns.map((run) => run.runId));
+    setRelevanceJudgments((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([, judgment]) => runIds.has(judgment.runId)),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [searchRuns]);
+
   const applySearchFilter = (field: SupportedFilterField, value: string) => {
     markCustomSearch();
     const overrides: Partial<RetrievalSearchPayload> = {};
@@ -391,6 +446,33 @@ export function RetrievalPage() {
     setSearchRuns([]);
     setActiveRunId(null);
     setComparisonBaselineRunId(null);
+    setRelevanceJudgments({});
+  };
+
+  const setHitJudgment = (
+    runId: string | null,
+    queryText: string,
+    evidenceId: string,
+    value: RelevanceJudgmentValue,
+  ) => {
+    if (!runId) return;
+    const key = relevanceJudgmentKey(runId, evidenceId);
+    setRelevanceJudgments((current) => {
+      if (current[key]?.value === value) {
+        const { [key]: _removed, ...remaining } = current;
+        return remaining;
+      }
+      return {
+        ...current,
+        [key]: {
+          evidenceId,
+          judgedAt: new Date().toISOString(),
+          query: queryText,
+          runId,
+          value,
+        },
+      };
+    });
   };
 
   const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
@@ -671,6 +753,7 @@ export function RetrievalPage() {
             activeRunId={activeRunId}
             comparison={activeRunComparison}
             comparisonBaselineRunId={comparisonBaselineRunId}
+            comparisonJudgments={comparisonJudgments}
             isSearchPending={searchMutation.isPending}
             onClear={clearSearchRuns}
             onRestore={restoreSearchRun}
@@ -685,8 +768,18 @@ export function RetrievalPage() {
             isSearchPending={searchMutation.isPending}
             isStale={isSearchResultStale}
             onApplyFacet={applySearchFilter}
+            onSetJudgment={(evidenceId, value) =>
+              setHitJudgment(
+                activeRun?.runId ?? null,
+                activeRun?.payload.query ?? submittedSearchPayload?.query ?? "",
+                evidenceId,
+                value,
+              )
+            }
             onRestoreSubmittedSearch={restoreSubmittedSearch}
             packageData={packageData}
+            relevanceJudgments={relevanceJudgments}
+            runId={activeRun?.runId ?? null}
             submittedSearchPayload={submittedSearchPayload}
           />
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
@@ -788,6 +881,7 @@ function SearchRunHistory({
   activeRunId,
   comparison,
   comparisonBaselineRunId,
+  comparisonJudgments,
   isSearchPending,
   onClear,
   onRestore,
@@ -797,6 +891,7 @@ function SearchRunHistory({
   activeRunId: string | null;
   comparison: RetrievalRunComparison | null;
   comparisonBaselineRunId: string | null;
+  comparisonJudgments: RelevanceJudgment[];
   isSearchPending: boolean;
   onClear: () => void;
   onRestore: (run: RetrievalSearchRun) => void;
@@ -903,16 +998,27 @@ function SearchRunHistory({
             </div>
           );
         })}
-        {comparison ? <SearchRunComparison comparison={comparison} /> : null}
+        {comparison ? (
+          <SearchRunComparison
+            comparison={comparison}
+            judgments={comparisonJudgments}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function SearchRunComparison({ comparison }: { comparison: RetrievalRunComparison }) {
+function SearchRunComparison({
+  comparison,
+  judgments,
+}: {
+  comparison: RetrievalRunComparison;
+  judgments: RelevanceJudgment[];
+}) {
   const copyReport = async () => {
     await copyTextToClipboard(
-      JSON.stringify(comparisonReportFromComparison(comparison), null, 2),
+      JSON.stringify(comparisonReportFromComparison(comparison, judgments), null, 2),
     );
   };
 
@@ -1292,16 +1398,22 @@ function SearchResults({
   isSearchPending,
   isStale,
   onApplyFacet,
+  onSetJudgment,
   onRestoreSubmittedSearch,
   packageData,
+  relevanceJudgments,
+  runId,
   submittedSearchPayload,
 }: {
   activeFilters: ActiveFacetFilters;
   isSearchPending: boolean;
   isStale: boolean;
   onApplyFacet: (field: SupportedFilterField, value: string) => void;
+  onSetJudgment: (evidenceId: string, value: RelevanceJudgmentValue) => void;
   onRestoreSubmittedSearch: () => void;
   packageData: RetrievalPackage | undefined;
+  relevanceJudgments: RelevanceJudgmentIndex;
+  runId: string | null;
   submittedSearchPayload: RetrievalSearchPayload | null;
 }) {
   if (!packageData) {
@@ -1362,7 +1474,17 @@ function SearchResults({
             diversitySelection={diversitySelections.get(hit.evidence.evidence_id) ?? null}
             hit={hit}
             index={index}
+            judgment={
+              runId
+                ? relevanceJudgments[
+                    relevanceJudgmentKey(runId, hit.evidence.evidence_id)
+                  ] ?? null
+                : null
+            }
             key={hit.evidence.evidence_id}
+            onSetJudgment={(value) =>
+              onSetJudgment(hit.evidence.evidence_id, value)
+            }
           />
         ))}
         {!packageData.hits.length ? (
@@ -1631,10 +1753,14 @@ function HitCard({
   diversitySelection,
   hit,
   index,
+  judgment,
+  onSetJudgment,
 }: {
   diversitySelection: DiversitySelectionStack | null;
   hit: RetrievalHit;
   index: number;
+  judgment: RelevanceJudgment | null;
+  onSetJudgment: (value: RelevanceJudgmentValue) => void;
 }) {
   const evidence = hit.evidence;
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
@@ -1670,6 +1796,8 @@ function HitCard({
       <p className="break-words text-sm leading-6 text-muted-foreground">
         {formatClaim(evidence.claim)}
       </p>
+
+      <RelevanceJudgmentControl judgment={judgment} onSetJudgment={onSetJudgment} />
 
       <div className="grid gap-2 md:grid-cols-3">
         <ScoreMeter label="Lexical" value={hit.lexical_score} />
@@ -1739,6 +1867,49 @@ function HitCard({
         </pre>
       </details>
     </article>
+  );
+}
+
+function RelevanceJudgmentControl({
+  judgment,
+  onSetJudgment,
+}: {
+  judgment: RelevanceJudgment | null;
+  onSetJudgment: (value: RelevanceJudgmentValue) => void;
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Relevance judgment
+        </div>
+        {judgment ? (
+          <Badge variant={judgmentBadgeVariant(judgment.value)}>
+            {judgmentLabel(judgment.value)}
+          </Badge>
+        ) : (
+          <Badge variant="muted">unjudged</Badge>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {relevanceJudgmentOptions.map((option) => {
+          const active = judgment?.value === option.value;
+          return (
+            <Button
+              aria-pressed={active}
+              key={option.value}
+              onClick={() => onSetJudgment(option.value)}
+              size="sm"
+              title={active ? "Clear this relevance judgment" : option.description}
+              type="button"
+              variant={active ? option.activeVariant : "outline"}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -3476,10 +3647,12 @@ function compareSearchRuns(
     addedEvidenceIds,
     activePayload: activeRun.payload,
     activeQuery: activeRun.payload.query,
+    activeRunId: activeRun.runId,
     activeSubmittedAt: activeRun.submittedAt,
     activeSummary: activeRun.summary,
     baselinePayload: baselineRun.payload,
     baselineQuery: baselineRun.payload.query,
+    baselineRunId: baselineRun.runId,
     baselineSubmittedAt: baselineRun.submittedAt,
     baselineSummary: baselineRun.summary,
     candidateDelta:
@@ -3506,7 +3679,10 @@ function compareSearchRuns(
   };
 }
 
-function comparisonReportFromComparison(comparison: RetrievalRunComparison) {
+function comparisonReportFromComparison(
+  comparison: RetrievalRunComparison,
+  judgments: RelevanceJudgment[],
+) {
   return {
     report_type: "retrieval_run_comparison",
     version: 1,
@@ -3530,6 +3706,15 @@ function comparisonReportFromComparison(comparison: RetrievalRunComparison) {
       warnings: comparison.warningDelta,
     },
     metrics: comparison.metrics,
+    judgments: judgments.map((judgment) => ({
+      doc_id: judgment.evidenceId,
+      evidence_id: judgment.evidenceId,
+      judged_at: judgment.judgedAt,
+      query: judgment.query,
+      rating: relevanceJudgmentRating(judgment.value),
+      run_id: judgment.runId,
+      value: judgment.value,
+    })),
     evidence: {
       added_ids: comparison.addedEvidenceIds,
       removed_ids: comparison.removedEvidenceIds,
@@ -3542,6 +3727,49 @@ function comparisonReportFromComparison(comparison: RetrievalRunComparison) {
       changed: comparison.topSourceChanged,
     },
   };
+}
+
+function judgmentsForComparison(
+  comparison: RetrievalRunComparison,
+  judgments: RelevanceJudgmentIndex,
+): RelevanceJudgment[] {
+  const evidenceIds = new Set([
+    ...comparison.addedEvidenceIds,
+    ...comparison.removedEvidenceIds,
+    ...comparison.retainedEvidenceIds,
+  ]);
+  return Object.values(judgments)
+    .filter(
+      (judgment) =>
+        evidenceIds.has(judgment.evidenceId) &&
+        (judgment.runId === comparison.activeRunId ||
+          judgment.runId === comparison.baselineRunId),
+    )
+    .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId));
+}
+
+function relevanceJudgmentKey(runId: string, evidenceId: string): string {
+  return `${runId}:${evidenceId}`;
+}
+
+function relevanceJudgmentRating(value: RelevanceJudgmentValue): number {
+  if (value === "relevant") return 2;
+  if (value === "partial") return 1;
+  return 0;
+}
+
+function judgmentLabel(value: RelevanceJudgmentValue): string {
+  if (value === "relevant") return "Relevant";
+  if (value === "partial") return "Partial";
+  return "Not relevant";
+}
+
+function judgmentBadgeVariant(
+  value: RelevanceJudgmentValue,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (value === "relevant") return "success";
+  if (value === "partial") return "warning";
+  return "destructive";
 }
 
 function comparisonMetrics({

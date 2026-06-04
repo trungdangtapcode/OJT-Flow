@@ -180,7 +180,9 @@ overlap and churn metrics, evidence IDs that were added, removed, or retained,
 and rank movement for retained evidence so relevance tuning remains inspectable.
 Comparison output should include a copyable JSON report with the active payload,
 baseline payload, summaries, deltas, metrics, evidence changes, and rank
-movement so tuning notes can be reproduced outside the browser.
+movement so tuning notes can be reproduced outside the browser. Result cards
+should collect explicit relevance judgments for the query-document pair and
+include those judgments in comparison reports as imported-judgment scaffolding.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.

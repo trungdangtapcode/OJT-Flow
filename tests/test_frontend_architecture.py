@@ -258,6 +258,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "overlapRatio" in retrieval_page
     assert "churnRate" in retrieval_page
     assert "meanAbsoluteRankDelta" in retrieval_page
+    assert "RelevanceJudgmentControl" in retrieval_page
+    assert "Relevance judgment" in retrieval_page
+    assert "relevanceJudgments" in retrieval_page
+    assert "judgmentsForComparison" in retrieval_page
+    assert "relevanceJudgmentRating" in retrieval_page
+    assert "not_relevant" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page
@@ -309,6 +315,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "rank movement" in frontend_architecture
     assert "copyable JSON report" in frontend_architecture
     assert "overlap and churn metrics" in frontend_architecture
+    assert "explicit relevance judgments" in frontend_architecture
     assert "restore the query builder" in frontend_architecture
     assert "copyable and launchable" in frontend_architecture
     assert "/retrieval/presets" in frontend_architecture
