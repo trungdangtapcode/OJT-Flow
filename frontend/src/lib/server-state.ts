@@ -12,14 +12,21 @@ import {
   getWorkflow,
   getWorkflowOutput,
   getWorkflowStats,
+  listRetrievalSources,
   listReviewSummaries,
   listSchemas,
   listWorkflowEvents,
   listWorkflowSummaries,
+  reindexRetrieval,
+  searchRetrieval,
   submitReview,
   uploadFileWorkflow,
 } from "../api";
-import type { StartWorkflowPayload } from "../types";
+import type {
+  RetrievalReindexPayload,
+  RetrievalSearchPayload,
+  StartWorkflowPayload,
+} from "../types";
 
 export const queryKeys = {
   stats: ["workflow-stats"] as const,
@@ -29,6 +36,7 @@ export const queryKeys = {
   output: (workflowId: string | null) => ["workflow-output", workflowId] as const,
   events: (workflowId: string | null) => ["workflow-events", workflowId] as const,
   schemas: ["schemas"] as const,
+  retrievalSources: ["retrieval-sources"] as const,
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
@@ -115,6 +123,27 @@ export function useRuntimeReadinessQuery() {
 
 export function useSchemasQuery() {
   return useQuery({ queryKey: queryKeys.schemas, queryFn: listSchemas });
+}
+
+export function useRetrievalSourcesQuery() {
+  return useQuery({ queryKey: queryKeys.retrievalSources, queryFn: listRetrievalSources });
+}
+
+export function useRetrievalSearchMutation() {
+  return useMutation({
+    mutationFn: (payload: RetrievalSearchPayload) => searchRetrieval(payload),
+  });
+}
+
+export function useRetrievalReindexMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RetrievalReindexPayload) => reindexRetrieval(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources });
+      toast.success("Retrieval index refreshed");
+    },
+  });
 }
 
 export function useCreateWorkflowMutation() {

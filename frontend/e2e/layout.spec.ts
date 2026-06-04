@@ -7,6 +7,7 @@ import { createDenseWorkflowQueue, createReviewWorkflow } from "./support/workfl
 const primaryRoutes = [
   "/workflows",
   "/reviews",
+  "/retrieval",
   "/workbench",
   "/audit",
   "/schemas",
@@ -133,10 +134,11 @@ async function expectShellAccessibility(page: Page) {
     };
   });
 
-  expect(metrics.navLinks).toHaveLength(6);
+  expect(metrics.navLinks).toHaveLength(7);
   expect(metrics.navLinks.filter((link) => link.ariaCurrent === "page")).toHaveLength(1);
   expect(metrics.navLinks.map((link) => link.label).sort()).toEqual([
     "Audit",
+    "Retrieval",
     "Reviews",
     "Schemas",
     "Settings",

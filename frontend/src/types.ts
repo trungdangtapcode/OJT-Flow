@@ -112,6 +112,99 @@ export type RetrievalTrace = {
   warnings: string[];
 };
 
+export type RetrievalHit = {
+  evidence: Evidence;
+  score: number;
+  lexical_score: number;
+  vector_score: number;
+  rerank_score: number;
+  matched_terms: string[];
+  source_locator: Record<string, unknown>;
+};
+
+export type RetrievalGraphNode = {
+  id: string;
+  label: string;
+  type: string;
+};
+
+export type RetrievalGraphEdge = {
+  source: string;
+  relation: string;
+  target: string;
+  evidence_id?: string | null;
+};
+
+export type RetrievalGraphTriple = {
+  subject: string;
+  predicate: string;
+  object: string;
+  evidence_id?: string | null;
+};
+
+export type RetrievalGraphContext = {
+  graph_contract: string;
+  nodes: RetrievalGraphNode[];
+  edges: RetrievalGraphEdge[];
+  triples: RetrievalGraphTriple[];
+  limits?: Record<string, unknown>;
+};
+
+export type RetrievalPackage = {
+  hits: RetrievalHit[];
+  evidence: Evidence[];
+  trace: RetrievalTrace;
+  handoff_context: {
+    graph_context?: RetrievalGraphContext;
+    [key: string]: unknown;
+  };
+};
+
+export type RetrievalSearchPayload = {
+  query: string;
+  top_k: number;
+  schema_id?: string | null;
+  workflow_id?: string | null;
+  fields: string[];
+  detected_format?: string | null;
+  resource_type?: string | null;
+  clinical_domain?: string | null;
+  standard_system?: string | null;
+  trust_level?: string | null;
+  source_type?: string | null;
+  filters: Record<string, unknown>;
+};
+
+export type RetrievalSource = {
+  source_id: string;
+  source_type: string;
+  title: string;
+  source_version?: string | null;
+  trust_level: string;
+  clinical_domain?: string | null;
+  standard_system?: string | null;
+  chunk_count: number;
+};
+
+export type RetrievalReindexPayload = {
+  include_seeded: boolean;
+  include_corpus: boolean;
+};
+
+export type RetrievalReindexResult = {
+  repository: string;
+  include_seeded: boolean;
+  include_corpus: boolean;
+  chunks_indexed: number;
+  embedding?: Record<string, unknown>;
+  corpus?: {
+    files_seen: number;
+    files_indexed: number;
+    chunks_indexed: number;
+    skipped_files: string[];
+  } | null;
+};
+
 export type HumanReview = {
   review_id: string;
   workflow_id: string;
@@ -215,6 +308,7 @@ export type WorkflowState = {
   handoff_context?: {
     retrieval_trace?: RetrievalTrace;
     retrieval_handoff?: Record<string, unknown>;
+    graph_context?: RetrievalGraphContext;
     [key: string]: unknown;
   };
   audit_event_refs: string[];
@@ -327,6 +421,14 @@ export type RuntimeConfig = {
     provider: string;
     model: string;
     dimensions: number;
+    hf_device?: string;
+    hf_batch_size?: number;
+    hf_cache_dir_configured?: boolean;
+  };
+  retrieval?: {
+    corpus_dir_count: number;
+    chunk_max_chars: number;
+    chunk_overlap_chars: number;
   };
   upload: {
     max_upload_bytes: number;

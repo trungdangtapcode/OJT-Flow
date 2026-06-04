@@ -10,6 +10,7 @@ import { AuthGate } from "./app/auth";
 import { AppProviders } from "./app/providers";
 import { AppShell } from "./components/layout/app-shell";
 import { AuditPage } from "./features/audit/audit-page";
+import { RetrievalPage } from "./features/retrieval/retrieval-page";
 import { ReviewsPage } from "./features/reviews/reviews-page";
 import { SchemasPage } from "./features/schemas/schemas-page";
 import { SettingsPage } from "./features/settings/settings-page";
@@ -51,6 +52,12 @@ const reviewsRoute = createRoute({
   component: ReviewsPage,
 });
 
+const retrievalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/retrieval",
+  component: RetrievalPage,
+});
+
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/audit",
@@ -86,6 +93,7 @@ const routeTree = rootRoute.addChildren([
   workflowsRoute,
   workflowDetailRoute,
   reviewsRoute,
+  retrievalRoute,
   auditRoute,
   schemasRoute,
   workbenchRoute,

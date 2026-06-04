@@ -1,4 +1,4 @@
-import { AlertTriangle, Copy, Download } from "lucide-react";
+import { AlertTriangle, Copy, Download, ListFilter, Network } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "../../components/ui/button";
@@ -18,7 +18,13 @@ import {
   workflowErrorMessage,
 } from "../../lib/server-state";
 import { formatDate, humanize } from "../../lib/utils";
-import type { HumanReview, ValidationIssue, WorkflowEvent, WorkflowState } from "../../types";
+import type {
+  HumanReview,
+  RetrievalGraphContext,
+  ValidationIssue,
+  WorkflowEvent,
+  WorkflowState,
+} from "../../types";
 import { PendingReviewGate } from "./workflow-detail-review";
 
 export function Overview({
@@ -174,6 +180,9 @@ export function Issues({ workflow, compact = false }: { workflow: WorkflowState;
 export function Evidence({ workflow }: { workflow: WorkflowState }) {
   const trace = workflow.handoff_context?.retrieval_trace;
   const safetyFlags = trace?.safety_flags ?? [];
+  const graphContext = workflow.handoff_context
+    ? graphContextFromHandoff(workflow.handoff_context)
+    : undefined;
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border bg-card/70 p-4">
@@ -188,6 +197,7 @@ export function Evidence({ workflow }: { workflow: WorkflowState }) {
         ) : null}
       </CardHeader>
       <CardContent className="p-0 md:p-4">
+        {trace ? <RetrievalTraceSummary graphContext={graphContext} trace={trace} /> : null}
         {safetyFlags.length ? (
           <div className="border-b border-amber-200 bg-amber-50 p-4 text-amber-950 md:mb-4 md:rounded-md md:border">
             <div className="flex min-w-0 items-start gap-3">
@@ -218,6 +228,7 @@ export function Evidence({ workflow }: { workflow: WorkflowState }) {
           </div>
         ) : (
           <div className="grid gap-3 p-4">
+            {graphContext ? <GraphContextSummary graphContext={graphContext} /> : null}
             {workflow.retrieved_context.map((evidence) => (
               <EvidenceCard evidence={evidence} key={evidence.evidence_id} />
             ))}
@@ -226,6 +237,114 @@ export function Evidence({ workflow }: { workflow: WorkflowState }) {
       </CardContent>
     </Card>
   );
+}
+
+function RetrievalTraceSummary({
+  graphContext,
+  trace,
+}: {
+  graphContext?: RetrievalGraphContext;
+  trace: NonNullable<WorkflowState["handoff_context"]>["retrieval_trace"];
+}) {
+  if (!trace) return null;
+  return (
+    <div className="grid gap-3 border-b border-border bg-muted/20 p-4 md:mb-4 md:rounded-md md:border">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <ListFilter className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-extrabold">Retrieval trace</div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-muted-foreground">
+            <span className="rounded-full bg-card px-2 py-1">{trace.candidates_seen} candidates</span>
+            <span className="rounded-full bg-card px-2 py-1">{trace.query_variants.length} query variants</span>
+            <span className="rounded-full bg-card px-2 py-1">{graphContext?.nodes.length ?? 0} graph nodes</span>
+          </div>
+          {trace.warnings.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {trace.warnings.slice(0, 4).map((warning) => (
+                <span
+                  className="max-w-full break-words rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-900"
+                  key={warning}
+                >
+                  {warning}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GraphContextSummary({ graphContext }: { graphContext: RetrievalGraphContext }) {
+  return (
+    <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Network className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <div className="font-extrabold">Graph handoff</div>
+          <div className="mt-1 text-xs font-bold uppercase text-muted-foreground">
+            {graphContext.graph_contract}
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-2 text-sm sm:grid-cols-3">
+        <GraphMetric label="Nodes" value={graphContext.nodes.length} />
+        <GraphMetric label="Edges" value={graphContext.edges.length} />
+        <GraphMetric label="Triples" value={graphContext.triples.length} />
+      </div>
+      {graphContext.triples.length ? (
+        <div className="grid gap-1.5">
+          {graphContext.triples.slice(0, 4).map((triple, index) => (
+            <div
+              className="break-words rounded-md bg-card px-2 py-1.5 text-sm text-muted-foreground"
+              key={`${triple.subject}-${triple.object}-${index}`}
+            >
+              <span className="font-bold text-foreground">{triple.subject}</span>{" "}
+              {triple.predicate} {triple.object}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GraphMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-border bg-card p-2">
+      <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 text-lg font-black tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function graphContextFromHandoff(
+  handoff: NonNullable<WorkflowState["handoff_context"]>,
+): RetrievalGraphContext | undefined {
+  if (handoff.graph_context) return handoff.graph_context;
+  const nested = handoff.retrieval_handoff;
+  if (!isRecord(nested)) return undefined;
+  const graphContext = nested.graph_context;
+  return isRetrievalGraphContext(graphContext) ? graphContext : undefined;
+}
+
+function isRetrievalGraphContext(value: unknown): value is RetrievalGraphContext {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.graph_contract === "string" &&
+    Array.isArray(value.nodes) &&
+    Array.isArray(value.edges) &&
+    Array.isArray(value.triples)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function Output({ workflow }: { workflow: WorkflowState }) {

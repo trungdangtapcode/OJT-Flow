@@ -6,6 +6,7 @@ The product UI is a React/TypeScript operations console for both daily end users
 
 - Workbench for messy healthcare data intake.
 - Workflow detail for status, steps, validation issues, review, output, explanation, evidence, and audit events.
+- Retrieval console for trusted healthcare search, reindexing, ranking trace, and graph handoff inspection.
 - Review queue for pending human decisions.
 - Schema registry read view.
 - Audit and settings surfaces for B2B governance, integrations, and deployment posture.
@@ -50,6 +51,7 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 - Authenticated runtime diagnostics for sanitized configuration and readiness
   checks.
 - React product console for workflow intake, review, schema, audit, and settings surfaces.
+- React retrieval console for direct evidence search, source inventory, and corpus reindexing.
 
 ## Run Tests
 

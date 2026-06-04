@@ -9,6 +9,7 @@ import {
   Layers,
   LogOut,
   RefreshCw,
+  Search,
   Settings,
   UserCircle,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const navGroups = [
     items: [
       { to: "/workflows", label: "Workflows", icon: Layers },
       { to: "/reviews", label: "Reviews", icon: ClipboardCheck },
+      { to: "/retrieval", label: "Retrieval", icon: Search },
       { to: "/audit", label: "Audit", icon: History },
     ],
   },
@@ -65,8 +67,8 @@ export function AppShell() {
 
   return (
     <div className="grid min-h-screen grid-cols-[204px_minmax(0,1fr)] bg-sidebar max-lg:grid-cols-1">
-      <aside className="sticky top-0 z-20 flex h-dvh flex-col border-r border-black/15 bg-sidebar p-3 text-sidebar-foreground shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-r-0 max-lg:p-2 max-sm:gap-0.5 max-sm:p-1.5">
-        <div className="mb-6 flex shrink-0 items-center gap-3 px-1 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:gap-0">
+      <aside className="sticky top-0 z-20 flex h-dvh flex-col border-r border-black/15 bg-sidebar p-3 text-sidebar-foreground shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-r-0 max-lg:p-2 max-sm:grid-cols-1 max-sm:gap-0 max-sm:p-1.5">
+        <div className="mb-6 flex shrink-0 items-center gap-3 px-1 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:hidden">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ccfbf1] text-[11px] font-black text-sidebar shadow-[0_8px_24px_rgba(45,212,191,0.16)] sm:h-9 sm:w-9 sm:rounded-lg sm:text-sm">
             OF
           </div>
