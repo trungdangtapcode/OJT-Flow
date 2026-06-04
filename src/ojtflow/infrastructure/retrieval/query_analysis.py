@@ -25,6 +25,9 @@ QUERY_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
 DEFAULT_MEDICAL_CONCEPT_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "terminologies" / "medical_concepts.json"
 )
+DEFAULT_QUERY_EXPANSION_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_expansion_rules.json"
+)
 
 
 @dataclass(frozen=True)
@@ -39,220 +42,6 @@ class QueryExpansionRule:
     variant: str
 
 
-CLINICAL_EXPANSION_RULES: tuple[QueryExpansionRule, ...] = (
-    QueryExpansionRule(
-        rule_id="lab_observation_identity",
-        concept="laboratory_observation_identity",
-        triggers=("lab", "laboratory", "lab_name", "test", "observation", "result"),
-        expanded_terms=(
-            "laboratory test identifier",
-            "lab name normalization",
-            "observation code",
-            "LOINC code",
-        ),
-        standards=("LOINC",),
-        variant="LOINC laboratory observation test identifiers lab_name code",
-    ),
-    QueryExpansionRule(
-        rule_id="hba1c_lab_test",
-        concept="hba1c_laboratory_test",
-        triggers=("hba1c", "a1c", "hemoglobin a1c", "glycated hemoglobin"),
-        expanded_terms=(
-            "HbA1c",
-            "hemoglobin A1c",
-            "glycated hemoglobin",
-            "laboratory observation value",
-        ),
-        standards=("LOINC", "FHIR"),
-        variant="HbA1c hemoglobin A1c glycated hemoglobin laboratory Observation code value unit",
-    ),
-    QueryExpansionRule(
-        rule_id="unit_normalization",
-        concept="unit_normalization",
-        triggers=(
-            "unit",
-            "units",
-            "missing unit",
-            "mg/dl",
-            "mmol/l",
-            "%",
-            "percent",
-            "valuequantity",
-        ),
-        expanded_terms=(
-            "UCUM computable unit",
-            "ambiguous unit",
-            "missing unit",
-            "valueQuantity unit",
-        ),
-        standards=("UCUM", "FHIR"),
-        variant="UCUM computable units valueQuantity unit code missing ambiguous units",
-    ),
-    QueryExpansionRule(
-        rule_id="fhir_observation_profile",
-        concept="fhir_observation_profile",
-        triggers=(
-            "fhir",
-            "observation",
-            "resourcetype",
-            "valuequantity",
-            "effectivedatetime",
-        ),
-        expanded_terms=(
-            "FHIR Observation",
-            "resourceType",
-            "subject",
-            "effective date",
-            "valueQuantity",
-        ),
-        standards=("FHIR",),
-        variant="FHIR Observation resource status code subject effectiveDateTime valueQuantity",
-    ),
-    QueryExpansionRule(
-        rule_id="csv_tabular_quality",
-        concept="csv_tabular_quality",
-        triggers=(
-            "csv",
-            "row",
-            "rows",
-            "column",
-            "columns",
-            "malformed",
-            "missing cells",
-            "extra cells",
-        ),
-        expanded_terms=(
-            "malformed row",
-            "extra cell",
-            "missing cell",
-            "parse report",
-            "tabular conversion",
-        ),
-        standards=("OJTFlow schema",),
-        variant="CSV malformed rows extra cells missing cells parse report conversion data quality",
-    ),
-    QueryExpansionRule(
-        rule_id="phi_review_context",
-        concept="sensitive_identifier_review",
-        triggers=("patient_id", "patient identifier", "mrn", "dob", "ssn", "identifier"),
-        expanded_terms=(
-            "sensitive identifier",
-            "PHI review",
-            "human review",
-            "patient identifier",
-        ),
-        standards=("OJTFlow policy",),
-        variant="patient identifiers sensitive fields PHI human review governance",
-    ),
-    QueryExpansionRule(
-        rule_id="medication_normalization",
-        concept="medication_normalization",
-        triggers=("medication", "medications", "drug", "drugs", "rxnorm", "ndc", "dose"),
-        expanded_terms=(
-            "RxNorm normalized medication concept",
-            "drug code mapping",
-            "medication terminology",
-            "dose form",
-        ),
-        standards=("RxNorm",),
-        variant="RxNorm medication drug normalized concept code dose form",
-    ),
-    QueryExpansionRule(
-        rule_id="observational_analytics_export",
-        concept="observational_analytics_export",
-        triggers=("omop", "cdm", "analytics", "cohort", "observational"),
-        expanded_terms=(
-            "OMOP Common Data Model",
-            "observational health data",
-            "analytics export",
-            "source evidence preservation",
-        ),
-        standards=("OMOP",),
-        variant="OMOP Common Data Model observational health analytics export mapping",
-    ),
-    QueryExpansionRule(
-        rule_id="biomedical_literature_search",
-        concept="biomedical_literature_search",
-        triggers=(
-            "pubmed",
-            "medline",
-            "mesh",
-            "literature",
-            "paper",
-            "papers",
-            "study",
-            "studies",
-            "trial",
-            "systematic review",
-            "meta-analysis",
-            "guideline",
-            "evidence",
-        ),
-        expanded_terms=(
-            "MeSH subject heading",
-            "PubMed automatic term mapping",
-            "title abstract text words",
-            "publication type filter",
-        ),
-        standards=("MeSH",),
-        variant="PubMed MEDLINE MeSH title abstract systematic review clinical trial evidence",
-    ),
-    QueryExpansionRule(
-        rule_id="clinical_trial_search",
-        concept="clinical_trial_search",
-        triggers=(
-            "clinical trial",
-            "clinical trials",
-            "clinicaltrials",
-            "clinicaltrials.gov",
-            "nct",
-            "recruiting",
-            "eligibility",
-            "enrollment",
-            "intervention",
-            "phase",
-        ),
-        expanded_terms=(
-            "ClinicalTrials.gov API v2",
-            "condition search",
-            "intervention search",
-            "recruitment status filter",
-            "eligibility criteria",
-        ),
-        standards=("ClinicalTrials.gov",),
-        variant="ClinicalTrials.gov API v2 studies condition intervention eligibility recruitment status",
-    ),
-    QueryExpansionRule(
-        rule_id="regulatory_drug_safety_search",
-        concept="regulatory_drug_safety_search",
-        triggers=(
-            "openfda",
-            "faers",
-            "fda",
-            "adverse event",
-            "adverse events",
-            "side effect",
-            "side effects",
-            "boxed warning",
-            "drug label",
-            "drug labeling",
-            "recall",
-            "ndc",
-            "drug safety",
-        ),
-        expanded_terms=(
-            "openFDA drug label API",
-            "openFDA drug adverse event API",
-            "FAERS public reports",
-            "boxed warning",
-            "drug safety signal",
-        ),
-        standards=("openFDA",),
-        variant="openFDA drug label adverse event FAERS boxed warning recall NDC safety",
-    ),
-)
-
-
 def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
     """Return deterministic query analysis and healthcare-aware variants."""
 
@@ -262,7 +51,7 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
     concept_candidates = _concept_candidates(haystack=haystack, tokens=tokens)
     matched_rules = [
         rule
-        for rule in CLINICAL_EXPANSION_RULES
+        for rule in _query_expansion_rules()
         if _rule_matches(rule, haystack=haystack, tokens=tokens)
     ]
     concepts = _dedupe(
@@ -372,6 +161,84 @@ def _concept_candidate_variants(
         )
         for candidate in candidates
     ]
+
+
+def _query_expansion_rules() -> tuple[QueryExpansionRule, ...]:
+    path = os.environ.get("OJT_QUERY_EXPANSION_RULES_PATH")
+    return _load_query_expansion_rules(path or str(DEFAULT_QUERY_EXPANSION_RULE_REGISTRY))
+
+
+def _load_query_expansion_rules(path_text: str) -> tuple[QueryExpansionRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid query expansion registry at {path}: expected rules list")
+
+    rules = tuple(_query_expansion_rule(record, path=path) for record in records)
+    _ensure_unique_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_expansion_rule(record: Any, *, path: Path) -> QueryExpansionRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid query expansion registry at {path}: rule must be an object")
+    required = ("rule_id", "concept", "triggers", "expanded_terms", "standards", "variant")
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(
+            f"Invalid query expansion registry at {path}: missing {missing_text}"
+        )
+    return QueryExpansionRule(
+        rule_id=_required_text(record["rule_id"], field="rule_id", path=path),
+        concept=_required_text(record["concept"], field="concept", path=path),
+        triggers=_text_tuple(record["triggers"], field="triggers", path=path),
+        expanded_terms=_text_tuple(
+            record["expanded_terms"],
+            field="expanded_terms",
+            path=path,
+        ),
+        standards=_text_tuple(record["standards"], field="standards", path=path),
+        variant=_required_text(record["variant"], field="variant", path=path),
+    )
+
+
+def _text_tuple(value: Any, *, field: str, path: Path) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid query expansion registry at {path}: {field} must be a list")
+    items = tuple(
+        normalized
+        for item in value
+        for normalized in [" ".join(str(item).split())]
+        if normalized
+    )
+    if not items:
+        raise ValueError(f"Invalid query expansion registry at {path}: {field} cannot be empty")
+    return items
+
+
+def _required_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid query expansion registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _ensure_unique_rule_ids(rules: tuple[QueryExpansionRule, ...], *, path: Path) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query expansion registry at {path}: duplicate rule_id {duplicate_text}"
+        )
 
 
 def _matching_aliases(

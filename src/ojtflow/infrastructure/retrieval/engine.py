@@ -611,6 +611,15 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             "ojtflow_terminology",
         ),
         (
+            "chunk_dictionary_query_expansion_rules_v1",
+            "dictionary:query_expansion_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Query Expansion Rule Registry",
+            knowledge_root / "retrieval/query_expansion_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
             "chunk_source_catalog_official_healthcare_sources_v1",
             "catalog:official_healthcare_sources_v1",
             EvidenceSourceType.DATA_DICTIONARY,

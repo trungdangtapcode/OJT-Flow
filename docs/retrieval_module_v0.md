@@ -114,6 +114,7 @@ Seeded v0 sources include:
 - RxNorm medication terminology direction
 - OMOP CDM analytics export direction
 - MeSH/PubMed biomedical literature-search direction
+- query expansion rule registry for deterministic healthcare retrieval variants
 - an official healthcare source catalog covering MeSH, RxNorm/RxNav, LOINC,
   FHIR R4, UCUM, MedlinePlus, openFDA, and ClinicalTrials.gov
 - a public dataset ingestion plan that keeps large third-party corpora out of
@@ -131,6 +132,8 @@ not a bulk data dump. It now contains:
   source inventory, access URLs, intended use, and ingestion mode.
 - `knowledge/terminologies/medical_concepts.json`: small controlled-vocabulary
   seed registry used by deterministic query analysis.
+- `knowledge/retrieval/query_expansion_rules.json`: deterministic query
+  expansion rules used by the analyzer before first-stage retrieval.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
   parameter templates for resource-level search hints.
 - `knowledge/corpus/clinical_data_standards_map.md`: project-scope map from
@@ -228,13 +231,21 @@ suggestions can be applied explicitly from the trace panel, which updates the
 query-builder filter state and reruns the search through the same typed
 `/retrieval/search` request path.
 
+Deterministic query expansion rules are loaded from
+`knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query
+analyzer. Each rule defines `rule_id`, `concept`, trigger terms, expanded
+terms, standards, and an auditable query variant. The analyzer reads the
+registry on request, so trusted rule updates can be made as data changes without
+editing source code. `OJT_QUERY_EXPANSION_RULES_PATH` can point the runtime to a
+different registry for local evaluation or deployment-specific rule packs.
+
 Concept candidates are loaded from `knowledge/terminologies/medical_concepts.json`,
-not hardcoded into the query analyzer. The seed registry currently covers a
+also not hardcoded into the query analyzer. The seed registry currently covers a
 small set of common examples across LOINC, RxNorm, and MeSH, such as HbA1c
 `4548-4`, glucose `2345-7`, creatinine `2160-0`, sodium `2951-2`, potassium
 `2823-3`, total cholesterol `2093-3`, metformin RxCUI `6809`, Diabetes Mellitus
 MeSH `D003920`, Hypertension MeSH `D006973`, and chronic kidney failure MeSH
-`D007676`. These candidates improve query variants, filter suggestions, and
+`D007676`. Rules and candidates improve query variants, filter suggestions, and
 operator transparency. They are scaffold data, not a substitute for a full
 licensed terminology service or final clinical code assignment.
 

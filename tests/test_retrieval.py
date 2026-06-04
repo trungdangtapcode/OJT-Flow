@@ -138,6 +138,64 @@ def test_query_analysis_detects_medication_and_analytics_routes() -> None:
     assert "OMOP" in analytics.standards
 
 
+def test_query_analysis_uses_data_driven_expansion_rules(tmp_path, monkeypatch) -> None:
+    registry_path = tmp_path / "query_expansion_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_expansion_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_registry_rule",
+                        "concept": "custom_registry_concept",
+                        "triggers": ["cardioxyz"],
+                        "expanded_terms": ["cardio registry expansion"],
+                        "standards": ["CustomStandard"],
+                        "variant": "custom registry variant",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_QUERY_EXPANSION_RULES_PATH", str(registry_path))
+
+    analysis = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert analysis.detected_concepts == ["custom_registry_concept"]
+    assert analysis.expanded_terms == ["cardio registry expansion"]
+    assert analysis.standards == ["CustomStandard"]
+    assert "custom_registry_rule" in analysis.rule_ids
+    assert "custom registry variant" in analysis.query_variants
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_expansion_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "updated_registry_rule",
+                        "concept": "updated_registry_concept",
+                        "triggers": ["cardioxyz"],
+                        "expanded_terms": ["updated registry expansion"],
+                        "standards": ["UpdatedStandard"],
+                        "variant": "updated registry variant",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert reloaded.detected_concepts == ["updated_registry_concept"]
+    assert reloaded.expanded_terms == ["updated registry expansion"]
+    assert reloaded.standards == ["UpdatedStandard"]
+    assert "updated_registry_rule" in reloaded.rule_ids
+    assert "updated registry variant" in reloaded.query_variants
+
+
 def test_query_analysis_uses_data_driven_medical_concepts() -> None:
     analysis = analyze_query(RetrievalQuery(query="serum glucose mg/dL"))
 
@@ -366,6 +424,7 @@ def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
     assert sources["standard:openfda_drug_apis"].standard_system == "openFDA"
     assert sources["standard:clinical_data_standards_map_v1"].source_type == EvidenceSourceType.HEALTHCARE_STANDARD
     assert sources["dictionary:medical_search_playbook_v1"].clinical_domain == "retrieval"
+    assert sources["dictionary:query_expansion_rules_v1"].standard_system == "ojtflow_retrieval"
 
 
 def test_static_retrieval_integrity_report_matches_seeded_knowledge() -> None:
@@ -425,6 +484,7 @@ def test_knowledge_json_sources_are_valid() -> None:
     for path in [
         ROOT / "knowledge/terminologies/medical_concepts.json",
         ROOT / "knowledge/terminologies/fhir_search_parameters.json",
+        ROOT / "knowledge/retrieval/query_expansion_rules.json",
         ROOT / "knowledge/source_catalog/official_healthcare_sources.json",
     ]:
         parsed = json.loads(path.read_text(encoding="utf-8"))
