@@ -1233,9 +1233,14 @@ def test_retrieval_eval_fixture_passes_static_repository() -> None:
     assert summary.passed is True
     assert summary.case_count == 5
     assert summary.hit_rate_at_k == 1.0
+    assert summary.mean_average_precision_at_k == 1.0
+    assert summary.mean_ndcg_at_k == 1.0
     assert summary.mean_reciprocal_rank == 1.0
+    assert summary.mean_coverage_at_k > 0
     assert summary.total_missing_source_ids == 0
     assert all(result.first_relevant_rank == 1 for result in summary.results)
+    assert all(result.ndcg_at_k == 1.0 for result in summary.results)
+    assert all(result.judged_source_count >= 1 for result in summary.results)
 
 
 def test_retrieval_eval_cli_outputs_json_summary() -> None:
@@ -1254,6 +1259,8 @@ def test_retrieval_eval_cli_outputs_json_summary() -> None:
     assert summary["passed"] is True
     assert summary["case_count"] == 5
     assert summary["hit_rate_at_k"] == 1.0
+    assert summary["mean_average_precision_at_k"] == 1.0
+    assert summary["mean_ndcg_at_k"] == 1.0
 
 
 def _bucket_counts(buckets) -> dict[str, int]:

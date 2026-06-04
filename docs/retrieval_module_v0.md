@@ -808,12 +808,18 @@ python scripts/evaluate-retrieval.py --json
 
 Cases live in `tests/fixtures/retrieval_eval_cases.json`. Each case defines a
 query, optional schema/fields/resource context, `top_k`, filters, and expected
-source IDs. The runner evaluates the static trusted knowledge repository and
-reports:
+source IDs or graded source-level `judgments`. Legacy `expected_source_ids`
+are treated as binary relevant judgments; new cases should prefer explicit
+ratings from 0 to 3 so search tuning can measure rank quality instead of only
+presence/absence. The runner evaluates the static trusted knowledge repository
+and reports:
 
 - hit@k: whether at least one expected source appears in the top `k`.
+- coverage@k: fraction of returned hits that have an explicit judgment.
 - recall@k: expected source coverage in the returned hits.
-- precision@k: fraction of returned hits that are expected sources.
+- precision@k: fraction of returned hits with a non-zero judgment.
+- MAP@k: average precision across positively judged sources.
+- NDCG@k: graded ranking quality against the ideal judged-source order.
 - reciprocal rank: rank-aware score for the first expected source.
 - selected source count: source diversity after final selection.
 
@@ -823,8 +829,13 @@ replacement for a larger curated clinical retrieval benchmark. Add cases when
 new standards, corpora, or workflow domains are added.
 
 Metric choices follow standard ranked-retrieval evaluation practice:
-precision/recall at a cutoff and reciprocal rank are the core signals for
-whether known relevant evidence is retrieved early enough for a user or agent to
-trust the workflow. References: Stanford IR ranked retrieval evaluation
-(`https://nlp.stanford.edu/IR-book/html/htmledition/evaluation-of-ranked-retrieval-results-1.html`)
+coverage, precision/recall at a cutoff, MAP, NDCG, and reciprocal rank are the
+core signals for whether known relevant evidence is retrieved early enough and
+ordered well enough for a user or agent to trust the workflow. References:
+OpenSearch Search Relevance Workbench pointwise evaluation
+(`https://docs.opensearch.org/latest/search-plugins/search-relevance/evaluate-search-quality/`),
+RAGAS retrieval metrics
+(`https://docs.ragas.io/en/v0.3.7/concepts/metrics/available_metrics/`),
+Stanford IR ranked retrieval evaluation
+(`https://nlp.stanford.edu/IR-book/html/htmledition/evaluation-of-ranked-retrieval-results-1.html`),
 and NIST `trec_eval` (`https://github.com/usnistgov/trec_eval`).

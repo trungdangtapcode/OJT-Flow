@@ -54,6 +54,12 @@ def main() -> int:
         help="Minimum mean reciprocal rank required to pass.",
     )
     parser.add_argument(
+        "--min-ndcg",
+        default=0.8,
+        type=float,
+        help="Minimum mean NDCG@k required to pass.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON instead of a compact text report.",
@@ -69,6 +75,7 @@ def main() -> int:
         min_hit_rate_at_k=args.min_hit_rate,
         min_mean_recall_at_k=args.min_mean_recall,
         min_mean_reciprocal_rank=args.min_mrr,
+        min_mean_ndcg_at_k=args.min_ndcg,
     )
 
     if args.json:
@@ -88,8 +95,11 @@ def _format_summary(summary: dict) -> str:
         "Retrieval evaluation",
         f"  cases: {summary['case_count']}",
         f"  hit@k: {summary['hit_rate_at_k']:.3f}",
+        f"  mean coverage@k: {summary['mean_coverage_at_k']:.3f}",
         f"  mean recall@k: {summary['mean_recall_at_k']:.3f}",
         f"  mean precision@k: {summary['mean_precision_at_k']:.3f}",
+        f"  MAP@k: {summary['mean_average_precision_at_k']:.3f}",
+        f"  NDCG@k: {summary['mean_ndcg_at_k']:.3f}",
         f"  MRR: {summary['mean_reciprocal_rank']:.3f}",
         f"  mean selected sources: {summary['mean_selected_source_count']:.3f}",
         f"  missing expected sources: {summary['total_missing_source_ids']}",
@@ -104,6 +114,7 @@ def _format_summary(summary: dict) -> str:
             f"{status} {result['case_id']}: "
             f"RR={result['reciprocal_rank']:.3f}, "
             f"recall={result['recall_at_k']:.3f}, "
+            f"NDCG={result['ndcg_at_k']:.3f}, "
             f"retrieved={', '.join(result['retrieved_source_ids'])}"
         )
     return "\n".join(lines)

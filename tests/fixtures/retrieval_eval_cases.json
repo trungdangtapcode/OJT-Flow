@@ -7,7 +7,14 @@
     "schema_id": "lab_result_v1",
     "top_k": 5,
     "filters": {"trust_level": "approved"},
-    "expected_source_ids": ["schema:lab_result_v1"]
+    "expected_source_ids": ["schema:lab_result_v1"],
+    "judgments": [
+      {
+        "source_id": "schema:lab_result_v1",
+        "rating": 3,
+        "reason": "Canonical schema evidence for required lab result fields."
+      }
+    ]
   },
   {
     "case_id": "missing_units",
@@ -16,7 +23,14 @@
     "fields": ["unit"],
     "top_k": 5,
     "filters": {"trust_level": "approved"},
-    "expected_source_ids": ["terminology:ucum"]
+    "expected_source_ids": ["terminology:ucum"],
+    "judgments": [
+      {
+        "source_id": "terminology:ucum",
+        "rating": 3,
+        "reason": "Canonical terminology evidence for computable lab units."
+      }
+    ]
   },
   {
     "case_id": "fhir_observation",
@@ -25,7 +39,14 @@
     "resource_type": "Observation",
     "top_k": 5,
     "filters": {"trust_level": "approved"},
-    "expected_source_ids": ["standard:fhir_observation_r4"]
+    "expected_source_ids": ["standard:fhir_observation_r4"],
+    "judgments": [
+      {
+        "source_id": "standard:fhir_observation_r4",
+        "rating": 3,
+        "reason": "Canonical FHIR Observation profile evidence for lab observations."
+      }
+    ]
   },
   {
     "case_id": "csv_json_transformation",
@@ -34,7 +55,14 @@
     "detected_format": "csv",
     "top_k": 5,
     "filters": {"trust_level": "approved"},
-    "expected_source_ids": ["example:csv_lab_to_json_records_v1"]
+    "expected_source_ids": ["example:csv_lab_to_json_records_v1"],
+    "judgments": [
+      {
+        "source_id": "example:csv_lab_to_json_records_v1",
+        "rating": 3,
+        "reason": "Canonical transformation example for lab CSV rows to JSON records."
+      }
+    ]
   },
   {
     "case_id": "hba1c_standard_mapping",
@@ -43,6 +71,13 @@
     "fields": ["lab_name", "value", "unit"],
     "top_k": 5,
     "filters": {"trust_level": "approved"},
-    "expected_source_ids": ["terminology:loinc"]
+    "expected_source_ids": ["terminology:loinc"],
+    "judgments": [
+      {
+        "source_id": "terminology:loinc",
+        "rating": 3,
+        "reason": "Canonical terminology evidence for lab test code grounding."
+      }
+    ]
   }
 ]
