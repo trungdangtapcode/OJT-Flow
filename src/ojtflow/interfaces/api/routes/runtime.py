@@ -88,6 +88,7 @@ async def runtime_config(
                 "score_weight": settings.rerank_score_weight,
             },
             "retrieval": {
+                "framework": settings.retrieval_framework,
                 "corpus_dir_count": len(settings.retrieval_corpus_dirs),
                 "chunk_max_chars": settings.retrieval_chunk_max_chars,
                 "chunk_overlap_chars": settings.retrieval_chunk_overlap_chars,

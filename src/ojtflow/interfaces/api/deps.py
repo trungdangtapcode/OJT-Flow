@@ -20,6 +20,7 @@ from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
 from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
+from ojtflow.infrastructure.retrieval.llamaindex_adapter import LlamaIndexRetrievalRepository
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.reranking import build_reranker
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
@@ -100,17 +101,11 @@ def _build_workflow_service() -> WorkflowService:
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()
         events = InMemoryEventRepository()
-        retrieval = StaticRetrievalRepository(
+        retrieval = _build_retrieval_repository(
+            settings,
             knowledge_root,
             embedding_provider,
-            reranker=reranker,
-            rerank_candidate_limit=settings.rerank_candidate_limit,
-            rerank_score_weight=settings.rerank_score_weight,
-            diversity_enabled=settings.retrieval_diversity_enabled,
-            diversity_lambda=settings.retrieval_diversity_lambda,
-            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
-            chunk_max_chars=settings.retrieval_chunk_max_chars,
-            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            reranker,
         )
     elif settings.storage_backend == "sqlite":
         backbone = SQLiteBackboneStore(
@@ -120,17 +115,11 @@ def _build_workflow_service() -> WorkflowService:
         datasets = SQLiteDatasetStore(backbone)
         workflows = SQLiteWorkflowRepository(backbone)
         events = SQLiteEventRepository(backbone)
-        retrieval = StaticRetrievalRepository(
+        retrieval = _build_retrieval_repository(
+            settings,
             knowledge_root,
             embedding_provider,
-            reranker=reranker,
-            rerank_candidate_limit=settings.rerank_candidate_limit,
-            rerank_score_weight=settings.rerank_score_weight,
-            diversity_enabled=settings.retrieval_diversity_enabled,
-            diversity_lambda=settings.retrieval_diversity_lambda,
-            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
-            chunk_max_chars=settings.retrieval_chunk_max_chars,
-            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            reranker,
         )
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
@@ -140,18 +129,12 @@ def _build_workflow_service() -> WorkflowService:
         datasets = PostgresDatasetStore(backbone)
         workflows = PostgresWorkflowRepository(backbone)
         events = PostgresEventRepository(backbone)
-        retrieval = PostgresRetrievalRepository(
-            backbone,
+        retrieval = _build_retrieval_repository(
+            settings,
             knowledge_root,
             embedding_provider,
-            reranker=reranker,
-            rerank_candidate_limit=settings.rerank_candidate_limit,
-            rerank_score_weight=settings.rerank_score_weight,
-            diversity_enabled=settings.retrieval_diversity_enabled,
-            diversity_lambda=settings.retrieval_diversity_lambda,
-            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
-            chunk_max_chars=settings.retrieval_chunk_max_chars,
-            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            reranker,
+            postgres_backbone=backbone,
         )
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
@@ -162,6 +145,51 @@ def _build_workflow_service() -> WorkflowService:
         events=events,
         knowledge=StaticKnowledgeRepository(knowledge_root),
         retrieval=retrieval,
+    )
+
+
+def _build_retrieval_repository(
+    settings: Settings,
+    knowledge_root,
+    embedding_provider,
+    reranker,
+    *,
+    postgres_backbone=None,
+):
+    if settings.retrieval_framework == "llamaindex":
+        return LlamaIndexRetrievalRepository(
+            knowledge_root,
+            embedding_provider=embedding_provider,
+            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+            chunk_max_chars=settings.retrieval_chunk_max_chars,
+            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+        )
+    if postgres_backbone is not None:
+        return PostgresRetrievalRepository(
+            postgres_backbone,
+            knowledge_root,
+            embedding_provider,
+            reranker=reranker,
+            rerank_candidate_limit=settings.rerank_candidate_limit,
+            rerank_score_weight=settings.rerank_score_weight,
+            diversity_enabled=settings.retrieval_diversity_enabled,
+            diversity_lambda=settings.retrieval_diversity_lambda,
+            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+            chunk_max_chars=settings.retrieval_chunk_max_chars,
+            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            hnsw_ef_search=settings.retrieval_hnsw_ef_search,
+        )
+    return StaticRetrievalRepository(
+        knowledge_root,
+        embedding_provider,
+        reranker=reranker,
+        rerank_candidate_limit=settings.rerank_candidate_limit,
+        rerank_score_weight=settings.rerank_score_weight,
+        diversity_enabled=settings.retrieval_diversity_enabled,
+        diversity_lambda=settings.retrieval_diversity_lambda,
+        corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+        chunk_max_chars=settings.retrieval_chunk_max_chars,
+        chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
     )
 
 

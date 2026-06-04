@@ -605,6 +605,7 @@ export type RuntimeConfig = {
     score_weight: number;
   };
   retrieval?: {
+    framework?: string;
     corpus_dir_count: number;
     chunk_max_chars: number;
     chunk_overlap_chars: number;

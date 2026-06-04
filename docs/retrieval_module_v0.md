@@ -23,6 +23,15 @@ Memory and SQLite modes use the static retrieval repository so tests and local
 demos do not require database state. The static adapter still accepts configured
 embedding providers for parity with Postgres mode.
 
+`OJT_RETRIEVAL_FRAMEWORK=custom` is the default and uses the native Postgres or
+static adapters above. `OJT_RETRIEVAL_FRAMEWORK=llamaindex` opts into the
+framework adapter behind the same `RetrievalRepository` port. That adapter uses
+LlamaIndex `Document`/`Node` objects, `SentenceSplitter`, `VectorStoreIndex`,
+and `QueryFusionRetriever`; when `llama-index-retrievers-bm25` is installed, it
+adds BM25 to vector retrieval with reciprocal-rank fusion. The API response
+contract remains `RetrievalPackage`, so workflow state, UI rendering, assistant
+tools, and audit/explanation paths do not depend on LlamaIndex types.
+
 ## Ranking
 
 The retrieval pipeline is auditable in v0:
@@ -219,6 +228,12 @@ Research basis:
 
 - RAG query transformation patterns:
   `https://github.com/NirDiamant/RAG_Techniques`
+- LlamaIndex documents/nodes and node parsing:
+  `https://docs.llamaindex.ai/en/v0.10.34/module_guides/loading/documents_and_nodes/`
+- LlamaIndex vector retriever:
+  `https://docs.llamaindex.ai/en/stable/api_reference/retrievers/vector/`
+- LlamaIndex reciprocal rerank fusion retriever:
+  `https://docs.llamaindex.ai/en/v0.10.22/examples/retrievers/reciprocal_rerank_fusion/`
 - Metadata-aware self-query retrieval:
   `https://api.python.langchain.com/en/latest/langchain/retrievers/langchain.retrievers.self_query.base.SelfQueryRetriever.html`
 - Elasticsearch query rules for contextual search control:

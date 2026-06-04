@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 
 EmbeddingProvider = Literal["deterministic", "openai", "huggingface"]
 LLMProvider = Literal["disabled", "openai"]
+RetrievalFramework = Literal["custom", "llamaindex"]
 RerankProvider = Literal["none", "huggingface"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
 DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
@@ -51,6 +52,7 @@ ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = (
 )
 ALLOWED_LLM_PROVIDERS: tuple[LLMProvider, ...] = ("disabled", "openai")
 ALLOWED_RERANK_PROVIDERS: tuple[RerankProvider, ...] = ("none", "huggingface")
+ALLOWED_RETRIEVAL_FRAMEWORKS: tuple[RetrievalFramework, ...] = ("custom", "llamaindex")
 DETERMINISTIC_EMBEDDING_MODEL = "deterministic-hash-v0"
 DETERMINISTIC_EMBEDDING_DIMENSIONS = 64
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
@@ -226,6 +228,10 @@ class Settings(BaseModel):
         alias="OJT_RETRIEVAL_HNSW_EF_SEARCH",
         ge=1,
         le=1000,
+    )
+    retrieval_framework: RetrievalFramework = Field(
+        default="custom",
+        alias="OJT_RETRIEVAL_FRAMEWORK",
     )
     rerank_provider: RerankProvider = Field(default="none", alias="OJT_RERANK_PROVIDER")
     rerank_model: str = Field(
@@ -416,6 +422,9 @@ def get_settings() -> Settings:
         ),
         OJT_RETRIEVAL_HNSW_EF_SEARCH=int(
             os.getenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", str(DEFAULT_RETRIEVAL_HNSW_EF_SEARCH))
+        ),
+        OJT_RETRIEVAL_FRAMEWORK=_parse_retrieval_framework(
+            os.getenv("OJT_RETRIEVAL_FRAMEWORK")
         ),
         OJT_RERANK_PROVIDER=_parse_rerank_provider(os.getenv("OJT_RERANK_PROVIDER")),
         OJT_RERANK_MODEL=_parse_rerank_model(os.getenv("OJT_RERANK_MODEL")),
@@ -694,6 +703,18 @@ def _parse_rerank_provider(value: str | None) -> RerankProvider:
     allowed = ", ".join(ALLOWED_RERANK_PROVIDERS)
     raise ValueError(
         f"Invalid rerank provider environment value: {value}. Expected one of: {allowed}"
+    )
+
+
+def _parse_retrieval_framework(value: str | None) -> RetrievalFramework:
+    normalized = "custom" if value is None else value.strip().lower()
+    if normalized in {"", "custom", "native", "ojtflow"}:
+        return "custom"
+    if normalized in {"llamaindex", "llama-index", "llama_index"}:
+        return "llamaindex"
+    allowed = ", ".join(ALLOWED_RETRIEVAL_FRAMEWORKS)
+    raise ValueError(
+        f"Invalid retrieval framework environment value: {value}. Expected one of: {allowed}"
     )
 
 

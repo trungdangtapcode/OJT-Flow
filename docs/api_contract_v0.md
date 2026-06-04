@@ -77,6 +77,7 @@ OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200
 OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160
 OJT_RETRIEVAL_DIVERSITY_ENABLED=true
 OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72
+OJT_RETRIEVAL_FRAMEWORK=custom
 ```
 
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
@@ -174,6 +175,13 @@ source do not crowd out other relevant evidence. `OJT_RETRIEVAL_DIVERSITY_LAMBDA
 must be between `0` and `1`; higher values favor relevance and lower values
 favor diversity. Retrieval packages expose the policy and source coverage under
 `handoff_context.diversity`.
+
+`OJT_RETRIEVAL_FRAMEWORK` supports `custom` and `llamaindex`. `custom` keeps the
+native Postgres/static retrieval adapters. `llamaindex` uses the optional
+LlamaIndex adapter behind the same retrieval port and requires
+`pip install -e '.[rag-framework]'` or a Docker build with
+`OJT_PYTHON_EXTRAS=parsing,rag-framework`. The response envelope and
+`RetrievalPackage` schema remain unchanged.
 
 Boundary string fields that drive tool behavior must remain non-blank after
 trimming. Whitespace-only workflow instructions, workflow data, direct

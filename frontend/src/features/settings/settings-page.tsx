@@ -226,6 +226,21 @@ export function SettingsPage() {
                   }
                 />
                 <SettingRow
+                  label="Retrieval framework"
+                  value={
+                    runtime
+                      ? runtime.retrieval?.framework ?? "custom"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                  badge={
+                    runtime?.retrieval?.framework === "llamaindex"
+                      ? "configured"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "native"
+                  }
+                />
+                <SettingRow
                   label="Diversity"
                   value={
                     runtime

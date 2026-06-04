@@ -30,6 +30,10 @@ parsing-full = [
 embeddings-local = [
   "sentence-transformers>=3.0,<4",
 ]
+rag-framework = [
+  "llama-index-core>=0.14,<0.15",
+  "llama-index-retrievers-bm25>=0.7,<0.8",
+]
 mcp = [
   "mcp[cli]>=1.13,<2",
 ]

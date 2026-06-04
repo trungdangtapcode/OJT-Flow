@@ -132,9 +132,10 @@ The image includes the `ojtflow[parsing]` extra by default, which enables
 MarkItDown-backed PDF, DOCX, XLSX/XLS, and PPTX extraction in the local Compose
 runtime. Set `OJT_PYTHON_EXTRAS=parsing,embeddings-local` before building the
 API image when Docker should include local SentenceTransformers embeddings and
-CrossEncoder reranking. Keep `pyproject.toml` ranges compatible for local
-development, and refresh `constraints.txt` only after the full release check
-passes.
+CrossEncoder reranking. Add `rag-framework` when Docker should include the
+optional LlamaIndex retrieval adapter. Keep `pyproject.toml` ranges compatible
+for local development, and refresh `constraints.txt` only after the full release
+check passes.
 
 The default backend storage is Postgres plus local file artifacts:
 
@@ -252,6 +253,31 @@ available or if the configured provider dimension does not match the vector
 column. Operator-provided trusted corpus files are indexed from
 `OJT_RETRIEVAL_CORPUS_DIRS` and can be refreshed through
 `POST /api/v1/retrieval/reindex`.
+
+The native retrieval adapter remains the production default:
+
+```text
+OJT_RETRIEVAL_FRAMEWORK=custom
+```
+
+For framework-backed RAG experiments, install or build the LlamaIndex extra:
+
+```bash
+uv pip install -e '.[rag-framework]'
+OJT_PYTHON_EXTRAS=parsing,rag-framework docker compose build api
+```
+
+Then opt in:
+
+```text
+OJT_RETRIEVAL_FRAMEWORK=llamaindex
+```
+
+That adapter uses LlamaIndex Documents/Nodes, `SentenceSplitter`,
+`VectorStoreIndex`, and `QueryFusionRetriever`. When
+`llama-index-retrievers-bm25` is installed, it adds BM25 to vector retrieval
+with reciprocal-rank fusion. The API response shape stays the same because the
+framework is isolated behind the existing retrieval repository port.
 
 Second-stage reranking is opt-in. The first stage retrieves a broader candidate
 set with lexical, vector, and reciprocal-rank-fusion signals. When
