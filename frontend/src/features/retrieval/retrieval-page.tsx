@@ -46,6 +46,7 @@ import type {
   RetrievalPackage,
   RetrievalCoverage,
   RetrievalFacets,
+  RetrievalSearchPayload,
   RetrievalSource,
   RuntimeConfig,
 } from "../../types";
@@ -61,6 +62,12 @@ const sourceTypeOptions = [
   "tool_output",
 ];
 const trustOptions = ["approved", "internal", "user_provided", "untrusted"];
+const supportedSuggestionFilterFields = new Set([
+  "clinical_domain",
+  "standard_system",
+  "source_type",
+  "trust_level",
+]);
 
 export function RetrievalPage() {
   const sourcesQuery = useRetrievalSourcesQuery();
@@ -89,10 +96,11 @@ export function RetrievalPage() {
   const sources = sourcesQuery.data ?? [];
   const domains = uniqueValues(sources.map((source) => source.clinical_domain));
   const standards = uniqueValues(sources.map((source) => source.standard_system));
+  const domainOptions = uniqueValues([...domains, clinicalDomain]);
+  const standardOptions = uniqueValues([...standards, standardSystem]);
   const graphContext = packageData?.handoff_context.graph_context;
 
-  const runSearch = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const executeSearch = async (overrides: Partial<RetrievalSearchPayload> = {}) => {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
       setFormError("Enter a retrieval query before searching.");
@@ -111,7 +119,34 @@ export function RetrievalPage() {
       trust_level: trustLevel || null,
       source_type: sourceType || null,
       filters: {},
+      ...overrides,
     });
+  };
+
+  const runSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await executeSearch();
+  };
+
+  const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
+    const value = suggestion.value;
+    const overrides: Partial<RetrievalSearchPayload> = {};
+    if (suggestion.field === "clinical_domain") {
+      setClinicalDomain(value);
+      overrides.clinical_domain = value;
+    } else if (suggestion.field === "standard_system") {
+      setStandardSystem(value);
+      overrides.standard_system = value;
+    } else if (suggestion.field === "source_type") {
+      setSourceType(value);
+      overrides.source_type = value;
+    } else if (suggestion.field === "trust_level") {
+      setTrustLevel(value);
+      overrides.trust_level = value;
+    } else {
+      return;
+    }
+    void executeSearch(overrides);
   };
 
   const reindex = () => {
@@ -257,7 +292,7 @@ export function RetrievalPage() {
                   Domain
                   <Select onChange={(event) => setClinicalDomain(event.target.value)} value={clinicalDomain}>
                     <option value="">Any domain</option>
-                    {domains.map((domain) => (
+                    {domainOptions.map((domain) => (
                       <option key={domain} value={domain}>{humanize(domain)}</option>
                     ))}
                   </Select>
@@ -266,7 +301,7 @@ export function RetrievalPage() {
                   Standard
                   <Select onChange={(event) => setStandardSystem(event.target.value)} value={standardSystem}>
                     <option value="">Any standard</option>
-                    {standards.map((standard) => (
+                    {standardOptions.map((standard) => (
                       <option key={standard} value={standard}>{standard}</option>
                     ))}
                   </Select>
@@ -306,7 +341,11 @@ export function RetrievalPage() {
         <div className="grid min-w-0 gap-5">
           <SearchResults packageData={packageData} />
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
-            <TracePanel packageData={packageData} />
+            <TracePanel
+              isSearchPending={searchMutation.isPending}
+              onApplyFilterSuggestion={applyFilterSuggestion}
+              packageData={packageData}
+            />
             <GraphPanel graphContext={graphContext} />
           </div>
           <IntegrityPanel
@@ -602,7 +641,15 @@ function ScoreMeter({ label, value }: { label: string; value: number }) {
   );
 }
 
-function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined }) {
+function TracePanel({
+  isSearchPending,
+  onApplyFilterSuggestion,
+  packageData,
+}: {
+  isSearchPending: boolean;
+  onApplyFilterSuggestion: (suggestion: FilterSuggestionStack) => void;
+  packageData: RetrievalPackage | undefined;
+}) {
   const trace = packageData?.trace;
   const stack = packageData ? rankingStackFromPackage(packageData) : null;
   const diversity = packageData ? diversityFromPackage(packageData) : null;
@@ -644,7 +691,11 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
               label="Filters"
               value={Object.keys(trace.filters_applied).length ? JSON.stringify(trace.filters_applied) : "none"}
             />
-            <QueryAnalysisBlock analysis={queryAnalysis} />
+            <QueryAnalysisBlock
+              analysis={queryAnalysis}
+              isSearchPending={isSearchPending}
+              onApplyFilterSuggestion={onApplyFilterSuggestion}
+            />
             <CoverageDiagnosticsBlock coverage={coverage} />
             <TokenList items={trace.query_variants} title="Query variants" />
             <TokenList items={trace.safety_flags.map(humanize)} title="Safety flags" tone="warning" />
@@ -698,8 +749,12 @@ function CoverageDiagnosticsBlock({
 
 function QueryAnalysisBlock({
   analysis,
+  isSearchPending,
+  onApplyFilterSuggestion,
 }: {
   analysis: QueryAnalysisStack | null;
+  isSearchPending: boolean;
+  onApplyFilterSuggestion: (suggestion: FilterSuggestionStack) => void;
 }) {
   if (!analysis) {
     return <TraceFact label="Query analysis" value="unavailable" />;
@@ -723,7 +778,11 @@ function QueryAnalysisBlock({
       <SearchHintList hints={analysis.searchHints} />
       <TokenList items={analysis.detectedConcepts.map(humanize)} title="Detected concepts" />
       <TokenList items={analysis.standards} title="Standard cues" />
-      <FilterSuggestionList suggestions={analysis.filterSuggestions} />
+      <FilterSuggestionList
+        isSearchPending={isSearchPending}
+        onApplySuggestion={onApplyFilterSuggestion}
+        suggestions={analysis.filterSuggestions}
+      />
       <TokenList items={analysis.expandedTerms} title="Expanded terms" />
     </div>
   );
@@ -848,8 +907,12 @@ function QueryDiagnosticList({
 }
 
 function FilterSuggestionList({
+  isSearchPending,
+  onApplySuggestion,
   suggestions,
 }: {
+  isSearchPending: boolean;
+  onApplySuggestion: (suggestion: FilterSuggestionStack) => void;
   suggestions: FilterSuggestionStack[];
 }) {
   if (!suggestions.length) {
@@ -861,26 +924,47 @@ function FilterSuggestionList({
         Suggested filters
       </div>
       <div className="flex min-w-0 flex-wrap gap-1.5">
-        {suggestions.map((suggestion) => (
-          <span
-            className={cn(
-              "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs font-bold",
-              suggestion.applied
-                ? "bg-emerald-100 text-emerald-900"
-                : "bg-card text-muted-foreground",
-            )}
-            key={`${suggestion.field}-${suggestion.value}`}
-            title={suggestion.reason}
-          >
-            <span className="break-words">
-              {humanize(suggestion.field)}={humanize(suggestion.value)}
+        {suggestions.map((suggestion) => {
+          const actionable =
+            !suggestion.applied && supportedSuggestionFilterFields.has(suggestion.field);
+          return (
+            <span
+              className={cn(
+                "inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold",
+                suggestion.applied
+                  ? "bg-emerald-100 text-emerald-900"
+                  : "bg-card text-muted-foreground",
+              )}
+              key={`${suggestion.field}-${suggestion.value}`}
+              title={suggestion.reason}
+            >
+              <span className="break-words">
+                {humanize(suggestion.field)}={humanize(suggestion.value)}
+              </span>
+              <span className="tabular-nums">
+                {Math.round(suggestion.confidence * 100)}%
+              </span>
+              {suggestion.applied ? <span>applied</span> : null}
+              {actionable ? (
+                <button
+                  aria-label={`Apply ${humanize(suggestion.field)} ${humanize(suggestion.value)} filter`}
+                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2 text-[11px] font-black text-foreground hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isSearchPending}
+                  onClick={() => onApplySuggestion(suggestion)}
+                  title={`Apply ${humanize(suggestion.field)}=${humanize(suggestion.value)}`}
+                  type="button"
+                >
+                  {isSearchPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ListFilter className="h-3 w-3" />
+                  )}
+                  Apply
+                </button>
+              ) : null}
             </span>
-            <span className="tabular-nums">
-              {Math.round(suggestion.confidence * 100)}%
-            </span>
-            {suggestion.applied ? <span>applied</span> : null}
-          </span>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

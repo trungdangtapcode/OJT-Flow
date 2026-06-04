@@ -1,4 +1,5 @@
 import {
+  Bot,
   CheckCircle2,
   Clock3,
   Database,
@@ -29,12 +30,15 @@ import {
   useRuntimeConfigQuery,
   useRuntimeHealthQuery,
   useRuntimeReadinessQuery,
+  useRuntimeAssistantSettingsMutation,
   useRuntimeRetrievalSettingsMutation,
   useSchemasQuery,
   workflowErrorMessage,
 } from "../../lib/server-state";
 import type {
   ReadinessCheck,
+  RuntimeAssistantSettings,
+  RuntimeAssistantSettingsPayload,
   RuntimeConfig,
   RuntimeReadiness,
   RuntimeRetrievalSettings,
@@ -400,6 +404,11 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          <AssistantSettingsForm
+            isLoading={runtimeConfigQuery.isLoading}
+            runtime={runtime}
+          />
+
           <RetrievalSettingsForm
             isLoading={runtimeConfigQuery.isLoading}
             runtime={runtime}
@@ -441,6 +450,175 @@ type RetrievalSettingsFormState = {
   diversityLambda: string;
   hnswEfSearch: string;
 };
+
+type AssistantSettingsFormState = {
+  provider: "disabled" | "openai";
+  model: string;
+  timeoutSeconds: string;
+  maxToolCalls: string;
+};
+
+function AssistantSettingsForm({
+  isLoading,
+  runtime,
+}: {
+  isLoading: boolean;
+  runtime: RuntimeConfig | undefined;
+}) {
+  const mutation = useRuntimeAssistantSettingsMutation();
+  const [form, setForm] = React.useState<AssistantSettingsFormState | null>(null);
+  const [localError, setLocalError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const settings = runtimeAssistantSettingsFromRuntime(runtime);
+    if (!settings) return;
+    setForm({
+      provider: settings.llm_provider,
+      model: settings.llm_model,
+      timeoutSeconds: String(settings.llm_timeout_seconds),
+      maxToolCalls: String(settings.llm_max_tool_calls),
+    });
+  }, [runtime]);
+
+  const updateField = <Key extends keyof AssistantSettingsFormState>(
+    key: Key,
+    value: AssistantSettingsFormState[Key],
+  ) => {
+    setForm((current) => (current ? { ...current, [key]: value } : current));
+    if (localError) setLocalError(null);
+  };
+
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form) return;
+    try {
+      mutation.mutate(runtimeAssistantPayloadFromForm(form));
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openAiMissing =
+    form?.provider === "openai" && runtime && runtime.llm?.openai_configured === false;
+
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-primary" />
+              Assistant runtime
+            </CardTitle>
+            <CardDescription>Operator-tuned planner mode and governed tool-call limits.</CardDescription>
+          </div>
+          {runtime?.llm?.runtime_settings_configured ? (
+            <Badge variant="success">reloadable</Badge>
+          ) : (
+            <Badge variant="muted">config-backed</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4 sm:pt-5">
+        {!form ? (
+          <Notice title={isLoading ? "Runtime loading" : "Runtime settings unavailable"}>
+            Backend runtime config has not returned editable Assistant settings.
+          </Notice>
+        ) : (
+          <form className="grid gap-4" onSubmit={save}>
+            {openAiMissing ? (
+              <Notice title="OpenAI key missing">
+                OpenAI planner mode requires OJT_OPENAI_API_KEY or OPENAI_API_KEY in the backend environment.
+              </Notice>
+            ) : null}
+            {localError ? (
+              <Notice title="Settings blocked" tone="danger">
+                {localError}
+              </Notice>
+            ) : null}
+            {mutation.isError ? (
+              <Notice title="Settings update failed" tone="danger">
+                {workflowErrorMessage(mutation.error)}
+              </Notice>
+            ) : null}
+            {mutation.data?.reloaded ? (
+              <Notice title="Settings reloaded">
+                Assistant planner is {mutation.data.settings.llm_provider}.
+              </Notice>
+            ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Label>
+                Planner
+                <Select
+                  onChange={(event) =>
+                    updateField(
+                      "provider",
+                      event.target.value === "openai" ? "openai" : "disabled",
+                    )
+                  }
+                  value={form.provider}
+                >
+                  <option value="disabled">Deterministic</option>
+                  <option value="openai">OpenAI</option>
+                </Select>
+              </Label>
+              <Label>
+                Model
+                <Input
+                  onChange={(event) => updateField("model", event.target.value)}
+                  placeholder="gpt-4.1-mini"
+                  type="text"
+                  value={form.model}
+                />
+              </Label>
+              <Label>
+                Timeout seconds
+                <Input
+                  min={1}
+                  max={300}
+                  onChange={(event) => updateField("timeoutSeconds", event.target.value)}
+                  step={0.5}
+                  type="number"
+                  value={form.timeoutSeconds}
+                />
+              </Label>
+              <Label>
+                Max tool calls
+                <Input
+                  min={1}
+                  max={12}
+                  onChange={(event) => updateField("maxToolCalls", event.target.value)}
+                  type="number"
+                  value={form.maxToolCalls}
+                />
+              </Label>
+            </div>
+
+            <div className="flex min-w-0 flex-wrap gap-2">
+              <Badge variant={runtime?.llm?.openai_configured ? "success" : "warning"}>
+                {runtime?.llm?.openai_configured ? "OpenAI key configured" : "OpenAI key missing"}
+              </Badge>
+              <Badge variant="muted">
+                {runtime?.llm?.base_url_configured ? "base URL configured" : "base URL missing"}
+              </Badge>
+              <Badge variant="success">write tools gated</Badge>
+            </div>
+
+            <Button disabled={mutation.isPending} type="submit">
+              {mutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save and reload
+            </Button>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function RetrievalSettingsForm({
   isLoading,
@@ -660,6 +838,45 @@ function runtimeRetrievalSettingsFromRuntime(
     retrieval_diversity_enabled: retrieval.diversity_enabled,
     retrieval_diversity_lambda: retrieval.diversity_lambda,
     retrieval_hnsw_ef_search: retrieval.hnsw_ef_search,
+  };
+}
+
+function runtimeAssistantSettingsFromRuntime(
+  runtime: RuntimeConfig | undefined,
+): RuntimeAssistantSettings | null {
+  const llm = runtime?.llm;
+  const settings = llm?.runtime_settings;
+  if (settings) return settings;
+  if (!llm) return null;
+  const provider = llm.provider === "openai" ? "openai" : "disabled";
+  if (
+    typeof llm.model !== "string" ||
+    !llm.model.trim() ||
+    !isFiniteNumber(llm.timeout_seconds) ||
+    !isFiniteNumber(llm.max_tool_calls)
+  ) {
+    return null;
+  }
+  return {
+    llm_provider: provider,
+    llm_model: llm.model,
+    llm_timeout_seconds: llm.timeout_seconds,
+    llm_max_tool_calls: llm.max_tool_calls,
+  };
+}
+
+function runtimeAssistantPayloadFromForm(
+  form: AssistantSettingsFormState,
+): RuntimeAssistantSettingsPayload {
+  const llm_model = form.model.trim();
+  if (!llm_model) {
+    throw new Error("Model must not be blank.");
+  }
+  return {
+    llm_provider: form.provider,
+    llm_model,
+    llm_timeout_seconds: numberField(form.timeoutSeconds, "Timeout seconds", 1, 300),
+    llm_max_tool_calls: integerField(form.maxToolCalls, "Max tool calls", 1, 12),
   };
 }
 

@@ -37,6 +37,11 @@ deterministic and token-free. `OJT_LLM_PROVIDER=openai` asks the OpenAI
 Responses API for a JSON tool plan using `OJT_LLM_MODEL` and
 `OJT_OPENAI_API_KEY` or `OPENAI_API_KEY`.
 
+Operators can change non-secret planner settings from Settings -> Assistant
+runtime or with `PUT /api/v1/runtime/assistant-settings`. Runtime changes are
+stored in `OJT_RUNTIME_SETTINGS_PATH`, reload the cached Assistant service, and
+do not expose or accept API keys. Secrets stay in environment/config management.
+
 Tool execution remains deterministic:
 
 - Unknown tool names are skipped.

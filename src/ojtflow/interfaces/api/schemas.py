@@ -267,6 +267,32 @@ class RuntimeRetrievalSettingsRequest(ContractModel):
     }
 
 
+class RuntimeAssistantSettingsRequest(ContractModel):
+    llm_provider: Literal["disabled", "openai"] | None = None
+    llm_model: NonBlankStr | None = None
+    llm_timeout_seconds: float | None = Field(default=None, gt=0, le=300)
+    llm_max_tool_calls: int | None = Field(default=None, ge=1, le=12)
+
+    @model_validator(mode="after")
+    def _has_runtime_update(self) -> "RuntimeAssistantSettingsRequest":
+        if not self.model_dump(exclude_none=True):
+            raise ValueError("At least one assistant setting must be provided.")
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "llm_provider": "openai",
+                    "llm_model": "gpt-4.1-mini",
+                    "llm_timeout_seconds": 30.0,
+                    "llm_max_tool_calls": 4,
+                }
+            ]
+        }
+    }
+
+
 class AssistantChatRequest(ContractModel):
     message: NonBlankStr
     context: dict[str, Any] = Field(default_factory=dict)

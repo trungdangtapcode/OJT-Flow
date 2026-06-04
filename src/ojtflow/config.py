@@ -19,7 +19,9 @@ LLMProvider = Literal["disabled", "openai"]
 RetrievalFramework = Literal["custom", "llamaindex"]
 RerankProvider = Literal["none", "huggingface"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
-RuntimeRetrievalSettingsPayload = dict[str, str | int | float | bool]
+RuntimeSettingsPayload = dict[str, str | int | float | bool]
+RuntimeRetrievalSettingsPayload = RuntimeSettingsPayload
+RuntimeAssistantSettingsPayload = RuntimeSettingsPayload
 DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
     ".pdf",
     ".docx",
@@ -87,6 +89,16 @@ RUNTIME_RETRIEVAL_SETTING_ALIASES = {
     "retrieval_diversity_enabled": "OJT_RETRIEVAL_DIVERSITY_ENABLED",
     "retrieval_diversity_lambda": "OJT_RETRIEVAL_DIVERSITY_LAMBDA",
     "retrieval_hnsw_ef_search": "OJT_RETRIEVAL_HNSW_EF_SEARCH",
+}
+RUNTIME_ASSISTANT_SETTING_ALIASES = {
+    "llm_provider": "OJT_LLM_PROVIDER",
+    "llm_model": "OJT_LLM_MODEL",
+    "llm_timeout_seconds": "OJT_LLM_TIMEOUT_SECONDS",
+    "llm_max_tool_calls": "OJT_LLM_MAX_TOOL_CALLS",
+}
+RUNTIME_SETTING_ALIASES = {
+    **RUNTIME_RETRIEVAL_SETTING_ALIASES,
+    **RUNTIME_ASSISTANT_SETTING_ALIASES,
 }
 
 
@@ -528,24 +540,51 @@ def runtime_retrieval_settings(settings: Settings) -> RuntimeRetrievalSettingsPa
     }
 
 
+def runtime_assistant_settings(settings: Settings) -> RuntimeAssistantSettingsPayload:
+    """Return assistant settings that operators may change at runtime."""
+
+    return {
+        "llm_provider": settings.llm_provider,
+        "llm_model": settings.llm_model,
+        "llm_timeout_seconds": settings.llm_timeout_seconds,
+        "llm_max_tool_calls": settings.llm_max_tool_calls,
+    }
+
+
 def save_runtime_retrieval_settings(
     settings: Settings,
     updates: RuntimeRetrievalSettingsPayload,
 ) -> Settings:
     """Persist runtime retrieval settings and validate the effective settings first."""
 
+    return _save_runtime_settings(settings, updates, RUNTIME_RETRIEVAL_SETTING_ALIASES)
+
+
+def save_runtime_assistant_settings(
+    settings: Settings,
+    updates: RuntimeAssistantSettingsPayload,
+) -> Settings:
+    """Persist runtime assistant settings and validate the effective settings first."""
+
+    return _save_runtime_settings(settings, updates, RUNTIME_ASSISTANT_SETTING_ALIASES)
+
+
+def _save_runtime_settings(
+    settings: Settings,
+    updates: RuntimeSettingsPayload,
+    allowed_aliases: dict[str, str],
+) -> Settings:
     runtime_path = settings.resolved_runtime_settings_path
-    current = _load_runtime_settings_overrides(runtime_path)
     merged = {
         key: value
-        for key, value in current.items()
-        if key in RUNTIME_RETRIEVAL_SETTING_ALIASES
+        for key, value in _load_runtime_settings_overrides(runtime_path).items()
+        if key in RUNTIME_SETTING_ALIASES
     }
     for key, value in updates.items():
-        if key in RUNTIME_RETRIEVAL_SETTING_ALIASES:
+        if key in allowed_aliases:
             merged[key] = _coerce_runtime_setting_value(key, value)
 
-    validated = _validate_runtime_retrieval_settings(settings, merged)
+    validated = _validate_runtime_settings(settings, merged)
     _write_runtime_settings_overrides(runtime_path, merged)
     return validated
 
@@ -554,25 +593,25 @@ def _apply_runtime_settings_overrides(settings_kwargs: dict[str, object]) -> Non
     raw_path = settings_kwargs.get("OJT_RUNTIME_SETTINGS_PATH", DEFAULT_RUNTIME_SETTINGS_PATH)
     runtime_path = _resolve_path(Path(raw_path), Path(__file__).resolve().parents[2])
     for key, value in _load_runtime_settings_overrides(runtime_path).items():
-        alias = RUNTIME_RETRIEVAL_SETTING_ALIASES.get(key)
+        alias = RUNTIME_SETTING_ALIASES.get(key)
         if not alias:
             continue
         settings_kwargs[alias] = _coerce_runtime_setting_value(key, value)
 
 
-def _validate_runtime_retrieval_settings(
+def _validate_runtime_settings(
     settings: Settings,
-    values: RuntimeRetrievalSettingsPayload,
+    values: RuntimeSettingsPayload,
 ) -> Settings:
     candidate_kwargs = settings.model_dump(by_alias=True)
     for key, value in values.items():
-        alias = RUNTIME_RETRIEVAL_SETTING_ALIASES.get(key)
+        alias = RUNTIME_SETTING_ALIASES.get(key)
         if alias:
             candidate_kwargs[alias] = _coerce_runtime_setting_value(key, value)
     return Settings(**candidate_kwargs)
 
 
-def _load_runtime_settings_overrides(path: Path) -> RuntimeRetrievalSettingsPayload:
+def _load_runtime_settings_overrides(path: Path) -> RuntimeSettingsPayload:
     if not path.exists():
         return {}
     try:
@@ -581,9 +620,9 @@ def _load_runtime_settings_overrides(path: Path) -> RuntimeRetrievalSettingsPayl
         raise ValueError(f"Invalid runtime settings JSON at {path}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"Invalid runtime settings JSON at {path}: expected an object")
-    payload: RuntimeRetrievalSettingsPayload = {}
+    payload: RuntimeSettingsPayload = {}
     for key, value in raw.items():
-        if key not in RUNTIME_RETRIEVAL_SETTING_ALIASES:
+        if key not in RUNTIME_SETTING_ALIASES:
             continue
         payload[str(key)] = _coerce_runtime_setting_value(str(key), value)
     return payload
@@ -591,12 +630,12 @@ def _load_runtime_settings_overrides(path: Path) -> RuntimeRetrievalSettingsPayl
 
 def _write_runtime_settings_overrides(
     path: Path,
-    values: RuntimeRetrievalSettingsPayload,
+    values: RuntimeSettingsPayload,
 ) -> None:
     payload = {
         key: _coerce_runtime_setting_value(key, value)
         for key, value in values.items()
-        if key in RUNTIME_RETRIEVAL_SETTING_ALIASES
+        if key in RUNTIME_SETTING_ALIASES
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -615,6 +654,22 @@ def _write_runtime_settings_overrides(
 
 
 def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float | bool:
+    if key == "llm_provider":
+        if not isinstance(value, str):
+            raise ValueError("llm_provider must be a string")
+        return _parse_llm_provider(value)
+    if key == "llm_model":
+        if not isinstance(value, str):
+            raise ValueError("llm_model must be a string")
+        return _parse_llm_model(value)
+    if key == "llm_timeout_seconds":
+        if isinstance(value, bool):
+            raise ValueError("llm_timeout_seconds must be a number")
+        return float(value)
+    if key == "llm_max_tool_calls":
+        if isinstance(value, bool):
+            raise ValueError("llm_max_tool_calls must be an integer")
+        return int(value)
     if key == "retrieval_framework":
         if not isinstance(value, str):
             raise ValueError("retrieval_framework must be a string")

@@ -784,7 +784,10 @@ Response data includes:
 - `llm.provider`
 - `llm.model`
 - `llm.openai_configured`
+- `llm.timeout_seconds`
 - `llm.max_tool_calls`
+- `llm.runtime_settings_configured`
+- `llm.runtime_settings`
 - `retrieval.framework`
 - `retrieval.corpus_dir_count`
 - `retrieval.chunk_max_chars`
@@ -807,7 +810,6 @@ Example:
 ```json
 {
   "data": {
-    "status": "ok",
     "storage_backend": "postgres",
     "persistent_storage": true,
     "postgres_configured": true,
@@ -838,7 +840,14 @@ Example:
       "openai_configured": true,
       "base_url_configured": true,
       "timeout_seconds": 30.0,
-      "max_tool_calls": 4
+      "max_tool_calls": 4,
+      "runtime_settings_configured": true,
+      "runtime_settings": {
+        "llm_provider": "openai",
+        "llm_model": "chat-latest",
+        "llm_timeout_seconds": 30.0,
+        "llm_max_tool_calls": 4
+      }
     },
     "retrieval": {
       "framework": "llamaindex",
@@ -879,6 +888,41 @@ Example:
 applied transaction-locally for vector candidate retrieval. Higher values
 increase recall and latency; lower values reduce latency and can miss more
 approximate-nearest-neighbor candidates.
+
+`PUT /api/v1/runtime/assistant-settings`
+
+Persists editable Assistant/LLM runtime settings and reloads cached backend
+service instances after validation. It accepts only planner/runtime control
+fields; API keys, OAuth secrets, database URLs, file paths, and approval
+decisions are not editable through this endpoint.
+
+Request:
+
+```json
+{
+  "llm_provider": "openai",
+  "llm_model": "gpt-4.1-mini",
+  "llm_timeout_seconds": 30.0,
+  "llm_max_tool_calls": 4
+}
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "settings": {
+      "llm_provider": "openai",
+      "llm_model": "gpt-4.1-mini",
+      "llm_timeout_seconds": 30.0,
+      "llm_max_tool_calls": 4
+    },
+    "reloaded": true
+  },
+  "error": null
+}
+```
 
 `PUT /api/v1/runtime/retrieval-settings`
 

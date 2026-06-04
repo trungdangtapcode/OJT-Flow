@@ -128,7 +128,10 @@ must surface embedding and rerank provider metadata from runtime config and
 retrieval handoff context so operators can distinguish first-stage hybrid
 searches from searches refined by second-stage reranking. It must also surface
 source coverage from retrieval diversity metadata so redundant single-source
-results are visible during evidence review.
+results are visible during evidence review. Query-analysis filter suggestions
+should be actionable from the trace view only through explicit operator apply
+controls; the UI must not silently apply suggested filters before users can see
+the reason, confidence, and existing applied state.
 The assistant route is the operator shortcut over those same backend contracts.
 It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
 write-gate state, executed tool calls, and compact evidence/output previews.
@@ -140,6 +143,9 @@ should show status facts first, then group runtime configuration into compact
 sections, summarize readiness/security/inventory counts before detailed rows,
 and render operational policy as structured rows. Configuration values must come
 from runtime endpoints and auth state rather than hardcoded deployment claims.
+Assistant runtime controls belong here: the page should expose reloadable
+planner mode, model, timeout, and tool-call limits while keeping API keys and
+other secrets backend-only.
 Embedding and rerank provider state should be visible here because model choice,
 device, and second-stage reranking materially affect retrieval latency and
 evidence quality.

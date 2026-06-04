@@ -205,7 +205,10 @@ The public retrieval package exposes this under
 Filter suggestions are a deterministic self-query feature: they recommend
 metadata filters such as `clinical_domain=laboratory` or
 `standard_system=UCUM`, but do not apply them silently. The Retrieval console
-shows confidence and whether each suggestion is already applied.
+shows confidence and whether each suggestion is already applied. Supported
+suggestions can be applied explicitly from the trace panel, which updates the
+query-builder filter state and reruns the search through the same typed
+`/retrieval/search` request path.
 
 Concept candidates are loaded from `knowledge/terminologies/medical_concepts.json`,
 not hardcoded into the query analyzer. The seed registry currently covers a

@@ -586,6 +586,20 @@ export type RuntimeRetrievalSettingsUpdate = {
   reloaded: boolean;
 };
 
+export type RuntimeAssistantSettings = {
+  llm_provider: "disabled" | "openai";
+  llm_model: string;
+  llm_timeout_seconds: number;
+  llm_max_tool_calls: number;
+};
+
+export type RuntimeAssistantSettingsPayload = Partial<RuntimeAssistantSettings>;
+
+export type RuntimeAssistantSettingsUpdate = {
+  settings: RuntimeAssistantSettings;
+  reloaded: boolean;
+};
+
 export type RuntimeConfig = {
   status: string;
   storage_backend: string;
@@ -619,6 +633,8 @@ export type RuntimeConfig = {
     base_url_configured: boolean;
     timeout_seconds: number;
     max_tool_calls: number;
+    runtime_settings_configured?: boolean;
+    runtime_settings?: RuntimeAssistantSettings;
   };
   rerank?: {
     provider: string;

@@ -7,7 +7,9 @@ from pydantic import ValidationError
 from ojtflow.config import (
     clear_settings_cache,
     get_settings,
+    runtime_assistant_settings,
     runtime_retrieval_settings,
+    save_runtime_assistant_settings,
     save_runtime_retrieval_settings,
 )
 
@@ -127,6 +129,54 @@ def test_runtime_retrieval_settings_are_persisted_and_reloaded(
     assert reloaded.retrieval_diversity_enabled is False
     assert reloaded.retrieval_diversity_lambda == 0.5
     assert reloaded.retrieval_hnsw_ef_search == 80
+
+
+def test_runtime_assistant_settings_are_persisted_and_preserved(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+        assistant_updated = save_runtime_assistant_settings(
+            settings,
+            {
+                "llm_provider": "openai",
+                "llm_model": "gpt-4.1-mini",
+                "llm_timeout_seconds": 45.0,
+                "llm_max_tool_calls": 6,
+            },
+        )
+        retrieval_updated = save_runtime_retrieval_settings(
+            assistant_updated,
+            {
+                "retrieval_framework": "llamaindex",
+                "retrieval_candidate_multiplier": 2,
+            },
+        )
+        clear_settings_cache()
+        reloaded = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert runtime_path.exists()
+    saved = json.loads(runtime_path.read_text(encoding="utf-8"))
+    assert saved["llm_provider"] == "openai"
+    assert saved["llm_model"] == "gpt-4.1-mini"
+    assert saved["llm_timeout_seconds"] == 45.0
+    assert saved["llm_max_tool_calls"] == 6
+    assert saved["retrieval_framework"] == "llamaindex"
+    assert saved["retrieval_candidate_multiplier"] == 2
+    assert runtime_assistant_settings(reloaded) == runtime_assistant_settings(assistant_updated)
+    assert reloaded.llm_provider == "openai"
+    assert reloaded.llm_model == "gpt-4.1-mini"
+    assert reloaded.llm_timeout_seconds == 45.0
+    assert reloaded.llm_max_tool_calls == 6
+    assert reloaded.retrieval_framework == "llamaindex"
+    assert runtime_retrieval_settings(reloaded) == runtime_retrieval_settings(retrieval_updated)
 
 
 @pytest.mark.parametrize(

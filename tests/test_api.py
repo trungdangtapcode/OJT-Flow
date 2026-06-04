@@ -1054,6 +1054,54 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
 
 
 @pytest.mark.asyncio
+async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.put(
+                "/api/v1/runtime/assistant-settings",
+                json={
+                    "llm_provider": "openai",
+                    "llm_model": "gpt-4.1-mini",
+                    "llm_timeout_seconds": 45.0,
+                    "llm_max_tool_calls": 6,
+                },
+            )
+            runtime_config = await client.get("/api/v1/runtime/config")
+
+        assert response.status_code == 200
+        data = _assert_success_envelope(response)["data"]
+        assert data["reloaded"] is True
+        assert data["settings"]["llm_provider"] == "openai"
+        assert data["settings"]["llm_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_timeout_seconds"] == 45.0
+        assert data["settings"]["llm_max_tool_calls"] == 6
+
+        assert runtime_path.exists()
+        saved = json.loads(runtime_path.read_text(encoding="utf-8"))
+        assert saved == data["settings"]
+
+        config = _assert_success_envelope(runtime_config)["data"]
+        assert config["llm"]["provider"] == "openai"
+        assert config["llm"]["model"] == "gpt-4.1-mini"
+        assert config["llm"]["timeout_seconds"] == 45.0
+        assert config["llm"]["max_tool_calls"] == 6
+        assert config["llm"]["runtime_settings"] == data["settings"]
+        assert "openai_api_key" not in runtime_config.text
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+
+@pytest.mark.asyncio
 async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("OJT_DATABASE_URL", "postgresql://user:secret@example.test/db")

@@ -11,6 +11,8 @@ import type {
   RetrievalReindexResult,
   RetrievalSearchPayload,
   RetrievalSource,
+  RuntimeAssistantSettingsPayload,
+  RuntimeAssistantSettingsUpdate,
   RuntimeConfig,
   RuntimeHealth,
   RuntimeReadiness,
@@ -417,6 +419,15 @@ export function updateRuntimeRetrievalSettings(
   payload: RuntimeRetrievalSettingsPayload,
 ): Promise<RuntimeRetrievalSettingsUpdate> {
   return request<RuntimeRetrievalSettingsUpdate>("/runtime/retrieval-settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateRuntimeAssistantSettings(
+  payload: RuntimeAssistantSettingsPayload,
+): Promise<RuntimeAssistantSettingsUpdate> {
+  return request<RuntimeAssistantSettingsUpdate>("/runtime/assistant-settings", {
     method: "PUT",
     body: JSON.stringify(payload),
   });

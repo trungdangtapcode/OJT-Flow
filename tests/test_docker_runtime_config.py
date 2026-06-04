@@ -141,6 +141,7 @@ def test_compose_runtime_uses_postgres_redis_and_persistent_app_data() -> None:
     ) in api_section
     assert "OJT_REDIS_URL: redis://redis:6379/0" in api_section
     assert "OJT_DATA_DIR: /app/var" in api_section
+    assert "OJT_RUNTIME_SETTINGS_PATH: ${OJT_RUNTIME_SETTINGS_PATH:-/app/var/runtime_settings.json}" in api_section
     assert "OJT_KNOWLEDGE_DIR: /app/knowledge" in api_section
     assert "OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations" in api_section
     assert "OJT_MAX_UPLOAD_BYTES: ${OJT_MAX_UPLOAD_BYTES:-26214400}" in api_section
@@ -153,9 +154,19 @@ def test_compose_runtime_uses_postgres_redis_and_persistent_app_data() -> None:
     assert "OJT_RERANK_BATCH_SIZE: ${OJT_RERANK_BATCH_SIZE:-16}" in api_section
     assert "OJT_RERANK_CANDIDATE_LIMIT: ${OJT_RERANK_CANDIDATE_LIMIT:-20}" in api_section
     assert "OJT_RERANK_SCORE_WEIGHT: ${OJT_RERANK_SCORE_WEIGHT:-0.08}" in api_section
+    assert "OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-disabled}" in api_section
+    assert "OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}" in api_section
+    assert "OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}" in api_section
+    assert "OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-30.0}" in api_section
+    assert "OJT_LLM_MAX_TOOL_CALLS: ${OJT_LLM_MAX_TOOL_CALLS:-4}" in api_section
     assert "OJT_RETRIEVAL_DIVERSITY_ENABLED: ${OJT_RETRIEVAL_DIVERSITY_ENABLED:-true}" in api_section
     assert "OJT_RETRIEVAL_DIVERSITY_LAMBDA: ${OJT_RETRIEVAL_DIVERSITY_LAMBDA:-0.72}" in api_section
     assert "OJT_RETRIEVAL_HNSW_EF_SEARCH: ${OJT_RETRIEVAL_HNSW_EF_SEARCH:-100}" in api_section
+    assert "OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}" in api_section
+    assert "OJT_RETRIEVAL_CANDIDATE_MULTIPLIER: ${OJT_RETRIEVAL_CANDIDATE_MULTIPLIER:-4}" in api_section
+    assert "OJT_RETRIEVAL_MIN_CANDIDATES: ${OJT_RETRIEVAL_MIN_CANDIDATES:-12}" in api_section
+    assert "OJT_RETRIEVAL_VECTOR_WEIGHT: ${OJT_RETRIEVAL_VECTOR_WEIGHT:-0.62}" in api_section
+    assert "OJT_RETRIEVAL_BM25_WEIGHT: ${OJT_RETRIEVAL_BM25_WEIGHT:-0.38}" in api_section
     assert '"${OJT_API_PORT:-8000}:8000"' in api_section
     assert "- app_data:/app/var" in api_section
     assert "postgres:" in api_section

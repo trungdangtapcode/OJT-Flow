@@ -13,7 +13,9 @@ from ojtflow.config import (
     Settings,
     clear_settings_cache,
     get_settings,
+    runtime_assistant_settings,
     runtime_retrieval_settings,
+    save_runtime_assistant_settings,
     save_runtime_retrieval_settings,
 )
 from ojtflow.core.contracts.auth import AuthenticatedSession
@@ -26,7 +28,10 @@ from ojtflow.interfaces.api.deps import (
     require_authentication,
 )
 from ojtflow.interfaces.api.responses import ok
-from ojtflow.interfaces.api.schemas import RuntimeRetrievalSettingsRequest
+from ojtflow.interfaces.api.schemas import (
+    RuntimeAssistantSettingsRequest,
+    RuntimeRetrievalSettingsRequest,
+)
 
 try:
     import redis as redis_client
@@ -86,6 +91,8 @@ async def runtime_config(
                 "base_url_configured": bool(settings.llm_base_url),
                 "timeout_seconds": settings.llm_timeout_seconds,
                 "max_tool_calls": settings.llm_max_tool_calls,
+                "runtime_settings_configured": bool(settings.runtime_settings_path),
+                "runtime_settings": runtime_assistant_settings(settings),
             },
             "rerank": {
                 "provider": settings.rerank_provider,
@@ -145,6 +152,35 @@ async def update_runtime_retrieval_settings(
     return ok(
         {
             "settings": runtime_retrieval_settings(fresh_settings),
+            "reloaded": True,
+        }
+    )
+
+
+@router.put("/runtime/assistant-settings")
+async def update_runtime_assistant_settings(
+    request: RuntimeAssistantSettingsRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Persist operator-tuned Assistant/LLM settings and reload cached services."""
+
+    del authenticated
+    updates = request.model_dump(exclude_none=True)
+    try:
+        save_runtime_assistant_settings(settings, updates)
+    except (TypeError, ValueError) as exc:
+        raise ToolExecutionError(
+            "Invalid runtime assistant settings.",
+            details={"reason": str(exc)},
+        ) from exc
+
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    fresh_settings = get_settings()
+    return ok(
+        {
+            "settings": runtime_assistant_settings(fresh_settings),
             "reloaded": True,
         }
     )

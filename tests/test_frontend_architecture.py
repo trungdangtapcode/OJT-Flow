@@ -57,6 +57,9 @@ WORKBENCH_PAGE = (
 RETRIEVAL_PAGE = (
     REPO_ROOT / "frontend" / "src" / "features" / "retrieval" / "retrieval-page.tsx"
 )
+SETTINGS_PAGE = (
+    REPO_ROOT / "frontend" / "src" / "features" / "settings" / "settings-page.tsx"
+)
 WORKBENCH_SPLIT_FILES = [
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-controls.tsx",
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-examples.ts",
@@ -185,8 +188,29 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "packageData.handoff_context.reranker" in retrieval_page
     assert "packageData.handoff_context.diversity" in retrieval_page
     assert "runtime?.rerank?.enabled" in retrieval_page
+    assert "applyFilterSuggestion" in retrieval_page
+    assert "supportedSuggestionFilterFields" in retrieval_page
+    assert "onApplyFilterSuggestion" in retrieval_page
     assert "Embedding and rerank provider state" in frontend_architecture
     assert "source coverage" in frontend_architecture
+    assert "explicit operator apply" in frontend_architecture
+
+
+def test_settings_page_exposes_reloadable_assistant_runtime() -> None:
+    settings_page = SETTINGS_PAGE.read_text(encoding="utf-8")
+    server_state = (FRONTEND_SRC / "lib" / "server-state.ts").read_text(encoding="utf-8")
+    api_module = API_MODULE.read_text(encoding="utf-8")
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "AssistantSettingsForm" in settings_page
+    assert "useRuntimeAssistantSettingsMutation" in settings_page
+    assert "runtimeAssistantPayloadFromForm" in settings_page
+    assert "OpenAI key configured" in settings_page
+    assert "updateRuntimeAssistantSettings" in server_state
+    assert '"/runtime/assistant-settings"' in api_module
+    assert "Assistant runtime" in frontend_architecture
 
 
 def test_frontend_browser_storage_is_not_used_for_auth_or_state() -> None:
