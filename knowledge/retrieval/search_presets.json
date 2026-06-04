@@ -1,0 +1,40 @@
+{
+  "version": "retrieval_search_presets.v1",
+  "presets": [
+    {
+      "preset_id": "lab_csv_observation_quality",
+      "label": "Lab CSV quality",
+      "description": "Ground missing-unit and malformed-row checks for lab CSV to FHIR Observation workflows.",
+      "query": "HbA1c lab CSV missing units FHIR Observation",
+      "top_k": 5,
+      "schema_id": "lab_result_v1",
+      "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+      "detected_format": "csv",
+      "resource_type": "Observation",
+      "clinical_domain": "laboratory",
+      "trust_level": "approved"
+    },
+    {
+      "preset_id": "pubmed_mesh_literature",
+      "label": "PubMed literature",
+      "description": "Build MeSH-aware PubMed syntax hints for biomedical literature grounding.",
+      "query": "PubMed systematic review HbA1c units",
+      "top_k": 5,
+      "fields": ["lab_name", "value", "unit"],
+      "clinical_domain": "laboratory",
+      "standard_system": "MeSH",
+      "trust_level": "approved"
+    },
+    {
+      "preset_id": "drug_safety_external_search",
+      "label": "Drug safety",
+      "description": "Surface ClinicalTrials.gov and openFDA search scaffolds for medication safety context.",
+      "query": "ClinicalTrials.gov openFDA metformin diabetes adverse event recruiting eligibility",
+      "top_k": 5,
+      "fields": ["medication", "condition", "adverse_event", "eligibility"],
+      "clinical_domain": "medication",
+      "standard_system": "RxNorm",
+      "trust_level": "approved"
+    }
+  ]
+}

@@ -81,6 +81,18 @@ entities and evidence triples from the retrieved claims. This is a
 GraphRAG-lite context for validation/explanation workflows, not diagnosis,
 treatment, triage, or medication advice.
 
+## Search Presets
+
+Operator-facing retrieval examples live in
+`knowledge/retrieval/search_presets.json` and are served through
+`GET /api/v1/retrieval/presets`. This keeps query-builder defaults, healthcare
+example searches, and metadata constraints in trusted data instead of React
+source. A preset can specify `query`, `fields`, `schema_id`, `detected_format`,
+`resource_type`, `clinical_domain`, `standard_system`, `trust_level`,
+`source_type`, and `top_k`. The Retrieval console applies a preset to the query
+builder only; operators still submit the search explicitly so preset changes
+remain reviewable and stale-result state remains accurate.
+
 ## Healthcare Sources
 
 Seeded v0 sources include:

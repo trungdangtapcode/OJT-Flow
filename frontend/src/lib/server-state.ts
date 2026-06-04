@@ -15,6 +15,7 @@ import {
   getWorkflowOutput,
   getWorkflowStats,
   listAssistantTools,
+  listRetrievalPresets,
   listRetrievalSources,
   listReviewSummaries,
   listSchemas,
@@ -51,6 +52,7 @@ export const queryKeys = {
   runtimeConfig: ["runtime-config"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
   assistantTools: ["assistant-tools"] as const,
+  retrievalPresets: ["retrieval-presets"] as const,
 };
 
 export const runtimeConfig = {
@@ -169,6 +171,10 @@ export function useSchemasQuery() {
 
 export function useRetrievalSourcesQuery() {
   return useQuery({ queryKey: queryKeys.retrievalSources, queryFn: listRetrievalSources });
+}
+
+export function useRetrievalPresetsQuery() {
+  return useQuery({ queryKey: queryKeys.retrievalPresets, queryFn: listRetrievalPresets });
 }
 
 export function useRetrievalIntegrityQuery(params: {

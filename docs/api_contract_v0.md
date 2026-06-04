@@ -1201,11 +1201,11 @@ deterministic metadata filter recommendations with `field`, `value`, `reason`,
 of deterministic query-quality checks with `code`, `severity`, `message`, and
 `suggested_action`; warning diagnostics are copied into `trace.warnings`. It
 also includes `search_hints`, deterministic external medical search syntax
-scaffolds with `target`, `query`, `rationale`, and `warnings` for workflows
-such as PubMed/MeSH literature search, FHIR resource search templates,
-ClinicalTrials.gov API v2 study search, and openFDA drug label/adverse-event
-search. Current targets include `pubmed`, `fhir`, `clinicaltrials_gov`,
-`openfda_drug_label`, and `openfda_drug_event`.
+scaffolds with `target`, `query`, optional `url`, `rationale`, and `warnings`
+for workflows such as PubMed/MeSH literature search, FHIR resource search
+templates, ClinicalTrials.gov API v2 study search, and openFDA drug
+label/adverse-event search. Current targets include `pubmed`, `fhir`,
+`clinicaltrials_gov`, `openfda_drug_label`, and `openfda_drug_event`.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.
@@ -1227,6 +1227,13 @@ supported keys are `trust_level`, `clinical_domain`, `standard_system`, and
 `source_type`. Unsupported filter keys or invalid enum values return
 `request_validation_error` before the retrieval repository runs, so the API does
 not silently accept filters that the ranking layer cannot enforce.
+
+`GET /api/v1/retrieval/presets` returns data-driven operator query presets
+loaded from `knowledge/retrieval/search_presets.json`. Each preset includes
+`preset_id`, `label`, `description`, `query`, `top_k`, `fields`, and optional
+schema, format, resource, clinical-domain, standard, trust, and source-type
+constraints. The frontend uses these presets to seed the query builder instead
+of hardcoding healthcare search examples in React.
 
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,

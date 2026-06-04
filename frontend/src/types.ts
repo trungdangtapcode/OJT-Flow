@@ -262,6 +262,22 @@ export type RetrievalSearchPayload = {
   filters: RetrievalSearchFilters;
 };
 
+export type RetrievalSearchPreset = {
+  preset_id: string;
+  label: string;
+  description: string;
+  query: string;
+  top_k: number;
+  fields: string[];
+  schema_id?: string | null;
+  detected_format?: string | null;
+  resource_type?: string | null;
+  clinical_domain?: string | null;
+  standard_system?: string | null;
+  trust_level?: string | null;
+  source_type?: string | null;
+};
+
 export type RetrievalSearchFilters = {
   trust_level?: string | null;
   clinical_domain?: string | null;

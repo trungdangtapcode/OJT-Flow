@@ -844,6 +844,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
             "/api/v1/retrieval/search",
             json={"query": "lab result schema", "top_k": 1},
         )
+        retrieval_presets = await client.get("/api/v1/retrieval/presets")
         retrieval_reindex = await client.post(
             "/api/v1/retrieval/reindex",
             json={"include_seeded": True, "include_corpus": True},
@@ -895,6 +896,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(assistant_tools, expected_code="unauthorized")
     assert retrieval.status_code == 401
     _assert_error_envelope(retrieval, expected_code="unauthorized")
+    assert retrieval_presets.status_code == 401
+    _assert_error_envelope(retrieval_presets, expected_code="unauthorized")
     assert retrieval_reindex.status_code == 401
     _assert_error_envelope(retrieval_reindex, expected_code="unauthorized")
     assert retrieval_sources.status_code == 401
@@ -2739,6 +2742,21 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         assert any(
             source["source_id"] == "standard:fhir_observation_r4"
             for source in sources.json()["data"]
+        )
+
+        presets = await client.get("/api/v1/retrieval/presets")
+        assert presets.status_code == 200
+        preset_data = presets.json()["data"]
+        assert any(
+            preset["preset_id"] == "lab_csv_observation_quality"
+            and preset["schema_id"] == "lab_result_v1"
+            and "patient_id" in preset["fields"]
+            for preset in preset_data
+        )
+        assert any(
+            preset["preset_id"] == "drug_safety_external_search"
+            and preset["standard_system"] == "RxNorm"
+            for preset in preset_data
         )
 
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})

@@ -124,6 +124,11 @@ lists trusted sources, refreshes the retrieval index, and renders rank signals,
 trace warnings, safety flags, and Graph-NER handoff context. It should stay an
 inspection console, not a separate workflow executor: workflow creation remains
 in Workbench and workflow-scoped evidence remains in Workflow Detail. The route
+loads search presets from `/retrieval/presets` so healthcare examples and
+default query-builder state are managed as trusted knowledge data rather than
+hardcoded React constants. The preset selector should apply query, fields,
+schema, format, resource, and metadata constraints without executing a search;
+operators still submit explicitly. The route
 must surface embedding and rerank provider metadata from runtime config and
 retrieval handoff context so operators can distinguish first-stage hybrid
 searches from searches refined by second-stage reranking. It must also surface

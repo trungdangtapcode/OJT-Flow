@@ -10,6 +10,7 @@ from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.infrastructure.retrieval.presets import load_retrieval_search_presets
 from ojtflow.interfaces.api.deps import get_api_settings, get_workflow_service, require_authentication
 from ojtflow.interfaces.api.limits import enforce_inline_json_limit
 from ojtflow.interfaces.api.responses import ok
@@ -54,6 +55,15 @@ async def search_retrieval(
         owner_user_id=authenticated.user.user_id,
     )
     return ok(package)
+
+
+@router.get("/retrieval/presets")
+async def list_retrieval_presets(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    del authenticated
+    return ok(load_retrieval_search_presets(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/sources")

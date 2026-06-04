@@ -34,6 +34,7 @@ import { Table, TBody, TD, TH, THead, TR } from "../../components/ui/table";
 import {
   useRetrievalReindexMutation,
   useRetrievalIntegrityQuery,
+  useRetrievalPresetsQuery,
   useRetrievalSearchMutation,
   useRetrievalSourcesQuery,
   useRuntimeConfigQuery,
@@ -51,21 +52,11 @@ import type {
   RetrievalCoverage,
   RetrievalFacets,
   RetrievalSearchPayload,
+  RetrievalSearchPreset,
   RetrievalSource,
   RuntimeConfig,
 } from "../../types";
 
-const defaultQuery = "HbA1c lab CSV missing units FHIR Observation";
-const defaultFields = "date, patient_id, lab_name, value, unit";
-const sourceTypeOptions = [
-  "schema",
-  "data_dictionary",
-  "healthcare_standard",
-  "terminology_system",
-  "transformation_example",
-  "tool_output",
-];
-const trustOptions = ["approved", "internal", "user_provided", "untrusted"];
 type SupportedFilterField = "clinical_domain" | "standard_system" | "source_type" | "trust_level";
 type ActiveFacetFilters = Partial<Record<SupportedFilterField, string>>;
 type ActiveFilterEntry = {
@@ -100,6 +91,7 @@ const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
 ]);
 
 export function RetrievalPage() {
+  const presetsQuery = useRetrievalPresetsQuery();
   const sourcesQuery = useRetrievalSourcesQuery();
   const schemasQuery = useSchemasQuery();
   const runtimeQuery = useRuntimeConfigQuery();
@@ -110,12 +102,12 @@ export function RetrievalPage() {
   });
   const searchMutation = useRetrievalSearchMutation();
   const reindexMutation = useRetrievalReindexMutation();
-  const [query, setQuery] = React.useState(defaultQuery);
-  const [fields, setFields] = React.useState(defaultFields);
-  const [schemaId, setSchemaId] = React.useState("lab_result_v1");
-  const [detectedFormat, setDetectedFormat] = React.useState("csv");
-  const [resourceType, setResourceType] = React.useState("Observation");
-  const [clinicalDomain, setClinicalDomain] = React.useState("laboratory");
+  const [query, setQuery] = React.useState("");
+  const [fields, setFields] = React.useState("");
+  const [schemaId, setSchemaId] = React.useState("");
+  const [detectedFormat, setDetectedFormat] = React.useState("");
+  const [resourceType, setResourceType] = React.useState("");
+  const [clinicalDomain, setClinicalDomain] = React.useState("");
   const [standardSystem, setStandardSystem] = React.useState("");
   const [trustLevel, setTrustLevel] = React.useState("approved");
   const [sourceType, setSourceType] = React.useState("");
@@ -124,13 +116,36 @@ export function RetrievalPage() {
   const [lastSearchSignature, setLastSearchSignature] = React.useState<string | null>(null);
   const [submittedSearchPayload, setSubmittedSearchPayload] =
     React.useState<RetrievalSearchPayload | null>(null);
+  const [activePresetId, setActivePresetId] = React.useState<string | null>(null);
+  const [didApplyInitialPreset, setDidApplyInitialPreset] = React.useState(false);
 
   const packageData = searchMutation.data;
+  const presets = presetsQuery.data ?? [];
   const sources = sourcesQuery.data ?? [];
   const domains = uniqueValues(sources.map((source) => source.clinical_domain));
   const standards = uniqueValues(sources.map((source) => source.standard_system));
   const domainOptions = uniqueValues([...domains, clinicalDomain]);
   const standardOptions = uniqueValues([...standards, standardSystem]);
+  const trustOptions = uniqueValues([
+    ...sources.map((source) => source.trust_level),
+    ...presets.map((preset) => preset.trust_level),
+    trustLevel,
+  ]);
+  const sourceTypeOptions = uniqueValues([
+    ...sources.map((source) => source.source_type),
+    ...presets.map((preset) => preset.source_type),
+    sourceType,
+  ]);
+  const topKOptions = uniqueNumberValues([
+    3,
+    5,
+    8,
+    10,
+    15,
+    20,
+    topK,
+    ...presets.map((preset) => preset.top_k),
+  ]);
   const graphContext = packageData?.handoff_context.graph_context;
   const activeFacetFilters: ActiveFacetFilters = {
     clinical_domain: clinicalDomain || undefined,
@@ -172,7 +187,31 @@ export function RetrievalPage() {
     await executeSearch();
   };
 
+  const markCustomSearch = () => setActivePresetId(null);
+
+  const applyPreset = React.useCallback((preset: RetrievalSearchPreset) => {
+    setQuery(preset.query);
+    setFields(preset.fields.join(", "));
+    setSchemaId(preset.schema_id ?? "");
+    setDetectedFormat(preset.detected_format ?? "");
+    setResourceType(preset.resource_type ?? "");
+    setClinicalDomain(preset.clinical_domain ?? "");
+    setStandardSystem(preset.standard_system ?? "");
+    setSourceType(preset.source_type ?? "");
+    setTrustLevel(preset.trust_level ?? "");
+    setTopK(preset.top_k);
+    setFormError(null);
+    setActivePresetId(preset.preset_id);
+  }, []);
+
+  React.useEffect(() => {
+    if (didApplyInitialPreset || !presets.length) return;
+    applyPreset(presets[0]);
+    setDidApplyInitialPreset(true);
+  }, [applyPreset, didApplyInitialPreset, presets]);
+
   const applySearchFilter = (field: SupportedFilterField, value: string) => {
+    markCustomSearch();
     const overrides: Partial<RetrievalSearchPayload> = {};
     if (field === "clinical_domain") {
       setClinicalDomain(value);
@@ -191,6 +230,7 @@ export function RetrievalPage() {
   };
 
   const clearSearchFilter = (field: SupportedFilterField) => {
+    markCustomSearch();
     const overrides: Partial<RetrievalSearchPayload> = {};
     if (field === "clinical_domain") {
       setClinicalDomain("");
@@ -209,6 +249,7 @@ export function RetrievalPage() {
   };
 
   const clearAllSearchFilters = () => {
+    markCustomSearch();
     setClinicalDomain("");
     setStandardSystem("");
     setSourceType("");
@@ -226,6 +267,7 @@ export function RetrievalPage() {
   const restoreSubmittedSearch = () => {
     if (!submittedSearchPayload) return;
 
+    markCustomSearch();
     setQuery(submittedSearchPayload.query);
     setFields(submittedSearchPayload.fields.join(", "));
     setSchemaId(submittedSearchPayload.schema_id ?? "");
@@ -320,12 +362,25 @@ export function RetrievalPage() {
                   {workflowErrorMessage(searchMutation.error)}
                 </Notice>
               ) : null}
+              {presetsQuery.isError ? (
+                <Notice title="Search presets unavailable">
+                  {workflowErrorMessage(presetsQuery.error)}
+                </Notice>
+              ) : null}
+
+              <SearchPresetStrip
+                activePresetId={activePresetId}
+                isLoading={presetsQuery.isLoading}
+                onApplyPreset={applyPreset}
+                presets={presets}
+              />
 
               <Label>
                 Query
                 <Textarea
                   className="min-h-24 resize-y"
                   onChange={(event) => {
+                    markCustomSearch();
                     setQuery(event.target.value);
                     if (formError) setFormError(null);
                   }}
@@ -337,7 +392,10 @@ export function RetrievalPage() {
                 Fields
                 <Textarea
                   className="min-h-16 resize-y"
-                  onChange={(event) => setFields(event.target.value)}
+                  onChange={(event) => {
+                    markCustomSearch();
+                    setFields(event.target.value);
+                  }}
                   value={fields}
                 />
               </Label>
@@ -345,7 +403,13 @@ export function RetrievalPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <Label>
                   Schema
-                  <Select onChange={(event) => setSchemaId(event.target.value)} value={schemaId}>
+                  <Select
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setSchemaId(event.target.value);
+                    }}
+                    value={schemaId}
+                  >
                     <option value="">Any schema</option>
                     {(schemasQuery.data ?? []).map((schema) => (
                       <option key={schema.schema_id} value={schema.schema_id}>
@@ -356,15 +420,27 @@ export function RetrievalPage() {
                 </Label>
                 <Label>
                   Top K
-                  <Select onChange={(event) => setTopK(Number(event.target.value))} value={topK}>
-                    {[3, 5, 8, 10, 15, 20].map((value) => (
+                  <Select
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setTopK(Number(event.target.value));
+                    }}
+                    value={topK}
+                  >
+                    {topKOptions.map((value) => (
                       <option key={value} value={value}>{value}</option>
                     ))}
                   </Select>
                 </Label>
                 <Label>
                   Format
-                  <Select onChange={(event) => setDetectedFormat(event.target.value)} value={detectedFormat}>
+                  <Select
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setDetectedFormat(event.target.value);
+                    }}
+                    value={detectedFormat}
+                  >
                     <option value="">Any format</option>
                     <option value="csv">CSV</option>
                     <option value="json">JSON</option>
@@ -375,7 +451,10 @@ export function RetrievalPage() {
                 <Label>
                   Resource
                   <Input
-                    onChange={(event) => setResourceType(event.target.value)}
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setResourceType(event.target.value);
+                    }}
                     placeholder="Observation"
                     value={resourceType}
                   />
@@ -385,7 +464,13 @@ export function RetrievalPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <Label>
                   Domain
-                  <Select onChange={(event) => setClinicalDomain(event.target.value)} value={clinicalDomain}>
+                  <Select
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setClinicalDomain(event.target.value);
+                    }}
+                    value={clinicalDomain}
+                  >
                     <option value="">Any domain</option>
                     {domainOptions.map((domain) => (
                       <option key={domain} value={domain}>{humanize(domain)}</option>
@@ -394,7 +479,13 @@ export function RetrievalPage() {
                 </Label>
                 <Label>
                   Standard
-                  <Select onChange={(event) => setStandardSystem(event.target.value)} value={standardSystem}>
+                  <Select
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setStandardSystem(event.target.value);
+                    }}
+                    value={standardSystem}
+                  >
                     <option value="">Any standard</option>
                     {standardOptions.map((standard) => (
                       <option key={standard} value={standard}>{standard}</option>
@@ -403,7 +494,13 @@ export function RetrievalPage() {
                 </Label>
                 <Label>
                   Trust
-                  <Select onChange={(event) => setTrustLevel(event.target.value)} value={trustLevel}>
+                  <Select
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setTrustLevel(event.target.value);
+                    }}
+                    value={trustLevel}
+                  >
                     <option value="">Any trust</option>
                     {trustOptions.map((trust) => (
                       <option key={trust} value={trust}>{humanize(trust)}</option>
@@ -412,7 +509,13 @@ export function RetrievalPage() {
                 </Label>
                 <Label>
                   Source type
-                  <Select onChange={(event) => setSourceType(event.target.value)} value={sourceType}>
+                  <Select
+                    onChange={(event) => {
+                      markCustomSearch();
+                      setSourceType(event.target.value);
+                    }}
+                    value={sourceType}
+                  >
                     <option value="">Any source</option>
                     {sourceTypeOptions.map((type) => (
                       <option key={type} value={type}>{humanize(type)}</option>
@@ -547,6 +650,75 @@ function RetrievalSummary({
         value={rerankerEnabled ? "on" : "off"}
       />
     </SummaryStrip>
+  );
+}
+
+function SearchPresetStrip({
+  activePresetId,
+  isLoading,
+  onApplyPreset,
+  presets,
+}: {
+  activePresetId: string | null;
+  isLoading: boolean;
+  onApplyPreset: (preset: RetrievalSearchPreset) => void;
+  presets: RetrievalSearchPreset[];
+}) {
+  if (isLoading) {
+    return (
+      <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm font-semibold text-muted-foreground">
+        Loading retrieval presets
+      </div>
+    );
+  }
+
+  if (!presets.length) {
+    return (
+      <Notice title="No retrieval presets">
+        Add presets under the trusted knowledge directory to seed the query builder.
+      </Notice>
+    );
+  }
+
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Search presets
+        </div>
+        <Badge variant="muted">{presets.length} data-driven</Badge>
+      </div>
+      <div className="grid gap-2">
+        {presets.map((preset) => {
+          const active = activePresetId === preset.preset_id;
+          return (
+            <button
+              aria-pressed={active}
+              className={cn(
+                "grid min-w-0 gap-1 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                active
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border bg-card hover:bg-muted",
+              )}
+              key={preset.preset_id}
+              onClick={() => onApplyPreset(preset)}
+              title={preset.description}
+              type="button"
+            >
+              <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="break-words font-black">{preset.label}</span>
+                <span className="rounded-full bg-muted px-2 py-1 text-xs font-bold text-muted-foreground">
+                  top {preset.top_k}
+                </span>
+              </span>
+              <span className="break-words text-xs leading-5 text-muted-foreground">
+                {preset.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -2145,6 +2317,12 @@ function retrievalSearchSignature(payload: RetrievalSearchPayload): string {
 
 function uniqueValues(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort();
+}
+
+function uniqueNumberValues(values: Array<number | null | undefined>) {
+  return Array.from(
+    new Set(values.filter((value): value is number => typeof value === "number" && value > 0)),
+  ).sort((left, right) => left - right);
 }
 
 function formatClaim(claim: string) {

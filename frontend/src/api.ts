@@ -11,6 +11,7 @@ import type {
   RetrievalReindexPayload,
   RetrievalReindexResult,
   RetrievalSearchPayload,
+  RetrievalSearchPreset,
   RetrievalSource,
   RuntimeAssistantSettingsPayload,
   RuntimeAssistantSettingsUpdate,
@@ -368,6 +369,10 @@ export function searchRetrieval(payload: RetrievalSearchPayload): Promise<Retrie
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function listRetrievalPresets(): Promise<RetrievalSearchPreset[]> {
+  return request<RetrievalSearchPreset[]>("/retrieval/presets");
 }
 
 export function chatWithAssistant(

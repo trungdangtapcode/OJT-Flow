@@ -212,6 +212,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page
     assert "displayed request" in retrieval_page
+    assert "useRetrievalPresetsQuery" in retrieval_page
+    assert "SearchPresetStrip" in retrieval_page
+    assert "activePresetId" in retrieval_page
+    assert "Loading retrieval presets" in retrieval_page
+    assert "data-driven" in retrieval_page
+    assert "defaultQuery" not in retrieval_page
     assert "activeFacetFiltersFromPayload" in retrieval_page
     assert "onApplyFacet" in retrieval_page
     assert "aria-pressed={applied}" in retrieval_page
@@ -230,6 +236,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "submitted request summary" in frontend_architecture
     assert "restore the query builder" in frontend_architecture
     assert "copyable and launchable" in frontend_architecture
+    assert "/retrieval/presets" in frontend_architecture
+    assert "trusted knowledge data" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:

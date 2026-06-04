@@ -123,6 +123,24 @@ class RetrievalSearchHint(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RetrievalSearchPreset(ContractModel):
+    """Operator-facing retrieval query preset loaded from trusted knowledge data."""
+
+    preset_id: NonBlankStr
+    label: NonBlankStr
+    description: NonBlankStr
+    query: NonBlankStr
+    top_k: int = Field(default=5, ge=1, le=20)
+    fields: list[NonBlankStr] = Field(default_factory=list)
+    schema_id: NonBlankStr | None = None
+    detected_format: NonBlankStr | None = None
+    resource_type: NonBlankStr | None = None
+    clinical_domain: NonBlankStr | None = None
+    standard_system: NonBlankStr | None = None
+    trust_level: TrustLevel | None = TrustLevel.APPROVED
+    source_type: EvidenceSourceType | None = None
+
+
 class RetrievalConceptCandidate(ContractModel):
     """Controlled-vocabulary concept candidate detected in a retrieval query."""
 
