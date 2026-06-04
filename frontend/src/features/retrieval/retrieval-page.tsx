@@ -60,6 +60,7 @@ import type {
   RetrievalCoverage,
   RetrievalFacets,
   RetrievalJudgmentEvaluationResult,
+  RetrievalQualitySummary,
   RetrievalQualitySignal,
   RetrievalQueryVariant,
   RetrievalRelevanceJudgment,
@@ -947,6 +948,7 @@ function RetrievalSummary({
   const graph = packageData?.handoff_context.graph_context;
   const packageRuntime = packageData ? rankingStackFromPackage(packageData) : null;
   const diversity = packageData ? diversityFromPackage(packageData) : null;
+  const qualitySummary = packageData?.quality_summary ?? null;
   const rerankerEnabled = Boolean(
     packageRuntime?.reranker.enabled ?? runtime?.rerank?.enabled,
   );
@@ -970,10 +972,10 @@ function RetrievalSummary({
       />
       <SummaryStripItem
         icon={ShieldCheck}
-        label="Safety flags"
-        supporting="Prompt and sensitive-context flags"
-        tone={packageData?.trace.safety_flags.length ? "warning" : "success"}
-        value={packageData?.trace.safety_flags.length ?? 0}
+        label="Readiness"
+        supporting={qualitySummary?.top_action ?? "Run search to assess package quality"}
+        tone={qualitySummaryTone(qualitySummary)}
+        value={qualitySummary ? `${qualitySummary.score}/100` : "n/a"}
       />
       <SummaryStripItem
         icon={Network}
@@ -4091,6 +4093,15 @@ function judgmentsForRunHits(
   return hits
     .map((hit) => judgments[relevanceJudgmentKey(runId, hit.evidence.evidence_id)] ?? null)
     .filter((judgment): judgment is RelevanceJudgment => judgment !== null);
+}
+
+function qualitySummaryTone(
+  summary: RetrievalQualitySummary | null,
+): "default" | "success" | "warning" | "info" | "neutral" {
+  if (!summary) return "neutral";
+  if (summary.status === "ready") return "success";
+  if (summary.status === "blocked" || summary.status === "review") return "warning";
+  return "info";
 }
 
 function relevanceJudgmentKey(runId: string, evidenceId: string): string {

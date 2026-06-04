@@ -192,6 +192,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "QualitySignalList" in retrieval_page
     assert "Retrieval quality" in retrieval_page
     assert "quality_signals" in retrieval_page
+    assert "quality_summary" in (REPO_ROOT / "frontend/src/types.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "Readiness" in retrieval_page
+    assert "qualitySummaryTone" in retrieval_page
     assert "qualitySignalBadgeVariant" in retrieval_page
     assert "queryVariantsFromTrace" in retrieval_page
     assert "QueryVariantList" in retrieval_page

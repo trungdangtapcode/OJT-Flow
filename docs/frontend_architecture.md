@@ -151,6 +151,9 @@ rank, normalized relevance, redundancy, MMR score, and selection reason.
 The trace panel must render `quality_signals` as a compact retrieval-quality
 checklist with severity, message, suggested action, and evidence references so
 operators can review package readiness without opening raw JSON.
+The top retrieval summary strip should also surface `quality_summary` as a
+readiness score, so operators can tell whether the active package is ready,
+needs review, or is blocked before reading detailed traces.
 Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see

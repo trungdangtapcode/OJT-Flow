@@ -540,6 +540,14 @@ the result set is empty, under-covered, safety-sensitive, or source-redundant
 without reading raw trace JSON first. They do not score clinical correctness or
 replace a human review.
 
+`RetrievalPackage.quality_summary` rolls the same signals into a quick
+operator-readiness summary with `status`, 0-100 `score`, severity counts,
+blocker/warning codes, and `top_action`. The summary is also copied into
+`handoff_context.quality_summary` so assistant and future Graph/RAG handoff
+layers can use the same readiness signal without parsing UI state. The summary
+does not hide the underlying signals; it only provides a first-glance answer to
+whether the package is ready, needs review, or is blocked.
+
 Research basis:
 
 - LlamaIndex retrieval evaluation overview:

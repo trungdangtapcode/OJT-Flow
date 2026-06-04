@@ -575,6 +575,9 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert "terminology_system" in _bucket_counts(package.facets.source_type)
     assert package.coverage is not None
     assert any(item.value == "UCUM" for item in package.coverage.standard_system)
+    assert package.quality_summary is not None
+    assert package.quality_summary.score >= 70
+    assert package.handoff_context["quality_summary"]["score"] == package.quality_summary.score
     analysis = package.handoff_context["query_analysis"]
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
@@ -948,6 +951,11 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
         {"standard_system": "UCUM"}
     ]
     assert signals["query_context_clear"].severity == "success"
+    assert package.quality_summary is not None
+    assert package.quality_summary.status == "review"
+    assert package.quality_summary.warning_count == 1
+    assert package.quality_summary.warning_codes == ["missing_standard_coverage"]
+    assert package.quality_summary.score == 85
 
 
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:

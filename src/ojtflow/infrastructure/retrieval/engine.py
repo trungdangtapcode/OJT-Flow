@@ -24,6 +24,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalHit,
     RetrievalPackage,
     RetrievalQualitySignal,
+    RetrievalQualitySummary,
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalScoreComponent,
@@ -349,12 +350,14 @@ def rank_chunks(
         candidates_seen=len(chunks),
         diversity_metadata=diversity_metadata,
     )
+    quality_summary = quality_summary_from_signals(quality_signals)
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
         coverage=coverage,
         facets=facets,
         quality_signals=quality_signals,
+        quality_summary=quality_summary,
         trace=trace,
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
@@ -365,6 +368,7 @@ def rank_chunks(
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,
             "diversity": diversity_metadata,
+            "quality_summary": quality_summary.model_dump(),
             "query_analysis": query_analysis.model_dump(),
         },
     )
@@ -537,6 +541,60 @@ def quality_signals_from_results(
                 )
             )
     return signals
+
+
+def quality_summary_from_signals(
+    signals: list[RetrievalQualitySignal],
+) -> RetrievalQualitySummary:
+    """Summarize package quality signals into an operator-readiness score."""
+
+    success_count = sum(1 for signal in signals if signal.severity == "success")
+    warning_signals = [signal for signal in signals if signal.severity == "warning"]
+    destructive_signals = [
+        signal
+        for signal in signals
+        if signal.severity in {"destructive", "error"}
+    ]
+    info_count = sum(1 for signal in signals if signal.severity == "info")
+    score = max(
+        0,
+        min(
+            100,
+            100
+            - 40 * len(destructive_signals)
+            - 15 * len(warning_signals)
+            - 5 * info_count,
+        ),
+    )
+    status = "ready"
+    if destructive_signals:
+        status = "blocked"
+    elif warning_signals or score < 85:
+        status = "review"
+    top_signal = (
+        destructive_signals[0]
+        if destructive_signals
+        else warning_signals[0]
+        if warning_signals
+        else signals[0]
+        if signals
+        else None
+    )
+    return RetrievalQualitySummary(
+        status=status,
+        score=score,
+        success_count=success_count,
+        warning_count=len(warning_signals),
+        destructive_count=len(destructive_signals),
+        info_count=info_count,
+        top_action=(
+            top_signal.suggested_action
+            if top_signal
+            else "Run retrieval before assessing package readiness."
+        ),
+        blocker_codes=[signal.code for signal in destructive_signals],
+        warning_codes=[signal.code for signal in warning_signals],
+    )
 
 
 def facets_from_chunks(chunks: list[KnowledgeChunk]) -> RetrievalFacets:

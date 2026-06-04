@@ -183,6 +183,10 @@ Retrieval hits expose `score_components` as the score explanation contract.
 Custom/static/Postgres retrieval emits lexical RRF, vector RRF, policy boost,
 and optional external reranker contribution rows. Framework adapters emit their
 own framework score row while preserving the same field shape.
+Retrieval packages also expose `quality_summary`, a deterministic aggregate of
+`quality_signals[]` with status, 0-100 score, severity counts, blocker/warning
+codes, and the top recommended action. This gives operators and assistant tools
+a quick readiness signal without hiding the underlying quality signals.
 
 `OJT_RETRIEVAL_FRAMEWORK` supports `custom` and `llamaindex`. `custom` keeps the
 native Postgres/static retrieval adapters. `llamaindex` uses the optional

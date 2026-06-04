@@ -186,6 +186,18 @@ export type RetrievalQualitySignal = {
   metadata: Record<string, unknown>;
 };
 
+export type RetrievalQualitySummary = {
+  status: string;
+  score: number;
+  success_count: number;
+  warning_count: number;
+  destructive_count: number;
+  info_count: number;
+  top_action: string;
+  blocker_codes: string[];
+  warning_codes: string[];
+};
+
 export type RetrievalGraphNode = {
   id: string;
   label: string;
@@ -269,6 +281,7 @@ export type RetrievalPackage = {
   coverage?: RetrievalCoverage | null;
   facets?: RetrievalFacets | null;
   quality_signals?: RetrievalQualitySignal[];
+  quality_summary?: RetrievalQualitySummary | null;
   trace: RetrievalTrace;
   handoff_context: {
     graph_context?: RetrievalGraphContext;

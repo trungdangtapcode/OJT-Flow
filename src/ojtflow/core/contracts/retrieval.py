@@ -219,6 +219,20 @@ class RetrievalQualitySignal(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RetrievalQualitySummary(ContractModel):
+    """Aggregate readiness summary for a retrieval package."""
+
+    status: NonBlankStr
+    score: int = Field(ge=0, le=100)
+    success_count: int = Field(ge=0)
+    warning_count: int = Field(ge=0)
+    destructive_count: int = Field(ge=0)
+    info_count: int = Field(ge=0)
+    top_action: NonBlankStr
+    blocker_codes: list[NonBlankStr] = Field(default_factory=list)
+    warning_codes: list[NonBlankStr] = Field(default_factory=list)
+
+
 class RetrievalFilterSuggestion(ContractModel):
     """Metadata filter suggested by deterministic self-query analysis."""
 
@@ -324,6 +338,7 @@ class RetrievalPackage(ContractModel):
     coverage: RetrievalCoverage | None = None
     facets: RetrievalFacets | None = None
     quality_signals: list[RetrievalQualitySignal] = Field(default_factory=list)
+    quality_summary: RetrievalQualitySummary | None = None
     trace: RetrievalTrace
     handoff_context: dict[str, Any] = Field(default_factory=dict)
 
