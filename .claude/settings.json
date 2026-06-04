@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "ojtflow-structured-data": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "ojtflow.mcp_servers.structured_data_server"],
+      "env": {}
+    },
+    "ojtflow-schema-validation": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "ojtflow.mcp_servers.schema_validation_server"],
+      "env": {}
+    },
+    "ojtflow-rag-context": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "ojtflow.mcp_servers.rag_context_server"],
+      "env": {}
+    },
+    "ojtflow-workflow-audit": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "ojtflow.mcp_servers.workflow_audit_server"],
+      "env": {}
+    },
+    "ojtflow-human-review": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "ojtflow.mcp_servers.human_review_server"],
+      "env": {}
+    }
+  }
+}

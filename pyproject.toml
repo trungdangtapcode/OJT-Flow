@@ -20,6 +20,9 @@ dev = [
   "pytest",
   "pytest-asyncio"
 ]
+mcp = [
+  "fastmcp>=2.0,<3",
+]
 parsing = [
   "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
 ]
