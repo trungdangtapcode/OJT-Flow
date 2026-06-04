@@ -330,7 +330,10 @@ refinements before rerunning the typed search.
 The console also tracks a deterministic signature of the submitted request. If
 operators change the query builder after a result package is displayed, the
 results header is marked with pending changes until the current request shape is
-submitted again.
+submitted again. Ranked evidence also shows a submitted-search summary with the
+query, target size, schema, format, resource, fields, and metadata constraints
+that produced the displayed result set. Result facet applied states are based on
+that submitted request, not unsaved edits in the query builder.
 In v0 these facets are computed over selected hits, not the full indexed corpus,
 so the counts match the evidence cards visible in the Retrieval console.
 

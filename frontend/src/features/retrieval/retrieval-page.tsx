@@ -120,6 +120,8 @@ export function RetrievalPage() {
   const [topK, setTopK] = React.useState(5);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [lastSearchSignature, setLastSearchSignature] = React.useState<string | null>(null);
+  const [submittedSearchPayload, setSubmittedSearchPayload] =
+    React.useState<RetrievalSearchPayload | null>(null);
 
   const packageData = searchMutation.data;
   const sources = sourcesQuery.data ?? [];
@@ -159,6 +161,7 @@ export function RetrievalPage() {
     }
     setFormError(null);
     await searchMutation.mutateAsync(payload);
+    setSubmittedSearchPayload(payload);
     setLastSearchSignature(retrievalSearchSignature(payload));
   };
 
@@ -432,6 +435,7 @@ export function RetrievalPage() {
             isStale={isSearchResultStale}
             onApplyFacet={applySearchFilter}
             packageData={packageData}
+            submittedSearchPayload={submittedSearchPayload}
           />
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
             <TracePanel
@@ -533,12 +537,14 @@ function SearchResults({
   isStale,
   onApplyFacet,
   packageData,
+  submittedSearchPayload,
 }: {
   activeFilters: ActiveFacetFilters;
   isSearchPending: boolean;
   isStale: boolean;
   onApplyFacet: (field: SupportedFilterField, value: string) => void;
   packageData: RetrievalPackage | undefined;
+  submittedSearchPayload: RetrievalSearchPayload | null;
 }) {
   if (!packageData) {
     return (
@@ -555,6 +561,10 @@ function SearchResults({
       </Card>
     );
   }
+
+  const resultFilters = submittedSearchPayload
+    ? activeFacetFiltersFromPayload(submittedSearchPayload)
+    : activeFilters;
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -574,8 +584,11 @@ function SearchResults({
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 pt-4">
+        {submittedSearchPayload ? (
+          <SubmittedSearchSummary isStale={isStale} payload={submittedSearchPayload} />
+        ) : null}
         <ResultFacets
-          activeFilters={activeFilters}
+          activeFilters={resultFilters}
           facets={packageData.facets}
           isSearchPending={isSearchPending}
           onApplyFacet={onApplyFacet}
@@ -667,6 +680,60 @@ function ResultFacets({
   );
 }
 
+function SubmittedSearchSummary({
+  isStale,
+  payload,
+}: {
+  isStale: boolean;
+  payload: RetrievalSearchPayload;
+}) {
+  const filters = activeFilterEntries(activeFacetFiltersFromPayload(payload));
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">Submitted search</div>
+        <Badge variant={isStale ? "warning" : "success"}>
+          {isStale ? "displayed request" : "current request"}
+        </Badge>
+      </div>
+      <div className="grid gap-2 text-sm">
+        <div className="break-words font-semibold">{payload.query}</div>
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          <Badge variant="muted">top {payload.top_k}</Badge>
+          {payload.schema_id ? <Badge variant="muted">{payload.schema_id}</Badge> : null}
+          {payload.detected_format ? <Badge variant="muted">{humanize(payload.detected_format)}</Badge> : null}
+          {payload.resource_type ? <Badge variant="muted">{payload.resource_type}</Badge> : null}
+          {payload.fields.slice(0, 8).map((field) => (
+            <span
+              className="max-w-full break-words rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground"
+              key={field}
+            >
+              {field}
+            </span>
+          ))}
+          {payload.fields.length > 8 ? (
+            <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
+              +{payload.fields.length - 8} fields
+            </span>
+          ) : null}
+        </div>
+        {filters.length ? (
+          <div className="flex min-w-0 flex-wrap gap-1.5">
+            {filters.map((filter) => (
+              <span
+                className="max-w-full break-words rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-bold text-foreground"
+                key={filter.field}
+              >
+                {filter.label}: {filter.displayValue}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ActiveFilterBar({
   filters,
   isSearchPending,
@@ -717,6 +784,15 @@ function ActiveFilterBar({
       </div>
     </div>
   );
+}
+
+function activeFacetFiltersFromPayload(payload: RetrievalSearchPayload): ActiveFacetFilters {
+  return {
+    clinical_domain: payload.clinical_domain || undefined,
+    standard_system: payload.standard_system || undefined,
+    source_type: payload.source_type || undefined,
+    trust_level: payload.trust_level || undefined,
+  };
 }
 
 function activeFilterEntries(filters: ActiveFacetFilters): ActiveFilterEntry[] {

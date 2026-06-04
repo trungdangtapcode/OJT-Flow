@@ -138,7 +138,10 @@ results locally. Selected refinements should remain visible as removable chips
 with a clear-all action so operators can audit and undo the active search
 constraints. If the query builder changes after a search, the results panel
 must show that ranked evidence has pending changes until the current request
-state is submitted again.
+state is submitted again. The ranked-results panel should also render the last
+submitted request summary and use that submitted payload to mark result facets
+as applied, so displayed evidence remains auditable even while the builder is
+being edited.
 The assistant route is the operator shortcut over those same backend contracts.
 It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
 write-gate state, executed tool calls, and compact evidence/output previews.

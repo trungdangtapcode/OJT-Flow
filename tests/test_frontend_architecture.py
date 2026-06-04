@@ -205,6 +205,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "retrievalSearchSignature" in retrieval_page
     assert "Search settings changed" in retrieval_page
     assert "pending changes" in retrieval_page
+    assert "submittedSearchPayload" in retrieval_page
+    assert "SubmittedSearchSummary" in retrieval_page
+    assert "Submitted search" in retrieval_page
+    assert "displayed request" in retrieval_page
+    assert "activeFacetFiltersFromPayload" in retrieval_page
     assert "onApplyFacet" in retrieval_page
     assert "aria-pressed={applied}" in retrieval_page
     assert "supportedSuggestionFilterFields" in retrieval_page
@@ -215,6 +220,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "actionable refinements" in frontend_architecture
     assert "removable chips" in frontend_architecture
     assert "pending changes" in frontend_architecture
+    assert "submitted request summary" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:
