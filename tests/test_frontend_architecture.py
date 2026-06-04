@@ -238,6 +238,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Run comparison" in retrieval_page
     assert "compareSearchRuns" in retrieval_page
     assert "comparisonRunForActive" in retrieval_page
+    assert "comparisonBaselineRunId" in retrieval_page
+    assert "Set baseline" in retrieval_page
+    assert "as comparison baseline" in retrieval_page
+    assert "GitCompareArrows" in retrieval_page
     assert "addedEvidenceIds" in retrieval_page
     assert "retainedEvidenceIds" in retrieval_page
     assert "RunComparisonRankChanges" in retrieval_page
@@ -301,6 +305,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "pending changes" in frontend_architecture
     assert "submitted request summary" in frontend_architecture
     assert "compare recent search packages" in frontend_architecture
+    assert "select a baseline run" in frontend_architecture
     assert "rank movement" in frontend_architecture
     assert "copyable JSON report" in frontend_architecture
     assert "overlap and churn metrics" in frontend_architecture

@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileSearch,
   Gauge,
+  GitCompareArrows,
   History,
   ListFilter,
   Loader2,
@@ -183,6 +184,8 @@ export function RetrievalPage() {
   const [didApplyInitialPreset, setDidApplyInitialPreset] = React.useState(false);
   const [searchRuns, setSearchRuns] = React.useState<RetrievalSearchRun[]>([]);
   const [activeRunId, setActiveRunId] = React.useState<string | null>(null);
+  const [comparisonBaselineRunId, setComparisonBaselineRunId] =
+    React.useState<string | null>(null);
 
   const activeRun = React.useMemo(
     () => searchRuns.find((run) => run.runId === activeRunId) ?? null,
@@ -190,9 +193,13 @@ export function RetrievalPage() {
   );
   const activeRunComparison = React.useMemo(() => {
     if (!activeRun) return null;
-    const baselineRun = comparisonRunForActive(searchRuns, activeRun.runId);
+    const baselineRun = comparisonRunForActive(
+      searchRuns,
+      activeRun.runId,
+      comparisonBaselineRunId,
+    );
     return baselineRun ? compareSearchRuns(activeRun, baselineRun) : null;
-  }, [activeRun, searchRuns]);
+  }, [activeRun, comparisonBaselineRunId, searchRuns]);
   const packageData = activeRun?.packageData ?? searchMutation.data;
   const presets = presetsQuery.data ?? [];
   const searchOptions = searchOptionsQuery.data;
@@ -292,6 +299,12 @@ export function RetrievalPage() {
     setDidApplyInitialPreset(true);
   }, [applyPreset, didApplyInitialPreset, presets]);
 
+  React.useEffect(() => {
+    if (!comparisonBaselineRunId) return;
+    if (searchRuns.some((run) => run.runId === comparisonBaselineRunId)) return;
+    setComparisonBaselineRunId(null);
+  }, [comparisonBaselineRunId, searchRuns]);
+
   const applySearchFilter = (field: SupportedFilterField, value: string) => {
     markCustomSearch();
     const overrides: Partial<RetrievalSearchPayload> = {};
@@ -371,11 +384,13 @@ export function RetrievalPage() {
     setSubmittedSearchPayload(run.payload);
     setLastSearchSignature(run.signature);
     setActiveRunId(run.runId);
+    if (comparisonBaselineRunId === run.runId) setComparisonBaselineRunId(null);
   };
 
   const clearSearchRuns = () => {
     setSearchRuns([]);
     setActiveRunId(null);
+    setComparisonBaselineRunId(null);
   };
 
   const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
@@ -655,9 +670,11 @@ export function RetrievalPage() {
           <SearchRunHistory
             activeRunId={activeRunId}
             comparison={activeRunComparison}
+            comparisonBaselineRunId={comparisonBaselineRunId}
             isSearchPending={searchMutation.isPending}
             onClear={clearSearchRuns}
             onRestore={restoreSearchRun}
+            onSetComparisonBaseline={setComparisonBaselineRunId}
             runs={searchRuns}
           />
         </div>
@@ -770,16 +787,20 @@ function RetrievalSummary({
 function SearchRunHistory({
   activeRunId,
   comparison,
+  comparisonBaselineRunId,
   isSearchPending,
   onClear,
   onRestore,
+  onSetComparisonBaseline,
   runs,
 }: {
   activeRunId: string | null;
   comparison: RetrievalRunComparison | null;
+  comparisonBaselineRunId: string | null;
   isSearchPending: boolean;
   onClear: () => void;
   onRestore: (run: RetrievalSearchRun) => void;
+  onSetComparisonBaseline: (runId: string | null) => void;
   runs: RetrievalSearchRun[];
 }) {
   if (!runs.length) return null;
@@ -807,52 +828,79 @@ function SearchRunHistory({
       <CardContent className="grid gap-2 pt-4">
         {runs.map((run) => {
           const active = run.runId === activeRunId;
+          const baseline = run.runId === comparisonBaselineRunId;
+          const canSetBaseline = !active && !isSearchPending;
           return (
-            <button
-              aria-pressed={active}
+            <div
               className={cn(
-                "grid min-w-0 gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-70",
+                "grid min-w-0 gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
                 active
                   ? "border-primary bg-primary/10 text-foreground"
                   : "border-border bg-card hover:bg-muted",
               )}
-              disabled={isSearchPending}
               key={run.runId}
-              onClick={() => onRestore(run)}
               title={run.payload.query}
-              type="button"
             >
-              <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="min-w-0 break-words font-black">
-                  {run.payload.query}
+              <button
+                aria-label={`Restore search run ${run.payload.query}`}
+                aria-pressed={active}
+                className="grid w-full min-w-0 gap-2 text-left focus-ring disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={isSearchPending}
+                onClick={() => onRestore(run)}
+                type="button"
+              >
+                <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 break-words font-black">
+                    {run.payload.query}
+                  </span>
+                  <span className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                    {baseline ? <Badge variant="default">baseline</Badge> : null}
+                    <Badge variant={searchRunSummaryVariant(run.summary)}>
+                      {run.summary.qualityWarningCount
+                        ? formatCount(run.summary.qualityWarningCount, "issue")
+                        : "ready"}
+                    </Badge>
+                  </span>
                 </span>
-                <Badge variant={searchRunSummaryVariant(run.summary)}>
-                  {run.summary.qualityWarningCount
-                    ? formatCount(run.summary.qualityWarningCount, "issue")
-                    : "ready"}
-                </Badge>
-              </span>
-              <span className="flex min-w-0 flex-wrap gap-1.5">
-                <Badge variant="muted">{formatRunTime(run.submittedAt)}</Badge>
-                <Badge variant="muted">top {run.payload.top_k}</Badge>
-                <Badge variant="muted">
-                  {formatCount(run.summary.hitCount, "hit")}
-                </Badge>
-                <Badge variant="muted">
-                  {formatCount(run.summary.candidateCount, "candidate")}
-                </Badge>
-                {run.summary.warningCount ? (
-                  <Badge variant="warning">
-                    {formatCount(run.summary.warningCount, "warning")}
+                <span className="flex min-w-0 flex-wrap gap-1.5">
+                  <Badge variant="muted">{formatRunTime(run.submittedAt)}</Badge>
+                  <Badge variant="muted">top {run.payload.top_k}</Badge>
+                  <Badge variant="muted">
+                    {formatCount(run.summary.hitCount, "hit")}
                   </Badge>
-                ) : null}
-              </span>
-              {run.summary.topSourceId ? (
-                <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
-                  Top source: {run.summary.topSourceId}
+                  <Badge variant="muted">
+                    {formatCount(run.summary.candidateCount, "candidate")}
+                  </Badge>
+                  {run.summary.warningCount ? (
+                    <Badge variant="warning">
+                      {formatCount(run.summary.warningCount, "warning")}
+                    </Badge>
+                  ) : null}
                 </span>
-              ) : null}
-            </button>
+                {run.summary.topSourceId ? (
+                  <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
+                    Top source: {run.summary.topSourceId}
+                  </span>
+                ) : null}
+              </button>
+              <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                <Button
+                  aria-label={
+                    baseline
+                      ? `Clear comparison baseline ${run.payload.query}`
+                      : `Use ${run.payload.query} as comparison baseline`
+                  }
+                  disabled={!canSetBaseline}
+                  onClick={() => onSetComparisonBaseline(baseline ? null : run.runId)}
+                  size="sm"
+                  type="button"
+                  variant={baseline ? "secondary" : "outline"}
+                >
+                  <GitCompareArrows className="h-4 w-4" />
+                  {baseline ? "Baseline" : "Set baseline"}
+                </Button>
+              </div>
+            </div>
           );
         })}
         {comparison ? <SearchRunComparison comparison={comparison} /> : null}
@@ -3390,9 +3438,14 @@ function createSearchRun(
 function comparisonRunForActive(
   runs: RetrievalSearchRun[],
   activeRunId: string,
+  baselineRunId: string | null,
 ): RetrievalSearchRun | null {
   const activeIndex = runs.findIndex((run) => run.runId === activeRunId);
   if (activeIndex < 0) return null;
+  const explicitBaseline = baselineRunId
+    ? runs.find((run) => run.runId === baselineRunId && run.runId !== activeRunId)
+    : null;
+  if (explicitBaseline) return explicitBaseline;
   return (
     runs.slice(activeIndex + 1).find((run) => run.runId !== activeRunId) ??
     runs.find((run) => run.runId !== activeRunId) ??

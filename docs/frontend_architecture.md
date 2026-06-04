@@ -173,13 +173,14 @@ restore the query builder to the submitted request without changing the result
 package or issuing another search. The Retrieval console should keep a compact
 in-session history of recent unique search runs with hit count, candidate count,
 warnings, quality issue count, and top source so operators can compare recent search packages
-and restore recent result packages without rerunning every query. The active
-run comparison should show deltas, overlap and churn metrics, evidence IDs that
-were added, removed, or retained, and rank movement for retained evidence so
-relevance tuning remains inspectable. Comparison output should include a
-copyable JSON report with the active payload, baseline payload, summaries,
-deltas, metrics, evidence changes, and rank movement so tuning notes can be
-reproduced outside the browser.
+and restore recent result packages without rerunning every query. Operators
+should be able to select a baseline run for pairwise comparison instead of only
+using the previous run. The active run comparison should show deltas,
+overlap and churn metrics, evidence IDs that were added, removed, or retained,
+and rank movement for retained evidence so relevance tuning remains inspectable.
+Comparison output should include a copyable JSON report with the active payload,
+baseline payload, summaries, deltas, metrics, evidence changes, and rank
+movement so tuning notes can be reproduced outside the browser.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.
