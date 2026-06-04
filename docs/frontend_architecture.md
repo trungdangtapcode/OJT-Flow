@@ -176,7 +176,9 @@ warnings, quality issue count, and top source so operators can compare recent se
 and restore recent result packages without rerunning every query. The active
 run comparison should show deltas, evidence IDs that were added, removed, or
 retained, and rank movement for retained evidence so relevance tuning remains
-inspectable.
+inspectable. Comparison output should include a copyable JSON report with the
+active payload, baseline payload, summaries, deltas, evidence changes, and rank
+movement so tuning notes can be reproduced outside the browser.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.

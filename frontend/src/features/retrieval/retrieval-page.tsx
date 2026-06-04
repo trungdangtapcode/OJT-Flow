@@ -109,7 +109,14 @@ type RetrievalRunSummary = {
 };
 type RetrievalRunComparison = {
   addedEvidenceIds: string[];
+  activePayload: RetrievalSearchPayload;
+  activeQuery: string;
+  activeSubmittedAt: string;
+  activeSummary: RetrievalRunSummary;
+  baselinePayload: RetrievalSearchPayload;
   baselineQuery: string;
+  baselineSubmittedAt: string;
+  baselineSummary: RetrievalRunSummary;
   candidateDelta: number;
   hitDelta: number;
   qualityWarningDelta: number;
@@ -846,6 +853,12 @@ function SearchRunHistory({
 }
 
 function SearchRunComparison({ comparison }: { comparison: RetrievalRunComparison }) {
+  const copyReport = async () => {
+    await copyTextToClipboard(
+      JSON.stringify(comparisonReportFromComparison(comparison), null, 2),
+    );
+  };
+
   return (
     <div
       aria-label="Search run comparison"
@@ -855,9 +868,21 @@ function SearchRunComparison({ comparison }: { comparison: RetrievalRunCompariso
         <div className="text-xs font-bold uppercase text-muted-foreground">
           Run comparison
         </div>
-        <Badge variant={comparison.topSourceChanged ? "warning" : "success"}>
-          {comparison.topSourceChanged ? "top source changed" : "top source stable"}
-        </Badge>
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          <Badge variant={comparison.topSourceChanged ? "warning" : "success"}>
+            {comparison.topSourceChanged ? "top source changed" : "top source stable"}
+          </Badge>
+          <Button
+            aria-label="Copy retrieval comparison report"
+            onClick={() => void copyReport()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Clipboard className="h-4 w-4" />
+            Copy report
+          </Button>
+        </div>
       </div>
       <div className="break-words text-xs leading-5 text-muted-foreground">
         Compared with: {comparison.baselineQuery}
@@ -3330,7 +3355,14 @@ function compareSearchRuns(
     addedEvidenceIds: activeEvidenceIds.filter(
       (evidenceId) => !baselineEvidenceIdSet.has(evidenceId),
     ),
+    activePayload: activeRun.payload,
+    activeQuery: activeRun.payload.query,
+    activeSubmittedAt: activeRun.submittedAt,
+    activeSummary: activeRun.summary,
+    baselinePayload: baselineRun.payload,
     baselineQuery: baselineRun.payload.query,
+    baselineSubmittedAt: baselineRun.submittedAt,
+    baselineSummary: baselineRun.summary,
     candidateDelta:
       activeRun.summary.candidateCount - baselineRun.summary.candidateCount,
     hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
@@ -3348,6 +3380,43 @@ function compareSearchRuns(
     topSourceChanged:
       activeRun.summary.topSourceId !== baselineRun.summary.topSourceId,
     warningDelta: activeRun.summary.warningCount - baselineRun.summary.warningCount,
+  };
+}
+
+function comparisonReportFromComparison(comparison: RetrievalRunComparison) {
+  return {
+    report_type: "retrieval_run_comparison",
+    version: 1,
+    generated_at: new Date().toISOString(),
+    active: {
+      query: comparison.activeQuery,
+      submitted_at: comparison.activeSubmittedAt,
+      payload: comparison.activePayload,
+      summary: comparison.activeSummary,
+    },
+    baseline: {
+      query: comparison.baselineQuery,
+      submitted_at: comparison.baselineSubmittedAt,
+      payload: comparison.baselinePayload,
+      summary: comparison.baselineSummary,
+    },
+    deltas: {
+      candidates: comparison.candidateDelta,
+      hits: comparison.hitDelta,
+      quality_warnings: comparison.qualityWarningDelta,
+      warnings: comparison.warningDelta,
+    },
+    evidence: {
+      added_ids: comparison.addedEvidenceIds,
+      removed_ids: comparison.removedEvidenceIds,
+      retained_ids: comparison.retainedEvidenceIds,
+      rank_changes: comparison.rankChanges,
+    },
+    top_source: {
+      before: comparison.topSourceBefore,
+      after: comparison.topSourceAfter,
+      changed: comparison.topSourceChanged,
+    },
   };
 }
 

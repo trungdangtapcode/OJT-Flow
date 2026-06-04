@@ -244,6 +244,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Rank movement" in retrieval_page
     assert "rankChangesBetweenRuns" in retrieval_page
     assert "rankDelta" in retrieval_page
+    assert "Copy report" in retrieval_page
+    assert "Copy retrieval comparison report" in retrieval_page
+    assert "comparisonReportFromComparison" in retrieval_page
+    assert "retrieval_run_comparison" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page
@@ -292,6 +296,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "submitted request summary" in frontend_architecture
     assert "compare recent search packages" in frontend_architecture
     assert "rank movement" in frontend_architecture
+    assert "copyable JSON report" in frontend_architecture
     assert "restore the query builder" in frontend_architecture
     assert "copyable and launchable" in frontend_architecture
     assert "/retrieval/presets" in frontend_architecture
