@@ -1,0 +1,136 @@
+{
+  "version": "FHIR R4 curated seed v0",
+  "source": "https://hl7.org/fhir/R4/search.html",
+  "purpose": "FHIR search parameter seed for deterministic medical retrieval hints. This is not a complete FHIR CapabilityStatement.",
+  "resources": [
+    {
+      "resource_type": "Observation",
+      "clinical_domain": "laboratory",
+      "parameters": [
+        {
+          "name": "code",
+          "type": "token",
+          "target_field": "Observation.code",
+          "example": "Observation?code=http://loinc.org|2345-7",
+          "standard_systems": ["FHIR", "LOINC"]
+        },
+        {
+          "name": "subject",
+          "type": "reference",
+          "target_field": "Observation.subject",
+          "example": "Observation?subject=Patient/<id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "Observation.subject where subject is Patient",
+          "example": "Observation?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "date",
+          "type": "date",
+          "target_field": "Observation.effective[x]",
+          "example": "Observation?date=ge2026-01-01",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "value-quantity",
+          "type": "quantity",
+          "target_field": "Observation.valueQuantity",
+          "example": "Observation?value-quantity=gt5|http://unitsofmeasure.org|mmol/L",
+          "standard_systems": ["FHIR", "UCUM"]
+        },
+        {
+          "name": "combo-code",
+          "type": "token",
+          "target_field": "Observation.code or Observation.component.code",
+          "example": "Observation?combo-code=http://loinc.org|4548-4",
+          "standard_systems": ["FHIR", "LOINC"]
+        }
+      ]
+    },
+    {
+      "resource_type": "DiagnosticReport",
+      "clinical_domain": "laboratory",
+      "parameters": [
+        {
+          "name": "code",
+          "type": "token",
+          "target_field": "DiagnosticReport.code",
+          "example": "DiagnosticReport?code=http://loinc.org|24323-8",
+          "standard_systems": ["FHIR", "LOINC"]
+        },
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "DiagnosticReport.subject where subject is Patient",
+          "example": "DiagnosticReport?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "result",
+          "type": "reference",
+          "target_field": "DiagnosticReport.result",
+          "example": "DiagnosticReport?result=Observation/<id>",
+          "standard_systems": ["FHIR"]
+        }
+      ]
+    },
+    {
+      "resource_type": "MedicationRequest",
+      "clinical_domain": "medication",
+      "parameters": [
+        {
+          "name": "code",
+          "type": "token",
+          "target_field": "MedicationRequest.medication[x]",
+          "example": "MedicationRequest?code=<rxnorm-rxcui>",
+          "standard_systems": ["FHIR", "RxNorm"]
+        },
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "MedicationRequest.subject",
+          "example": "MedicationRequest?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "status",
+          "type": "token",
+          "target_field": "MedicationRequest.status",
+          "example": "MedicationRequest?status=active",
+          "standard_systems": ["FHIR"]
+        }
+      ]
+    },
+    {
+      "resource_type": "Condition",
+      "clinical_domain": "problem_list",
+      "parameters": [
+        {
+          "name": "code",
+          "type": "token",
+          "target_field": "Condition.code",
+          "example": "Condition?code=<condition-code>",
+          "standard_systems": ["FHIR", "SNOMED CT", "ICD-10-CM"]
+        },
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "Condition.subject",
+          "example": "Condition?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "clinical-status",
+          "type": "token",
+          "target_field": "Condition.clinicalStatus",
+          "example": "Condition?clinical-status=active",
+          "standard_systems": ["FHIR"]
+        }
+      ]
+    }
+  ]
+}

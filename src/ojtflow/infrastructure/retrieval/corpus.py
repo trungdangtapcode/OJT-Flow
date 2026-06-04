@@ -165,9 +165,12 @@ def _title_from_text(path: Path, text: str) -> str:
 
 def _source_type_for(path: Path, text: str) -> EvidenceSourceType:
     inspected = f"{path} {text[:1000]}".lower()
-    if any(term in inspected for term in ["loinc", "ucum", "rxnorm", "snomed"]):
+    if any(
+        term in inspected
+        for term in ["loinc", "ucum", "rxnorm", "snomed", "mesh", "icd-10"]
+    ):
         return EvidenceSourceType.TERMINOLOGY_SYSTEM
-    if any(term in inspected for term in ["fhir", "omop", "hl7", "standard"]):
+    if any(term in inspected for term in ["fhir", "omop", "hl7", "standard", "clinicaltrials.gov"]):
         return EvidenceSourceType.HEALTHCARE_STANDARD
     if "example" in inspected:
         return EvidenceSourceType.TRANSFORMATION_EXAMPLE
@@ -176,10 +179,32 @@ def _source_type_for(path: Path, text: str) -> EvidenceSourceType:
 
 def _clinical_domain_for(path: Path, text: str) -> str:
     inspected = f"{path} {text[:1000]}".lower()
-    if any(term in inspected for term in ["lab", "observation", "hba1c", "glucose"]):
+    if any(
+        term in inspected
+        for term in [
+            "lab",
+            "laboratory",
+            "observation",
+            "hba1c",
+            "glucose",
+            "creatinine",
+            "sodium",
+            "potassium",
+            "cholesterol",
+        ]
+    ):
         return "laboratory"
-    if any(term in inspected for term in ["medication", "rxnorm", "drug"]):
+    if any(term in inspected for term in ["medication", "rxnorm", "drug", "openfda", "ndc"]):
         return "medication"
+    if any(
+        term in inspected
+        for term in ["mesh", "pubmed", "medline", "literature", "clinicaltrials", "trial"]
+    ):
+        return "literature"
+    if any(term in inspected for term in ["fhir", "hl7", "interoperability"]):
+        return "interoperability"
+    if any(term in inspected for term in ["omop", "analytics", "cohort"]):
+        return "analytics"
     if any(term in inspected for term in ["imaging", "dicom", "radiology"]):
         return "imaging"
     if any(term in inspected for term in ["governance", "policy", "review"]):
@@ -194,7 +219,13 @@ def _standard_system_for(path: Path, text: str) -> str:
         "LOINC": ["loinc"],
         "UCUM": ["ucum"],
         "RxNorm": ["rxnorm"],
+        "MeSH": ["mesh", "pubmed", "medline"],
         "OMOP": ["omop"],
+        "ClinicalTrials.gov": ["clinicaltrials.gov", "clinicaltrials"],
+        "openFDA": ["openfda", "fda adverse", "drug label"],
+        "SNOMED CT": ["snomed"],
+        "ICD-10-CM": ["icd-10"],
+        "MedlinePlus": ["medlineplus"],
     }
     for system, markers in candidates.items():
         if any(marker in inspected for marker in markers):

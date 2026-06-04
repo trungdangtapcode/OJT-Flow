@@ -58,13 +58,47 @@ Seeded v0 sources include:
 - human-review governance triggers
 - CSV lab-to-JSON transformation pattern
 - FHIR Observation R4 direction
+- curated FHIR R4 search parameter seeds for Observation, DiagnosticReport,
+  MedicationRequest, and Condition
 - LOINC laboratory terminology direction
 - UCUM unit terminology direction
 - RxNorm medication terminology direction
 - OMOP CDM analytics export direction
+- MeSH/PubMed biomedical literature-search direction
+- an official healthcare source catalog covering MeSH, RxNorm/RxNav, LOINC,
+  FHIR R4, UCUM, MedlinePlus, openFDA, and ClinicalTrials.gov
+- a public dataset ingestion plan that keeps large third-party corpora out of
+  git and routes them through explicit ingestion adapters
 
 The implementation preserves original user data and records terminology evidence
 without silently normalizing clinical concepts.
+
+## Knowledge Expansion
+
+The source-controlled `knowledge/` tree is intentionally a curated seed layer,
+not a bulk data dump. It now contains:
+
+- `knowledge/source_catalog/official_healthcare_sources.json`: authoritative
+  source inventory, access URLs, intended use, and ingestion mode.
+- `knowledge/terminologies/medical_concepts.json`: small controlled-vocabulary
+  seed registry used by deterministic query analysis.
+- `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
+  parameter templates for resource-level search hints.
+- `knowledge/corpus/clinical_data_standards_map.md`: project-scope map from
+  workflow use cases to FHIR, LOINC, UCUM, RxNorm, MeSH/PubMed,
+  ClinicalTrials.gov, openFDA, and OMOP.
+- `knowledge/corpus/medical_search_playbook.md`: retrieval design notes based
+  on advanced RAG patterns such as query transformation, hybrid retrieval,
+  reranking, source-aware diversity, and coverage diagnostics.
+- `knowledge/corpus/public_dataset_ingestion_plan.md`: priority ingestion plan
+  for official public healthcare sources.
+
+Bulk data belongs in runtime storage, not in the repo. The next ingestion layer
+should fetch official datasets or API snapshots into ignored local/object
+storage, normalize them into `KnowledgeDocument` and `KnowledgeChunk` records,
+record source release metadata, and expose only reviewed distilled chunks to
+the retrieval index. This keeps licenses, update cadence, provenance, and
+storage size manageable for an enterprise deployment.
 
 ## Query Analysis
 
@@ -92,6 +126,21 @@ The public retrieval package exposes this under
 {
   "strategy": "deterministic_clinical_expansion_v0",
   "detected_concepts": ["hba1c_laboratory_test", "unit_normalization"],
+  "concept_candidates": [
+    {
+      "concept_id": "glucose_serum_plasma",
+      "display_name": "Glucose in serum or plasma",
+      "standard_system": "LOINC",
+      "code": "2345-7",
+      "clinical_domain": "laboratory",
+      "matched_aliases": ["glucose"],
+      "confidence": 0.8,
+      "source": "https://loinc.org/2345-7",
+      "metadata": {
+        "preferred_units": ["mg/dL", "mmol/L"]
+      }
+    }
+  ],
   "expanded_terms": ["HbA1c", "UCUM computable unit"],
   "standards": ["LOINC", "FHIR", "UCUM"],
   "rule_ids": ["hba1c_lab_test", "unit_normalization"],
@@ -125,6 +174,16 @@ metadata filters such as `clinical_domain=laboratory` or
 `standard_system=UCUM`, but do not apply them silently. The Retrieval console
 shows confidence and whether each suggestion is already applied.
 
+Concept candidates are loaded from `knowledge/terminologies/medical_concepts.json`,
+not hardcoded into the query analyzer. The seed registry currently covers a
+small set of common examples across LOINC, RxNorm, and MeSH, such as HbA1c
+`4548-4`, glucose `2345-7`, creatinine `2160-0`, sodium `2951-2`, potassium
+`2823-3`, total cholesterol `2093-3`, metformin RxCUI `6809`, Diabetes Mellitus
+MeSH `D003920`, Hypertension MeSH `D006973`, and chronic kidney failure MeSH
+`D007676`. These candidates improve query variants, filter suggestions, and
+operator transparency. They are scaffold data, not a substitute for a full
+licensed terminology service or final clinical code assignment.
+
 Diagnostics are deterministic query-quality checks. They flag low-specificity
 queries, missing healthcare concept matches, and standard filters that conflict
 with the standards inferred from query content. Warning diagnostics are copied
@@ -143,7 +202,7 @@ the query as a final literature strategy.
 Research basis:
 
 - RAG query transformation patterns:
-  `https://github.com/NirDiamant/RAG_Techniques/blob/main/all_rag_techniques/query_transformations.ipynb`
+  `https://github.com/NirDiamant/RAG_Techniques`
 - Metadata-aware self-query retrieval:
   `https://api.python.langchain.com/en/latest/langchain/retrievers/langchain.retrievers.self_query.base.SelfQueryRetriever.html`
 - Elasticsearch query rules for contextual search control:
@@ -155,8 +214,13 @@ Research basis:
 - HL7 FHIR R4 search semantics:
   `https://hl7.org/fhir/R4/search.html`
 - FHIR Observation R4: `https://hl7.org/fhir/r4/observation.html`
-- LOINC laboratory terminology: `https://cdn.loinc.org/about/`
+- NLM MeSH data: `https://www.nlm.nih.gov/databases/download/mesh.html`
+- RxNorm/RxNav APIs: `https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html`
+- LOINC examples: `https://loinc.org/2345-7` and `https://loinc.org/4548-4`
 - UCUM units: `https://ucum.nlm.nih.gov/`
+- MedlinePlus XML: `https://medlineplus.gov/xml.html`
+- openFDA APIs: `https://open.fda.gov/apis/`
+- ClinicalTrials.gov API v2: `https://clinicaltrials.gov/data-api/api`
 
 ## Snippets And Context Compression
 

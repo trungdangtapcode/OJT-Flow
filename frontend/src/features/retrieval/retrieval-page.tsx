@@ -694,11 +694,61 @@ function QueryAnalysisBlock({
         <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
       </div>
       <QueryDiagnosticList diagnostics={analysis.diagnostics} />
+      <ConceptCandidateList candidates={analysis.conceptCandidates} />
       <SearchHintList hints={analysis.searchHints} />
       <TokenList items={analysis.detectedConcepts.map(humanize)} title="Detected concepts" />
       <TokenList items={analysis.standards} title="Standard cues" />
       <FilterSuggestionList suggestions={analysis.filterSuggestions} />
       <TokenList items={analysis.expandedTerms} title="Expanded terms" />
+    </div>
+  );
+}
+
+function ConceptCandidateList({
+  candidates,
+}: {
+  candidates: ConceptCandidateStack[];
+}) {
+  if (!candidates.length) {
+    return <TokenList items={[]} title="Concept candidates" />;
+  }
+  return (
+    <div className="grid gap-1.5">
+      <div className="text-xs font-bold uppercase text-muted-foreground">
+        Concept candidates
+      </div>
+      <div className="grid gap-2">
+        {candidates.map((candidate) => (
+          <div
+            className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
+            key={`${candidate.standardSystem}-${candidate.code}-${candidate.conceptId}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{candidate.displayName}</span>
+              <Badge variant="success">
+                {candidate.standardSystem}
+                {candidate.code ? ` ${candidate.code}` : ""}
+              </Badge>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              <span className="rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground">
+                {humanize(candidate.clinicalDomain ?? "unknown")}
+              </span>
+              <span className="rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground">
+                {Math.round(candidate.confidence * 100)}%
+              </span>
+              {candidate.matchedAliases.slice(0, 4).map((alias) => (
+                <span
+                  className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
+                  key={`${candidate.conceptId}-${alias}`}
+                >
+                  {alias}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1047,6 +1097,7 @@ type DiversityStack = {
 };
 
 type QueryAnalysisStack = {
+  conceptCandidates: ConceptCandidateStack[];
   detectedConcepts: string[];
   diagnostics: QueryDiagnosticStack[];
   expandedTerms: string[];
@@ -1056,6 +1107,16 @@ type QueryAnalysisStack = {
   standards: string[];
   strategy: string;
   variantCount: number;
+};
+
+type ConceptCandidateStack = {
+  clinicalDomain: string | null;
+  code: string | null;
+  conceptId: string;
+  confidence: number;
+  displayName: string;
+  matchedAliases: string[];
+  standardSystem: string;
 };
 
 type SearchHintStack = {
@@ -1102,6 +1163,7 @@ function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
 function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisStack {
   const queryAnalysis = recordValue(packageData.handoff_context.query_analysis);
   return {
+    conceptCandidates: conceptCandidatesValue(queryAnalysis.concept_candidates),
     detectedConcepts: stringArrayValue(queryAnalysis.detected_concepts),
     diagnostics: queryDiagnosticsValue(queryAnalysis.diagnostics),
     expandedTerms: stringArrayValue(queryAnalysis.expanded_terms),
@@ -1175,6 +1237,22 @@ function booleanValue(value: unknown): boolean {
 function stringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function conceptCandidatesValue(value: unknown): ConceptCandidateStack[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      clinicalDomain: optionalStringValue(item.clinical_domain),
+      code: optionalStringValue(item.code),
+      conceptId: stringValue(item.concept_id, "concept"),
+      confidence: numberValue(item.confidence) ?? 0,
+      displayName: stringValue(item.display_name, "Unknown concept"),
+      matchedAliases: stringArrayValue(item.matched_aliases),
+      standardSystem: stringValue(item.standard_system, "unknown"),
+    }))
+    .filter((item) => item.conceptId !== "concept" && item.standardSystem !== "unknown");
 }
 
 function filterSuggestionsValue(value: unknown): FilterSuggestionStack[] {

@@ -1,0 +1,157 @@
+{
+  "version": "2026-06-04",
+  "purpose": "Authoritative source catalog for expanding OJTFlow healthcare retrieval knowledge without committing uncontrolled bulk datasets.",
+  "sources": [
+    {
+      "source_id": "nlm_mesh_2026",
+      "name": "NLM Medical Subject Headings",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "biomedical_literature",
+      "standard_system": "MeSH",
+      "access": {
+        "download_page": "https://www.nlm.nih.gov/databases/download/mesh.html",
+        "rdf_index": "https://nlmpubs.nlm.nih.gov/projects/mesh/rdf/2026/",
+        "rest_example": "https://id.nlm.nih.gov/mesh/D003920.json"
+      },
+      "recommended_use": [
+        "PubMed/Medline subject search normalization",
+        "literature retrieval expansion",
+        "controlled vocabulary display and evidence provenance"
+      ],
+      "ingestion_mode": "bulk_rdf_or_selected_rest_snapshots",
+      "notes": "NLM publishes MeSH XML, MARC 21, and RDF. Full RDF/XML should be ingested out-of-repo or into ignored runtime storage, then distilled into curated retrieval chunks."
+    },
+    {
+      "source_id": "nlm_rxnorm",
+      "name": "RxNorm and RxNav API",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "medication",
+      "standard_system": "RxNorm",
+      "access": {
+        "overview": "https://www.nlm.nih.gov/research/umls/rxnorm/",
+        "api_docs": "https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html",
+        "rxcui_example": "https://rxnav.nlm.nih.gov/REST/rxcui.json?name=metformin",
+        "status_example": "https://rxnav.nlm.nih.gov/REST/rxcui/6809/historystatus.json"
+      },
+      "recommended_use": [
+        "drug name normalization",
+        "RxCUI lookup",
+        "medication search routing"
+      ],
+      "ingestion_mode": "api_lookup_cache",
+      "notes": "Use RxNav for online enrichment and cache normalized names/RxCUIs with release metadata."
+    },
+    {
+      "source_id": "loinc_core",
+      "name": "LOINC",
+      "authority": "Regenstrief Institute",
+      "domain": "laboratory",
+      "standard_system": "LOINC",
+      "access": {
+        "home": "https://loinc.org/",
+        "hba1c_example": "https://loinc.org/4548-4",
+        "glucose_example": "https://loinc.org/2345-7",
+        "fhir_terminology_service": "https://fhir.loinc.org/CodeSystem/$lookup?system=http://loinc.org&code=2345-7"
+      },
+      "recommended_use": [
+        "lab test identity normalization",
+        "FHIR Observation.code hints",
+        "field-level validation evidence"
+      ],
+      "ingestion_mode": "licensed_bulk_or_selected_public_pages",
+      "notes": "Full LOINC downloads and FHIR terminology service access may require a free account. Keep downloaded bulk files out of git."
+    },
+    {
+      "source_id": "hl7_fhir_r4",
+      "name": "HL7 FHIR R4 Core Specification",
+      "authority": "HL7 International",
+      "domain": "interoperability",
+      "standard_system": "FHIR",
+      "access": {
+        "search": "https://hl7.org/fhir/R4/search.html",
+        "observation": "https://hl7.org/fhir/r4/observation.html",
+        "observation_profile_json": "https://hl7.org/fhir/R4/observation.profile.json",
+        "search_parameter_registry": "https://www.hl7.org/fhir/R4/searchparameter-registry.html"
+      },
+      "recommended_use": [
+        "FHIR-like profile scaffolding",
+        "resource search hint generation",
+        "Graph-NER/RAG handoff schema"
+      ],
+      "ingestion_mode": "selected_spec_chunks_and_profile_json",
+      "notes": "FHIR search parameters are resource-specific; generated hints should remain templates until validated against a concrete server capability statement."
+    },
+    {
+      "source_id": "ucum",
+      "name": "Unified Code for Units of Measure",
+      "authority": "Regenstrief Institute / UCUM maintainers",
+      "domain": "units",
+      "standard_system": "UCUM",
+      "access": {
+        "home": "https://ucum.org/",
+        "nlm_service": "https://ucum.nlm.nih.gov/"
+      },
+      "recommended_use": [
+        "computable unit normalization",
+        "missing or ambiguous unit validation",
+        "FHIR Quantity.unit/code hints"
+      ],
+      "ingestion_mode": "selected_unit_seed_plus_validator_adapter",
+      "notes": "Use UCUM for computable units. Do not silently convert units without preserving original evidence and review gating."
+    },
+    {
+      "source_id": "medlineplus_xml",
+      "name": "MedlinePlus XML Data",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "consumer_health",
+      "standard_system": "MedlinePlus",
+      "access": {
+        "xml_data": "https://medlineplus.gov/xml.html"
+      },
+      "recommended_use": [
+        "patient-friendly explanation retrieval",
+        "consumer-health limitation language",
+        "non-clinical educational summaries"
+      ],
+      "ingestion_mode": "bulk_xml_out_of_repo_then_curated_chunks",
+      "notes": "Useful for explanation packages, but should be clearly separated from clinical validation evidence."
+    },
+    {
+      "source_id": "openfda",
+      "name": "openFDA",
+      "authority": "U.S. Food and Drug Administration",
+      "domain": "drug_safety_regulatory",
+      "standard_system": "openFDA",
+      "access": {
+        "api_docs": "https://open.fda.gov/apis/",
+        "drug_api": "https://open.fda.gov/apis/drug/",
+        "downloads": "https://open.fda.gov/apis/downloads/"
+      },
+      "recommended_use": [
+        "drug label search",
+        "public adverse event retrieval",
+        "regulatory evidence routing"
+      ],
+      "ingestion_mode": "api_or_endpoint_downloads_out_of_repo",
+      "notes": "openFDA data is public and useful for regulatory retrieval, but not all data has been validated for clinical or production use."
+    },
+    {
+      "source_id": "clinicaltrials_gov_v2",
+      "name": "ClinicalTrials.gov API v2",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "clinical_trials",
+      "standard_system": "ClinicalTrials.gov",
+      "access": {
+        "api_docs": "https://clinicaltrials.gov/data-api/api",
+        "openapi": "https://clinicaltrials.gov/api/oas/v2/ctg-oas-v2.yaml"
+      },
+      "recommended_use": [
+        "trial evidence retrieval",
+        "eligibility criteria search",
+        "condition/intervention evidence context"
+      ],
+      "ingestion_mode": "api_query_cache",
+      "notes": "Trial records are evidence context, not clinical decision support. Keep current status and retrieval timestamps."
+    }
+  ]
+}

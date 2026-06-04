@@ -138,6 +138,58 @@ def test_query_analysis_detects_medication_and_analytics_routes() -> None:
     assert "OMOP" in analytics.standards
 
 
+def test_query_analysis_uses_data_driven_medical_concepts() -> None:
+    analysis = analyze_query(RetrievalQuery(query="serum glucose mg/dL"))
+
+    candidates = {
+        candidate.concept_id: candidate
+        for candidate in analysis.concept_candidates
+    }
+    suggestions = {
+        (suggestion.field, suggestion.value): suggestion
+        for suggestion in analysis.filter_suggestions
+    }
+
+    assert candidates["glucose_serum_plasma"].standard_system == "LOINC"
+    assert candidates["glucose_serum_plasma"].code == "2345-7"
+    assert candidates["glucose_serum_plasma"].matched_aliases
+    assert "glucose_serum_plasma" in analysis.detected_concepts
+    assert "LOINC" in analysis.standards
+    assert any("2345-7" in variant for variant in analysis.query_variants)
+    assert ("clinical_domain", "laboratory") in suggestions
+    assert ("standard_system", "LOINC") in suggestions
+
+
+def test_query_analysis_normalizes_medication_concept_from_registry() -> None:
+    analysis = analyze_query(RetrievalQuery(query="metformin dose search"))
+    candidates = {
+        candidate.concept_id: candidate
+        for candidate in analysis.concept_candidates
+    }
+
+    assert candidates["metformin_medication"].standard_system == "RxNorm"
+    assert candidates["metformin_medication"].code == "6809"
+    assert "RxNorm" in analysis.standards
+    assert any("6809" in variant for variant in analysis.query_variants)
+
+
+def test_query_analysis_uses_expanded_lab_seed_concepts() -> None:
+    analysis = analyze_query(RetrievalQuery(query="serum creatinine mmol/L"))
+    candidates = {
+        candidate.concept_id: candidate
+        for candidate in analysis.concept_candidates
+    }
+
+    assert candidates["creatinine_serum_plasma"].standard_system == "LOINC"
+    assert candidates["creatinine_serum_plasma"].code == "2160-0"
+    assert "laboratory" in {
+        suggestion.value
+        for suggestion in analysis.filter_suggestions
+        if suggestion.field == "clinical_domain"
+    }
+    assert any("2160-0" in variant for variant in analysis.query_variants)
+
+
 def test_query_analysis_builds_medical_search_hints() -> None:
     literature = analyze_query(
         RetrievalQuery(query="PubMed systematic review HbA1c units")
@@ -161,6 +213,23 @@ def test_query_analysis_builds_medical_search_hints() -> None:
     assert "fhir" in fhir_hints
     assert fhir_hints["fhir"].query.startswith("Observation?")
     assert "subject=Patient/<id>" in fhir_hints["fhir"].query
+
+
+def test_query_analysis_uses_mesh_seed_concepts_in_pubmed_hint() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(query="PubMed hypertension systematic review")
+    )
+    candidates = {
+        candidate.concept_id: candidate
+        for candidate in analysis.concept_candidates
+    }
+    hints = {hint.target: hint for hint in analysis.search_hints}
+
+    assert candidates["hypertension_subject"].standard_system == "MeSH"
+    assert candidates["hypertension_subject"].code == "D006973"
+    assert "pubmed" in hints
+    assert '"Hypertension"[mh]' in hints["pubmed"].query
+    assert '"Hypertension"[tiab]' in hints["pubmed"].query
 
 
 def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
@@ -212,6 +281,37 @@ def test_static_retrieval_ranks_pubmed_mesh_search_evidence() -> None:
     assert package.handoff_context["query_analysis"]["search_hints"][0]["target"] == "pubmed"
 
 
+def test_static_retrieval_lists_medical_concept_registry_source() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+
+    sources = {source.source_id: source for source in repository.list_sources()}
+
+    assert sources["terminology:medical_concepts_v1"].source_type == EvidenceSourceType.TERMINOLOGY_SYSTEM
+    assert sources["terminology:medical_concepts_v1"].standard_system == "ojtflow_terminology"
+
+
+def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+
+    sources = {source.source_id: source for source in repository.list_sources()}
+
+    assert sources["catalog:official_healthcare_sources_v1"].standard_system == "ojtflow_source_catalog"
+    assert sources["catalog:public_dataset_ingestion_plan_v1"].standard_system == "ojtflow_source_catalog"
+    assert sources["standard:fhir_search_parameters_r4_v1"].standard_system == "FHIR"
+    assert sources["standard:clinical_data_standards_map_v1"].source_type == EvidenceSourceType.HEALTHCARE_STANDARD
+    assert sources["dictionary:medical_search_playbook_v1"].clinical_domain == "retrieval"
+
+
+def test_knowledge_json_sources_are_valid() -> None:
+    for path in [
+        ROOT / "knowledge/terminologies/medical_concepts.json",
+        ROOT / "knowledge/terminologies/fhir_search_parameters.json",
+        ROOT / "knowledge/source_catalog/official_healthcare_sources.json",
+    ]:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+        assert isinstance(parsed, dict)
+
+
 def test_static_retrieval_filters_by_standard_system() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
     package = repository.search(
@@ -246,7 +346,7 @@ def test_static_retrieval_filters_by_source_type() -> None:
         for item in package.evidence
     )
     assert package.facets is not None
-    assert _bucket_counts(package.facets.source_type) == {"terminology_system": 3}
+    assert _bucket_counts(package.facets.source_type) == {"terminology_system": 4}
 
 
 def test_retrieval_coverage_reports_missing_expected_standard() -> None:

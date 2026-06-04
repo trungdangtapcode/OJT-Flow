@@ -943,15 +943,17 @@ for downstream agents. Current values include
 `handoff_context.query_analysis` is auditable query-understanding metadata.
 It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
 such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
-produced expanded query variants. It also includes `filter_suggestions`, a list
-of deterministic metadata filter recommendations with `field`, `value`,
-`reason`, `rule_id`, `confidence`, and `applied`. It also includes
-`diagnostics`, a list of deterministic query-quality checks with `code`,
-`severity`, `message`, and `suggested_action`; warning diagnostics are copied
-into `trace.warnings`. It also includes `search_hints`, deterministic external
-medical search syntax scaffolds with `target`, `query`, `rationale`, and
-`warnings` for workflows such as PubMed/MeSH literature search and FHIR
-resource search templates.
+produced expanded query variants. It includes `concept_candidates`, a list of
+controlled-vocabulary candidates with `concept_id`, `display_name`,
+`standard_system`, `code`, `clinical_domain`, `matched_aliases`, `confidence`,
+`source`, and `metadata`. It also includes `filter_suggestions`, a list of
+deterministic metadata filter recommendations with `field`, `value`, `reason`,
+`rule_id`, `confidence`, and `applied`. It also includes `diagnostics`, a list
+of deterministic query-quality checks with `code`, `severity`, `message`, and
+`suggested_action`; warning diagnostics are copied into `trace.warnings`. It
+also includes `search_hints`, deterministic external medical search syntax
+scaffolds with `target`, `query`, `rationale`, and `warnings` for workflows
+such as PubMed/MeSH literature search and FHIR resource search templates.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.
@@ -971,7 +973,11 @@ when supplied.
 
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,
-and chunk count.
+and chunk count. The seeded source inventory includes local schema/governance
+knowledge plus curated healthcare-standard assets under `knowledge/`, including
+the official source catalog, medical concept seed registry, FHIR R4 search
+parameter seed, clinical data standards map, medical search playbook, and public
+dataset ingestion plan.
 
 `POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from
 seeded knowledge and configured local corpus directories:
@@ -986,7 +992,13 @@ seeded knowledge and configured local corpus directories:
 Response data includes repository type, indexed chunk count, embedding provider
 metadata, and local corpus indexing stats. The endpoint requires an
 authenticated session and does not accept arbitrary document text; corpus
-content comes from trusted runtime directories configured by operators.
+files must be placed in configured trusted knowledge directories first.
+Large official datasets such as MeSH RDF/XML, RxNorm/RxNav cache exports,
+LOINC downloads, MedlinePlus XML, openFDA downloads, and ClinicalTrials.gov API
+snapshots should be ingested into ignored runtime/object storage and then
+distilled into reviewed knowledge chunks. They should not be committed directly
+to source control. Corpus content comes from trusted runtime directories
+configured by operators.
 
 ## Upload Workflow
 

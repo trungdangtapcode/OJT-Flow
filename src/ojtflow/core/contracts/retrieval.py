@@ -122,11 +122,26 @@ class RetrievalSearchHint(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RetrievalConceptCandidate(ContractModel):
+    """Controlled-vocabulary concept candidate detected in a retrieval query."""
+
+    concept_id: NonBlankStr
+    display_name: NonBlankStr
+    standard_system: NonBlankStr
+    code: str | None = None
+    clinical_domain: str | None = None
+    matched_aliases: list[NonBlankStr] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    source: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalQueryAnalysis(ContractModel):
     """Auditable query understanding used before first-stage retrieval."""
 
     strategy: str = "deterministic_clinical_expansion_v0"
     detected_concepts: list[str] = Field(default_factory=list)
+    concept_candidates: list[RetrievalConceptCandidate] = Field(default_factory=list)
     expanded_terms: list[str] = Field(default_factory=list)
     standards: list[str] = Field(default_factory=list)
     rule_ids: list[str] = Field(default_factory=list)

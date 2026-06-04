@@ -571,6 +571,60 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             "laboratory",
             "ojtflow_example",
         ),
+        (
+            "chunk_terminology_medical_concepts_v1",
+            "terminology:medical_concepts_v1",
+            EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            "Medical Concept Seed Registry",
+            knowledge_root / "terminologies/medical_concepts.json",
+            "multi_domain",
+            "ojtflow_terminology",
+        ),
+        (
+            "chunk_source_catalog_official_healthcare_sources_v1",
+            "catalog:official_healthcare_sources_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Official Healthcare Source Catalog",
+            knowledge_root / "source_catalog/official_healthcare_sources.json",
+            "multi_domain",
+            "ojtflow_source_catalog",
+        ),
+        (
+            "chunk_standard_fhir_search_parameters_r4_v1",
+            "standard:fhir_search_parameters_r4_v1",
+            EvidenceSourceType.HEALTHCARE_STANDARD,
+            "FHIR R4 Search Parameter Seed",
+            knowledge_root / "terminologies/fhir_search_parameters.json",
+            "interoperability",
+            "FHIR",
+        ),
+        (
+            "chunk_standard_clinical_data_standards_map_v1",
+            "standard:clinical_data_standards_map_v1",
+            EvidenceSourceType.HEALTHCARE_STANDARD,
+            "Clinical Data Standards Map",
+            knowledge_root / "corpus/clinical_data_standards_map.md",
+            "multi_domain",
+            "ojtflow_standard_map",
+        ),
+        (
+            "chunk_dictionary_medical_search_playbook_v1",
+            "dictionary:medical_search_playbook_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Medical Search Playbook",
+            knowledge_root / "corpus/medical_search_playbook.md",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_catalog_public_dataset_ingestion_plan_v1",
+            "catalog:public_dataset_ingestion_plan_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Public Dataset Ingestion Plan",
+            knowledge_root / "corpus/public_dataset_ingestion_plan.md",
+            "multi_domain",
+            "ojtflow_source_catalog",
+        ),
     ]
     for (
         chunk_id,
@@ -785,6 +839,12 @@ def _rerank_boost(
         boost += 0.05
     if chunk.standard_system == "FHIR" and "fhir_observation_profile" in concepts:
         boost += 0.05
+    if chunk.source_type == EvidenceSourceType.TRANSFORMATION_EXAMPLE and (
+        "csv_tabular_quality" in concepts
+        or query.detected_format
+        or {"convert", "conversion", "transformation", "example"}.intersection(matched_terms)
+    ):
+        boost += 0.09
     filter_domain = query.filters.get("clinical_domain")
     if filter_domain and filter_domain == chunk.clinical_domain:
         boost += 0.03

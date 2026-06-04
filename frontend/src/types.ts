@@ -188,6 +188,7 @@ export type RetrievalGraphContext = {
 export type RetrievalQueryAnalysis = {
   strategy: string;
   detected_concepts: string[];
+  concept_candidates: RetrievalConceptCandidate[];
   expanded_terms: string[];
   standards: string[];
   rule_ids: string[];
@@ -195,6 +196,18 @@ export type RetrievalQueryAnalysis = {
   filter_suggestions: RetrievalFilterSuggestion[];
   diagnostics: RetrievalQueryDiagnostic[];
   search_hints: RetrievalSearchHint[];
+};
+
+export type RetrievalConceptCandidate = {
+  concept_id: string;
+  display_name: string;
+  standard_system: string;
+  code?: string | null;
+  clinical_domain?: string | null;
+  matched_aliases: string[];
+  confidence: number;
+  source?: string | null;
+  metadata: Record<string, unknown>;
 };
 
 export type RetrievalFilterSuggestion = {
