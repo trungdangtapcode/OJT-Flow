@@ -186,6 +186,12 @@ def test_env_example_exposes_compose_and_upload_runtime_knobs() -> None:
         "OJT_MAX_UPLOAD_BYTES=26214400",
         "OJT_MAX_INLINE_DATA_BYTES=1048576",
         "OJT_UPLOAD_READ_CHUNK_BYTES=1048576",
+        "OJT_HF_EMBEDDING_DEVICE=auto",
+        "OJT_HF_EMBEDDING_BATCH_SIZE=32",
+        "OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface",
+        "OJT_RETRIEVAL_CORPUS_DIRS=knowledge/corpus",
+        "OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200",
+        "OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160",
     }
 
     assert required_settings <= lines

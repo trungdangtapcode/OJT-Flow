@@ -27,6 +27,9 @@ parsing-full = [
   "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
   "magic-pdf[full]>=0.11.0",
 ]
+embeddings-local = [
+  "sentence-transformers>=3.0,<4",
+]
 
 [build-system]
 requires = ["setuptools>=69"]

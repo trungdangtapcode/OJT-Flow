@@ -459,7 +459,32 @@ def test_embedding_settings_accept_openai_provider(monkeypatch) -> None:
     assert settings.openai_api_key == "host-key"
 
 
-@pytest.mark.parametrize("bad_provider", ["", "   ", "vertex", "sentence-transformers"])
+def test_embedding_settings_accept_huggingface_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", " HF ")
+    monkeypatch.setenv("OJT_EMBEDDING_MODEL", " BAAI/bge-small-en-v1.5 ")
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", " 384 ")
+    monkeypatch.setenv("OJT_HF_EMBEDDING_DEVICE", " cuda:0 ")
+    monkeypatch.setenv("OJT_HF_EMBEDDING_BATCH_SIZE", " 8 ")
+    monkeypatch.setenv("OJT_RETRIEVAL_CORPUS_DIRS", "knowledge/corpus, data/trusted")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.embedding_provider == "huggingface"
+    assert settings.embedding_model == "BAAI/bge-small-en-v1.5"
+    assert settings.embedding_dimensions == 384
+    assert settings.hf_embedding_device == "cuda:0"
+    assert settings.hf_embedding_batch_size == 8
+    assert settings.resolved_retrieval_corpus_dirs == (
+        REPO_ROOT / "knowledge/corpus",
+        REPO_ROOT / "data/trusted",
+    )
+
+
+@pytest.mark.parametrize("bad_provider", ["", "   ", "vertex"])
 def test_embedding_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", bad_provider)
     clear_settings_cache()
@@ -506,6 +531,18 @@ def test_openai_embedding_dimensions_must_be_positive(monkeypatch, bad_dimension
 
     try:
         with pytest.raises(ValueError, match="Invalid embedding dimensions"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+def test_retrieval_chunk_overlap_must_be_smaller_than_chunk_size(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_CHUNK_MAX_CHARS", "100")
+    monkeypatch.setenv("OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS", "100")
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="OVERLAP"):
             get_settings()
     finally:
         clear_settings_cache()
@@ -661,6 +698,8 @@ def test_runtime_docs_explain_embedding_provider_validation() -> None:
 
     assert "OJT_EMBEDDING_PROVIDER" in docs
     assert "OJT_EMBEDDING_PROVIDER=openai" in docs
+    assert "OJT_EMBEDDING_PROVIDER=huggingface" in docs
+    assert "OJT_HF_EMBEDDING_DEVICE=cuda" in docs
     assert "OJT_OPENAI_API_KEY" in docs
     assert "deterministic-hash-v0" in docs
     assert "OJT_EMBEDDING_DIMENSIONS=384" in docs

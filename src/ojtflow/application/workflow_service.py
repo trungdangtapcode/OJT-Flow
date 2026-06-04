@@ -748,6 +748,19 @@ class WorkflowService:
 
         return self.retrieval_service.list_sources()
 
+    def reindex_retrieval(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = True,
+    ) -> dict:
+        """Refresh retrieval index from configured trusted sources."""
+
+        return self.retrieval_service.reindex(
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
+        )
+
     def _load_requested_schema(
         self,
         schema_id: str | None,

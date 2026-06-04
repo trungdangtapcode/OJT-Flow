@@ -279,7 +279,7 @@ def test_release_candidate_checklist_matches_current_release_gate() -> None:
         "Workflow, review, event, summary, stats, retrieval-with-workflow, and output",
         "FHIR-like profiling",
         "OCR evidence endpoint",
-        "Graph-NER/RAG remains a handoff contract in v0",
+        "Graph-NER/RAG emits an auditable GraphRAG-lite handoff",
         "Google OAuth, ADC, service-account, key, and certificate filenames",
         "`plan/` is ignored and not tracked as source",
     ]

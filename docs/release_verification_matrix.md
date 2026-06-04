@@ -65,14 +65,15 @@ Use the active virtualenv Python for `PYTHON_BIN` when running locally.
 | Validation flags missing fields, dates, units, PHI-like fields, prompt-injection patterns, and type problems | `tests/test_workflow_service.py` and `tests/test_api.py::test_api_workflow_review_roundtrip`. |
 | FHIR-like profiling emits profile evidence and handoff context | `tests/test_workflow_service.py::test_fhir_like_workflow_adds_profile_evidence_and_handoff_context` and `tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error`. |
 | OCR evidence normalization gates low-confidence fields | `tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error` and `tests/test_api.py::test_fhir_and_ocr_routes_use_medical_evidence_service_dependency`. |
-| Graph-NER/RAG is a v0 handoff contract, not a claimed live graph agent | `RELEASE_CANDIDATE.md`, `docs/retrieval_module_v0.md`, and workflow handoff assertions in the Python suite. |
+| Graph-NER/RAG emits an auditable GraphRAG-lite handoff, not clinical decision support | `docs/retrieval_module_v0.md`, `tests/test_retrieval.py::test_retrieval_service_adds_graph_context`, and API retrieval handoff assertions in the Python suite. |
 
 ## Retrieval
 
 | Claim | Evidence |
 | --- | --- |
 | Retrieval uses trusted healthcare knowledge inventory | `tests/test_retrieval.py::test_static_retrieval_ranks_healthcare_evidence_with_trace` and retrieval endpoint tests. |
-| Postgres mode uses full-text search, configured vector scoring, fusion, and reranking | `tests/test_postgres_migrations.py::test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback`, `tests/test_postgres_migrations.py::test_semantic_embedding_vector_migration_uses_384_dimensions`, and retrieval-backed workflow tests. |
+| Postgres mode uses full-text search, configured vector scoring, fusion, and reranking | `tests/test_postgres_migrations.py::test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback`, `tests/test_postgres_migrations.py::test_semantic_embedding_vector_migration_uses_384_dimensions`, `tests/test_retrieval.py::test_huggingface_embedding_provider_uses_query_and_document_methods`, and retrieval-backed workflow tests. |
+| Trusted local corpus reindexing is explicit and authenticated | `tests/test_retrieval.py::test_static_retrieval_reindex_adds_local_corpus`, `tests/test_retrieval.py::test_local_corpus_loader_chunks_trusted_healthcare_docs`, and `tests/test_api.py::test_retrieval_reindex_route_delegates_to_workflow_service`. |
 | Retrieval trace exposes strategy, variants, filters, candidate counts, selected IDs, safety flags, and warnings | `tests/test_retrieval.py`, `tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error`, and browser Evidence-tab checks. |
 | Runtime readiness probes retrieval through the same service path used by workflows | `tests/test_api.py::test_runtime_readiness_returns_sanitized_operational_checks`, `tests/test_api.py::test_runtime_readiness_requires_trusted_schema_inventory`, and `tests/test_api.py::test_runtime_readiness_requires_retrieval_sources`. |
 | Retrieval query context is treated as data | `tests/test_retrieval.py::test_retrieval_trace_flags_untrusted_query_context` and blank/trimmed boundary tests in `tests/test_api.py`. |

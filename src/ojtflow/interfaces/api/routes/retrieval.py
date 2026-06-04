@@ -11,7 +11,7 @@ from ojtflow.core.contracts.retrieval import RetrievalQuery
 from ojtflow.interfaces.api.deps import get_api_settings, get_workflow_service, require_authentication
 from ojtflow.interfaces.api.limits import enforce_inline_json_limit
 from ojtflow.interfaces.api.responses import ok
-from ojtflow.interfaces.api.schemas import RetrievalSearchRequest
+from ojtflow.interfaces.api.schemas import RetrievalReindexRequest, RetrievalSearchRequest
 
 router = APIRouter(tags=["retrieval"])
 
@@ -60,3 +60,18 @@ async def list_retrieval_sources(
 ) -> dict:
     del authenticated
     return ok(service.list_retrieval_sources())
+
+
+@router.post("/retrieval/reindex")
+async def reindex_retrieval(
+    request: RetrievalReindexRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    del authenticated
+    return ok(
+        service.reindex_retrieval(
+            include_seeded=request.include_seeded,
+            include_corpus=request.include_corpus,
+        )
+    )

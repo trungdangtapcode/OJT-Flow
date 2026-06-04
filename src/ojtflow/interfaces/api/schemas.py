@@ -187,3 +187,19 @@ class RetrievalSearchRequest(ContractModel):
             ]
         }
     }
+
+
+class RetrievalReindexRequest(ContractModel):
+    include_seeded: bool = True
+    include_corpus: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "include_seeded": True,
+                    "include_corpus": True,
+                }
+            ]
+        }
+    }

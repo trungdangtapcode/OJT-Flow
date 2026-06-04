@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.ports import RetrievalRepository
 from ojtflow.core.contracts.data import DataProfile
 from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
@@ -10,18 +11,32 @@ from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, R
 class RetrievalService:
     """Builds retrieval queries and delegates ranking to replaceable adapters."""
 
-    def __init__(self, repository: RetrievalRepository) -> None:
+    def __init__(
+        self,
+        repository: RetrievalRepository,
+        graph_ner: GraphNERService | None = None,
+    ) -> None:
         self.repository = repository
+        self.graph_ner = graph_ner or GraphNERService()
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         """Run direct retrieval."""
 
-        return self.repository.search(query)
+        package = self.repository.search(query)
+        return self.graph_ner.augment_package(package, query)
 
     def list_sources(self) -> list[RetrievalSource]:
         """List configured retrieval sources."""
 
         return self.repository.list_sources()
+
+    def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
+        """Refresh retrieval index from configured trusted sources."""
+
+        return self.repository.reindex(
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
+        )
 
     def search_for_workflow(
         self,

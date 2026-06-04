@@ -95,7 +95,13 @@ def _build_workflow_service() -> WorkflowService:
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()
         events = InMemoryEventRepository()
-        retrieval = StaticRetrievalRepository(knowledge_root, embedding_provider)
+        retrieval = StaticRetrievalRepository(
+            knowledge_root,
+            embedding_provider,
+            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+            chunk_max_chars=settings.retrieval_chunk_max_chars,
+            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+        )
     elif settings.storage_backend == "sqlite":
         backbone = SQLiteBackboneStore(
             settings.resolved_database_path,
@@ -104,7 +110,13 @@ def _build_workflow_service() -> WorkflowService:
         datasets = SQLiteDatasetStore(backbone)
         workflows = SQLiteWorkflowRepository(backbone)
         events = SQLiteEventRepository(backbone)
-        retrieval = StaticRetrievalRepository(knowledge_root, embedding_provider)
+        retrieval = StaticRetrievalRepository(
+            knowledge_root,
+            embedding_provider,
+            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+            chunk_max_chars=settings.retrieval_chunk_max_chars,
+            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+        )
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -113,7 +125,14 @@ def _build_workflow_service() -> WorkflowService:
         datasets = PostgresDatasetStore(backbone)
         workflows = PostgresWorkflowRepository(backbone)
         events = PostgresEventRepository(backbone)
-        retrieval = PostgresRetrievalRepository(backbone, knowledge_root, embedding_provider)
+        retrieval = PostgresRetrievalRepository(
+            backbone,
+            knowledge_root,
+            embedding_provider,
+            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+            chunk_max_chars=settings.retrieval_chunk_max_chars,
+            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+        )
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
 
