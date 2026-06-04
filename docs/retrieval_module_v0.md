@@ -16,7 +16,7 @@ Production Docker uses Postgres with:
 - `ojtflow.knowledge_documents`
 - `ojtflow.knowledge_chunks`
 - generated `tsvector` search
-- optional pgvector `vector(64)` and HNSW index when the extension is available
+- optional pgvector `vector(384)` and HNSW index when the extension is available
 - JSON embeddings as a portable fallback
 
 Memory and SQLite modes use the deterministic static retrieval repository so
@@ -24,19 +24,22 @@ tests and local demos do not require external services.
 
 ## Ranking
 
-The retrieval pipeline is deterministic in v0:
+The retrieval pipeline is auditable in v0:
 
 1. Build query variants from instruction, fields, schema, format, and resource type.
 2. Candidate chunks are filtered by trust level, clinical domain, standard system, or source type.
 3. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
-4. Vector score uses a deterministic hash embedding provider unless disabled later.
+4. Vector score uses the configured embedding provider:
+   deterministic hash embeddings for offline tests, or OpenAI semantic
+   embeddings for CPU-safe production-like retrieval.
 5. Reciprocal Rank Fusion combines lexical and vector rankings.
 6. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
 7. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
-This is intentionally compatible with later HyDE, learned embeddings, GraphRAG,
-RAPTOR, and terminology-service adapters without changing workflow contracts.
+This is intentionally compatible with later Hugging Face local embeddings, HyDE,
+GraphRAG, RAPTOR, and terminology-service adapters without changing workflow
+contracts.
 
 ## Healthcare Sources
 
@@ -109,17 +112,25 @@ OJT_EMBEDDING_MODEL=deterministic-hash-v0
 OJT_EMBEDDING_DIMENSIONS=64
 ```
 
-`OJT_EMBEDDING_PROVIDER=deterministic` is the only implemented embedding provider
-in v0. `OJT_EMBEDDING_MODEL=deterministic-hash-v0` is the only accepted model ID
-for that provider. Both settings are validated during settings load so runtime
-diagnostics cannot report an external provider while the deterministic adapter is
-actually serving retrieval.
+`OJT_EMBEDDING_PROVIDER` supports `deterministic` and `openai`.
+Deterministic mode is for tests and offline demos only. OpenAI mode uses the
+Embeddings API and reads `OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY`
+when the project-specific variable is not set.
 
-`OJT_EMBEDDING_DIMENSIONS=64` is fixed in v0 because it must match the
-Postgres-compatible `embedding vector(64)` schema. Other dimensions are rejected
-during settings load.
-External ADC/model-backed embeddings should be added behind the provider
-interface after retrieval quality tests and a matching vector migration exist.
+Recommended OpenAI semantic retrieval settings:
+
+```text
+OJT_EMBEDDING_PROVIDER=openai
+OJT_EMBEDDING_MODEL=text-embedding-3-small
+OJT_EMBEDDING_DIMENSIONS=384
+OJT_OPENAI_API_KEY=...
+```
+
+`text-embedding-3-small` is used with 384 dimensions to match the local
+`embedding vector(384)` schema and keep storage/query cost lower than the
+model's default 1536-dimensional output. Both provider and model are validated
+during settings load so runtime diagnostics cannot claim a provider that the
+retrieval adapter is not actually using.
 
 `OJT_KNOWLEDGE_DIR` points at the trusted healthcare knowledge inventory used to
 seed retrieval sources and schema evidence. Relative paths resolve from the

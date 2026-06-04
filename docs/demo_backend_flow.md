@@ -85,7 +85,8 @@ Expected behavior:
    for explicit no-schema runs.
 5. Retrieval returns trusted lab evidence.
    In Postgres mode, retrieval uses seeded healthcare knowledge chunks with
-   full-text search, deterministic vector scoring, fusion, and reranking.
+   full-text search, configured vector scoring, fusion, and reranking. Use
+   `OJT_EMBEDDING_PROVIDER=openai` for CPU-safe semantic embeddings.
 6. Validation flags PHI-like patient ID, date inconsistency, missing value, and missing unit.
 7. Transformation plan is created.
 8. Safety gate pauses the workflow for human review.

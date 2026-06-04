@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 
 
-EmbeddingProvider = Literal["deterministic"]
+EmbeddingProvider = Literal["deterministic", "openai"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
 DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
     ".pdf",
@@ -42,9 +42,12 @@ COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 DNS_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 UPLOAD_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9][a-z0-9-]{0,15}$")
 ALLOWED_STORAGE_BACKENDS: tuple[StorageBackend, ...] = ("postgres", "sqlite", "memory")
-ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = ("deterministic",)
+ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = ("deterministic", "openai")
 DETERMINISTIC_EMBEDDING_MODEL = "deterministic-hash-v0"
 DETERMINISTIC_EMBEDDING_DIMENSIONS = 64
+OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+OPENAI_EMBEDDING_DIMENSIONS = 384
+OPENAI_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_STORAGE_BACKEND: StorageBackend = "postgres"
 DEFAULT_POSTGRES_DSN = "postgresql://ojtflow:ojtflow@localhost:5432/ojtflow"
 DEFAULT_DATABASE_PATH = Path("var/ojtflow.db")
@@ -140,6 +143,16 @@ class Settings(BaseModel):
     embedding_dimensions: int = Field(
         default=DETERMINISTIC_EMBEDDING_DIMENSIONS,
         alias="OJT_EMBEDDING_DIMENSIONS",
+        gt=0,
+    )
+    openai_api_key: str = Field(default="", alias="OJT_OPENAI_API_KEY")
+    openai_embedding_base_url: str = Field(
+        default=OPENAI_EMBEDDING_BASE_URL,
+        alias="OJT_OPENAI_EMBEDDING_BASE_URL",
+    )
+    openai_embedding_timeout_seconds: float = Field(
+        default=20.0,
+        alias="OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS",
         gt=0,
     )
 
@@ -246,9 +259,21 @@ def get_settings() -> Settings:
             os.getenv("OJT_ALLOWED_UPLOAD_EXTENSIONS")
         ),
         OJT_EMBEDDING_PROVIDER=_parse_embedding_provider(os.getenv("OJT_EMBEDDING_PROVIDER")),
-        OJT_EMBEDDING_MODEL=_parse_embedding_model(os.getenv("OJT_EMBEDDING_MODEL")),
+        OJT_EMBEDDING_MODEL=_parse_embedding_model(
+            os.getenv("OJT_EMBEDDING_MODEL"),
+            provider=os.getenv("OJT_EMBEDDING_PROVIDER"),
+        ),
         OJT_EMBEDDING_DIMENSIONS=_parse_embedding_dimensions(
-            os.getenv("OJT_EMBEDDING_DIMENSIONS")
+            os.getenv("OJT_EMBEDDING_DIMENSIONS"),
+            provider=os.getenv("OJT_EMBEDDING_PROVIDER"),
+            model=os.getenv("OJT_EMBEDDING_MODEL"),
+        ),
+        OJT_OPENAI_API_KEY=os.getenv("OJT_OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "")),
+        OJT_OPENAI_EMBEDDING_BASE_URL=_parse_openai_base_url(
+            os.getenv("OJT_OPENAI_EMBEDDING_BASE_URL")
+        ),
+        OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=float(
+            os.getenv("OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS", "20.0")
         ),
     )
 
@@ -499,41 +524,82 @@ def _parse_embedding_provider(value: str | None) -> EmbeddingProvider:
     normalized = "deterministic" if value is None else value.strip().lower()
     if normalized == "deterministic":
         return "deterministic"
+    if normalized == "openai":
+        return "openai"
     allowed = ", ".join(ALLOWED_EMBEDDING_PROVIDERS)
     raise ValueError(
         f"Invalid embedding provider environment value: {value}. Expected one of: {allowed}"
     )
 
 
-def _parse_embedding_model(value: str | None) -> str:
-    normalized = DETERMINISTIC_EMBEDDING_MODEL if value is None else value.strip()
-    if normalized == DETERMINISTIC_EMBEDDING_MODEL:
+def _parse_embedding_model(value: str | None, *, provider: str | None = None) -> str:
+    parsed_provider = _parse_embedding_provider(provider)
+    default = (
+        OPENAI_EMBEDDING_MODEL
+        if parsed_provider == "openai"
+        else DETERMINISTIC_EMBEDDING_MODEL
+    )
+    normalized = default if value is None else value.strip()
+    allowed = {
+        "deterministic": {DETERMINISTIC_EMBEDDING_MODEL},
+        "openai": {OPENAI_EMBEDDING_MODEL, "text-embedding-3-large"},
+    }[parsed_provider]
+    if normalized in allowed:
         return normalized
     raise ValueError(
         "Invalid embedding model environment value: "
-        f"{value}. Expected: {DETERMINISTIC_EMBEDDING_MODEL}"
+        f"{value}. Expected one of: {', '.join(sorted(allowed))}"
     )
 
 
-def _parse_embedding_dimensions(value: str | None) -> int:
-    normalized = (
-        str(DETERMINISTIC_EMBEDDING_DIMENSIONS)
-        if value is None
-        else value.strip()
+def _parse_embedding_dimensions(
+    value: str | None,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+) -> int:
+    parsed_provider = _parse_embedding_provider(provider)
+    parsed_model = _parse_embedding_model(model, provider=parsed_provider)
+    default_dimensions = (
+        OPENAI_EMBEDDING_DIMENSIONS
+        if parsed_provider == "openai"
+        else DETERMINISTIC_EMBEDDING_DIMENSIONS
     )
+    normalized = str(default_dimensions) if value is None else value.strip()
     try:
         dimensions = int(normalized)
     except ValueError as exc:
         raise ValueError(
             "Invalid embedding dimensions environment value: "
-            f"{value}. Expected: {DETERMINISTIC_EMBEDDING_DIMENSIONS}"
+            f"{value}. Expected a positive integer supported by {parsed_model}"
         ) from exc
-    if dimensions == DETERMINISTIC_EMBEDDING_DIMENSIONS:
+    if parsed_provider == "deterministic" and dimensions == DETERMINISTIC_EMBEDDING_DIMENSIONS:
         return dimensions
+    if parsed_provider == "openai" and dimensions > 0:
+        if parsed_model.startswith("text-embedding-3-"):
+            return dimensions
+        if dimensions == 1536:
+            return dimensions
     raise ValueError(
         "Invalid embedding dimensions environment value: "
-        f"{value}. Expected: {DETERMINISTIC_EMBEDDING_DIMENSIONS}"
+        f"{value}. Expected a positive integer supported by {parsed_model}"
     )
+
+
+def _parse_openai_base_url(value: str | None) -> str:
+    raw = OPENAI_EMBEDDING_BASE_URL if value is None else value.strip().rstrip("/")
+    if not raw:
+        raise ValueError("Invalid OpenAI embedding base URL: value is blank")
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Invalid OpenAI embedding base URL: scheme must be http or https")
+    if not parsed.hostname:
+        raise ValueError("Invalid OpenAI embedding base URL: host is required")
+    if parsed.username or parsed.password:
+        raise ValueError("Invalid OpenAI embedding base URL: user info is not allowed")
+    if parsed.fragment:
+        raise ValueError("Invalid OpenAI embedding base URL: fragment is not allowed")
+    return raw
 
 
 def _parse_cookie_name(value: str | None) -> str:
