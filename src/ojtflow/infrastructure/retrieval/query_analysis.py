@@ -32,6 +32,9 @@ DEFAULT_QUERY_EXPANSION_RULE_REGISTRY = (
 DEFAULT_FILTER_SUGGESTION_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "filter_suggestion_rules.json"
 )
+DEFAULT_QUERY_DIAGNOSTIC_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_diagnostic_rules.json"
+)
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
 )
@@ -77,6 +80,18 @@ class FilterSuggestionRule:
     reason: str
     confidence: float
     match: FilterSuggestionMatch
+
+
+@dataclass(frozen=True)
+class QueryDiagnosticRule:
+    """One data-driven query-quality diagnostic rule."""
+
+    rule_id: str
+    condition: str
+    code: str
+    severity: str
+    message: str
+    suggested_action: str
 
 
 @dataclass(frozen=True)
@@ -459,6 +474,126 @@ def _ensure_unique_filter_suggestion_rule_ids(
         )
 
 
+def _query_diagnostic_rules() -> tuple[QueryDiagnosticRule, ...]:
+    path = os.environ.get("OJT_QUERY_DIAGNOSTIC_RULES_PATH")
+    return _load_query_diagnostic_rules(path or str(DEFAULT_QUERY_DIAGNOSTIC_RULE_REGISTRY))
+
+
+def _load_query_diagnostic_rules(path_text: str) -> tuple[QueryDiagnosticRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return _default_query_diagnostic_rules()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid query diagnostic registry at {path}: expected rules list")
+
+    rules = tuple(_query_diagnostic_rule(record, path=path) for record in records)
+    _ensure_unique_query_diagnostic_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_diagnostic_rule(record: Any, *, path: Path) -> QueryDiagnosticRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid query diagnostic registry at {path}: rule must be an object")
+    required = ("rule_id", "condition", "code", "severity", "message", "suggested_action")
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(
+            f"Invalid query diagnostic registry at {path}: missing {missing_text}"
+        )
+    condition = _required_query_diagnostic_text(
+        record["condition"],
+        field="condition",
+        path=path,
+    )
+    allowed_conditions = {
+        "low_specificity_query",
+        "no_healthcare_concept_detected",
+        "standard_filter_conflicts_with_query",
+    }
+    if condition not in allowed_conditions:
+        allowed = ", ".join(sorted(allowed_conditions))
+        raise ValueError(
+            f"Invalid query diagnostic registry at {path}: condition must be one of {allowed}"
+        )
+    return QueryDiagnosticRule(
+        rule_id=_required_query_diagnostic_text(record["rule_id"], field="rule_id", path=path),
+        condition=condition,
+        code=_required_query_diagnostic_text(record["code"], field="code", path=path),
+        severity=_required_query_diagnostic_text(record["severity"], field="severity", path=path),
+        message=_required_query_diagnostic_text(record["message"], field="message", path=path),
+        suggested_action=_required_query_diagnostic_text(
+            record["suggested_action"],
+            field="suggested_action",
+            path=path,
+        ),
+    )
+
+
+def _required_query_diagnostic_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid query diagnostic registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _ensure_unique_query_diagnostic_rule_ids(
+    rules: tuple[QueryDiagnosticRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query diagnostic registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
+def _default_query_diagnostic_rules() -> tuple[QueryDiagnosticRule, ...]:
+    return (
+        QueryDiagnosticRule(
+            rule_id="low_specificity_query",
+            condition="low_specificity_query",
+            code="low_specificity_query",
+            severity="warning",
+            message="Retrieval query has limited context for healthcare evidence ranking.",
+            suggested_action="Add a schema, resource type, clinical domain, standard, or field list.",
+        ),
+        QueryDiagnosticRule(
+            rule_id="no_healthcare_concept_detected",
+            condition="no_healthcare_concept_detected",
+            code="no_healthcare_concept_detected",
+            severity="info",
+            message="No healthcare retrieval concept matched deterministic query rules.",
+            suggested_action=(
+                "Use explicit terms such as FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, "
+                "lab, unit, medication, literature, or patient identifier when relevant."
+            ),
+        ),
+        QueryDiagnosticRule(
+            rule_id="standard_filter_conflicts_with_query",
+            condition="standard_filter_conflicts_with_query",
+            code="standard_filter_conflicts_with_query",
+            severity="warning",
+            message=(
+                "Applied standard_system={applied_standard} does not match detected "
+                "query standards: {suggested_standards}."
+            ),
+            suggested_action=(
+                "Remove the standard filter or choose one of the detected standard filters."
+            ),
+        ),
+    )
+
+
 def _search_hint_target(target: str) -> SearchHintTarget:
     targets = {item.target: item for item in _search_hint_targets()}
     return targets.get(
@@ -793,29 +928,6 @@ def _query_diagnostics(
     tokens: set[str],
 ) -> list[RetrievalQueryDiagnostic]:
     diagnostics: list[RetrievalQueryDiagnostic] = []
-    if _is_low_specificity_query(query, tokens=tokens):
-        diagnostics.append(
-            RetrievalQueryDiagnostic(
-                code="low_specificity_query",
-                severity="warning",
-                message="Retrieval query has limited context for healthcare evidence ranking.",
-                suggested_action=(
-                    "Add a schema, resource type, clinical domain, standard, or field list."
-                ),
-            )
-        )
-    if not concepts:
-        diagnostics.append(
-            RetrievalQueryDiagnostic(
-                code="no_healthcare_concept_detected",
-                severity="info",
-                message="No healthcare retrieval concept matched deterministic query rules.",
-                suggested_action=(
-                    "Use explicit terms such as FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, "
-                    "lab, unit, medication, literature, or patient identifier when relevant."
-                ),
-            )
-        )
     applied_standard = str(query.filters.get("standard_system") or "")
     suggested_standards = {
         standard_value
@@ -823,17 +935,29 @@ def _query_diagnostics(
         for standard_value in [_standard_filter_value(standard)]
         if standard_value
     }
-    if applied_standard and suggested_standards and applied_standard not in suggested_standards:
+    for rule in _query_diagnostic_rules():
+        if not _query_diagnostic_rule_matches(
+            rule,
+            query=query,
+            concepts=concepts,
+            tokens=tokens,
+            applied_standard=applied_standard,
+            suggested_standards=suggested_standards,
+        ):
+            continue
         diagnostics.append(
             RetrievalQueryDiagnostic(
-                code="standard_filter_conflicts_with_query",
-                severity="warning",
-                message=(
-                    f"Applied standard_system={applied_standard} does not match detected "
-                    f"query standards: {', '.join(sorted(suggested_standards))}."
+                code=rule.code,
+                severity=rule.severity,
+                message=_format_query_diagnostic_template(
+                    rule.message,
+                    applied_standard=applied_standard,
+                    suggested_standards=suggested_standards,
                 ),
-                suggested_action=(
-                    "Remove the standard filter or choose one of the detected standard filters."
+                suggested_action=_format_query_diagnostic_template(
+                    rule.suggested_action,
+                    applied_standard=applied_standard,
+                    suggested_standards=suggested_standards,
                 ),
             )
         )
@@ -1102,6 +1226,41 @@ def _is_low_specificity_query(query: RetrievalQuery, *, tokens: set[str]) -> boo
     if any(query.filters.get(key) for key in ("clinical_domain", "standard_system", "source_type")):
         return False
     return len(tokens) < 3
+
+
+def _query_diagnostic_rule_matches(
+    rule: QueryDiagnosticRule,
+    *,
+    query: RetrievalQuery,
+    concepts: list[str],
+    tokens: set[str],
+    applied_standard: str,
+    suggested_standards: set[str],
+) -> bool:
+    if rule.condition == "low_specificity_query":
+        return _is_low_specificity_query(query, tokens=tokens)
+    if rule.condition == "no_healthcare_concept_detected":
+        return not concepts
+    if rule.condition == "standard_filter_conflicts_with_query":
+        return bool(
+            applied_standard
+            and suggested_standards
+            and applied_standard not in suggested_standards
+        )
+    return False
+
+
+def _format_query_diagnostic_template(
+    template: str,
+    *,
+    applied_standard: str,
+    suggested_standards: set[str],
+) -> str:
+    suggested = ", ".join(sorted(suggested_standards)) or "none"
+    return template.format(
+        applied_standard=applied_standard or "none",
+        suggested_standards=suggested,
+    )
 
 
 def _suggestion(

@@ -280,6 +280,68 @@ def test_query_analysis_reports_quality_diagnostics() -> None:
     assert diagnostics["no_healthcare_concept_detected"].severity == "info"
 
 
+def test_query_analysis_uses_data_driven_diagnostic_rules(tmp_path, monkeypatch) -> None:
+    registry_path = tmp_path / "query_diagnostic_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_diagnostic_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_low_specificity",
+                        "condition": "low_specificity_query",
+                        "code": "custom_low_specificity",
+                        "severity": "warning",
+                        "message": "Custom low specificity message",
+                        "suggested_action": "Custom low specificity action",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_QUERY_DIAGNOSTIC_RULES_PATH", str(registry_path))
+
+    analysis = analyze_query(RetrievalQuery(query="help"))
+    diagnostics = {diagnostic.code: diagnostic for diagnostic in analysis.diagnostics}
+
+    assert "low_specificity_query" not in diagnostics
+    assert diagnostics["custom_low_specificity"].message == "Custom low specificity message"
+    assert diagnostics["custom_low_specificity"].suggested_action == (
+        "Custom low specificity action"
+    )
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_diagnostic_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "reloaded_low_specificity",
+                        "condition": "low_specificity_query",
+                        "code": "reloaded_low_specificity",
+                        "severity": "info",
+                        "message": "Reloaded low specificity message",
+                        "suggested_action": "Reloaded low specificity action",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="help"))
+    reloaded_diagnostics = {
+        diagnostic.code: diagnostic for diagnostic in reloaded.diagnostics
+    }
+
+    assert "custom_low_specificity" not in reloaded_diagnostics
+    assert reloaded_diagnostics["reloaded_low_specificity"].severity == "info"
+    assert reloaded_diagnostics["reloaded_low_specificity"].message == (
+        "Reloaded low specificity message"
+    )
+
+
 def test_query_analysis_reports_conflicting_standard_filter() -> None:
     analysis = analyze_query(
         RetrievalQuery(

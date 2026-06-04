@@ -1,0 +1,29 @@
+{
+  "version": "retrieval_query_diagnostic_rules.v1",
+  "rules": [
+    {
+      "rule_id": "low_specificity_query",
+      "condition": "low_specificity_query",
+      "code": "low_specificity_query",
+      "severity": "warning",
+      "message": "Retrieval query has limited context for healthcare evidence ranking.",
+      "suggested_action": "Add a schema, resource type, clinical domain, standard, or field list."
+    },
+    {
+      "rule_id": "no_healthcare_concept_detected",
+      "condition": "no_healthcare_concept_detected",
+      "code": "no_healthcare_concept_detected",
+      "severity": "info",
+      "message": "No healthcare retrieval concept matched deterministic query rules.",
+      "suggested_action": "Use explicit terms such as FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, lab, unit, medication, literature, or patient identifier when relevant."
+    },
+    {
+      "rule_id": "standard_filter_conflicts_with_query",
+      "condition": "standard_filter_conflicts_with_query",
+      "code": "standard_filter_conflicts_with_query",
+      "severity": "warning",
+      "message": "Applied standard_system={applied_standard} does not match detected query standards: {suggested_standards}.",
+      "suggested_action": "Remove the standard filter or choose one of the detected standard filters."
+    }
+  ]
+}

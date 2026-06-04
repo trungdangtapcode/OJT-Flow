@@ -141,6 +141,9 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/filter_suggestion_rules.json`: deterministic metadata
   filter suggestion rules for fields such as `clinical_domain` and
   `standard_system`.
+- `knowledge/retrieval/query_diagnostic_rules.json`: deterministic
+  query-quality diagnostic rules for low-specificity queries, missing
+  healthcare concept matches, and conflicting standard filters.
 - `knowledge/retrieval/ranking_boost_rules.json`: deterministic ranking boost
   rules for schema, field, trust-level, source-type, concept, and healthcare
   standard matches.
@@ -275,8 +278,13 @@ licensed terminology service or final clinical code assignment.
 
 Diagnostics are deterministic query-quality checks. They flag low-specificity
 queries, missing healthcare concept matches, and standard filters that conflict
-with the standards inferred from query content. Warning diagnostics are copied
-into `RetrievalTrace.warnings` for audit and UI visibility.
+with the standards inferred from query content. Diagnostic codes, severities,
+messages, and suggested actions are loaded from
+`knowledge/retrieval/query_diagnostic_rules.json`; the code only owns the
+allowlisted condition mechanics. `OJT_QUERY_DIAGNOSTIC_RULES_PATH` can point
+the runtime to a deployment-specific rule pack for local evaluation or
+enterprise policy wording. Warning diagnostics are copied into
+`RetrievalTrace.warnings` for audit and UI visibility.
 
 Ranking boost rules are loaded from `knowledge/retrieval/ranking_boost_rules.json`,
 not hardcoded into the ranking engine. Each rule defines `rule_id`, `weight`,
