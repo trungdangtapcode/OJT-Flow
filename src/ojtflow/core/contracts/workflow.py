@@ -47,6 +47,18 @@ class WorkflowOutput(ContractModel):
     explanation_id: str | None = None
 
 
+class WorkflowOutputArtifact(ContractModel):
+    """User-readable generated artifact for a completed workflow."""
+
+    workflow_id: str
+    output_format: DataFormat
+    output_hash: str | None = None
+    byte_size: int
+    content: str
+    warnings: list[str] = Field(default_factory=list)
+    diff_summary: dict[str, Any] = Field(default_factory=dict)
+
+
 class WorkflowStep(ContractModel):
     """UI/progress-oriented workflow step separate from append-only audit events."""
 
@@ -60,10 +72,21 @@ class WorkflowStep(ContractModel):
     issue_count: int = 0
 
 
+class WorkflowFailure(ContractModel):
+    """Structured failure recorded when a workflow cannot continue."""
+
+    code: str
+    message: str
+    error_type: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    failed_at: str = Field(default_factory=lambda: utc_now().isoformat())
+
+
 class WorkflowState(ContractModel):
     """Single auditable source of truth for one workflow run."""
 
     workflow_id: str = Field(default_factory=lambda: new_id("wf"))
+    owner_user_id: str | None = None
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
     status: WorkflowStatus = WorkflowStatus.CREATED
@@ -80,6 +103,7 @@ class WorkflowState(ContractModel):
     review: HumanReview | None = None
     output: WorkflowOutput | None = None
     explanation: ExplanationReport | None = None
+    failure: WorkflowFailure | None = None
     handoff_context: dict[str, Any] = Field(default_factory=dict)
     risk_flags: list[str] = Field(default_factory=list)
     audit_event_refs: list[str] = Field(default_factory=list)

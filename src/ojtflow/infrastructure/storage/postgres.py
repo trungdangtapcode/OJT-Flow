@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 try:
     import psycopg
@@ -16,11 +15,19 @@ except ImportError:  # pragma: no cover - exercised only when optional dependenc
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
+from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryItem, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError, OJTFlowError
 from ojtflow.core.ids import new_id
 from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
+from ojtflow.infrastructure.storage.file_refs import artifact_path_from_file_ref
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
+from ojtflow.infrastructure.storage.summary import (
+    clamp_page,
+    clamp_page_size,
+    normalize_direction,
+    normalize_sort,
+)
 
 
 class PostgresBackboneStore:
@@ -149,12 +156,10 @@ class PostgresDatasetStore:
         return record
 
     def get_text(self, storage_ref: str) -> str:
-        parsed = urlparse(storage_ref)
-        if parsed.scheme != "file":
-            raise NotFoundError(f"Unsupported dataset storage ref: {storage_ref}")
-        path = Path(unquote(parsed.path))
-        if not path.exists():
-            raise NotFoundError(f"Dataset file not found: {storage_ref}")
+        path = artifact_path_from_file_ref(
+            storage_ref,
+            [self.backbone.datasets_dir, self.backbone.outputs_dir],
+        )
         return path.read_text(encoding="utf-8")
 
 
@@ -171,10 +176,11 @@ class PostgresWorkflowRepository:
                 cursor.execute(
                     """
                     insert into ojtflow.workflows (
-                        workflow_id, status, schema_version, review_id,
+                        workflow_id, owner_user_id, status, schema_version, review_id,
                         state_json, created_at, updated_at
-                    ) values (%s, %s, %s, %s, %s::jsonb, %s::timestamptz, %s::timestamptz)
+                    ) values (%s, %s, %s, %s, %s, %s::jsonb, %s::timestamptz, %s::timestamptz)
                     on conflict(workflow_id) do update set
+                        owner_user_id = excluded.owner_user_id,
                         status = excluded.status,
                         schema_version = excluded.schema_version,
                         review_id = excluded.review_id,
@@ -183,6 +189,7 @@ class PostgresWorkflowRepository:
                     """,
                     (
                         workflow.workflow_id,
+                        workflow.owner_user_id,
                         workflow.status.value,
                         workflow.schema_version,
                         review_id,
@@ -275,31 +282,204 @@ class PostgresWorkflowRepository:
         self,
         status: WorkflowStatus | None = None,
         limit: int = 50,
+        owner_user_id: str | None = None,
     ) -> list[WorkflowState]:
         limit = max(1, min(limit, 200))
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = %s")
+            params.append(owner_user_id)
+        if status:
+            clauses.append("status = %s")
+            params.append(status.value)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        params.append(limit)
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
-                if status:
-                    cursor.execute(
-                        """
-                        select state_json from ojtflow.workflows
-                        where status = %s
-                        order by updated_at desc
-                        limit %s
-                        """,
-                        (status.value, limit),
-                    )
-                else:
-                    cursor.execute(
-                        """
-                        select state_json from ojtflow.workflows
-                        order by updated_at desc
-                        limit %s
-                        """,
-                        (limit,),
-                    )
+                cursor.execute(
+                    f"""
+                    select state_json from ojtflow.workflows
+                    {where}
+                    order by updated_at desc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
                 rows = cursor.fetchall()
         return [WorkflowState.model_validate(row["state_json"]) for row in rows]
+
+    def list_summary(
+        self,
+        status: WorkflowStatus | None = None,
+        q: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        sort: str = "updated_at",
+        direction: str = "desc",
+        reviews_only: bool = False,
+        review_status: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> WorkflowSummaryPage:
+        page = clamp_page(page)
+        page_size = clamp_page_size(page_size)
+        offset = (page - 1) * page_size
+        sort = normalize_sort(sort)
+        direction = normalize_direction(direction)
+        where, params = _summary_filters(
+            status,
+            q,
+            reviews_only,
+            review_status,
+            owner_user_id,
+        )
+        sort_sql = {
+            "updated_at": "updated_at",
+            "created_at": "created_at",
+            "status": "status",
+            "workflow_id": "workflow_id",
+            "issue_count": "issue_count",
+            "evidence_count": "evidence_count",
+        }[sort]
+
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"select count(*) as total from ({_summary_projection_sql()}) s {where}",
+                    params,
+                )
+                total = int(cursor.fetchone()["total"])
+                cursor.execute(
+                    f"""
+                    select * from ({_summary_projection_sql()}) s
+                    {where}
+                    order by {sort_sql} {direction}, workflow_id asc
+                    limit %s offset %s
+                    """,
+                    (*params, page_size, offset),
+                )
+                rows = cursor.fetchall()
+
+        return WorkflowSummaryPage(
+            items=[_summary_item_from_row(row) for row in rows],
+            page=page,
+            page_size=page_size,
+            total=total,
+        )
+
+    def stats(self, owner_user_id: str | None = None) -> WorkflowStats:
+        where, params = _summary_filters(
+            status=None,
+            q=None,
+            reviews_only=False,
+            review_status=None,
+            owner_user_id=owner_user_id,
+        )
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select status, count(*) as total
+                    from ojtflow.workflows
+                    {where}
+                    group by status
+                    """,
+                    params,
+                )
+                by_status = {row["status"]: int(row["total"]) for row in cursor.fetchall()}
+                cursor.execute(
+                    f"""
+                    select
+                        count(*) as total,
+                        count(*) filter (where review_id is not null) as review_gated,
+                        count(*) filter (where review_status = 'pending') as pending_reviews,
+                        coalesce(avg(issue_count), 0) as average_issue_count
+                    from ({_summary_projection_sql()}) s
+                    {where}
+                    """,
+                    params,
+                )
+                row = cursor.fetchone()
+        return WorkflowStats(
+            total=int(row["total"]),
+            by_status=by_status,
+            pending_reviews=int(row["pending_reviews"]),
+            failed=by_status.get(WorkflowStatus.FAILED.value, 0),
+            completed=by_status.get(WorkflowStatus.COMPLETED.value, 0),
+            review_gated=int(row["review_gated"]),
+            average_issue_count=round(float(row["average_issue_count"]), 2),
+        )
+
+
+def _summary_projection_sql() -> str:
+    return """
+        select
+            workflow_id,
+            owner_user_id,
+            status,
+            state_json->>'user_instruction' as instruction,
+            state_json #>> '{intent,options,schema_id}' as schema_id,
+            state_json #>> '{intent,target_format}' as target_format,
+            coalesce(jsonb_array_length(state_json #> '{validation_report,issues}'), 0) as issue_count,
+            review_id,
+            state_json #>> '{review,status}' as review_status,
+            coalesce(jsonb_array_length(state_json->'retrieved_context'), 0) as evidence_count,
+            created_at,
+            updated_at
+        from ojtflow.workflows
+    """
+
+
+def _summary_filters(
+    status: WorkflowStatus | None,
+    q: str | None,
+    reviews_only: bool,
+    review_status: str | None,
+    owner_user_id: str | None = None,
+) -> tuple[str, tuple[object, ...]]:
+    clauses: list[str] = []
+    params: list[object] = []
+    if owner_user_id is not None:
+        clauses.append("owner_user_id = %s")
+        params.append(owner_user_id)
+    if status:
+        clauses.append("status = %s")
+        params.append(status.value)
+    if reviews_only:
+        clauses.append("review_id is not null")
+    if review_status:
+        clauses.append("review_status = %s")
+        params.append(review_status)
+    if q and q.strip():
+        clauses.append(
+            """(
+                workflow_id ilike %s
+                or instruction ilike %s
+                or coalesce(schema_id, '') ilike %s
+                or coalesce(review_id, '') ilike %s
+            )"""
+        )
+        needle = f"%{q.strip()}%"
+        params.extend([needle, needle, needle, needle])
+    where = f"where {' and '.join(clauses)}" if clauses else ""
+    return where, tuple(params)
+
+
+def _summary_item_from_row(row) -> WorkflowSummaryItem:
+    return WorkflowSummaryItem(
+        workflow_id=row["workflow_id"],
+        owner_user_id=row["owner_user_id"],
+        status=WorkflowStatus(row["status"]),
+        instruction=row["instruction"] or "",
+        schema_id=row["schema_id"],
+        target_format=row["target_format"],
+        issue_count=int(row["issue_count"]),
+        review_id=row["review_id"],
+        review_status=row["review_status"],
+        evidence_count=int(row["evidence_count"]),
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
 
 
 class PostgresEventRepository:

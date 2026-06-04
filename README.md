@@ -22,10 +22,10 @@ src/ojtflow/
   application/      workflow use cases and ports
   infrastructure/   Postgres, SQLite, in-memory, and static knowledge adapters
   interfaces/api/   FastAPI routes and request schemas
-frontend/
-  src/              React product UI and API client
   medical/          OCR/DICOM/visual evidence extension contracts
   mcp_servers/      planned MCP wrapper boundary
+frontend/
+  src/              React product UI and API client
 ```
 
 Dependency direction points inward to `core`. API, storage, retrieval, and future MCP/cloud/model integrations should be replaceable without changing domain contracts.
@@ -44,15 +44,45 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
   Redis session cache in Postgres deployments, and HTTP-only browser session cookies.
 - Deterministic CSV-to-JSON conversion after approval.
 - Evidence-grounded explanation report with medical intended-use limitation.
-- Static trusted knowledge fixture for `lab_result_v1`.
-- FastAPI routes for workflows, review, convert, validate, FHIR profile, OCR evidence, and health.
+- Healthcare-aware retrieval module with Postgres full-text search, pgvector-ready
+  storage, deterministic local embeddings, and static fallback.
+- FastAPI routes for workflows, review, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
+- Authenticated runtime diagnostics for sanitized configuration and readiness
+  checks.
 - React product console for workflow intake, review, schema, audit, and settings surfaces.
 
 ## Run Tests
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /home/tcuong1000/.ostwin/.venv/bin/python -m pytest
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m pytest
 ```
+
+Run the real-browser Playwright suite against the Docker stack:
+
+```bash
+cd frontend
+npm run e2e
+```
+
+See `docs/testing_strategy.md` for unit, integration, real-stack, and browser E2E scope.
+
+Release evidence is tracked in `RELEASE_CANDIDATE.md` and
+`docs/release_verification_matrix.md`. Keep those documents aligned with the
+release script whenever backend contracts, storage, auth, retrieval, OCR/FHIR
+handoffs, frontend behavior, or deployment checks change.
+
+Run the full local release check against the Docker stack:
+
+```bash
+PYTHON_BIN=python scripts/release-check.sh
+```
+
+The script runs backend tests, frontend build, Docker stack rebuild, runtime
+asset freshness, browser E2E, E2E cleanup, a Postgres residue assertion for
+Playwright test users/workflows, and git whitespace hygiene. Set
+`PYTHON_BIN` to your active virtualenv Python when needed. Use
+`OJT_RELEASE_CHECK_SKIP_DOCKER_BUILD=1` only when the stack is already rebuilt,
+and `OJT_RELEASE_CHECK_SKIP_E2E=1` only for a narrow local compile/test pass.
 
 ## Run With Docker
 
@@ -64,10 +94,33 @@ Use `docker-compose up --build` if your machine has Docker Compose v1.
 
 This starts:
 
-- `postgres` on `localhost:5432`
+- `postgres` on `localhost:5432` using the pgvector-capable Postgres image
 - `redis` on `localhost:6379`
 - `api` on `localhost:8000`
 - `frontend` on `localhost:5173`
+
+Those host ports are local defaults. Override them with
+`OJT_POSTGRES_PORT`, `OJT_REDIS_PORT`, `OJT_API_PORT`, and
+`OJT_FRONTEND_PORT` when running beside existing services. The Compose
+Postgres container also accepts `OJT_POSTGRES_DB`, `OJT_POSTGRES_USER`, and
+`OJT_POSTGRES_PASSWORD`; the API container DSN is derived from those Compose
+settings and points at the internal `postgres` service.
+
+Compose health checks verify Postgres, Redis, API `/health`, and frontend
+serving readiness. The frontend waits for the API health check before starting.
+The Docker frontend is a built static React bundle served by nginx on port
+`5173`; nginx preserves SPA routes and proxies `/api/*` plus `/health` to the
+API container.
+
+The API applies pending Postgres migrations automatically when the Postgres
+storage adapters are constructed. The explicit migration command remains useful
+for CI, release checks, and inspecting pending migration output, but it is not a
+separate required step for `docker compose up`.
+
+The API image installs Python dependencies with `constraints.txt` so Docker
+rebuilds of the same commit resolve to the same runtime dependency versions.
+Keep `pyproject.toml` ranges compatible for local development, and refresh
+`constraints.txt` only after the full release check passes.
 
 The default backend storage is Postgres plus local file artifacts:
 
@@ -88,15 +141,62 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_AUTH_COOKIE_SAMESITE=lax`
 - `OJT_AUTH_COOKIE_DOMAIN=`
 - `OJT_DATA_DIR=var`
+- `OJT_KNOWLEDGE_DIR=knowledge`
+- `OJT_MIGRATIONS_DIR=sql/postgres/migrations`
 - `OJT_MAX_UPLOAD_BYTES=26214400`
+- `OJT_MAX_INLINE_DATA_BYTES=1048576`
 - `OJT_UPLOAD_READ_CHUNK_BYTES=1048576`
 - `OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml`
+- `OJT_EMBEDDING_PROVIDER=deterministic`
+- `OJT_EMBEDDING_MODEL=deterministic-hash-v0`
+- `OJT_EMBEDDING_DIMENSIONS=64`
 
-The frontend proxies `/api/*` requests to the API container in Docker. No API keys or ADC credential files are committed; pass those through environment variables or mounted runtime credentials only.
+`OJT_STORAGE_BACKEND` must be one of `postgres`, `sqlite`, or `memory`.
+Postgres is the production-like default. SQLite is a local single-file fallback.
+Memory storage is for tests and short-lived demos only.
+`OJT_DATABASE_URL` must use `postgres://` or `postgresql://` syntax with a host,
+optional numeric port, and database name.
+`OJT_REDIS_URL` may be blank only to mark Redis as not configured; otherwise it
+must use `redis://`, `rediss://`, or `unix://` syntax with valid host/port or
+socket-path components.
+
+Numeric runtime settings for OAuth timeout, auth TTLs, upload limits, read
+chunk size, and inline payload limit must be positive.
+The API validates them at startup so a broken deployment fails before it starts
+accepting workflow traffic.
+
+`OJT_KNOWLEDGE_DIR` points at trusted schemas, data dictionaries, governance
+rules, and retrieval seed documents. `OJT_MIGRATIONS_DIR` points at ordered
+Postgres SQL migrations. Relative values resolve from the project root in local
+development; container deployments set absolute `/app/...` paths so installed
+Python package locations do not control runtime data discovery. The migrations
+directory must exist and contain ordered `.sql` files, otherwise Postgres
+startup fails before serving traffic.
+Named `schema_id` values are also strict: callers must use a schema returned by
+`GET /api/v1/schemas`. Set `schema_id` to `null` for explicit no-schema
+validation. A missing requested schema returns a structured `not_found` error
+instead of silently weakening validation.
+
+`OJT_ALLOWED_UPLOAD_EXTENSIONS` may narrow the built-in supported upload
+extensions. Values may include or omit the leading dot, are normalized to
+lowercase, and must be simple supported suffixes such as `.csv` or `.pdf`.
+Unsupported or unsafe values such as `.exe`, `.tar.gz`, paths, wildcards, or
+extensions containing spaces are rejected during settings load.
+
+`OJT_EMBEDDING_PROVIDER=deterministic` and
+`OJT_EMBEDDING_MODEL=deterministic-hash-v0` are the only implemented embedding
+provider/model pair in v0. They are validated at settings load so runtime
+diagnostics cannot claim an external embedding provider that the retrieval
+adapter is not actually using. `OJT_EMBEDDING_DIMENSIONS=64` is also fixed in
+v0 because the Postgres retrieval schema uses `embedding vector(64)`.
+
+The frontend container proxies `/api/*` and `/health` requests to the API
+container in Docker. No API keys or ADC credential files are committed; pass
+those through environment variables or mounted runtime credentials only.
 
 ## Document Upload Parsing
 
-PR #1 adds upload parsing routes:
+Upload parsing routes:
 
 - `POST /api/v1/parse/extract`
 - `POST /api/v1/parse/upload/workflow`
@@ -104,6 +204,8 @@ PR #1 adds upload parsing routes:
 - `GET /api/v1/auth/google/url`
 - `GET /api/v1/auth/google/callback`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/runtime/config`
+- `GET /api/v1/runtime/readiness`
 - `POST /api/v1/auth/logout`
 
 ## Google OAuth Login
@@ -139,8 +241,13 @@ Login flow:
    validate, FHIR, and OCR routes.
 
 Use `OJT_ALLOWED_AUTH_REDIRECT_URIS` to add deployment callback URLs beyond the
-two local defaults. Use `OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS` to restrict sign-in
-to one or more Google Workspace domains.
+two local defaults. OAuth redirect URIs must use `http` or `https`; non-local
+HTTP callbacks must use HTTPS. Redirect URIs with fragments, embedded user info,
+missing hosts, or non-web schemes are rejected during settings load. Use
+`OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS` to restrict sign-in to one or more Google
+Workspace domains. Hosted-domain allowlists and `OJT_AUTH_COOKIE_DOMAIN` must
+be bare DNS domains. URLs, ports, wildcards, spaces, IP addresses, and localhost
+are rejected; omit OJT_AUTH_COOKIE_DOMAIN for localhost development.
 
 See `docs/auth_architecture.md` for the auth port/adapters, storage matrix, and
 browser session transport.
@@ -169,6 +276,20 @@ The local Vite server defaults to proxying API requests to `http://localhost:800
 VITE_API_PROXY_TARGET=http://127.0.0.1:8000 npm run dev
 ```
 
+When using the Docker frontend, verify the running container is serving the same
+hashed assets as the freshly built Docker image:
+
+```bash
+docker compose up -d --build frontend
+(cd frontend && npm run runtime:assert-current)
+```
+
+If the check reports stale runtime assets, rebuild the frontend image:
+
+```bash
+docker compose up -d --build frontend
+```
+
 ## Run API Locally Against Docker Postgres
 
 Start Postgres:
@@ -179,24 +300,26 @@ docker compose up -d postgres
 
 Use `docker-compose up -d postgres` if your machine has Docker Compose v1.
 
-Run migrations:
+Optional: run migrations explicitly before starting the API or in CI:
 
 ```bash
-PYTHONPATH=src /home/tcuong1000/.ostwin/.venv/bin/python -m ojtflow.infrastructure.storage.migrate
+PYTHONPATH=src python -m ojtflow.infrastructure.storage.migrate
 ```
 
 Run the API:
 
 ```bash
-PYTHONPATH=src /home/tcuong1000/.ostwin/.venv/bin/python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 8000
+PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 8000
 ```
 
 Use `OJT_STORAGE_BACKEND=sqlite` for a single-file local fallback, or
-`OJT_STORAGE_BACKEND=memory` for short-lived tests.
+`OJT_STORAGE_BACKEND=memory` for short-lived tests. The only supported storage
+backend values are `postgres`, `sqlite`, or `memory`; invalid values fail during
+settings load.
 
 Useful routes:
 
-- `GET /health`
+- `GET /health` raw liveness probe for Docker/load balancers
 - `POST /api/v1/workflows`
 - `GET /api/v1/workflows/{workflow_id}`
 - `GET /api/v1/workflows/{workflow_id}/events`
@@ -207,6 +330,8 @@ Useful routes:
 - `POST /api/v1/validate`
 - `POST /api/v1/fhir/profile`
 - `POST /api/v1/ocr/evidence`
+- `POST /api/v1/retrieval/search`
+- `GET /api/v1/retrieval/sources`
 - `POST /api/v1/parse/extract`
 - `POST /api/v1/parse/upload/workflow`
 - `GET /api/v1/parse/extractors`

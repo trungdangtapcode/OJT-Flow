@@ -7,9 +7,11 @@ from copy import deepcopy
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
+from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
 from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
+from ojtflow.infrastructure.storage.summary import filter_sort_page_summaries, workflow_stats
 
 
 class InMemoryDatasetStore:
@@ -103,12 +105,49 @@ class InMemoryWorkflowRepository:
         self,
         status: WorkflowStatus | None = None,
         limit: int = 50,
+        owner_user_id: str | None = None,
     ) -> list[WorkflowState]:
         workflows = list(self._workflows.values())
+        if owner_user_id is not None:
+            workflows = [
+                workflow for workflow in workflows
+                if workflow.owner_user_id == owner_user_id
+            ]
         if status:
             workflows = [workflow for workflow in workflows if workflow.status == status]
         workflows.sort(key=lambda workflow: workflow.updated_at, reverse=True)
         return [deepcopy(workflow) for workflow in workflows[:limit]]
+
+    def list_summary(
+        self,
+        status: WorkflowStatus | None = None,
+        q: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        sort: str = "updated_at",
+        direction: str = "desc",
+        reviews_only: bool = False,
+        review_status: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> WorkflowSummaryPage:
+        return filter_sort_page_summaries(
+            [deepcopy(workflow) for workflow in self._workflows.values()],
+            status=status,
+            q=q,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            direction=direction,
+            reviews_only=reviews_only,
+            review_status=review_status,
+            owner_user_id=owner_user_id,
+        )
+
+    def stats(self, owner_user_id: str | None = None) -> WorkflowStats:
+        return workflow_stats(
+            [deepcopy(workflow) for workflow in self._workflows.values()],
+            owner_user_id=owner_user_id,
+        )
 
 
 class InMemoryEventRepository:

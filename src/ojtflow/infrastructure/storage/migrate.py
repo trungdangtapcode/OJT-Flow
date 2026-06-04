@@ -8,7 +8,10 @@ from ojtflow.infrastructure.storage.migrations import PostgresMigrator
 
 def main() -> None:
     settings = get_settings()
-    applied = PostgresMigrator(settings.postgres_dsn).apply()
+    applied = PostgresMigrator(
+        settings.postgres_dsn,
+        migrations_dir=settings.resolved_migrations_dir,
+    ).apply()
     if applied:
         print("Applied migrations:", ", ".join(applied))
     else:
@@ -17,4 +20,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

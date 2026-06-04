@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+from ojtflow.config import get_settings
 from ojtflow.core.errors import OJTFlowError
 
 try:
@@ -30,7 +31,7 @@ class PostgresMigrator:
 
     def __init__(self, dsn: str, migrations_dir: Path | None = None) -> None:
         self.dsn = dsn
-        self.migrations_dir = migrations_dir or Path(__file__).resolve().parents[4] / "sql/postgres/migrations"
+        self.migrations_dir = migrations_dir or get_settings().resolved_migrations_dir
 
     def apply(self) -> list[str]:
         """Apply pending migrations and return applied versions."""
@@ -68,9 +69,18 @@ class PostgresMigrator:
     def load_migrations(self) -> list[Migration]:
         """Load migrations in filename order."""
 
+        if not self.migrations_dir.is_dir():
+            raise OJTFlowError(f"Postgres migrations directory not found: {self.migrations_dir}")
+
         migrations: list[Migration] = []
+        seen_versions: set[str] = set()
         for path in sorted(self.migrations_dir.glob("*.sql")):
             version, name = _parse_migration_name(path)
+            if version in seen_versions:
+                raise OJTFlowError(
+                    f"Duplicate migration version {version} in {self.migrations_dir}"
+                )
+            seen_versions.add(version)
             sql = path.read_text(encoding="utf-8")
             migrations.append(
                 Migration(
@@ -81,6 +91,8 @@ class PostgresMigrator:
                     checksum=sha256(sql.encode("utf-8")).hexdigest(),
                 )
             )
+        if not migrations:
+            raise OJTFlowError(f"No Postgres migration files found in {self.migrations_dir}")
         return migrations
 
     def _ensure_migration_table(self, cursor) -> None:
@@ -106,6 +118,8 @@ def _parse_migration_name(path: Path) -> tuple[str, str]:
     if "_" not in stem:
         raise OJTFlowError(f"Invalid migration filename: {path.name}")
     version, name = stem.split("_", 1)
-    if not version.isdigit():
+    if not version.isdigit() or len(version) != 3:
         raise OJTFlowError(f"Invalid migration version: {path.name}")
+    if not name:
+        raise OJTFlowError(f"Invalid migration name: {path.name}")
     return version, name

@@ -5,9 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from ojtflow.application.workflow_service import WorkflowService
+from ojtflow.core.contracts.auth import AuthenticatedSession
+from ojtflow.core.contracts.base import NonBlankStr
 from ojtflow.core.contracts.workflow import WorkflowState
-from ojtflow.interfaces.api.deps import get_workflow_service
-from ojtflow.interfaces.api.responses import ok
+from ojtflow.interfaces.api.deps import get_workflow_service, require_authentication
+from ojtflow.interfaces.api.responses import ok, raise_for_failed_workflow
 from ojtflow.interfaces.api.schemas import SubmitReviewRequest
 
 router = APIRouter(tags=["review"])
@@ -15,14 +17,17 @@ router = APIRouter(tags=["review"])
 
 @router.post("/review/{review_id}")
 async def submit_review(
-    review_id: str,
+    review_id: NonBlankStr,
     request: SubmitReviewRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
     workflow = service.submit_review(
         review_id=review_id,
         decision=request.decision,
-        decided_by=request.decided_by,
+        decided_by=authenticated.user.user_id,
         payload=request.payload,
+        owner_user_id=authenticated.user.user_id,
     )
+    raise_for_failed_workflow(workflow)
     return ok(workflow)

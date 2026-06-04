@@ -11,9 +11,11 @@ Requires:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.exceptions import RequestValidationError
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
+from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
 from ojtflow.data_tools.extract import (
@@ -24,8 +26,12 @@ from ojtflow.data_tools.extract import (
     supported_extensions,
     validate_extractor_choice,
 )
-from ojtflow.interfaces.api.deps import get_api_settings, get_workflow_service
-from ojtflow.interfaces.api.responses import ok
+from ojtflow.interfaces.api.deps import (
+    get_api_settings,
+    get_workflow_service,
+    require_authentication,
+)
+from ojtflow.interfaces.api.responses import ok, raise_for_failed_workflow
 
 router = APIRouter(tags=["parse"])
 
@@ -59,11 +65,37 @@ async def _read_upload_bytes(file: UploadFile, settings: Settings) -> tuple[byte
     return bytes(extractor_bytes), filename, source_format
 
 
+def _optional_form_text(value: str | None) -> str | None:
+    """Normalize optional multipart form text while preserving blank-as-omitted UX."""
+
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _required_form_text(field_name: str, value: str) -> str:
+    normalized = value.strip()
+    if normalized:
+        return normalized
+    raise RequestValidationError(
+        [
+            {
+                "type": "string_too_short",
+                "loc": ("body", field_name),
+                "msg": "String should have at least 1 character",
+                "input": value,
+                "ctx": {"min_length": 1},
+            }
+        ]
+    )
+
+
 @router.post("/parse/upload/workflow")
 async def upload_and_start_workflow(
     file: UploadFile = File(..., description="Document file to parse (PDF, DOCX, image, …)"),
     instruction: str = Form(
-        default="Extract and explain the content of this document.",
+        ...,
         description="Natural-language instruction for the workflow.",
     ),
     target_format: DataFormat = Form(
@@ -82,6 +114,7 @@ async def upload_and_start_workflow(
         default=Extractor.AUTO,
         description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
     ),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
@@ -92,7 +125,9 @@ async def upload_and_start_workflow(
 
     Returns the same `WorkflowState` envelope as `POST /api/v1/workflows`.
     """
+    instruction = _required_form_text("instruction", instruction)
     extractor = validate_extractor_choice(extractor)
+    schema_id = _optional_form_text(schema_id)
     file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
 
     workflow = service.start_workflow_from_file(
@@ -103,7 +138,9 @@ async def upload_and_start_workflow(
         schema_id=schema_id,
         require_human_review=require_human_review,
         prefer_extractor=extractor,
+        owner_user_id=authenticated.user.user_id,
     )
+    raise_for_failed_workflow(workflow)
     return ok(workflow)
 
 
@@ -114,6 +151,7 @@ async def extract_only(
         default=Extractor.AUTO,
         description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
     ),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Extract text from a document without running the full workflow.
@@ -130,6 +168,7 @@ async def extract_only(
     """
     from ojtflow.data_tools.extract import extract_document
 
+    del authenticated
     extractor = validate_extractor_choice(extractor)
     file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
 
@@ -149,8 +188,11 @@ async def extract_only(
 
 
 @router.get("/parse/extractors")
-async def list_extractors() -> dict:
+async def list_extractors(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+) -> dict:
     """Return which extraction engines are installed and available."""
+    del authenticated
     return ok(
         {
             "available": available_extractors(),

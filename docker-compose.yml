@@ -1,16 +1,16 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: ojtflow
-      POSTGRES_USER: ojtflow
-      POSTGRES_PASSWORD: ojtflow
+      POSTGRES_DB: ${OJT_POSTGRES_DB:-ojtflow}
+      POSTGRES_USER: ${OJT_POSTGRES_USER:-ojtflow}
+      POSTGRES_PASSWORD: ${OJT_POSTGRES_PASSWORD:-ojtflow}
     ports:
-      - "5432:5432"
+      - "${OJT_POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ojtflow -d ojtflow"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${OJT_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -30,9 +30,11 @@ services:
       context: .
     environment:
       OJT_STORAGE_BACKEND: postgres
-      OJT_DATABASE_URL: postgresql://ojtflow:ojtflow@postgres:5432/ojtflow
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
       OJT_REDIS_URL: redis://redis:6379/0
       OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+      OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
       OJT_GOOGLE_CLIENT_ID: ${OJT_GOOGLE_CLIENT_ID:-}
       OJT_GOOGLE_CLIENT_SECRET: ${OJT_GOOGLE_CLIENT_SECRET:-}
       OJT_GOOGLE_REDIRECT_URI: ${OJT_GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/auth/google/callback}
@@ -46,8 +48,15 @@ services:
       OJT_AUTH_COOKIE_SECURE: ${OJT_AUTH_COOKIE_SECURE:-false}
       OJT_AUTH_COOKIE_SAMESITE: ${OJT_AUTH_COOKIE_SAMESITE:-lax}
       OJT_AUTH_COOKIE_DOMAIN: ${OJT_AUTH_COOKIE_DOMAIN:-}
+      OJT_MAX_UPLOAD_BYTES: ${OJT_MAX_UPLOAD_BYTES:-26214400}
+      OJT_MAX_INLINE_DATA_BYTES: ${OJT_MAX_INLINE_DATA_BYTES:-1048576}
+      OJT_UPLOAD_READ_CHUNK_BYTES: ${OJT_UPLOAD_READ_CHUNK_BYTES:-1048576}
+      OJT_ALLOWED_UPLOAD_EXTENSIONS: ${OJT_ALLOWED_UPLOAD_EXTENSIONS:-.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-deterministic}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-deterministic-hash-v0}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-64}
     ports:
-      - "8000:8000"
+      - "${OJT_API_PORT:-8000}:8000"
     volumes:
       - app_data:/app/var
     depends_on:
@@ -55,17 +64,43 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   frontend:
     build:
       context: ./frontend
-    environment:
-      VITE_API_BASE_URL: /api/v1
-      VITE_API_PROXY_TARGET: http://api:8000
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     ports:
-      - "5173:5173"
+      - "${OJT_FRONTEND_PORT:-5173}:5173"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:5173/",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   postgres_data:

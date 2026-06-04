@@ -103,11 +103,17 @@ class AuthService:
         token_hash = _hash_token(token)
         cached = self.cache.get_session(token_hash)
         if cached:
-            authenticated = _session_from_payload(cached)
-            if authenticated.session.expires_at <= _now():
+            authenticated = _session_from_cache_payload(cached)
+            if authenticated is None:
+                self.cache.delete_session(token_hash)
+            elif authenticated.session.revoked_at is not None:
                 self.cache.delete_session(token_hash)
                 return None
-            return authenticated
+            elif authenticated.session.expires_at <= _now():
+                self.cache.delete_session(token_hash)
+                return None
+            else:
+                return authenticated
 
         authenticated = self.repository.get_active_session(token_hash, _now())
         if not authenticated:
@@ -222,6 +228,13 @@ def _session_from_payload(payload: dict[str, Any]) -> AuthenticatedSession:
             last_seen_at=_parse_optional_datetime(session.get("last_seen_at")),
         ),
     )
+
+
+def _session_from_cache_payload(payload: dict[str, Any]) -> AuthenticatedSession | None:
+    try:
+        return _session_from_payload(payload)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _parse_datetime(value: str) -> datetime:

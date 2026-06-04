@@ -1,0 +1,202 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+
+import {
+  ApiRequestError,
+  API_BASE_URL,
+  createWorkflow,
+  getExtractorInventory,
+  getRuntimeConfig,
+  getRuntimeHealth,
+  getRuntimeReadiness,
+  getWorkflow,
+  getWorkflowOutput,
+  getWorkflowStats,
+  listReviewSummaries,
+  listSchemas,
+  listWorkflowEvents,
+  listWorkflowSummaries,
+  submitReview,
+  uploadFileWorkflow,
+} from "../api";
+import type { StartWorkflowPayload } from "../types";
+
+export const queryKeys = {
+  stats: ["workflow-stats"] as const,
+  workflowSummaries: (params: Record<string, unknown>) => ["workflow-summaries", params] as const,
+  reviewSummaries: (params: Record<string, unknown>) => ["review-summaries", params] as const,
+  workflow: (workflowId: string | null) => ["workflow", workflowId] as const,
+  output: (workflowId: string | null) => ["workflow-output", workflowId] as const,
+  events: (workflowId: string | null) => ["workflow-events", workflowId] as const,
+  schemas: ["schemas"] as const,
+  extractors: ["extractors"] as const,
+  health: ["runtime-health"] as const,
+  runtimeConfig: ["runtime-config"] as const,
+  runtimeReadiness: ["runtime-readiness"] as const,
+};
+
+export const runtimeConfig = {
+  apiBaseUrl: API_BASE_URL,
+} as const;
+
+export function useWorkflowStatsQuery() {
+  return useQuery({ queryKey: queryKeys.stats, queryFn: getWorkflowStats });
+}
+
+export function useWorkflowSummariesQuery(params: {
+  status?: string | null;
+  q?: string | null;
+  page?: number;
+  page_size?: number;
+  sort?: string;
+  direction?: string;
+}) {
+  return useQuery({
+    queryKey: queryKeys.workflowSummaries(params),
+    queryFn: () => listWorkflowSummaries(params),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useReviewSummariesQuery(params: {
+  status?: string | null;
+  q?: string | null;
+  page?: number;
+  page_size?: number;
+  sort?: string;
+  direction?: string;
+}) {
+  return useQuery({
+    queryKey: queryKeys.reviewSummaries(params),
+    queryFn: () => listReviewSummaries(params),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useWorkflowQuery(workflowId: string | null) {
+  return useQuery({
+    enabled: Boolean(workflowId),
+    queryKey: queryKeys.workflow(workflowId),
+    queryFn: () => getWorkflow(workflowId!),
+  });
+}
+
+export function useWorkflowEventsQuery(workflowId: string | null) {
+  return useQuery({
+    enabled: Boolean(workflowId),
+    queryKey: queryKeys.events(workflowId),
+    queryFn: () => listWorkflowEvents(workflowId!),
+  });
+}
+
+export function useWorkflowOutputQuery(workflowId: string | null, enabled: boolean) {
+  return useQuery({
+    enabled: Boolean(workflowId) && enabled,
+    queryKey: queryKeys.output(workflowId),
+    queryFn: () => getWorkflowOutput(workflowId!),
+  });
+}
+
+export function useExtractorInventoryQuery() {
+  return useQuery({ queryKey: queryKeys.extractors, queryFn: getExtractorInventory });
+}
+
+export function useRuntimeHealthQuery() {
+  return useQuery({ queryKey: queryKeys.health, queryFn: getRuntimeHealth });
+}
+
+export function useRuntimeConfigQuery() {
+  return useQuery({ queryKey: queryKeys.runtimeConfig, queryFn: getRuntimeConfig });
+}
+
+export function useRuntimeReadinessQuery() {
+  return useQuery({ queryKey: queryKeys.runtimeReadiness, queryFn: getRuntimeReadiness });
+}
+
+export function useSchemasQuery() {
+  return useQuery({ queryKey: queryKeys.schemas, queryFn: listSchemas });
+}
+
+export function useCreateWorkflowMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: StartWorkflowPayload) => createWorkflow(payload),
+    onSuccess: async () => {
+      await invalidateWorkflowCollections(queryClient);
+      toast.success("Workflow created");
+    },
+    onError: async (error) => {
+      if (workflowErrorWorkflowId(error)) {
+        await invalidateWorkflowCollections(queryClient);
+      }
+    },
+  });
+}
+
+export function useUploadWorkflowMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UploadWorkflowPayload) =>
+      uploadFileWorkflow(payload.file, payload.options),
+    onSuccess: async () => {
+      await invalidateWorkflowCollections(queryClient);
+      toast.success("Workflow created from file");
+    },
+    onError: async (error) => {
+      if (workflowErrorWorkflowId(error)) {
+        await invalidateWorkflowCollections(queryClient);
+      }
+    },
+  });
+}
+
+export function useReviewDecisionMutation(workflowId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reviewId, decision }: { reviewId: string; decision: string }) =>
+      submitReview(reviewId, decision),
+    onSuccess: async () => {
+      await invalidateWorkflowCollections(queryClient);
+      await invalidateWorkflowDetail(queryClient, workflowId);
+      toast.success("Review decision recorded");
+    },
+    onError: async (error) => {
+      await invalidateWorkflowCollections(queryClient);
+      await invalidateWorkflowDetail(
+        queryClient,
+        workflowErrorWorkflowId(error) ?? workflowId,
+      );
+    },
+  });
+}
+
+type UploadWorkflowPayload = {
+  file: File;
+  options: Parameters<typeof uploadFileWorkflow>[1];
+};
+
+async function invalidateWorkflowCollections(queryClient: ReturnType<typeof useQueryClient>) {
+  await queryClient.invalidateQueries({ queryKey: queryKeys.stats });
+  await queryClient.invalidateQueries({ queryKey: ["workflow-summaries"] });
+  await queryClient.invalidateQueries({ queryKey: ["review-summaries"] });
+}
+
+async function invalidateWorkflowDetail(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workflowId: string | null,
+) {
+  if (!workflowId) return;
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.workflow(workflowId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.events(workflowId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.output(workflowId) }),
+  ]);
+}
+
+export function workflowErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function workflowErrorWorkflowId(error: unknown): string | null {
+  return error instanceof ApiRequestError ? error.workflowId : null;
+}

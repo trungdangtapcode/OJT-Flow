@@ -2,34 +2,72 @@
 
 from __future__ import annotations
 
+import json
+
 from ojtflow.agents.explanation_agent import ExplanationAgent
 from ojtflow.agents.parser_agent import ParserAgent
 from ojtflow.agents.safety_agent import SafetyAgent
 from ojtflow.agents.transformation_agent import TransformationAgent
 from ojtflow.agents.validation_agent import ValidationAgent
-from ojtflow.application.ports import DatasetStore, EventRepository, KnowledgeRepository, WorkflowRepository
+from ojtflow.application.ports import (
+    DatasetStore,
+    EventRepository,
+    KnowledgeRepository,
+    RetrievalRepository,
+    WorkflowRepository,
+)
+from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.application.tool_registry import tool_specs_json
-from ojtflow.core.contracts.data import ParsedData, TransformationOutput, TransformationPlan
+from ojtflow.core.contracts.data import (
+    ParsedData,
+    TransformationAction,
+    TransformationOutput,
+    TransformationPlan,
+)
 from ojtflow.core.contracts.enums import (
     ActorType,
     DataFormat,
     EventType,
     ReviewDecision,
+    ReviewStatus,
     Severity,
     StepStatus,
     WorkflowStatus,
 )
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
 from ojtflow.core.contracts.review import HumanReview
+from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import (
+    WorkflowFailure,
     WorkflowInput,
     WorkflowIntent,
     WorkflowOutput,
+    WorkflowOutputArtifact,
     WorkflowState,
     WorkflowStep,
 )
-from ojtflow.core.errors import NotFoundError, PolicyBlockedError
+from ojtflow.core.errors import (
+    ArtifactIntegrityError,
+    NotFoundError,
+    OJTFlowError,
+    PolicyBlockedError,
+    ToolExecutionError,
+    UnsupportedUploadError,
+    UploadTooLargeError,
+)
+from ojtflow.core.text import format_count
+from ojtflow.data_tools.hashing import sha256_text
 from ojtflow.data_tools.transform_plan import build_transformation_plan
+from ojtflow.fhir.profile import profile_fhir_like
+
+
+SUPPORTED_REVIEW_EDIT_ACTIONS = {
+    "normalize_date",
+    "preserve_missing_as_null",
+    "preserve_missing_unit_as_null",
+    "mask_sensitive_field_for_explanation",
+}
 
 
 class WorkflowService:
@@ -41,11 +79,13 @@ class WorkflowService:
         workflows: WorkflowRepository,
         events: EventRepository,
         knowledge: KnowledgeRepository,
+        retrieval: RetrievalRepository,
     ) -> None:
         self.datasets = datasets
         self.workflows = workflows
         self.events = events
         self.knowledge = knowledge
+        self.retrieval_service = RetrievalService(retrieval)
         self.parser_agent = ParserAgent()
         self.validation_agent = ValidationAgent()
         self.safety_agent = SafetyAgent()
@@ -60,10 +100,12 @@ class WorkflowService:
         target_format: DataFormat = DataFormat.JSON,
         schema_id: str | None = "lab_result_v1",
         require_human_review: bool = True,
+        owner_user_id: str | None = None,
     ) -> WorkflowState:
         """Start and run a workflow until completion or review pause."""
 
         workflow = WorkflowState(
+            owner_user_id=owner_user_id,
             user_instruction=instruction,
             intent=WorkflowIntent(
                 target_format=target_format,
@@ -140,6 +182,7 @@ class WorkflowService:
         schema_id: str | None = "lab_result_v1",
         require_human_review: bool = True,
         prefer_extractor: str = "auto",
+        owner_user_id: str | None = None,
     ) -> WorkflowState:
         """Start a workflow from a raw document file (PDF, DOCX, image, …).
 
@@ -160,6 +203,7 @@ class WorkflowService:
         raw_format = DataFormat(source_format) if source_format in {item.value for item in DataFormat} else DataFormat.UNKNOWN
 
         workflow = WorkflowState(
+            owner_user_id=owner_user_id,
             user_instruction=instruction,
             intent=WorkflowIntent(
                 target_format=target_format,
@@ -215,38 +259,58 @@ class WorkflowService:
                 output_ref=raw_dataset.storage_ref,
             )
 
-            extraction = extract_document(file_bytes, safe_filename, prefer=prefer_extractor)
-            extracted_text = extraction.text
-            extraction_meta = {
-                "extractor_used": extraction.extractor_used,
-                "source_format": extraction.source_format,
-                "filename": extraction.filename,
-                "page_count": extraction.page_count,
-                "warnings": extraction.warnings,
-            }
+            direct_format = _direct_upload_data_format(source_format)
+            if direct_format:
+                try:
+                    extracted_text = file_bytes.decode("utf-8-sig")
+                except UnicodeDecodeError as exc:
+                    raise ToolExecutionError(
+                        f"Uploaded {source_format} file must be UTF-8 encoded."
+                    ) from exc
+                extraction_meta = {
+                    "extractor_used": "direct_text_upload",
+                    "source_format": source_format,
+                    "filename": safe_filename,
+                    "page_count": None,
+                    "warnings": [],
+                }
+                parsed_declared_format = direct_format
+            else:
+                extraction = extract_document(file_bytes, safe_filename, prefer=prefer_extractor)
+                extracted_text = extraction.text
+                extraction_meta = {
+                    "extractor_used": extraction.extractor_used,
+                    "source_format": extraction.source_format,
+                    "filename": extraction.filename,
+                    "page_count": extraction.page_count,
+                    "warnings": extraction.warnings,
+                }
+                parsed_declared_format = DataFormat.MARKDOWN
 
             dataset = self.datasets.put_text(
                 extracted_text,
                 workflow_id=workflow.workflow_id,
                 source_kind="uploaded_file_extracted_text",
-                declared_format=DataFormat.MARKDOWN.value,
-                detected_format=DataFormat.MARKDOWN.value,
+                declared_format=parsed_declared_format.value,
+                detected_format=parsed_declared_format.value,
             )
             workflow.input = WorkflowInput(
                 dataset_ref=dataset.storage_ref,
                 input_hash=dataset.sha256,
-                declared_format=DataFormat.MARKDOWN,
-                detected_format=DataFormat.MARKDOWN,
+                declared_format=parsed_declared_format,
+                detected_format=parsed_declared_format,
             )
             workflow.handoff_context["source_filename"] = safe_filename
             workflow.handoff_context["extraction"] = extraction_meta
             workflow.handoff_context["extracted_dataset_ref"] = dataset.storage_ref
+            extractor_used = str(extraction_meta.get("extractor_used", "unknown"))
+            extraction_warnings = extraction_meta.get("warnings") or []
             self._event(
                 workflow,
                 ActorType.TOOL,
                 "document_extractor",
                 EventType.TOOL_COMPLETED,
-                f"Extracted {source_format} upload using {extraction.extractor_used}",
+                f"Extracted {source_format} upload using {extractor_used}",
                 input_refs=[raw_dataset.storage_ref],
                 output_refs=[dataset.storage_ref],
                 metadata=extraction_meta,
@@ -255,14 +319,14 @@ class WorkflowService:
                 workflow,
                 "document_extraction",
                 StepStatus.COMPLETED,
-                f"Extracted {source_format} upload using {extraction.extractor_used}",
+                f"Extracted {source_format} upload using {extractor_used}",
                 output_ref=dataset.storage_ref,
-                issue_count=len(extraction.warnings),
+                issue_count=len(extraction_warnings),
             )
 
             parser_result = self.parser_agent.run(
                 text=extracted_text,
-                declared_format=DataFormat.MARKDOWN,
+                declared_format=parsed_declared_format,
                 source_ref=dataset.storage_ref,
             )
             parsed: ParsedData = parser_result.data["parsed"]
@@ -301,6 +365,68 @@ class WorkflowService:
             self.workflows.save(workflow)
             return workflow
 
+    def validate_data(
+        self,
+        data: str,
+        declared_format: DataFormat | None = None,
+        schema_id: str | None = "lab_result_v1",
+    ) -> dict:
+        """Parse and validate data without creating a persisted workflow."""
+
+        parser_result = self.parser_agent.run(
+            text=data,
+            declared_format=declared_format,
+            source_ref="inline://validate",
+        )
+        parsed: ParsedData = parser_result.data["parsed"]
+        profile = parser_result.data["profile"]
+        schema = self._load_requested_schema(schema_id)
+        validation_result = self.validation_agent.run(parsed, profile, schema)
+        return {
+            "status": "success",
+            "detected_format": parsed.format,
+            "profile": profile.model_dump(mode="json"),
+            "validation_report": validation_result.data["validation_report"].model_dump(mode="json"),
+        }
+
+    def convert_data(
+        self,
+        data: str,
+        declared_format: DataFormat | None = None,
+        target_format: DataFormat = DataFormat.JSON,
+    ) -> dict:
+        """Parse and convert data without creating a persisted workflow."""
+
+        parser_result = self.parser_agent.run(
+            text=data,
+            declared_format=declared_format,
+            source_ref="inline://convert",
+        )
+        parsed: ParsedData = parser_result.data["parsed"]
+        profile = parser_result.data["profile"]
+        transformation_result = self.transformation_agent.run(
+            parsed,
+            target_format,
+            plan=None,
+        )
+        output_text = transformation_result.data["output_text"]
+        output = transformation_result.data["transformation_output"]
+        metadata = output.model_dump(mode="json")
+        metadata["source_format"] = parsed.format.value
+        metadata["target_format"] = output.output_format.value
+        metadata["source_row_count"] = profile.row_count
+        metadata["target_row_count"] = output.diff_summary.get("target_row_count")
+        metadata["output_hash"] = output.output_hash
+        metadata["lossy"] = bool(output.warnings)
+        metadata["actions_applied"] = output.diff_summary.get("actions_applied", [])
+        return {
+            "status": "success",
+            "detected_format": parsed.format,
+            "output_format": output.output_format,
+            "output": output_text,
+            "metadata": metadata,
+        }
+
     def _run_after_parse(
         self,
         workflow: WorkflowState,
@@ -316,27 +442,47 @@ class WorkflowService:
         if workflow.profile is None:
             raise NotFoundError("Workflow is missing a data profile after parsing")
 
-        evidence = self.knowledge.search(
-            f"{instruction} fields {[field.name for field in workflow.profile.fields]}",
+        schema = self._load_requested_schema(
+            schema_id,
+            workflow_id=workflow.workflow_id,
+        )
+        fhir_context = self._profile_fhir_context(workflow, parsed)
+
+        retrieval_package = self.retrieval_service.search_for_workflow(
+            workflow_id=workflow.workflow_id,
+            instruction=instruction,
+            profile=workflow.profile,
+            schema_id=schema_id,
+            resource_type=fhir_context["resource_type"],
+            query_terms=fhir_context["query_terms"],
             top_k=5,
         )
-        workflow.retrieved_context = evidence
+        evidence = retrieval_package.evidence
+        workflow.retrieved_context = [*fhir_context["evidence"], *evidence]
+        workflow.handoff_context["retrieval_trace"] = retrieval_package.trace.model_dump(
+            mode="json"
+        )
+        workflow.handoff_context["retrieval_handoff"] = retrieval_package.handoff_context
         self._event(
             workflow,
             ActorType.AGENT,
             "retrieval_agent",
             EventType.RETRIEVAL_COMPLETED,
-            f"Retrieved {len(evidence)} trusted evidence item(s)",
-            metadata={"source_ids": [item.source_id for item in evidence]},
+            f"Retrieved {format_count(len(evidence), 'trusted evidence item')}",
+            metadata={
+                "source_ids": [item.source_id for item in evidence],
+                "strategy": retrieval_package.trace.strategy,
+                "safety_flags": retrieval_package.trace.safety_flags,
+                "warnings": retrieval_package.trace.warnings,
+            },
         )
         self._step(
             workflow,
-            "static_retrieval",
+            "retrieval",
             StepStatus.COMPLETED,
-            f"Retrieved {len(evidence)} trusted evidence item(s)",
+            f"Retrieved {format_count(len(workflow.retrieved_context), 'trusted evidence item')}",
         )
 
-        schema = self.knowledge.get_schema(schema_id)
         validation_result = self.validation_agent.run(parsed, workflow.profile, schema)
         workflow.validation_report = validation_result.data["validation_report"]
         workflow.schema_profile = {
@@ -405,59 +551,345 @@ class WorkflowService:
         self.workflows.save(workflow)
         return workflow
 
-    def get_workflow(self, workflow_id: str) -> WorkflowState:
+    def _profile_fhir_context(
+        self,
+        workflow: WorkflowState,
+        parsed: ParsedData,
+    ) -> dict:
+        """Attach lightweight FHIR-like profile context when JSON input carries resources."""
+
+        empty = {"evidence": [], "resource_type": None, "query_terms": []}
+        if parsed.format != DataFormat.JSON or not isinstance(parsed.content, dict):
+            return empty
+        if not (
+            parsed.content.get("resourceType")
+            or (
+                parsed.content.get("resourceType") == "Bundle"
+                and isinstance(parsed.content.get("entry"), list)
+            )
+        ):
+            return empty
+
+        profile_result = profile_fhir_like(json.dumps(parsed.content))
+        profile = profile_result["profile"]
+        evidence = profile_result["evidence"]
+        profile_payload = profile.model_dump(mode="json")
+        workflow.handoff_context["fhir_profile"] = profile_payload
+        workflow.handoff_context["fhir_handoff"] = profile.handoff_context
+        resource_type = _primary_fhir_resource_type(profile_payload)
+        query_terms = list(profile.handoff_context.get("rag_query_terms", []))
+        self._event(
+            workflow,
+            ActorType.AGENT,
+            "fhir_agent",
+            EventType.AGENT_COMPLETED,
+            f"Profiled FHIR-like input with {format_count(len(profile.resource_counts), 'resource type')}",
+            severity=Severity.WARNING if profile.issues else Severity.INFO,
+            metadata={
+                "resource_type": resource_type,
+                "resource_counts": profile_payload.get("resource_counts", {}),
+                "issues": profile_payload.get("issues", []),
+            },
+        )
+        self._step(
+            workflow,
+            "fhir_profile",
+            StepStatus.COMPLETED,
+            f"Profiled FHIR-like input: {', '.join(query_terms) or 'resource detected'}",
+            issue_count=len(profile.issues),
+        )
+        return {"evidence": evidence, "resource_type": resource_type, "query_terms": query_terms}
+
+    def get_workflow(
+        self,
+        workflow_id: str,
+        owner_user_id: str | None = None,
+    ) -> WorkflowState:
         """Fetch a workflow."""
 
-        return self.workflows.get(workflow_id)
+        workflow = self.workflows.get(workflow_id)
+        self._assert_workflow_owner(workflow, owner_user_id)
+        return workflow
 
     def list_workflows(
         self,
         status: WorkflowStatus | None = None,
         limit: int = 50,
+        owner_user_id: str | None = None,
     ) -> list[WorkflowState]:
         """List workflows for product UI and audit surfaces."""
 
-        return self.workflows.list(status=status, limit=limit)
+        return self.workflows.list(
+            status=status,
+            limit=limit,
+            owner_user_id=owner_user_id,
+        )
+
+    def list_workflow_summaries(
+        self,
+        status: WorkflowStatus | None = None,
+        q: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        sort: str = "updated_at",
+        direction: str = "desc",
+        owner_user_id: str | None = None,
+    ) -> WorkflowSummaryPage:
+        """List paginated workflow summaries for enterprise tables."""
+
+        return self.workflows.list_summary(
+            status=status,
+            q=q,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            direction=direction,
+            reviews_only=False,
+            review_status=None,
+            owner_user_id=owner_user_id,
+        )
+
+    def list_review_summaries(
+        self,
+        status: str | None = "pending",
+        q: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        sort: str = "updated_at",
+        direction: str = "desc",
+        owner_user_id: str | None = None,
+    ) -> WorkflowSummaryPage:
+        """List paginated review-backed workflow summaries."""
+
+        page_result = self.workflows.list_summary(
+            status=None,
+            q=q,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            direction=direction,
+            reviews_only=True,
+            review_status=status,
+            owner_user_id=owner_user_id,
+        )
+        return page_result
+
+    def workflow_stats(self, owner_user_id: str | None = None) -> WorkflowStats:
+        """Return aggregate workflow stats for command center surfaces."""
+
+        return self.workflows.stats(owner_user_id=owner_user_id)
 
     def list_reviews(
         self,
         status: str | None = None,
         limit: int = 50,
+        owner_user_id: str | None = None,
     ) -> list[WorkflowState]:
         """List workflows that have review objects attached."""
 
-        workflows = self.workflows.list(limit=max(limit * 3, limit))
-        reviewed = [workflow for workflow in workflows if workflow.review]
-        if status:
-            reviewed = [
-                workflow
-                for workflow in reviewed
-                if workflow.review and workflow.review.status.value == status
-            ]
-        return reviewed[:limit]
+        if limit <= 0:
+            return []
+
+        review_status = None if status in {None, "all"} else status
+        page_size = min(limit, 100)
+        page = 1
+        reviewed: list[WorkflowState] = []
+
+        while len(reviewed) < limit:
+            page_result = self.workflows.list_summary(
+                page=page,
+                page_size=page_size,
+                sort="updated_at",
+                direction="desc",
+                reviews_only=True,
+                review_status=review_status,
+                owner_user_id=owner_user_id,
+            )
+            if not page_result.items:
+                break
+
+            for item in page_result.items:
+                workflow = self.workflows.get(item.workflow_id)
+                self._assert_workflow_owner(workflow, owner_user_id)
+                if not workflow.review:
+                    continue
+                if review_status and workflow.review.status.value != review_status:
+                    continue
+                reviewed.append(workflow)
+                if len(reviewed) >= limit:
+                    break
+
+            if page * page_size >= page_result.total:
+                break
+            page += 1
+
+        return reviewed
 
     def list_schemas(self) -> list[dict]:
         """List trusted schema registry entries."""
 
         return self.knowledge.list_schemas()
 
-    def list_events(self, workflow_id: str) -> list[WorkflowEvent]:
+    def search_retrieval(
+        self,
+        query: RetrievalQuery,
+        owner_user_id: str | None = None,
+    ) -> RetrievalPackage:
+        """Run direct retrieval search."""
+
+        if query.workflow_id:
+            workflow = self.workflows.get(query.workflow_id)
+            self._assert_workflow_owner(workflow, owner_user_id)
+        self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
+        return self.retrieval_service.search(query)
+
+    def list_retrieval_sources(self) -> list[RetrievalSource]:
+        """List available retrieval source inventory."""
+
+        return self.retrieval_service.list_sources()
+
+    def _load_requested_schema(
+        self,
+        schema_id: str | None,
+        *,
+        workflow_id: str | None = None,
+    ) -> dict | None:
+        """Load an explicitly requested schema.
+
+        Missing named schemas must fail rather than downgrade validation.
+        """
+
+        if not schema_id:
+            return None
+        schema = self.knowledge.get_schema(schema_id)
+        if schema is None:
+            raise NotFoundError(
+                f"Requested schema profile not found: {schema_id}",
+                workflow_id=workflow_id,
+                details={
+                    "schema_id": schema_id,
+                    "resolution": (
+                        "Use a schema_id returned by GET /api/v1/schemas, "
+                        "or set schema_id to null for explicit no-schema validation."
+                    ),
+                },
+            )
+        return schema
+
+    def list_events(
+        self,
+        workflow_id: str,
+        owner_user_id: str | None = None,
+    ) -> list[WorkflowEvent]:
         """Fetch workflow events."""
 
+        workflow = self.workflows.get(workflow_id)
+        self._assert_workflow_owner(workflow, owner_user_id)
         return self.events.list_for_workflow(workflow_id)
+
+    def get_workflow_output(
+        self,
+        workflow_id: str,
+        owner_user_id: str | None = None,
+    ) -> WorkflowOutputArtifact:
+        """Return the generated output artifact for a workflow.
+
+        The caller provides only a workflow ID. The storage ref is resolved from
+        persisted workflow state so clients cannot read arbitrary local files.
+        """
+
+        workflow = self.workflows.get(workflow_id)
+        self._assert_workflow_owner(workflow, owner_user_id)
+        output = workflow.output.transformation if workflow.output else None
+        if not output or not output.output_ref:
+            raise NotFoundError(
+                f"Workflow output not generated: {workflow_id}",
+                workflow_id=workflow_id,
+            )
+        content = self._read_verified_text_artifact(
+            storage_ref=output.output_ref,
+            expected_hash=output.output_hash,
+            workflow_id=workflow.workflow_id,
+            artifact_label="output",
+        )
+        return WorkflowOutputArtifact(
+            workflow_id=workflow.workflow_id,
+            output_format=output.output_format,
+            output_hash=output.output_hash,
+            byte_size=len(content.encode("utf-8")),
+            content=content,
+            warnings=output.warnings,
+            diff_summary=output.diff_summary,
+        )
 
     def submit_review(
         self,
         review_id: str,
         decision: ReviewDecision,
-        decided_by: str = "user",
+        decided_by: str,
         payload: dict | None = None,
+        owner_user_id: str | None = None,
     ) -> WorkflowState:
         """Apply a human review decision and resume if approved."""
 
+        if not decided_by.strip():
+            raise PolicyBlockedError("Review decision requires an explicit reviewer identity.")
+
         workflow = self.workflows.find_by_review_id(review_id)
+        self._assert_workflow_owner(workflow, owner_user_id)
         if not workflow.review:
             raise NotFoundError(f"Review not found: {review_id}")
+        if workflow.review.status != ReviewStatus.PENDING:
+            raise PolicyBlockedError(
+                f"Review is already decided: {review_id}",
+                workflow_id=workflow.workflow_id,
+                details={
+                    "review_id": review_id,
+                    "review_status": workflow.review.status.value,
+                },
+            )
+        if decision not in workflow.review.allowed_decisions:
+            raise PolicyBlockedError(
+                f"Review decision is not allowed: {decision.value}",
+                workflow_id=workflow.workflow_id,
+                details={
+                    "review_id": review_id,
+                    "decision": decision.value,
+                    "allowed_decisions": [
+                        allowed.value for allowed in workflow.review.allowed_decisions
+                    ],
+                },
+            )
+
+        if decision == ReviewDecision.CLARIFY:
+            workflow.review.request_clarification(requested_by=decided_by, payload=payload)
+            workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
+            workflow.touch()
+            self._event(
+                workflow,
+                ActorType.USER,
+                decided_by,
+                EventType.REVIEW_DECIDED,
+                f"Clarification requested for review: {review_id}",
+                metadata={"review_id": review_id, "decision": decision.value},
+            )
+            self.workflows.save(workflow)
+            return workflow
+
+        plan_for_execution = workflow.transformation_plan
+        if decision == ReviewDecision.APPROVE_WITH_EDITS:
+            if not workflow.transformation_plan:
+                raise NotFoundError(
+                    "Workflow is missing transformation plan",
+                    workflow_id=workflow.workflow_id,
+                )
+            plan_for_execution = _edited_plan_from_review_payload(
+                payload=payload,
+                current_plan=workflow.transformation_plan,
+                workflow_id=workflow.workflow_id,
+                review_id=review_id,
+            )
+            workflow.transformation_plan = plan_for_execution
 
         workflow.review.apply_decision(decision, decided_by=decided_by, payload=payload)
         self._complete_pending_step(
@@ -480,19 +912,19 @@ class WorkflowService:
             workflow.touch()
             self.workflows.save(workflow)
             return workflow
-        if decision == ReviewDecision.CLARIFY:
-            workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
-            workflow.touch()
-            self.workflows.save(workflow)
-            return workflow
         if decision not in {ReviewDecision.APPROVE, ReviewDecision.APPROVE_WITH_EDITS}:
             raise PolicyBlockedError(f"Unsupported review decision: {decision}")
 
-        if not workflow.input or not workflow.transformation_plan:
+        if not workflow.input or not plan_for_execution:
             raise NotFoundError("Workflow is missing input or transformation plan")
 
         try:
-            data = self.datasets.get_text(workflow.input.dataset_ref)
+            data = self._read_verified_text_artifact(
+                storage_ref=workflow.input.dataset_ref,
+                expected_hash=workflow.input.input_hash,
+                workflow_id=workflow.workflow_id,
+                artifact_label="input",
+            )
             parser_result = self.parser_agent.run(
                 data,
                 workflow.input.declared_format,
@@ -500,11 +932,32 @@ class WorkflowService:
             )
             parsed: ParsedData = parser_result.data["parsed"]
             target_format = workflow.intent.target_format or DataFormat.JSON
-            self._complete_transformation(workflow, parsed, target_format, workflow.transformation_plan)
+            self._complete_transformation(workflow, parsed, target_format, plan_for_execution)
+        except ArtifactIntegrityError as exc:
+            self._fail_workflow(workflow, exc)
+            self.workflows.save(workflow)
+            raise
         except Exception as exc:
             self._fail_workflow(workflow, exc)
         self.workflows.save(workflow)
         return workflow
+
+    def _read_verified_text_artifact(
+        self,
+        storage_ref: str,
+        expected_hash: str | None,
+        workflow_id: str,
+        artifact_label: str,
+    ) -> str:
+        content = self.datasets.get_text(storage_ref)
+        content_hash = sha256_text(content)
+        if expected_hash and content_hash != expected_hash:
+            raise ArtifactIntegrityError(
+                f"Workflow {artifact_label} artifact failed integrity verification: {workflow_id}",
+                workflow_id=workflow_id,
+                details={"artifact": artifact_label},
+            )
+        return content
 
     def _complete_transformation(
         self,
@@ -662,6 +1115,12 @@ class WorkflowService:
     def _fail_workflow(self, workflow: WorkflowState, exc: Exception) -> None:
         workflow.status = WorkflowStatus.FAILED
         workflow.risk_flags.append(type(exc).__name__)
+        workflow.failure = WorkflowFailure(
+            code=_failure_code(exc),
+            message=str(exc),
+            error_type=type(exc).__name__,
+            details=exc.details if isinstance(exc, OJTFlowError) else {},
+        )
         workflow.touch()
         self._event(
             workflow,
@@ -679,3 +1138,137 @@ class WorkflowService:
             str(exc),
             issue_count=1,
         )
+
+    @staticmethod
+    def _assert_workflow_owner(
+        workflow: WorkflowState,
+        owner_user_id: str | None,
+    ) -> None:
+        if owner_user_id is not None and workflow.owner_user_id != owner_user_id:
+            raise NotFoundError(f"Workflow not found: {workflow.workflow_id}")
+
+
+def _failure_code(exc: Exception) -> str:
+    if isinstance(exc, ArtifactIntegrityError):
+        return "artifact_integrity_error"
+    if isinstance(exc, NotFoundError):
+        return "not_found"
+    if isinstance(exc, PolicyBlockedError):
+        return "policy_blocked"
+    if isinstance(exc, UploadTooLargeError):
+        return "upload_too_large"
+    if isinstance(exc, UnsupportedUploadError):
+        return "unsupported_upload"
+    if isinstance(exc, ToolExecutionError):
+        return "tool_execution_error"
+    if isinstance(exc, OJTFlowError):
+        return "ojtflow_error"
+    return "workflow_failed"
+
+
+def _direct_upload_data_format(source_format: str) -> DataFormat | None:
+    """Return a parser format for uploads that do not need document extraction."""
+
+    return {
+        "csv": DataFormat.CSV,
+        "json": DataFormat.JSON,
+        "yaml": DataFormat.YAML,
+        "markdown": DataFormat.MARKDOWN,
+        "text": DataFormat.MARKDOWN,
+    }.get(source_format)
+
+
+def _edited_plan_from_review_payload(
+    *,
+    payload: dict | None,
+    current_plan: TransformationPlan,
+    workflow_id: str,
+    review_id: str,
+) -> TransformationPlan:
+    if not isinstance(payload, dict) or not payload:
+        raise PolicyBlockedError(
+            "approve_with_edits requires explicit edited transformation actions.",
+            workflow_id=workflow_id,
+            details={"review_id": review_id, "required": "payload.actions"},
+        )
+
+    plan_payload = payload.get("transformation_plan", payload)
+    if not isinstance(plan_payload, dict):
+        raise PolicyBlockedError(
+            "approve_with_edits transformation_plan payload must be an object.",
+            workflow_id=workflow_id,
+            details={"review_id": review_id},
+        )
+
+    target_format = plan_payload.get("target_format")
+    if target_format and target_format != current_plan.target_format.value:
+        raise PolicyBlockedError(
+            "approve_with_edits cannot change the workflow target format.",
+            workflow_id=workflow_id,
+            details={
+                "review_id": review_id,
+                "target_format": target_format,
+                "expected_target_format": current_plan.target_format.value,
+            },
+        )
+
+    raw_actions = plan_payload.get("actions")
+    if not isinstance(raw_actions, list) or not raw_actions:
+        raise PolicyBlockedError(
+            "approve_with_edits requires at least one edited transformation action.",
+            workflow_id=workflow_id,
+            details={"review_id": review_id, "required": "payload.actions"},
+        )
+
+    actions: list[TransformationAction] = []
+    for index, raw_action in enumerate(raw_actions):
+        if not isinstance(raw_action, dict):
+            raise PolicyBlockedError(
+                "approve_with_edits actions must be objects.",
+                workflow_id=workflow_id,
+                details={"review_id": review_id, "action_index": index},
+            )
+        try:
+            action = TransformationAction.model_validate(raw_action)
+        except ValueError as exc:
+            raise PolicyBlockedError(
+                "approve_with_edits action payload is invalid.",
+                workflow_id=workflow_id,
+                details={
+                    "review_id": review_id,
+                    "action_index": index,
+                    "validation_error": str(exc),
+                },
+            ) from exc
+        if action.action not in SUPPORTED_REVIEW_EDIT_ACTIONS:
+            raise PolicyBlockedError(
+                "approve_with_edits action is not supported by the deterministic transformer.",
+                workflow_id=workflow_id,
+                details={
+                    "review_id": review_id,
+                    "action_index": index,
+                    "action": action.action,
+                    "supported_actions": sorted(SUPPORTED_REVIEW_EDIT_ACTIONS),
+                },
+            )
+        actions.append(action)
+
+    return TransformationPlan(
+        plan_id=current_plan.plan_id,
+        target_format=current_plan.target_format,
+        actions=actions,
+        requires_review=any(action.requires_review for action in actions),
+    )
+
+
+def _primary_fhir_resource_type(profile_payload: dict) -> str | None:
+    resource_type = profile_payload.get("resource_type")
+    if resource_type and resource_type != "Bundle":
+        return str(resource_type)
+    resource_counts = profile_payload.get("resource_counts")
+    if isinstance(resource_counts, dict) and resource_counts:
+        non_bundle = sorted(key for key in resource_counts if key != "Bundle")
+        if non_bundle:
+            return str(non_bundle[0])
+        return str(sorted(resource_counts)[0])
+    return str(resource_type) if resource_type else None

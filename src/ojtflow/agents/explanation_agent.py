@@ -7,6 +7,7 @@ from ojtflow.core.contracts.agent import AgentResult
 from ojtflow.core.contracts.data import ExplanationReport, TransformationOutput, ValidationReport
 from ojtflow.core.contracts.enums import AgentStatus
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.text import format_count
 
 
 class ExplanationAgent(Agent):
@@ -56,10 +57,9 @@ def _build_summary(
     if transformation_output:
         return (
             f"Validated input against {validation_report.schema_id or 'an inferred schema'}, "
-            f"found {issue_count} issue(s), and produced {transformation_output.output_format.value} output."
+            f"found {format_count(issue_count, 'issue')}, and produced {transformation_output.output_format.value} output."
         )
     return (
         f"Validated input against {validation_report.schema_id or 'an inferred schema'} "
-        f"and found {issue_count} issue(s)."
+        f"and found {format_count(issue_count, 'issue')}."
     )
-

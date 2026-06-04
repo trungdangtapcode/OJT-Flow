@@ -20,9 +20,13 @@ dist/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/var/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+frontend/playwright-report/
+frontend/test-results/
+frontend/.auth/
 
 # Virtual environments
 .venv/
@@ -34,6 +38,24 @@ ENV/
 .env
 .env.*
 !.env.example
+credentials/
+secrets/
+.gcloud/
+.config/gcloud/
+credentials.json
+token.json
+oauth-token.json
+application_default_credentials.json
+adc.json
+gcloud_adc.json
+google-oauth-client.json
+client_secret*.json
+service-account*.json
+*service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
 
 # OJTFlow local runtime state
 var/
@@ -73,3 +95,6 @@ Thumbs.db
 *.swp
 *.swo
 plan/
+
+# Local screenshot drops
+image.png

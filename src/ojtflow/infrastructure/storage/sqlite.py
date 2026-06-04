@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.storage import DatasetRecord
+from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
 from ojtflow.core.ids import new_id
 from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
+from ojtflow.infrastructure.storage.file_refs import artifact_path_from_file_ref
+from ojtflow.infrastructure.storage.summary import filter_sort_page_summaries, workflow_stats
 
 
 class SQLiteBackboneStore:
@@ -39,6 +41,7 @@ class SQLiteBackboneStore:
                 """
                 create table if not exists workflows (
                     workflow_id text primary key,
+                    owner_user_id text,
                     status text not null,
                     schema_version text not null,
                     review_id text,
@@ -76,6 +79,18 @@ class SQLiteBackboneStore:
                     storage_ref text not null unique,
                     created_at text default current_timestamp
                 );
+                """
+            )
+            columns = {
+                row["name"]
+                for row in connection.execute("pragma table_info(workflows)").fetchall()
+            }
+            if "owner_user_id" not in columns:
+                connection.execute("alter table workflows add column owner_user_id text")
+            connection.execute(
+                """
+                create index if not exists idx_workflows_owner_updated
+                    on workflows(owner_user_id, updated_at desc)
                 """
             )
 
@@ -179,12 +194,10 @@ class SQLiteDatasetStore:
         return record
 
     def get_text(self, storage_ref: str) -> str:
-        parsed = urlparse(storage_ref)
-        if parsed.scheme != "file":
-            raise NotFoundError(f"Unsupported dataset storage ref: {storage_ref}")
-        path = Path(unquote(parsed.path))
-        if not path.exists():
-            raise NotFoundError(f"Dataset file not found: {storage_ref}")
+        path = artifact_path_from_file_ref(
+            storage_ref,
+            [self.backbone.datasets_dir, self.backbone.outputs_dir],
+        )
         return path.read_text(encoding="utf-8")
 
 
@@ -200,10 +213,11 @@ class SQLiteWorkflowRepository:
             connection.execute(
                 """
                 insert into workflows (
-                    workflow_id, status, schema_version, review_id,
+                    workflow_id, owner_user_id, status, schema_version, review_id,
                     state_json, created_at, updated_at
-                ) values (?, ?, ?, ?, ?, ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(workflow_id) do update set
+                    owner_user_id = excluded.owner_user_id,
                     status = excluded.status,
                     schema_version = excluded.schema_version,
                     review_id = excluded.review_id,
@@ -212,6 +226,7 @@ class SQLiteWorkflowRepository:
                 """,
                 (
                     workflow.workflow_id,
+                    workflow.owner_user_id,
                     workflow.status.value,
                     workflow.schema_version,
                     review_id,
@@ -245,27 +260,62 @@ class SQLiteWorkflowRepository:
         self,
         status: WorkflowStatus | None = None,
         limit: int = 50,
+        owner_user_id: str | None = None,
     ) -> list[WorkflowState]:
         limit = max(1, min(limit, 200))
-        params: tuple[object, ...]
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = ?")
+            params.append(owner_user_id)
         if status:
-            sql = """
-                select state_json from workflows
-                where status = ?
-                order by updated_at desc
-                limit ?
-            """
-            params = (status.value, limit)
-        else:
-            sql = """
-                select state_json from workflows
-                order by updated_at desc
-                limit ?
-            """
-            params = (limit,)
+            clauses.append("status = ?")
+            params.append(status.value)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        sql = f"""
+            select state_json from workflows
+            {where}
+            order by updated_at desc
+            limit ?
+        """
+        params.append(limit)
         with self.backbone.connect() as connection:
-            rows = connection.execute(sql, params).fetchall()
+            rows = connection.execute(sql, tuple(params)).fetchall()
         return [WorkflowState.model_validate_json(row["state_json"]) for row in rows]
+
+    def list_summary(
+        self,
+        status: WorkflowStatus | None = None,
+        q: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        sort: str = "updated_at",
+        direction: str = "desc",
+        reviews_only: bool = False,
+        review_status: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> WorkflowSummaryPage:
+        with self.backbone.connect() as connection:
+            rows = connection.execute("select state_json from workflows").fetchall()
+        workflows = [WorkflowState.model_validate_json(row["state_json"]) for row in rows]
+        return filter_sort_page_summaries(
+            workflows,
+            status=status,
+            q=q,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            direction=direction,
+            reviews_only=reviews_only,
+            review_status=review_status,
+            owner_user_id=owner_user_id,
+        )
+
+    def stats(self, owner_user_id: str | None = None) -> WorkflowStats:
+        with self.backbone.connect() as connection:
+            rows = connection.execute("select state_json from workflows").fetchall()
+        workflows = [WorkflowState.model_validate_json(row["state_json"]) for row in rows]
+        return workflow_stats(workflows, owner_user_id=owner_user_id)
 
 
 class SQLiteEventRepository:
