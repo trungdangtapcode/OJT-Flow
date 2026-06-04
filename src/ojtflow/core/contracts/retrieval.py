@@ -34,6 +34,22 @@ class RetrievalSnippet(ContractModel):
     extraction_strategy: str = "deterministic_sentence_window_v0"
 
 
+class RetrievalFacetBucket(ContractModel):
+    """One result facet bucket and selected-hit count."""
+
+    value: NonBlankStr
+    count: int = Field(ge=1)
+
+
+class RetrievalFacets(ContractModel):
+    """Facet buckets summarizing final selected retrieval hits."""
+
+    source_type: list[RetrievalFacetBucket] = Field(default_factory=list)
+    clinical_domain: list[RetrievalFacetBucket] = Field(default_factory=list)
+    standard_system: list[RetrievalFacetBucket] = Field(default_factory=list)
+    trust_level: list[RetrievalFacetBucket] = Field(default_factory=list)
+
+
 class RetrievalHit(ContractModel):
     """One ranked retrieval candidate with transparent scoring components."""
 
@@ -75,6 +91,7 @@ class RetrievalPackage(ContractModel):
 
     hits: list[RetrievalHit] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
+    facets: RetrievalFacets | None = None
     trace: RetrievalTrace
     handoff_context: dict[str, Any] = Field(default_factory=dict)
 

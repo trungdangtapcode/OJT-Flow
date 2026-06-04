@@ -40,7 +40,9 @@ The retrieval pipeline is auditable in v0:
 7. Each ranked hit gets a deterministic extractive snippet: the most
    query-relevant sentence/window from the source chunk, with matched terms and
    normalized source offsets.
-8. Trace safety flags mark prompt-injection-like query text and sensitive field
+8. Final selected hits are summarized into result facets by source type,
+   clinical domain, standard system, and trust level.
+9. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
 The retrieval package now includes a `graph_context` handoff that extracts
@@ -128,6 +130,30 @@ Research basis:
   `https://github.com/NirDiamant/RAG_Techniques/blob/main/all_rag_techniques/contextual_compression.ipynb`
 - Search-result highlighting/snippets:
   `https://www.elastic.co/docs/reference/elasticsearch/rest-apis/highlighting`
+
+## Result Facets
+
+`RetrievalPackage.facets` summarizes final selected hits:
+
+```json
+{
+  "source_type": [{"value": "terminology_system", "count": 2}],
+  "clinical_domain": [{"value": "laboratory", "count": 4}],
+  "standard_system": [{"value": "UCUM", "count": 1}],
+  "trust_level": [{"value": "approved", "count": 5}]
+}
+```
+
+This follows standard search UI practice: result sets expose bucket counts so
+operators can understand coverage and refine filters. In v0 these facets are
+computed over selected hits, not the full indexed corpus, so the counts match
+the evidence cards visible in the Retrieval console.
+
+Research basis:
+
+- Solr faceting: `https://solr.apache.org/guide/solr/latest/query-guide/faceting.html`
+- Elasticsearch bucket aggregations:
+  `https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket.html`
 
 ## API
 

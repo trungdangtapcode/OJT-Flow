@@ -96,6 +96,9 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.hits[0].score >= package.hits[-1].score
     assert package.hits[0].snippet is not None
     assert package.hits[0].snippet.matched_terms
+    assert package.facets is not None
+    assert _bucket_counts(package.facets.trust_level) == {"approved": 5}
+    assert "terminology_system" in _bucket_counts(package.facets.source_type)
     analysis = package.handoff_context["query_analysis"]
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
@@ -135,6 +138,8 @@ def test_static_retrieval_filters_by_source_type() -> None:
         item.source_type == EvidenceSourceType.TERMINOLOGY_SYSTEM
         for item in package.evidence
     )
+    assert package.facets is not None
+    assert _bucket_counts(package.facets.source_type) == {"terminology_system": 3}
 
 
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:
@@ -517,3 +522,7 @@ def test_retrieval_eval_cli_outputs_json_summary() -> None:
     assert summary["passed"] is True
     assert summary["case_count"] == 5
     assert summary["hit_rate_at_k"] == 1.0
+
+
+def _bucket_counts(buckets) -> dict[str, int]:
+    return {bucket.value: bucket.count for bucket in buckets}

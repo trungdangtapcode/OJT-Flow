@@ -924,6 +924,7 @@ Response data is a `RetrievalPackage`:
 - `hits[].matched_terms`
 - `hits[].snippet`
 - `evidence`
+- `facets`
 - `trace.strategy`
 - `trace.query_variants`
 - `trace.filters_applied`
@@ -945,6 +946,8 @@ produced expanded query variants.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.
+`facets` summarizes the final selected hits into buckets for `source_type`,
+`clinical_domain`, `standard_system`, and `trust_level`.
 
 Retrieval endpoints require an authenticated session. Searches without
 `workflow_id` run over the approved knowledge inventory. Searches with

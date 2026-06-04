@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
@@ -13,6 +15,8 @@ from typing import Any
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
+    RetrievalFacetBucket,
+    RetrievalFacets,
     RetrievalHit,
     RetrievalPackage,
     RetrievalQuery,
@@ -241,6 +245,7 @@ def rank_chunks(
         lambda_mult=diversity_lambda,
     )
     top_hits = [hit for _, hit in selected_ranked_hits]
+    facets = facets_from_chunks([chunk for chunk, _ in selected_ranked_hits])
     if diversity_metadata["duplicate_selected_source_count"]:
         trace_warnings.append(
             "Retrieval results include repeated source IDs after diversity selection."
@@ -257,6 +262,7 @@ def rank_chunks(
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
+        facets=facets,
         trace=trace,
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
@@ -269,6 +275,17 @@ def rank_chunks(
             "diversity": diversity_metadata,
             "query_analysis": query_analysis.model_dump(),
         },
+    )
+
+
+def facets_from_chunks(chunks: list[KnowledgeChunk]) -> RetrievalFacets:
+    """Build final-hit facets for operator scan/filter UX."""
+
+    return RetrievalFacets(
+        source_type=_facet_buckets(chunk.source_type.value for chunk in chunks),
+        clinical_domain=_facet_buckets(chunk.clinical_domain for chunk in chunks),
+        standard_system=_facet_buckets(chunk.standard_system for chunk in chunks),
+        trust_level=_facet_buckets(chunk.trust_level.value for chunk in chunks),
     )
 
 
@@ -568,6 +585,17 @@ def _lexical_score(
     phrase_boost = 0.15 if query_text.lower() in chunk.content.lower() else 0.0
     title_boost = 0.08 if any(token in tokenize(chunk.title) for token in query_tokens) else 0.0
     return overlap + phrase_boost + title_boost
+
+
+def _facet_buckets(values: Iterable[object | None]) -> list[RetrievalFacetBucket]:
+    counts = Counter(str(value) for value in values if value)
+    return [
+        RetrievalFacetBucket(value=value, count=count)
+        for value, count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
 
 
 def _snippet_source_text(content: str) -> str:

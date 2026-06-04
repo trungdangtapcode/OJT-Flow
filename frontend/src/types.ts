@@ -131,6 +131,18 @@ export type RetrievalSnippet = {
   extraction_strategy: string;
 };
 
+export type RetrievalFacetBucket = {
+  value: string;
+  count: number;
+};
+
+export type RetrievalFacets = {
+  source_type: RetrievalFacetBucket[];
+  clinical_domain: RetrievalFacetBucket[];
+  standard_system: RetrievalFacetBucket[];
+  trust_level: RetrievalFacetBucket[];
+};
+
 export type RetrievalGraphNode = {
   id: string;
   label: string;
@@ -171,6 +183,7 @@ export type RetrievalQueryAnalysis = {
 export type RetrievalPackage = {
   hits: RetrievalHit[];
   evidence: Evidence[];
+  facets?: RetrievalFacets | null;
   trace: RetrievalTrace;
   handoff_context: {
     graph_context?: RetrievalGraphContext;

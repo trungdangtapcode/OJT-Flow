@@ -40,6 +40,7 @@ import type {
   RetrievalGraphContext,
   RetrievalHit,
   RetrievalPackage,
+  RetrievalFacets,
   RetrievalSource,
   RuntimeConfig,
 } from "../../types";
@@ -406,6 +407,7 @@ function SearchResults({ packageData }: { packageData: RetrievalPackage | undefi
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 pt-4">
+        <ResultFacets facets={packageData.facets} />
         {packageData.hits.map((hit, index) => (
           <HitCard hit={hit} index={index} key={hit.evidence.evidence_id} />
         ))}
@@ -416,6 +418,42 @@ function SearchResults({ packageData }: { packageData: RetrievalPackage | undefi
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function ResultFacets({ facets }: { facets: RetrievalFacets | null | undefined }) {
+  if (!facets) return null;
+  const sections = [
+    { label: "Source type", values: facets.source_type, formatter: humanize },
+    { label: "Domain", values: facets.clinical_domain, formatter: humanize },
+    { label: "Standard", values: facets.standard_system, formatter: (value: string) => value },
+    { label: "Trust", values: facets.trust_level, formatter: humanize },
+  ].filter((section) => section.values.length > 0);
+  if (!sections.length) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="text-xs font-bold uppercase text-muted-foreground">
+        Result facets
+      </div>
+      <div className="grid gap-2 lg:grid-cols-2">
+        {sections.map((section) => (
+          <div className="grid gap-1.5" key={section.label}>
+            <div className="text-xs font-bold text-muted-foreground">{section.label}</div>
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              {section.values.map((bucket) => (
+                <span
+                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground"
+                  key={`${section.label}-${bucket.value}`}
+                >
+                  <span className="break-words">{section.formatter(bucket.value)}</span>
+                  <span className="tabular-nums text-foreground">{bucket.count}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
