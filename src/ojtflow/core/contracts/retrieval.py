@@ -75,6 +75,17 @@ class RetrievalTrace(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RetrievalFilterSuggestion(ContractModel):
+    """Metadata filter suggested by deterministic self-query analysis."""
+
+    field: NonBlankStr
+    value: NonBlankStr
+    reason: NonBlankStr
+    rule_id: NonBlankStr
+    confidence: float = Field(ge=0.0, le=1.0)
+    applied: bool = False
+
+
 class RetrievalQueryAnalysis(ContractModel):
     """Auditable query understanding used before first-stage retrieval."""
 
@@ -84,6 +95,7 @@ class RetrievalQueryAnalysis(ContractModel):
     standards: list[str] = Field(default_factory=list)
     rule_ids: list[str] = Field(default_factory=list)
     query_variants: list[str] = Field(default_factory=list)
+    filter_suggestions: list[RetrievalFilterSuggestion] = Field(default_factory=list)
 
 
 class RetrievalPackage(ContractModel):

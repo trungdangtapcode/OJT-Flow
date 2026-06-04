@@ -6,7 +6,11 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from ojtflow.core.contracts.retrieval import RetrievalQuery, RetrievalQueryAnalysis
+from ojtflow.core.contracts.retrieval import (
+    RetrievalFilterSuggestion,
+    RetrievalQuery,
+    RetrievalQueryAnalysis,
+)
 
 QUERY_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
 
@@ -160,6 +164,7 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         standards=standards,
         rule_ids=rule_ids,
         query_variants=variants,
+        filter_suggestions=_filter_suggestions(query, concepts, standards, rule_ids),
     )
 
 
@@ -226,6 +231,103 @@ def _expanded_terms_variant(expanded_terms: list[str]) -> str:
     if not expanded_terms:
         return ""
     return " ".join(expanded_terms)
+
+
+def _filter_suggestions(
+    query: RetrievalQuery,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+) -> list[RetrievalFilterSuggestion]:
+    suggestions: list[RetrievalFilterSuggestion] = []
+    concept_set = set(concepts)
+    if concept_set.intersection(
+        {
+            "laboratory_observation_identity",
+            "hba1c_laboratory_test",
+            "unit_normalization",
+            "fhir_observation_profile",
+        }
+    ):
+        suggestions.append(
+            _suggestion(
+                query,
+                field="clinical_domain",
+                value="laboratory",
+                reason="Detected laboratory observation context.",
+                rule_id="suggest_laboratory_domain",
+                confidence=0.92,
+            )
+        )
+    for standard in standards:
+        standard_value = _standard_filter_value(standard)
+        if not standard_value:
+            continue
+        suggestions.append(
+            _suggestion(
+                query,
+                field="standard_system",
+                value=standard_value,
+                reason=f"Detected {standard_value} standard context.",
+                rule_id=f"suggest_standard_{standard_value.lower()}",
+                confidence=0.86,
+            )
+        )
+    if "phi_review_context" in rule_ids:
+        suggestions.append(
+            _suggestion(
+                query,
+                field="standard_system",
+                value="ojtflow_policy",
+                reason="Detected sensitive identifier review context.",
+                rule_id="suggest_governance_policy",
+                confidence=0.78,
+            )
+        )
+    return _dedupe_suggestions(suggestions)
+
+
+def _suggestion(
+    query: RetrievalQuery,
+    *,
+    field: str,
+    value: str,
+    reason: str,
+    rule_id: str,
+    confidence: float,
+) -> RetrievalFilterSuggestion:
+    return RetrievalFilterSuggestion(
+        field=field,
+        value=value,
+        reason=reason,
+        rule_id=rule_id,
+        confidence=confidence,
+        applied=str(query.filters.get(field) or "") == value,
+    )
+
+
+def _standard_filter_value(standard: str) -> str | None:
+    if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP"}:
+        return standard
+    if standard == "OJTFlow policy":
+        return "ojtflow_policy"
+    if standard == "OJTFlow schema":
+        return "ojtflow_schema"
+    return None
+
+
+def _dedupe_suggestions(
+    suggestions: list[RetrievalFilterSuggestion],
+) -> list[RetrievalFilterSuggestion]:
+    deduped: list[RetrievalFilterSuggestion] = []
+    seen: set[tuple[str, str]] = set()
+    for suggestion in suggestions:
+        key = (suggestion.field, suggestion.value)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(suggestion)
+    return deduped
 
 
 def _dedupe(values: Iterable[object]) -> list[str]:

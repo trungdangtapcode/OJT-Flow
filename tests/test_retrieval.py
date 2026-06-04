@@ -74,6 +74,32 @@ def test_query_analysis_expands_clinical_standard_terms() -> None:
     assert "UCUM computable unit" in analysis.expanded_terms
     assert any("LOINC laboratory observation" in variant for variant in analysis.query_variants)
     assert any("FHIR Observation" in variant for variant in analysis.query_variants)
+    suggestions = {
+        (suggestion.field, suggestion.value): suggestion
+        for suggestion in analysis.filter_suggestions
+    }
+    assert ("clinical_domain", "laboratory") in suggestions
+    assert ("standard_system", "UCUM") in suggestions
+    assert ("standard_system", "LOINC") in suggestions
+
+
+def test_query_analysis_marks_applied_filter_suggestions() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="FHIR Observation unit",
+            fields=["unit"],
+            filters={"clinical_domain": "laboratory", "standard_system": "FHIR"},
+        )
+    )
+
+    suggestions = {
+        (suggestion.field, suggestion.value): suggestion.applied
+        for suggestion in analysis.filter_suggestions
+    }
+
+    assert suggestions[("clinical_domain", "laboratory")] is True
+    assert suggestions[("standard_system", "FHIR")] is True
+    assert suggestions[("standard_system", "UCUM")] is False
 
 
 def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:

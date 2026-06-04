@@ -178,6 +178,16 @@ export type RetrievalQueryAnalysis = {
   standards: string[];
   rule_ids: string[];
   query_variants: string[];
+  filter_suggestions: RetrievalFilterSuggestion[];
+};
+
+export type RetrievalFilterSuggestion = {
+  field: string;
+  value: string;
+  reason: string;
+  rule_id: string;
+  confidence: number;
+  applied: boolean;
 };
 
 export type RetrievalPackage = {

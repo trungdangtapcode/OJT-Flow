@@ -92,13 +92,30 @@ The public retrieval package exposes this under
   "expanded_terms": ["HbA1c", "UCUM computable unit"],
   "standards": ["LOINC", "FHIR", "UCUM"],
   "rule_ids": ["hba1c_lab_test", "unit_normalization"],
-  "query_variants": ["..."]
+  "query_variants": ["..."],
+  "filter_suggestions": [
+    {
+      "field": "standard_system",
+      "value": "UCUM",
+      "reason": "Detected UCUM standard context.",
+      "rule_id": "suggest_standard_ucum",
+      "confidence": 0.86,
+      "applied": false
+    }
+  ]
 }
 ```
+
+Filter suggestions are a deterministic self-query feature: they recommend
+metadata filters such as `clinical_domain=laboratory` or
+`standard_system=UCUM`, but do not apply them silently. The Retrieval console
+shows confidence and whether each suggestion is already applied.
 
 Research basis:
 
 - RAG query transformation patterns: `https://github.com/NirDiamant/RAG_Techniques`
+- Metadata-aware self-query retrieval:
+  `https://python.langchain.com/docs/how_to/self_query/`
 - FHIR Observation R4: `https://hl7.org/fhir/r4/observation.html`
 - LOINC laboratory terminology: `https://cdn.loinc.org/about/`
 - UCUM units: `https://ucum.nlm.nih.gov/`

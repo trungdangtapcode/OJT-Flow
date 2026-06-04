@@ -652,7 +652,47 @@ function QueryAnalysisBlock({
       </div>
       <TokenList items={analysis.detectedConcepts.map(humanize)} title="Detected concepts" />
       <TokenList items={analysis.standards} title="Standard cues" />
+      <FilterSuggestionList suggestions={analysis.filterSuggestions} />
       <TokenList items={analysis.expandedTerms} title="Expanded terms" />
+    </div>
+  );
+}
+
+function FilterSuggestionList({
+  suggestions,
+}: {
+  suggestions: FilterSuggestionStack[];
+}) {
+  if (!suggestions.length) {
+    return <TokenList items={[]} title="Suggested filters" />;
+  }
+  return (
+    <div className="grid gap-1.5">
+      <div className="text-xs font-bold uppercase text-muted-foreground">
+        Suggested filters
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {suggestions.map((suggestion) => (
+          <span
+            className={cn(
+              "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs font-bold",
+              suggestion.applied
+                ? "bg-emerald-100 text-emerald-900"
+                : "bg-card text-muted-foreground",
+            )}
+            key={`${suggestion.field}-${suggestion.value}`}
+            title={suggestion.reason}
+          >
+            <span className="break-words">
+              {humanize(suggestion.field)}={humanize(suggestion.value)}
+            </span>
+            <span className="tabular-nums">
+              {Math.round(suggestion.confidence * 100)}%
+            </span>
+            {suggestion.applied ? <span>applied</span> : null}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -895,10 +935,19 @@ type DiversityStack = {
 type QueryAnalysisStack = {
   detectedConcepts: string[];
   expandedTerms: string[];
+  filterSuggestions: FilterSuggestionStack[];
   ruleIds: string[];
   standards: string[];
   strategy: string;
   variantCount: number;
+};
+
+type FilterSuggestionStack = {
+  applied: boolean;
+  confidence: number;
+  field: string;
+  reason: string;
+  value: string;
 };
 
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
@@ -925,6 +974,7 @@ function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisS
   return {
     detectedConcepts: stringArrayValue(queryAnalysis.detected_concepts),
     expandedTerms: stringArrayValue(queryAnalysis.expanded_terms),
+    filterSuggestions: filterSuggestionsValue(queryAnalysis.filter_suggestions),
     ruleIds: stringArrayValue(queryAnalysis.rule_ids),
     standards: stringArrayValue(queryAnalysis.standards),
     strategy: stringValue(queryAnalysis.strategy, "unknown"),
@@ -993,6 +1043,20 @@ function booleanValue(value: unknown): boolean {
 function stringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function filterSuggestionsValue(value: unknown): FilterSuggestionStack[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      applied: booleanValue(item.applied),
+      confidence: numberValue(item.confidence) ?? 0,
+      field: stringValue(item.field, "filter"),
+      reason: stringValue(item.reason, "Suggested by query analysis."),
+      value: stringValue(item.value, "unknown"),
+    }))
+    .filter((item) => item.field !== "filter" && item.value !== "unknown");
 }
 
 function highlightedParts(text: string, terms: string[]) {

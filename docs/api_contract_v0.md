@@ -942,7 +942,9 @@ for downstream agents. Current values include
 `handoff_context.query_analysis` is auditable query-understanding metadata.
 It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
 such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
-produced expanded query variants.
+produced expanded query variants. It also includes `filter_suggestions`, a list
+of deterministic metadata filter recommendations with `field`, `value`,
+`reason`, `rule_id`, `confidence`, and `applied`.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.
