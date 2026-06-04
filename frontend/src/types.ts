@@ -120,6 +120,15 @@ export type RetrievalHit = {
   rerank_score: number;
   matched_terms: string[];
   source_locator: Record<string, unknown>;
+  snippet?: RetrievalSnippet | null;
+};
+
+export type RetrievalSnippet = {
+  text: string;
+  start_char: number;
+  end_char: number;
+  matched_terms: string[];
+  extraction_strategy: string;
 };
 
 export type RetrievalGraphNode = {

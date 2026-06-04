@@ -25,6 +25,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     build_query_variants,
     rank_chunks,
     retrieval_safety_flags,
+    snippet_from_chunk,
 )
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 from ojtflow.infrastructure.retrieval.reranking import HuggingFaceCrossEncoderReranker
@@ -93,6 +94,8 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.trace.strategy == "static_hybrid_rrf"
     assert package.trace.candidates_seen >= 5
     assert package.hits[0].score >= package.hits[-1].score
+    assert package.hits[0].snippet is not None
+    assert package.hits[0].snippet.matched_terms
     analysis = package.handoff_context["query_analysis"]
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
@@ -132,6 +135,32 @@ def test_static_retrieval_filters_by_source_type() -> None:
         item.source_type == EvidenceSourceType.TERMINOLOGY_SYSTEM
         for item in package.evidence
     )
+
+
+def test_retrieval_snippet_extracts_query_focused_segment() -> None:
+    chunk = KnowledgeChunk(
+        chunk_id="snippet_test",
+        source_id="source:snippet",
+        source_type=EvidenceSourceType.DATA_DICTIONARY,
+        title="Lab quality policy",
+        content=(
+            "Administrative metadata is not relevant to the current lookup. "
+            "Missing units require human review before downstream clinical analytics use. "
+            "Archive handling and export labels are managed separately."
+        ),
+    )
+
+    snippet = snippet_from_chunk(
+        chunk,
+        query_tokens=set(build_query_variants(RetrievalQuery(query="missing units human review"))),
+        matched_terms=["missing", "units", "human", "review"],
+    )
+
+    assert snippet.text == "Missing units require human review before downstream clinical analytics use."
+    assert snippet.start_char > 0
+    assert snippet.end_char > snippet.start_char
+    assert len(snippet.text) < len(chunk.content)
+    assert snippet.matched_terms == ["missing", "units", "human", "review"]
 
 
 def test_retrieval_trace_flags_untrusted_query_context() -> None:

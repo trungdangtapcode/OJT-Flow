@@ -37,7 +37,10 @@ The retrieval pipeline is auditable in v0:
    embeddings for local GPU retrieval.
 5. Reciprocal Rank Fusion combines lexical and vector rankings.
 6. Rerank boosts favor schema matches, field matches, approved sources, and relevant healthcare standards.
-7. Trace safety flags mark prompt-injection-like query text and sensitive field
+7. Each ranked hit gets a deterministic extractive snippet: the most
+   query-relevant sentence/window from the source chunk, with matched terms and
+   normalized source offsets.
+8. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
 The retrieval package now includes a `graph_context` handoff that extracts
@@ -97,6 +100,34 @@ Research basis:
 - FHIR Observation R4: `https://hl7.org/fhir/r4/observation.html`
 - LOINC laboratory terminology: `https://cdn.loinc.org/about/`
 - UCUM units: `https://ucum.nlm.nih.gov/`
+
+## Snippets And Context Compression
+
+Every `RetrievalHit` includes `snippet`, a deterministic extractive preview of
+the source claim. Snippets select the highest-overlap sentence/window after
+retrieval and before UI/explanation rendering:
+
+```json
+{
+  "text": "Missing units require human review before downstream clinical analytics use.",
+  "start_char": 44,
+  "end_char": 114,
+  "matched_terms": ["missing", "units", "human", "review"],
+  "extraction_strategy": "deterministic_sentence_window_v0"
+}
+```
+
+This is a conservative form of contextual compression: it reduces review noise
+and makes evidence easier to inspect without asking a model to rewrite clinical
+content. The full evidence `claim` remains available for audit and downstream
+handoff.
+
+Research basis:
+
+- RAG contextual compression / relevant segment extraction:
+  `https://github.com/NirDiamant/RAG_Techniques/blob/main/all_rag_techniques/contextual_compression.ipynb`
+- Search-result highlighting/snippets:
+  `https://www.elastic.co/docs/reference/elasticsearch/rest-apis/highlighting`
 
 ## API
 

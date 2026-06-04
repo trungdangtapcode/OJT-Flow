@@ -24,6 +24,16 @@ class RetrievalQuery(ContractModel):
     filters: dict[str, Any] = Field(default_factory=dict)
 
 
+class RetrievalSnippet(ContractModel):
+    """Query-focused extractive snippet from a retrieved evidence chunk."""
+
+    text: NonBlankStr
+    start_char: int = Field(ge=0)
+    end_char: int = Field(ge=0)
+    matched_terms: list[str] = Field(default_factory=list)
+    extraction_strategy: str = "deterministic_sentence_window_v0"
+
+
 class RetrievalHit(ContractModel):
     """One ranked retrieval candidate with transparent scoring components."""
 
@@ -34,6 +44,7 @@ class RetrievalHit(ContractModel):
     rerank_score: float = 0.0
     matched_terms: list[str] = Field(default_factory=list)
     source_locator: dict[str, Any] = Field(default_factory=dict)
+    snippet: RetrievalSnippet | None = None
 
 
 class RetrievalTrace(ContractModel):
