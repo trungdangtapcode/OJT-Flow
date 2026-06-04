@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Any
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
 
-from ojtflow.config import Settings
 from ojtflow.application.workflow_service import WorkflowService
+from ojtflow.config import (
+    Settings,
+    clear_settings_cache,
+    get_settings,
+    runtime_retrieval_settings,
+    save_runtime_retrieval_settings,
+)
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.core.errors import ToolExecutionError
 from ojtflow.interfaces.api.deps import (
+    clear_workflow_service_cache,
     get_api_settings,
     get_workflow_service,
     require_authentication,
 )
 from ojtflow.interfaces.api.responses import ok
+from ojtflow.interfaces.api.schemas import RuntimeRetrievalSettingsRequest
 
 try:
     import redis as redis_client
@@ -92,9 +101,15 @@ async def runtime_config(
                 "corpus_dir_count": len(settings.retrieval_corpus_dirs),
                 "chunk_max_chars": settings.retrieval_chunk_max_chars,
                 "chunk_overlap_chars": settings.retrieval_chunk_overlap_chars,
+                "candidate_multiplier": settings.retrieval_candidate_multiplier,
+                "min_candidates": settings.retrieval_min_candidates,
+                "vector_weight": settings.retrieval_vector_weight,
+                "bm25_weight": settings.retrieval_bm25_weight,
                 "diversity_enabled": settings.retrieval_diversity_enabled,
                 "diversity_lambda": settings.retrieval_diversity_lambda,
                 "hnsw_ef_search": settings.retrieval_hnsw_ef_search,
+                "runtime_settings_configured": bool(settings.runtime_settings_path),
+                "runtime_settings": runtime_retrieval_settings(settings),
             },
             "upload": {
                 "max_upload_bytes": settings.max_upload_bytes,
@@ -102,6 +117,35 @@ async def runtime_config(
                 "read_chunk_bytes": settings.upload_read_chunk_bytes,
                 "allowed_extensions": list(settings.allowed_upload_extensions),
             },
+        }
+    )
+
+
+@router.put("/runtime/retrieval-settings")
+async def update_runtime_retrieval_settings(
+    request: RuntimeRetrievalSettingsRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Persist operator-tuned retrieval settings and reload cached services."""
+
+    del authenticated
+    updates = request.model_dump(exclude_none=True)
+    try:
+        save_runtime_retrieval_settings(settings, updates)
+    except (TypeError, ValueError) as exc:
+        raise ToolExecutionError(
+            "Invalid runtime retrieval settings.",
+            details={"reason": str(exc)},
+        ) from exc
+
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    fresh_settings = get_settings()
+    return ok(
+        {
+            "settings": runtime_retrieval_settings(fresh_settings),
+            "reloaded": True,
         }
     )
 

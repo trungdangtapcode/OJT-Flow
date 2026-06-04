@@ -60,34 +60,51 @@ class LlamaIndexRetrievalRepository:
         corpus_dirs: tuple[Path, ...] | None = None,
         chunk_max_chars: int = 1200,
         chunk_overlap_chars: int = 160,
+        candidate_multiplier: int = 4,
+        min_candidates: int = 12,
+        vector_weight: float = 0.62,
+        bm25_weight: float = 0.38,
     ) -> None:
         self.knowledge_root = Path(knowledge_root)
         self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
         self.corpus_dirs = corpus_dirs or (self.knowledge_root / "corpus",)
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap_chars = chunk_overlap_chars
+        self.candidate_multiplier = candidate_multiplier
+        self.min_candidates = min_candidates
+        self.vector_weight = vector_weight
+        self.bm25_weight = bm25_weight
         self._chunks = default_healthcare_chunks(self.knowledge_root)
+        self._chunk_generation = 0
+        self._index_cache: _LlamaIndexCache | None = None
         self._ensure_llamaindex_core()
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
+        cache = self._index()
         chunks = self._filter_chunks(self._chunks, query)
         warnings: list[str] = []
         if not chunks:
             warnings.append("No retrieval chunks matched filters; returning empty package.")
             return _empty_package(query, warnings=warnings, strategy="llamaindex_hybrid_rrf")
 
-        nodes = self._nodes_for_chunks(chunks)
-        retriever, retriever_warnings = self._build_retriever(nodes, top_k=query.top_k)
+        candidate_top_k = max(
+            query.top_k * self.candidate_multiplier,
+            self.min_candidates,
+        )
+        retriever, retriever_warnings = self._build_retriever(
+            cache=cache,
+            top_k=candidate_top_k,
+        )
         warnings.extend(retriever_warnings)
 
         query_analysis = analyze_query(query)
         query_text = " ".join(query_analysis.query_variants)
-        results = retriever.retrieve(query_text)
-        hits, selected_chunks = _hits_from_nodes(
-            results[: query.top_k],
+        results = _filter_node_results(
+            retriever.retrieve(query_text),
             query=query,
-            query_text=query_text,
+            top_k=query.top_k,
         )
+        hits, selected_chunks = _hits_from_nodes(results, query_text=query_text)
         coverage = coverage_from_chunks(selected_chunks, query_analysis)
         warnings.extend(coverage.warnings)
         safety_flags = retrieval_safety_flags(query)
@@ -100,7 +117,7 @@ class LlamaIndexRetrievalRepository:
             strategy="llamaindex_hybrid_rrf",
             query_variants=query_analysis.query_variants,
             filters_applied=query.filters,
-            candidates_seen=len(nodes),
+            candidates_seen=len(cache.nodes),
             final_hit_ids=[hit.evidence.evidence_id for hit in hits],
             safety_flags=safety_flags,
             warnings=warnings,
@@ -115,6 +132,16 @@ class LlamaIndexRetrievalRepository:
                 "retrieval_contract": "retrieval_package.v0",
                 "framework": "llamaindex",
                 "strategy": "hybrid_vector_bm25_rrf",
+                "framework_components": {
+                    "node_count": len(cache.nodes),
+                    "candidate_top_k": candidate_top_k,
+                    "candidate_multiplier": self.candidate_multiplier,
+                    "min_candidates": self.min_candidates,
+                    "bm25_enabled": cache.bm25_available,
+                    "vector_weight": self.vector_weight,
+                    "bm25_weight": self.bm25_weight,
+                    "index_generation": cache.generation,
+                },
                 "query_fields": query.fields,
                 "schema_id": query.schema_id,
                 "embedding": self.embedding_provider.metadata(),
@@ -139,12 +166,21 @@ class LlamaIndexRetrievalRepository:
             )
             chunks.extend(corpus_chunks)
         self._chunks = chunks
+        self._invalidate_index()
         return {
             "repository": "llamaindex",
             "include_seeded": include_seeded,
             "include_corpus": include_corpus,
             "chunks_indexed": len(chunks),
             "embedding": self.embedding_provider.metadata(),
+            "framework": {
+                "name": "llamaindex",
+                "index_generation": self._chunk_generation,
+                "candidate_multiplier": self.candidate_multiplier,
+                "min_candidates": self.min_candidates,
+                "vector_weight": self.vector_weight,
+                "bm25_weight": self.bm25_weight,
+            },
             "corpus": result.__dict__ if result else None,
         }
 
@@ -175,6 +211,22 @@ class LlamaIndexRetrievalRepository:
             ),
         )
 
+    def _index(self) -> "_LlamaIndexCache":
+        if self._index_cache is None or self._index_cache.generation != self._chunk_generation:
+            nodes = self._nodes_for_chunks(self._chunks)
+            index = self._vector_index(nodes)
+            self._index_cache = _LlamaIndexCache(
+                generation=self._chunk_generation,
+                nodes=nodes,
+                index=index,
+                bm25_available=_bm25_available(),
+            )
+        return self._index_cache
+
+    def _invalidate_index(self) -> None:
+        self._chunk_generation += 1
+        self._index_cache = None
+
     def _nodes_for_chunks(self, chunks: list[KnowledgeChunk]) -> list[Any]:
         try:
             from llama_index.core import Document
@@ -196,20 +248,26 @@ class LlamaIndexRetrievalRepository:
         )
         return parser.get_nodes_from_documents(documents)
 
-    def _build_retriever(self, nodes: list[Any], *, top_k: int) -> tuple[Any, list[str]]:
+    def _vector_index(self, nodes: list[Any]) -> Any:
         try:
             from llama_index.core import VectorStoreIndex
+        except ModuleNotFoundError as exc:  # pragma: no cover - exercised by config path.
+            raise _llamaindex_dependency_error() from exc
+
+        return VectorStoreIndex(
+            nodes=nodes,
+            embed_model=_OJTFlowLlamaIndexEmbedding(self.embedding_provider),
+        )
+
+    def _build_retriever(self, *, cache: "_LlamaIndexCache", top_k: int) -> tuple[Any, list[str]]:
+        try:
             from llama_index.core.retrievers import QueryFusionRetriever
         except ModuleNotFoundError as exc:  # pragma: no cover - exercised by config path.
             raise _llamaindex_dependency_error() from exc
 
         warnings: list[str] = []
-        index = VectorStoreIndex(
-            nodes=nodes,
-            embed_model=_OJTFlowLlamaIndexEmbedding(self.embedding_provider),
-        )
-        retrievers = [index.as_retriever(similarity_top_k=top_k)]
-        bm25 = _bm25_retriever(index=index, nodes=nodes, top_k=top_k)
+        retrievers = [cache.index.as_retriever(similarity_top_k=top_k)]
+        bm25 = _bm25_retriever(index=cache.index, nodes=cache.nodes, top_k=top_k)
         if bm25 is not None:
             retrievers.append(bm25)
         else:
@@ -226,7 +284,12 @@ class LlamaIndexRetrievalRepository:
                 similarity_top_k=top_k,
                 num_queries=1,
                 use_async=False,
-                retriever_weights=[0.62, 0.38] if len(retrievers) == 2 else None,
+                retriever_weights=_retriever_weights(
+                    vector_weight=self.vector_weight,
+                    bm25_weight=self.bm25_weight,
+                )
+                if len(retrievers) == 2
+                else None,
             ),
             warnings,
         )
@@ -309,10 +372,70 @@ def _bm25_retriever(*, index: Any, nodes: list[Any], top_k: int) -> Any | None:
         )
 
 
-def _hits_from_nodes(
+def _bm25_available() -> bool:
+    try:
+        import llama_index.retrievers.bm25  # noqa: F401
+    except ModuleNotFoundError:
+        return False
+    return True
+
+
+def _retriever_weights(*, vector_weight: float, bm25_weight: float) -> list[float]:
+    total = vector_weight + bm25_weight
+    if total <= 0:
+        return [1.0, 0.0]
+    return [vector_weight / total, bm25_weight / total]
+
+
+class _LlamaIndexCache:
+    def __init__(
+        self,
+        *,
+        generation: int,
+        nodes: list[Any],
+        index: Any,
+        bm25_available: bool,
+    ) -> None:
+        self.generation = generation
+        self.nodes = nodes
+        self.index = index
+        self.bm25_available = bm25_available
+
+
+def _filter_node_results(
     results: list[Any],
     *,
     query: RetrievalQuery,
+    top_k: int,
+) -> list[Any]:
+    filtered: list[Any] = []
+    for result in results:
+        node = getattr(result, "node", None)
+        metadata = dict(getattr(node, "metadata", {}) or {}) if node is not None else {}
+        if _metadata_matches_query(metadata, query):
+            filtered.append(result)
+        if len(filtered) >= top_k:
+            break
+    return filtered
+
+
+def _metadata_matches_query(metadata: dict[str, Any], query: RetrievalQuery) -> bool:
+    filters = query.filters
+    expected = {
+        "trust_level": filters.get("trust_level"),
+        "clinical_domain": filters.get("clinical_domain"),
+        "standard_system": filters.get("standard_system"),
+        "source_type": filters.get("source_type"),
+    }
+    return all(
+        not value or str(metadata.get(key) or "") == str(value)
+        for key, value in expected.items()
+    )
+
+
+def _hits_from_nodes(
+    results: list[Any],
+    *,
     query_text: str,
 ) -> tuple[list[RetrievalHit], list[KnowledgeChunk]]:
     query_tokens = set(tokenize(query_text))

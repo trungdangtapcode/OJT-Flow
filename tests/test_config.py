@@ -1,9 +1,15 @@
+import json
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from ojtflow.config import clear_settings_cache, get_settings
+from ojtflow.config import (
+    clear_settings_cache,
+    get_settings,
+    runtime_retrieval_settings,
+    save_runtime_retrieval_settings,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +62,10 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.llm_model == "chat-latest"
     assert settings.llm_max_tool_calls == 4
     assert settings.retrieval_hnsw_ef_search == 100
+    assert settings.retrieval_candidate_multiplier == 4
+    assert settings.retrieval_min_candidates == 12
+    assert settings.retrieval_vector_weight == 0.62
+    assert settings.retrieval_bm25_weight == 0.38
     assert settings.resolved_knowledge_dir == REPO_ROOT / "knowledge"
     assert settings.resolved_migrations_dir == REPO_ROOT / "sql/postgres/migrations"
 
@@ -74,6 +84,49 @@ def test_runtime_resource_paths_are_configurable_and_resolved(monkeypatch, tmp_p
 
     assert settings.resolved_knowledge_dir == knowledge_dir
     assert settings.resolved_migrations_dir == migrations_dir
+
+
+def test_runtime_retrieval_settings_are_persisted_and_reloaded(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+        updated = save_runtime_retrieval_settings(
+            settings,
+            {
+                "retrieval_framework": "llamaindex",
+                "retrieval_candidate_multiplier": 3,
+                "retrieval_min_candidates": 9,
+                "retrieval_vector_weight": 0.7,
+                "retrieval_bm25_weight": 0.3,
+                "retrieval_diversity_enabled": False,
+                "retrieval_diversity_lambda": 0.5,
+                "retrieval_hnsw_ef_search": 80,
+            },
+        )
+        clear_settings_cache()
+        reloaded = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert runtime_path.exists()
+    assert json.loads(runtime_path.read_text(encoding="utf-8")) == runtime_retrieval_settings(
+        updated
+    )
+    assert runtime_retrieval_settings(reloaded) == runtime_retrieval_settings(updated)
+    assert reloaded.retrieval_framework == "llamaindex"
+    assert reloaded.retrieval_candidate_multiplier == 3
+    assert reloaded.retrieval_min_candidates == 9
+    assert reloaded.retrieval_vector_weight == 0.7
+    assert reloaded.retrieval_bm25_weight == 0.3
+    assert reloaded.retrieval_diversity_enabled is False
+    assert reloaded.retrieval_diversity_lambda == 0.5
+    assert reloaded.retrieval_hnsw_ef_search == 80
 
 
 @pytest.mark.parametrize(

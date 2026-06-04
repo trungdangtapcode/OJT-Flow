@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from functools import lru_cache
@@ -18,6 +19,7 @@ LLMProvider = Literal["disabled", "openai"]
 RetrievalFramework = Literal["custom", "llamaindex"]
 RerankProvider = Literal["none", "huggingface"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
+RuntimeRetrievalSettingsPayload = dict[str, str | int | float | bool]
 DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
     ".pdf",
     ".docx",
@@ -69,12 +71,23 @@ DEFAULT_STORAGE_BACKEND: StorageBackend = "postgres"
 DEFAULT_POSTGRES_DSN = "postgresql://ojtflow:ojtflow@localhost:5432/ojtflow"
 DEFAULT_DATABASE_PATH = Path("var/ojtflow.db")
 DEFAULT_DATA_DIR = Path("var")
+DEFAULT_RUNTIME_SETTINGS_PATH = Path("var/runtime_settings.json")
 DEFAULT_KNOWLEDGE_DIR = Path("knowledge")
 DEFAULT_MIGRATIONS_DIR = Path("sql/postgres/migrations")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/api/v1/auth/google/callback"
 DEFAULT_GOOGLE_FRONTEND_REDIRECT_URI = "http://localhost:5173/auth/callback"
 LOCAL_OAUTH_REDIRECT_HOSTS = {"localhost", "127.0.0.1", "::1"}
+RUNTIME_RETRIEVAL_SETTING_ALIASES = {
+    "retrieval_framework": "OJT_RETRIEVAL_FRAMEWORK",
+    "retrieval_candidate_multiplier": "OJT_RETRIEVAL_CANDIDATE_MULTIPLIER",
+    "retrieval_min_candidates": "OJT_RETRIEVAL_MIN_CANDIDATES",
+    "retrieval_vector_weight": "OJT_RETRIEVAL_VECTOR_WEIGHT",
+    "retrieval_bm25_weight": "OJT_RETRIEVAL_BM25_WEIGHT",
+    "retrieval_diversity_enabled": "OJT_RETRIEVAL_DIVERSITY_ENABLED",
+    "retrieval_diversity_lambda": "OJT_RETRIEVAL_DIVERSITY_LAMBDA",
+    "retrieval_hnsw_ef_search": "OJT_RETRIEVAL_HNSW_EF_SEARCH",
+}
 
 
 class Settings(BaseModel):
@@ -92,6 +105,10 @@ class Settings(BaseModel):
     data_dir: Path = Field(default=DEFAULT_DATA_DIR, alias="OJT_DATA_DIR")
     knowledge_dir: Path = Field(default=DEFAULT_KNOWLEDGE_DIR, alias="OJT_KNOWLEDGE_DIR")
     migrations_dir: Path = Field(default=DEFAULT_MIGRATIONS_DIR, alias="OJT_MIGRATIONS_DIR")
+    runtime_settings_path: Path = Field(
+        default=DEFAULT_RUNTIME_SETTINGS_PATH,
+        alias="OJT_RUNTIME_SETTINGS_PATH",
+    )
     redis_url: str = Field(default=DEFAULT_REDIS_URL, alias="OJT_REDIS_URL")
     google_client_id: str = Field(default="", alias="OJT_GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="OJT_GOOGLE_CLIENT_SECRET")
@@ -233,6 +250,30 @@ class Settings(BaseModel):
         default="custom",
         alias="OJT_RETRIEVAL_FRAMEWORK",
     )
+    retrieval_candidate_multiplier: int = Field(
+        default=4,
+        alias="OJT_RETRIEVAL_CANDIDATE_MULTIPLIER",
+        ge=1,
+        le=20,
+    )
+    retrieval_min_candidates: int = Field(
+        default=12,
+        alias="OJT_RETRIEVAL_MIN_CANDIDATES",
+        ge=1,
+        le=200,
+    )
+    retrieval_vector_weight: float = Field(
+        default=0.62,
+        alias="OJT_RETRIEVAL_VECTOR_WEIGHT",
+        ge=0,
+        le=1,
+    )
+    retrieval_bm25_weight: float = Field(
+        default=0.38,
+        alias="OJT_RETRIEVAL_BM25_WEIGHT",
+        ge=0,
+        le=1,
+    )
     rerank_provider: RerankProvider = Field(default="none", alias="OJT_RERANK_PROVIDER")
     rerank_model: str = Field(
         default=HUGGINGFACE_RERANK_MODEL,
@@ -261,6 +302,15 @@ class Settings(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_retrieval_framework_weights(self) -> "Settings":
+        if self.retrieval_vector_weight + self.retrieval_bm25_weight <= 0:
+            raise ValueError(
+                "OJT_RETRIEVAL_VECTOR_WEIGHT and OJT_RETRIEVAL_BM25_WEIGHT "
+                "cannot both be zero"
+            )
+        return self
+
     @property
     def repo_root(self) -> Path:
         return Path(__file__).resolve().parents[2]
@@ -280,6 +330,10 @@ class Settings(BaseModel):
     @property
     def resolved_migrations_dir(self) -> Path:
         return _resolve_path(self.migrations_dir, self.repo_root)
+
+    @property
+    def resolved_runtime_settings_path(self) -> Path:
+        return _resolve_path(self.runtime_settings_path, self.repo_root)
 
     @property
     def resolved_hf_embedding_cache_dir(self) -> Path:
@@ -316,7 +370,7 @@ def _resolve_path(path: Path, root: Path) -> Path:
 def get_settings() -> Settings:
     """Return cached settings."""
 
-    return Settings(
+    settings_kwargs = dict(
         OJT_STORAGE_BACKEND=_parse_storage_backend(os.getenv("OJT_STORAGE_BACKEND")),
         OJT_DATABASE_URL=_parse_postgres_dsn(
             os.getenv(
@@ -329,6 +383,9 @@ def get_settings() -> Settings:
         OJT_KNOWLEDGE_DIR=Path(os.getenv("OJT_KNOWLEDGE_DIR", str(DEFAULT_KNOWLEDGE_DIR))),
         OJT_MIGRATIONS_DIR=Path(
             os.getenv("OJT_MIGRATIONS_DIR", str(DEFAULT_MIGRATIONS_DIR))
+        ),
+        OJT_RUNTIME_SETTINGS_PATH=Path(
+            os.getenv("OJT_RUNTIME_SETTINGS_PATH", str(DEFAULT_RUNTIME_SETTINGS_PATH))
         ),
         OJT_REDIS_URL=_parse_redis_url(os.getenv("OJT_REDIS_URL")),
         OJT_GOOGLE_CLIENT_ID=os.getenv("OJT_GOOGLE_CLIENT_ID", ""),
@@ -426,6 +483,16 @@ def get_settings() -> Settings:
         OJT_RETRIEVAL_FRAMEWORK=_parse_retrieval_framework(
             os.getenv("OJT_RETRIEVAL_FRAMEWORK")
         ),
+        OJT_RETRIEVAL_CANDIDATE_MULTIPLIER=int(
+            os.getenv("OJT_RETRIEVAL_CANDIDATE_MULTIPLIER", "4")
+        ),
+        OJT_RETRIEVAL_MIN_CANDIDATES=int(
+            os.getenv("OJT_RETRIEVAL_MIN_CANDIDATES", "12")
+        ),
+        OJT_RETRIEVAL_VECTOR_WEIGHT=float(
+            os.getenv("OJT_RETRIEVAL_VECTOR_WEIGHT", "0.62")
+        ),
+        OJT_RETRIEVAL_BM25_WEIGHT=float(os.getenv("OJT_RETRIEVAL_BM25_WEIGHT", "0.38")),
         OJT_RERANK_PROVIDER=_parse_rerank_provider(os.getenv("OJT_RERANK_PROVIDER")),
         OJT_RERANK_MODEL=_parse_rerank_model(os.getenv("OJT_RERANK_MODEL")),
         OJT_RERANK_DEVICE=_parse_hf_device(
@@ -436,12 +503,145 @@ def get_settings() -> Settings:
         OJT_RERANK_CANDIDATE_LIMIT=int(os.getenv("OJT_RERANK_CANDIDATE_LIMIT", "20")),
         OJT_RERANK_SCORE_WEIGHT=float(os.getenv("OJT_RERANK_SCORE_WEIGHT", "0.08")),
     )
+    _apply_runtime_settings_overrides(settings_kwargs)
+    return Settings(**settings_kwargs)
 
 
 def clear_settings_cache() -> None:
     """Clear cached settings in tests."""
 
     get_settings.cache_clear()
+
+
+def runtime_retrieval_settings(settings: Settings) -> RuntimeRetrievalSettingsPayload:
+    """Return the retrieval settings that operators may change at runtime."""
+
+    return {
+        "retrieval_framework": settings.retrieval_framework,
+        "retrieval_candidate_multiplier": settings.retrieval_candidate_multiplier,
+        "retrieval_min_candidates": settings.retrieval_min_candidates,
+        "retrieval_vector_weight": settings.retrieval_vector_weight,
+        "retrieval_bm25_weight": settings.retrieval_bm25_weight,
+        "retrieval_diversity_enabled": settings.retrieval_diversity_enabled,
+        "retrieval_diversity_lambda": settings.retrieval_diversity_lambda,
+        "retrieval_hnsw_ef_search": settings.retrieval_hnsw_ef_search,
+    }
+
+
+def save_runtime_retrieval_settings(
+    settings: Settings,
+    updates: RuntimeRetrievalSettingsPayload,
+) -> Settings:
+    """Persist runtime retrieval settings and validate the effective settings first."""
+
+    runtime_path = settings.resolved_runtime_settings_path
+    current = _load_runtime_settings_overrides(runtime_path)
+    merged = {
+        key: value
+        for key, value in current.items()
+        if key in RUNTIME_RETRIEVAL_SETTING_ALIASES
+    }
+    for key, value in updates.items():
+        if key in RUNTIME_RETRIEVAL_SETTING_ALIASES:
+            merged[key] = _coerce_runtime_setting_value(key, value)
+
+    validated = _validate_runtime_retrieval_settings(settings, merged)
+    _write_runtime_settings_overrides(runtime_path, merged)
+    return validated
+
+
+def _apply_runtime_settings_overrides(settings_kwargs: dict[str, object]) -> None:
+    raw_path = settings_kwargs.get("OJT_RUNTIME_SETTINGS_PATH", DEFAULT_RUNTIME_SETTINGS_PATH)
+    runtime_path = _resolve_path(Path(raw_path), Path(__file__).resolve().parents[2])
+    for key, value in _load_runtime_settings_overrides(runtime_path).items():
+        alias = RUNTIME_RETRIEVAL_SETTING_ALIASES.get(key)
+        if not alias:
+            continue
+        settings_kwargs[alias] = _coerce_runtime_setting_value(key, value)
+
+
+def _validate_runtime_retrieval_settings(
+    settings: Settings,
+    values: RuntimeRetrievalSettingsPayload,
+) -> Settings:
+    candidate_kwargs = settings.model_dump(by_alias=True)
+    for key, value in values.items():
+        alias = RUNTIME_RETRIEVAL_SETTING_ALIASES.get(key)
+        if alias:
+            candidate_kwargs[alias] = _coerce_runtime_setting_value(key, value)
+    return Settings(**candidate_kwargs)
+
+
+def _load_runtime_settings_overrides(path: Path) -> RuntimeRetrievalSettingsPayload:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid runtime settings JSON at {path}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid runtime settings JSON at {path}: expected an object")
+    payload: RuntimeRetrievalSettingsPayload = {}
+    for key, value in raw.items():
+        if key not in RUNTIME_RETRIEVAL_SETTING_ALIASES:
+            continue
+        payload[str(key)] = _coerce_runtime_setting_value(str(key), value)
+    return payload
+
+
+def _write_runtime_settings_overrides(
+    path: Path,
+    values: RuntimeRetrievalSettingsPayload,
+) -> None:
+    payload = {
+        key: _coerce_runtime_setting_value(key, value)
+        for key, value in values.items()
+        if key in RUNTIME_RETRIEVAL_SETTING_ALIASES
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temp_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(path)
+    finally:
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        except OSError:
+            pass
+
+
+def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float | bool:
+    if key == "retrieval_framework":
+        if not isinstance(value, str):
+            raise ValueError("retrieval_framework must be a string")
+        return _parse_retrieval_framework(value)
+    if key == "retrieval_diversity_enabled":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return _parse_bool(value, default=True)
+        raise ValueError("retrieval_diversity_enabled must be a boolean")
+    if key in {
+        "retrieval_candidate_multiplier",
+        "retrieval_min_candidates",
+        "retrieval_hnsw_ef_search",
+    }:
+        if isinstance(value, bool):
+            raise ValueError(f"{key} must be an integer")
+        return int(value)
+    if key in {
+        "retrieval_vector_weight",
+        "retrieval_bm25_weight",
+        "retrieval_diversity_lambda",
+    }:
+        if isinstance(value, bool):
+            raise ValueError(f"{key} must be a number")
+        return float(value)
+    raise ValueError(f"Unsupported runtime setting: {key}")
 
 
 def _parse_extensions(value: str | None) -> tuple[str, ...]:

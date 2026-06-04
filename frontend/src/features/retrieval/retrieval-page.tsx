@@ -625,6 +625,10 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
             <TraceFact label="Strategy" value={trace.strategy} />
             <TraceFact label="Candidates" value={String(trace.candidates_seen)} />
             <TraceFact
+              label="Framework"
+              value={stack ? formatFrameworkStack(stack) : "unknown"}
+            />
+            <TraceFact
               label="Embedding"
               value={stack ? formatEmbeddingStack(stack) : "unknown"}
             />
@@ -1262,6 +1266,14 @@ type RankingStack = {
     model: string;
     provider: string;
   };
+  framework: {
+    bm25Enabled: boolean | null;
+    bm25Weight: number | null;
+    candidateTopK: number | null;
+    name: string;
+    nodeCount: number | null;
+    vectorWeight: number | null;
+  };
   reranker: {
     device: string | null;
     enabled: boolean;
@@ -1326,6 +1338,7 @@ type FilterSuggestionStack = {
 
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   const embedding = recordValue(packageData.handoff_context.embedding);
+  const frameworkComponents = recordValue(packageData.handoff_context.framework_components);
   const reranker = recordValue(packageData.handoff_context.reranker);
   const rerankerProvider = stringValue(reranker.provider, "none");
   return {
@@ -1333,6 +1346,14 @@ function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
       dimensions: numberValue(embedding.dimensions),
       model: stringValue(embedding.model, "unknown"),
       provider: stringValue(embedding.provider, "unknown"),
+    },
+    framework: {
+      bm25Enabled: optionalBooleanValue(frameworkComponents.bm25_enabled),
+      bm25Weight: numberValue(frameworkComponents.bm25_weight),
+      candidateTopK: numberValue(frameworkComponents.candidate_top_k),
+      name: stringValue(packageData.handoff_context.framework, "custom"),
+      nodeCount: numberValue(frameworkComponents.node_count),
+      vectorWeight: numberValue(frameworkComponents.vector_weight),
     },
     reranker: {
       device: optionalStringValue(reranker.device),
@@ -1377,6 +1398,26 @@ function formatEmbeddingStack(stack: RankingStack): string {
   return `${stack.embedding.provider} / ${stack.embedding.model}${dimensions}`;
 }
 
+function formatFrameworkStack(stack: RankingStack): string {
+  if (stack.framework.name !== "llamaindex") {
+    return stack.framework.name;
+  }
+  const nodeText = stack.framework.nodeCount === null ? "unknown nodes" : `${stack.framework.nodeCount} nodes`;
+  const candidateText =
+    stack.framework.candidateTopK === null ? "candidate pool unknown" : `top ${stack.framework.candidateTopK}`;
+  const bm25Text =
+    stack.framework.bm25Enabled === null
+      ? "BM25 unknown"
+      : stack.framework.bm25Enabled
+        ? "BM25 on"
+        : "BM25 off";
+  const weights =
+    stack.framework.vectorWeight === null || stack.framework.bm25Weight === null
+      ? "weights unknown"
+      : `weights ${stack.framework.vectorWeight.toFixed(2)}:${stack.framework.bm25Weight.toFixed(2)}`;
+  return `${stack.framework.name} / ${nodeText} / ${candidateText} / ${bm25Text} / ${weights}`;
+}
+
 function formatRerankerStack(stack: RankingStack): string {
   if (!stack.reranker.enabled) {
     return `${stack.reranker.provider} disabled`;
@@ -1415,6 +1456,10 @@ function numberValue(value: unknown): number | null {
 
 function booleanValue(value: unknown): boolean {
   return value === true;
+}
+
+function optionalBooleanValue(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function stringArrayValue(value: unknown): string[] {

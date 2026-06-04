@@ -22,12 +22,14 @@ import {
   reindexRetrieval,
   searchRetrieval,
   submitReview,
+  updateRuntimeRetrievalSettings,
   uploadFileWorkflow,
 } from "../api";
 import type {
   AssistantChatPayload,
   RetrievalReindexPayload,
   RetrievalSearchPayload,
+  RuntimeRetrievalSettingsPayload,
   StartWorkflowPayload,
 } from "../types";
 
@@ -123,6 +125,23 @@ export function useRuntimeConfigQuery() {
 
 export function useRuntimeReadinessQuery() {
   return useQuery({ queryKey: queryKeys.runtimeReadiness, queryFn: getRuntimeReadiness });
+}
+
+export function useRuntimeRetrievalSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RuntimeRetrievalSettingsPayload) =>
+      updateRuntimeRetrievalSettings(payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfig }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeReadiness }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources }),
+        queryClient.invalidateQueries({ queryKey: ["retrieval-integrity"] }),
+      ]);
+      toast.success("Retrieval settings reloaded");
+    },
+  });
 }
 
 export function useSchemasQuery() {

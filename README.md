@@ -271,6 +271,10 @@ Then opt in:
 
 ```text
 OJT_RETRIEVAL_FRAMEWORK=llamaindex
+OJT_RETRIEVAL_CANDIDATE_MULTIPLIER=4
+OJT_RETRIEVAL_MIN_CANDIDATES=12
+OJT_RETRIEVAL_VECTOR_WEIGHT=0.62
+OJT_RETRIEVAL_BM25_WEIGHT=0.38
 ```
 
 That adapter uses LlamaIndex Documents/Nodes, `SentenceSplitter`,
@@ -278,6 +282,12 @@ That adapter uses LlamaIndex Documents/Nodes, `SentenceSplitter`,
 `llama-index-retrievers-bm25` is installed, it adds BM25 to vector retrieval
 with reciprocal-rank fusion. The API response shape stays the same because the
 framework is isolated behind the existing retrieval repository port.
+
+Retrieval runtime controls can also be changed from the Settings page or
+`PUT /api/v1/runtime/retrieval-settings`. The backend validates the requested
+values, writes them to `OJT_RUNTIME_SETTINGS_PATH`, clears cached settings and
+service instances, then reloads the retrieval repository with the new
+framework/candidate/fusion/diversity settings.
 
 Second-stage reranking is opt-in. The first stage retrieves a broader candidate
 set with lexical, vector, and reciprocal-rank-fusion signals. When
@@ -317,6 +327,7 @@ Upload parsing routes:
 - `GET /api/v1/auth/me`
 - `GET /api/v1/runtime/config`
 - `GET /api/v1/runtime/readiness`
+- `PUT /api/v1/runtime/retrieval-settings`
 - `POST /api/v1/auth/logout`
 
 ## Google OAuth Login

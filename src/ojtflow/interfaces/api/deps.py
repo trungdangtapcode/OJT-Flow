@@ -163,6 +163,10 @@ def _build_retrieval_repository(
             corpus_dirs=settings.resolved_retrieval_corpus_dirs,
             chunk_max_chars=settings.retrieval_chunk_max_chars,
             chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            candidate_multiplier=settings.retrieval_candidate_multiplier,
+            min_candidates=settings.retrieval_min_candidates,
+            vector_weight=settings.retrieval_vector_weight,
+            bm25_weight=settings.retrieval_bm25_weight,
         )
     if postgres_backbone is not None:
         return PostgresRetrievalRepository(

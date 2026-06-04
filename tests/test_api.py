@@ -949,6 +949,59 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.put(
+                "/api/v1/runtime/retrieval-settings",
+                json={
+                    "retrieval_framework": "llamaindex",
+                    "retrieval_candidate_multiplier": 3,
+                    "retrieval_min_candidates": 9,
+                    "retrieval_vector_weight": 0.7,
+                    "retrieval_bm25_weight": 0.3,
+                    "retrieval_diversity_enabled": False,
+                    "retrieval_diversity_lambda": 0.5,
+                    "retrieval_hnsw_ef_search": 80,
+                },
+            )
+            runtime_config = await client.get("/api/v1/runtime/config")
+
+        assert response.status_code == 200
+        data = _assert_success_envelope(response)["data"]
+        assert data["reloaded"] is True
+        assert data["settings"]["retrieval_framework"] == "llamaindex"
+        assert data["settings"]["retrieval_candidate_multiplier"] == 3
+        assert data["settings"]["retrieval_min_candidates"] == 9
+        assert data["settings"]["retrieval_vector_weight"] == 0.7
+        assert data["settings"]["retrieval_bm25_weight"] == 0.3
+        assert data["settings"]["retrieval_diversity_enabled"] is False
+        assert data["settings"]["retrieval_diversity_lambda"] == 0.5
+        assert data["settings"]["retrieval_hnsw_ef_search"] == 80
+
+        assert runtime_path.exists()
+        saved = json.loads(runtime_path.read_text(encoding="utf-8"))
+        assert saved == data["settings"]
+
+        config = _assert_success_envelope(runtime_config)["data"]
+        assert config["retrieval"]["framework"] == "llamaindex"
+        assert config["retrieval"]["candidate_multiplier"] == 3
+        assert config["retrieval"]["runtime_settings"] == data["settings"]
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+
+@pytest.mark.asyncio
 async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("OJT_DATABASE_URL", "postgresql://user:secret@example.test/db")

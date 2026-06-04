@@ -14,6 +14,8 @@ import type {
   RuntimeConfig,
   RuntimeHealth,
   RuntimeReadiness,
+  RuntimeRetrievalSettingsPayload,
+  RuntimeRetrievalSettingsUpdate,
   SchemaEntry,
   StartWorkflowPayload,
   WorkflowEvent,
@@ -409,6 +411,15 @@ export function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 export function getRuntimeReadiness(): Promise<RuntimeReadiness> {
   return request<RuntimeReadiness>("/runtime/readiness");
+}
+
+export function updateRuntimeRetrievalSettings(
+  payload: RuntimeRetrievalSettingsPayload,
+): Promise<RuntimeRetrievalSettingsUpdate> {
+  return request<RuntimeRetrievalSettingsUpdate>("/runtime/retrieval-settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getRuntimeHealth(): Promise<RuntimeHealth> {

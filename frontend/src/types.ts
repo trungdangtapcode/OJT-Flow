@@ -561,6 +561,24 @@ export type RuntimeReadiness = {
   checks: ReadinessCheck[];
 };
 
+export type RuntimeRetrievalSettings = {
+  retrieval_framework: "custom" | "llamaindex";
+  retrieval_candidate_multiplier: number;
+  retrieval_min_candidates: number;
+  retrieval_vector_weight: number;
+  retrieval_bm25_weight: number;
+  retrieval_diversity_enabled: boolean;
+  retrieval_diversity_lambda: number;
+  retrieval_hnsw_ef_search: number;
+};
+
+export type RuntimeRetrievalSettingsPayload = Partial<RuntimeRetrievalSettings>;
+
+export type RuntimeRetrievalSettingsUpdate = {
+  settings: RuntimeRetrievalSettings;
+  reloaded: boolean;
+};
+
 export type RuntimeConfig = {
   status: string;
   storage_backend: string;
@@ -609,9 +627,15 @@ export type RuntimeConfig = {
     corpus_dir_count: number;
     chunk_max_chars: number;
     chunk_overlap_chars: number;
+    candidate_multiplier?: number;
+    min_candidates?: number;
+    vector_weight?: number;
+    bm25_weight?: number;
     diversity_enabled?: boolean;
     diversity_lambda?: number;
     hnsw_ef_search?: number;
+    runtime_settings_configured?: boolean;
+    runtime_settings?: RuntimeRetrievalSettings;
   };
   upload: {
     max_upload_bytes: number;

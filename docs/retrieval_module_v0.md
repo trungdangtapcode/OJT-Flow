@@ -31,6 +31,17 @@ and `QueryFusionRetriever`; when `llama-index-retrievers-bm25` is installed, it
 adds BM25 to vector retrieval with reciprocal-rank fusion. The API response
 contract remains `RetrievalPackage`, so workflow state, UI rendering, assistant
 tools, and audit/explanation paths do not depend on LlamaIndex types.
+The LlamaIndex adapter builds a reusable in-process index for the current
+trusted chunk generation and invalidates it on `reindex()`. Retrieval still
+applies OJTFlow metadata filters before returning evidence and reports
+`handoff_context.framework_components` with node count, candidate pool size,
+BM25 availability, and index generation.
+Candidate-pool sizing and fusion weights are configuration-backed through
+`OJT_RETRIEVAL_CANDIDATE_MULTIPLIER`, `OJT_RETRIEVAL_MIN_CANDIDATES`,
+`OJT_RETRIEVAL_VECTOR_WEIGHT`, and `OJT_RETRIEVAL_BM25_WEIGHT`. They can be
+changed from the Settings page or `PUT /api/v1/runtime/retrieval-settings`,
+which validates the effective settings, writes `OJT_RUNTIME_SETTINGS_PATH`
+atomically, clears cached settings/services, and reloads the retrieval adapter.
 
 ## Ranking
 
@@ -532,6 +543,12 @@ OJT_RERANK_SCORE_WEIGHT=0.08
 OJT_RETRIEVAL_DIVERSITY_ENABLED=true
 OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72
 OJT_RETRIEVAL_HNSW_EF_SEARCH=100
+OJT_RETRIEVAL_FRAMEWORK=custom
+OJT_RETRIEVAL_CANDIDATE_MULTIPLIER=4
+OJT_RETRIEVAL_MIN_CANDIDATES=12
+OJT_RETRIEVAL_VECTOR_WEIGHT=0.62
+OJT_RETRIEVAL_BM25_WEIGHT=0.38
+OJT_RUNTIME_SETTINGS_PATH=var/runtime_settings.json
 ```
 
 `OJT_RERANK_PROVIDER` supports `none` and `huggingface`. The Hugging Face

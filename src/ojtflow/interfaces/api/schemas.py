@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr, NonBlankText
 from ojtflow.core.contracts.enums import (
@@ -199,6 +199,48 @@ class RetrievalReindexRequest(ContractModel):
                 {
                     "include_seeded": True,
                     "include_corpus": True,
+                }
+            ]
+        }
+    }
+
+
+class RuntimeRetrievalSettingsRequest(ContractModel):
+    retrieval_framework: Literal["custom", "llamaindex"] | None = None
+    retrieval_candidate_multiplier: int | None = Field(default=None, ge=1, le=20)
+    retrieval_min_candidates: int | None = Field(default=None, ge=1, le=200)
+    retrieval_vector_weight: float | None = Field(default=None, ge=0, le=1)
+    retrieval_bm25_weight: float | None = Field(default=None, ge=0, le=1)
+    retrieval_diversity_enabled: bool | None = None
+    retrieval_diversity_lambda: float | None = Field(default=None, ge=0, le=1)
+    retrieval_hnsw_ef_search: int | None = Field(default=None, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def _has_runtime_update(self) -> "RuntimeRetrievalSettingsRequest":
+        if not self.model_dump(exclude_none=True):
+            raise ValueError("At least one retrieval setting must be provided.")
+        if (
+            self.retrieval_vector_weight is not None
+            and self.retrieval_bm25_weight is not None
+            and self.retrieval_vector_weight + self.retrieval_bm25_weight <= 0
+        ):
+            raise ValueError(
+                "retrieval_vector_weight and retrieval_bm25_weight cannot both be zero."
+            )
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "retrieval_framework": "llamaindex",
+                    "retrieval_candidate_multiplier": 4,
+                    "retrieval_min_candidates": 12,
+                    "retrieval_vector_weight": 0.62,
+                    "retrieval_bm25_weight": 0.38,
+                    "retrieval_diversity_enabled": True,
+                    "retrieval_diversity_lambda": 0.72,
+                    "retrieval_hnsw_ef_search": 100,
                 }
             ]
         }

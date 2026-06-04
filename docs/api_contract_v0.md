@@ -785,10 +785,19 @@ Response data includes:
 - `llm.model`
 - `llm.openai_configured`
 - `llm.max_tool_calls`
+- `retrieval.framework`
 - `retrieval.corpus_dir_count`
 - `retrieval.chunk_max_chars`
 - `retrieval.chunk_overlap_chars`
+- `retrieval.candidate_multiplier`
+- `retrieval.min_candidates`
+- `retrieval.vector_weight`
+- `retrieval.bm25_weight`
+- `retrieval.diversity_enabled`
+- `retrieval.diversity_lambda`
 - `retrieval.hnsw_ef_search`
+- `retrieval.runtime_settings_configured`
+- `retrieval.runtime_settings`
 - `upload.max_upload_bytes`
 - `upload.max_inline_data_bytes`
 - `upload.allowed_extensions`
@@ -832,12 +841,28 @@ Example:
       "max_tool_calls": 4
     },
     "retrieval": {
+      "framework": "llamaindex",
       "corpus_dir_count": 1,
       "chunk_max_chars": 1200,
       "chunk_overlap_chars": 160,
+      "candidate_multiplier": 4,
+      "min_candidates": 12,
+      "vector_weight": 0.62,
+      "bm25_weight": 0.38,
       "diversity_enabled": true,
       "diversity_lambda": 0.72,
-      "hnsw_ef_search": 100
+      "hnsw_ef_search": 100,
+      "runtime_settings_configured": true,
+      "runtime_settings": {
+        "retrieval_framework": "llamaindex",
+        "retrieval_candidate_multiplier": 4,
+        "retrieval_min_candidates": 12,
+        "retrieval_vector_weight": 0.62,
+        "retrieval_bm25_weight": 0.38,
+        "retrieval_diversity_enabled": true,
+        "retrieval_diversity_lambda": 0.72,
+        "retrieval_hnsw_ef_search": 100
+      }
     },
     "upload": {
       "max_upload_bytes": 26214400,
@@ -854,6 +879,49 @@ Example:
 applied transaction-locally for vector candidate retrieval. Higher values
 increase recall and latency; lower values reduce latency and can miss more
 approximate-nearest-neighbor candidates.
+
+`PUT /api/v1/runtime/retrieval-settings`
+
+Persists editable retrieval runtime settings and reloads cached backend service
+instances after validation. It accepts only retrieval-scoped keys; secrets,
+database URLs, OAuth settings, file paths, and model API keys are not editable
+through this endpoint.
+
+Request:
+
+```json
+{
+  "retrieval_framework": "llamaindex",
+  "retrieval_candidate_multiplier": 4,
+  "retrieval_min_candidates": 12,
+  "retrieval_vector_weight": 0.62,
+  "retrieval_bm25_weight": 0.38,
+  "retrieval_diversity_enabled": true,
+  "retrieval_diversity_lambda": 0.72,
+  "retrieval_hnsw_ef_search": 100
+}
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "settings": {
+      "retrieval_framework": "llamaindex",
+      "retrieval_candidate_multiplier": 4,
+      "retrieval_min_candidates": 12,
+      "retrieval_vector_weight": 0.62,
+      "retrieval_bm25_weight": 0.38,
+      "retrieval_diversity_enabled": true,
+      "retrieval_diversity_lambda": 0.72,
+      "retrieval_hnsw_ef_search": 100
+    },
+    "reloaded": true
+  },
+  "error": null
+}
+```
 
 `GET /api/v1/runtime/readiness`
 
