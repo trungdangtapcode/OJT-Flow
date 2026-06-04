@@ -174,7 +174,9 @@ uses an MMR-style relevance/novelty balance so repeated chunks from the same
 source do not crowd out other relevant evidence. `OJT_RETRIEVAL_DIVERSITY_LAMBDA`
 must be between `0` and `1`; higher values favor relevance and lower values
 favor diversity. Retrieval packages expose the policy and source coverage under
-`handoff_context.diversity`.
+`handoff_context.diversity`. Diversity metadata includes aggregate source
+counts plus `selected_hits[]` rows with evidence ID, source ID, selected rank,
+original rank, relevance score, redundancy score, selection score, and reason.
 
 Retrieval hits expose `score_components` as the score explanation contract.
 Custom/static/Postgres retrieval emits lexical RRF, vector RRF, policy boost,

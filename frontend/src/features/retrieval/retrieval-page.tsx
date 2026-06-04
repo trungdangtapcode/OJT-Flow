@@ -846,6 +846,7 @@ function SearchResults({
   const resultFilters = submittedSearchPayload
     ? activeFacetFiltersFromPayload(submittedSearchPayload)
     : activeFilters;
+  const diversitySelections = diversitySelectionByEvidenceId(packageData);
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -880,7 +881,12 @@ function SearchResults({
           onApplyFacet={onApplyFacet}
         />
         {packageData.hits.map((hit, index) => (
-          <HitCard hit={hit} index={index} key={hit.evidence.evidence_id} />
+          <HitCard
+            diversitySelection={diversitySelections.get(hit.evidence.evidence_id) ?? null}
+            hit={hit}
+            index={index}
+            key={hit.evidence.evidence_id}
+          />
         ))}
         {!packageData.hits.length ? (
           <Notice title="No matching evidence">
@@ -1129,7 +1135,15 @@ function isSupportedFilterField(value: string): value is SupportedFilterField {
   return supportedSuggestionFilterFields.has(value as SupportedFilterField);
 }
 
-function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
+function HitCard({
+  diversitySelection,
+  hit,
+  index,
+}: {
+  diversitySelection: DiversitySelectionStack | null;
+  hit: RetrievalHit;
+  index: number;
+}) {
   const evidence = hit.evidence;
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   const scoreComponents = scoreComponentsFromHit(hit);
@@ -1172,6 +1186,8 @@ function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
       </div>
 
       <ScoreExplanation components={scoreComponents} />
+
+      <DiversitySelectionExplanation selection={diversitySelection} />
 
       {rankingBoostSignals.length ? (
         <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
@@ -1311,6 +1327,40 @@ function ScoreExplanation({ components }: { components: RetrievalScoreComponent[
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function DiversitySelectionExplanation({
+  selection,
+}: {
+  selection: DiversitySelectionStack | null;
+}) {
+  if (!selection) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
+        <Network className="h-3.5 w-3.5 shrink-0" />
+        <span>Diversity selection</span>
+      </div>
+      <div className="grid gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <Badge variant="muted">selected #{selection.selectedRank}</Badge>
+          <Badge variant="muted">original #{selection.originalRank}</Badge>
+          <span className="font-mono font-semibold text-muted-foreground">
+            relevance {formatScore(selection.relevanceScore)}
+          </span>
+          <span className="font-mono font-semibold text-muted-foreground">
+            redundancy {formatScore(selection.redundancyScore)}
+          </span>
+          <span className="font-mono font-semibold text-muted-foreground">
+            MMR {formatScore(selection.selectionScore)}
+          </span>
+        </div>
+        <div className="break-words font-semibold text-muted-foreground">
+          {selection.reason}
+        </div>
       </div>
     </div>
   );
@@ -2258,8 +2308,20 @@ type DiversityStack = {
   duplicateSelectedSourceCount: number;
   enabled: boolean;
   lambda: number | null;
+  selectedHits: DiversitySelectionStack[];
   selectedSourceCount: number;
   selectionMode: string;
+};
+
+type DiversitySelectionStack = {
+  evidenceId: string;
+  originalRank: number;
+  reason: string;
+  redundancyScore: number;
+  relevanceScore: number;
+  selectedRank: number;
+  selectionScore: number;
+  sourceId: string;
 };
 
 type QueryAnalysisStack = {
@@ -2369,6 +2431,7 @@ function diversityFromPackage(packageData: RetrievalPackage): DiversityStack {
       numberValue(diversity.duplicate_selected_source_count) ?? 0,
     enabled: booleanValue(diversity.enabled),
     lambda: numberValue(diversity.lambda),
+    selectedHits: diversitySelectionDetailsValue(diversity.selected_hits),
     selectedSourceCount: numberValue(diversity.selected_source_count) ?? 0,
     selectionMode: stringValue(diversity.selection_mode, "unknown"),
   };
@@ -2423,6 +2486,34 @@ function formatDiversityTrace(diversity: DiversityStack): string {
   const lambda = diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2);
   const duplicateText = `${diversity.duplicateSelectedSourceCount} duplicate selected`;
   return `${diversity.selectionMode} / lambda ${lambda} / ${formatSourceCoverage(diversity)} sources / ${duplicateText}`;
+}
+
+function diversitySelectionByEvidenceId(
+  packageData: RetrievalPackage,
+): Map<string, DiversitySelectionStack> {
+  return new Map(
+    diversityFromPackage(packageData).selectedHits.map((selection) => [
+      selection.evidenceId,
+      selection,
+    ]),
+  );
+}
+
+function diversitySelectionDetailsValue(value: unknown): DiversitySelectionStack[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      evidenceId: stringValue(item.evidence_id, ""),
+      originalRank: numberValue(item.original_rank) ?? 0,
+      reason: stringValue(item.reason, "Selected retrieval evidence."),
+      redundancyScore: numberValue(item.redundancy_score) ?? 0,
+      relevanceScore: numberValue(item.relevance_score) ?? 0,
+      selectedRank: numberValue(item.selected_rank) ?? 0,
+      selectionScore: numberValue(item.selection_score) ?? 0,
+      sourceId: stringValue(item.source_id, ""),
+    }))
+    .filter((item) => item.evidenceId && item.selectedRank > 0);
 }
 
 function queryVariantsFromTrace(trace: RetrievalPackage["trace"]): RetrievalQueryVariant[] {

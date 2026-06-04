@@ -145,7 +145,10 @@ the applied rule ID, reason, and weight, with
 `source_locator.ranking_boost_rules` kept as the compatibility fallback for
 older payloads. It must also surface source coverage from retrieval
 diversity metadata so redundant single-source results are visible during
-evidence review. Query-analysis filter suggestions
+evidence review. Result cards must render per-hit diversity selection details
+from `handoff_context.diversity.selected_hits` when present, including original
+rank, normalized relevance, redundancy, MMR score, and selection reason.
+Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see
 the reason, confidence, and existing applied state. Result facets should also be

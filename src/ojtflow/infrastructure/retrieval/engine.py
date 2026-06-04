@@ -18,6 +18,7 @@ from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
     RetrievalCoverage,
     RetrievalCoverageItem,
+    RetrievalDiversitySelection,
     RetrievalFacetBucket,
     RetrievalFacets,
     RetrievalHit,
@@ -1348,23 +1349,45 @@ def _select_diverse_hits(
     enabled: bool,
     lambda_mult: float,
 ) -> tuple[list[tuple[KnowledgeChunk, RetrievalHit]], dict[str, Any]]:
+    original_ranks = {
+        hit.evidence.evidence_id: rank
+        for rank, (_, hit) in enumerate(ranked_hits, start=1)
+    }
+    relevance = _normalized_hit_relevance(ranked_hits) if ranked_hits else {}
     if not enabled or top_k <= 1 or len(ranked_hits) <= 1:
         selected = ranked_hits[:top_k]
+        selection_details = _score_order_selection_details(
+            selected,
+            relevance=relevance,
+            original_ranks=original_ranks,
+        )
         return selected, _diversity_metadata(
             ranked_hits,
             selected,
             enabled=enabled,
             lambda_mult=lambda_mult,
+            selection_details=selection_details,
         )
 
     clamped_lambda = max(0.0, min(1.0, lambda_mult))
     candidates = list(ranked_hits)
     selected: list[tuple[KnowledgeChunk, RetrievalHit]] = [candidates.pop(0)]
-    relevance = _normalized_hit_relevance(ranked_hits)
+    selection_details = [
+        _diversity_selection_detail(
+            selected[0],
+            selected_rank=1,
+            original_rank=original_ranks[selected[0][1].evidence.evidence_id],
+            relevance_score=relevance[selected[0][1].evidence.evidence_id],
+            redundancy_score=0.0,
+            selection_score=relevance[selected[0][1].evidence.evidence_id],
+            reason="Top-ranked hit selected as the initial MMR seed.",
+        )
+    ]
 
     while candidates and len(selected) < top_k:
         best_index = 0
         best_score = float("-inf")
+        best_redundancy = 0.0
         for index, candidate in enumerate(candidates):
             chunk, hit = candidate
             redundancy = max(
@@ -1378,14 +1401,81 @@ def _select_diverse_hits(
             if mmr_score > best_score:
                 best_score = mmr_score
                 best_index = index
-        selected.append(candidates.pop(best_index))
+                best_redundancy = redundancy
+        selected_candidate = candidates.pop(best_index)
+        selected.append(selected_candidate)
+        _, selected_hit = selected_candidate
+        selection_details.append(
+            _diversity_selection_detail(
+                selected_candidate,
+                selected_rank=len(selected),
+                original_rank=original_ranks[selected_hit.evidence.evidence_id],
+                relevance_score=relevance[selected_hit.evidence.evidence_id],
+                redundancy_score=best_redundancy,
+                selection_score=best_score,
+                reason=_mmr_selection_reason(best_redundancy),
+            )
+        )
 
     return selected, _diversity_metadata(
         ranked_hits,
         selected,
         enabled=enabled,
         lambda_mult=clamped_lambda,
+        selection_details=selection_details,
     )
+
+
+def _score_order_selection_details(
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]],
+    *,
+    relevance: dict[str, float],
+    original_ranks: dict[str, int],
+) -> list[RetrievalDiversitySelection]:
+    return [
+        _diversity_selection_detail(
+            candidate,
+            selected_rank=index,
+            original_rank=original_ranks[hit.evidence.evidence_id],
+            relevance_score=relevance.get(hit.evidence.evidence_id, 1.0),
+            redundancy_score=0.0,
+            selection_score=relevance.get(hit.evidence.evidence_id, 1.0),
+            reason="Selected by score order because diversity selection was not applied.",
+        )
+        for index, candidate in enumerate(selected, start=1)
+        for _, hit in [candidate]
+    ]
+
+
+def _diversity_selection_detail(
+    candidate: tuple[KnowledgeChunk, RetrievalHit],
+    *,
+    selected_rank: int,
+    original_rank: int,
+    relevance_score: float,
+    redundancy_score: float,
+    selection_score: float,
+    reason: str,
+) -> RetrievalDiversitySelection:
+    chunk, hit = candidate
+    return RetrievalDiversitySelection(
+        evidence_id=hit.evidence.evidence_id,
+        source_id=chunk.source_id,
+        selected_rank=selected_rank,
+        original_rank=original_rank,
+        relevance_score=round(relevance_score, 6),
+        redundancy_score=round(redundancy_score, 6),
+        selection_score=round(selection_score, 6),
+        reason=reason,
+    )
+
+
+def _mmr_selection_reason(redundancy_score: float) -> str:
+    if redundancy_score >= 0.999:
+        return "Selected despite same-source redundancy because relevance remained strongest."
+    if redundancy_score > 0:
+        return "Selected after balancing relevance against overlap with already selected evidence."
+    return "Selected from a new source with no measured redundancy penalty."
 
 
 def _normalized_hit_relevance(
@@ -1423,6 +1513,7 @@ def _diversity_metadata(
     *,
     enabled: bool,
     lambda_mult: float,
+    selection_details: list[RetrievalDiversitySelection],
 ) -> dict[str, Any]:
     candidate_sources = {chunk.source_id for chunk, _ in ranked_hits}
     selected_sources = [chunk.source_id for chunk, _ in selected]
@@ -1433,4 +1524,8 @@ def _diversity_metadata(
         "candidate_source_count": len(candidate_sources),
         "selected_source_count": len(set(selected_sources)),
         "duplicate_selected_source_count": len(selected_sources) - len(set(selected_sources)),
+        "selected_hits": [
+            detail.model_dump(mode="json")
+            for detail in selection_details
+        ],
     }

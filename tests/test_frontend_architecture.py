@@ -195,6 +195,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "query_variant_details" in retrieval_page
     assert "RerankBadge" in retrieval_page
     assert "DiversityBadge" in retrieval_page
+    assert "DiversitySelectionExplanation" in retrieval_page
+    assert "diversitySelectionByEvidenceId" in retrieval_page
+    assert "selected_hits" in retrieval_page
+    assert "Diversity selection" in retrieval_page
     assert "packageData.handoff_context.reranker" in retrieval_page
     assert "packageData.handoff_context.diversity" in retrieval_page
     assert "runtime?.rerank?.enabled" in retrieval_page

@@ -88,6 +88,19 @@ class RetrievalCoverage(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RetrievalDiversitySelection(ContractModel):
+    """One selected hit's source-aware diversity selection explanation."""
+
+    evidence_id: NonBlankStr
+    source_id: NonBlankStr
+    selected_rank: int = Field(ge=1)
+    original_rank: int = Field(ge=1)
+    relevance_score: float
+    redundancy_score: float = Field(ge=0.0, le=1.0)
+    selection_score: float
+    reason: NonBlankStr
+
+
 class RetrievalHit(ContractModel):
     """One ranked retrieval candidate with transparent scoring components."""
 

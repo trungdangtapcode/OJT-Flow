@@ -1104,14 +1104,20 @@ def test_retrieval_diversity_selection_reduces_redundant_sources() -> None:
 
     selected_sources = [hit.evidence.source_id for hit in package.hits]
     assert selected_sources == ["source:alpha", "source:beta"]
-    assert package.handoff_context["diversity"] == {
-        "enabled": True,
-        "selection_mode": "mmr_source_diversity",
-        "lambda": 0.5,
-        "candidate_source_count": 2,
-        "selected_source_count": 2,
-        "duplicate_selected_source_count": 0,
-    }
+    diversity = package.handoff_context["diversity"]
+    assert diversity["enabled"] is True
+    assert diversity["selection_mode"] == "mmr_source_diversity"
+    assert diversity["lambda"] == 0.5
+    assert diversity["candidate_source_count"] == 2
+    assert diversity["selected_source_count"] == 2
+    assert diversity["duplicate_selected_source_count"] == 0
+    assert [item["source_id"] for item in diversity["selected_hits"]] == selected_sources
+    assert diversity["selected_hits"][0]["reason"] == (
+        "Top-ranked hit selected as the initial MMR seed."
+    )
+    assert diversity["selected_hits"][1]["original_rank"] > 1
+    assert diversity["selected_hits"][1]["redundancy_score"] < 1.0
+    assert "balancing relevance" in diversity["selected_hits"][1]["reason"]
 
 
 def test_local_corpus_loader_chunks_trusted_healthcare_docs(tmp_path: Path) -> None:

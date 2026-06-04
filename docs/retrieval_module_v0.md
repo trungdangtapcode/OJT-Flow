@@ -304,6 +304,12 @@ vocabulary concept. The trace copies those details to
 `trace.query_variant_details` so operator review can inspect query rewrites
 without guessing why a variant was used.
 
+Source-aware diversity metadata includes `selected_hits`, one row per final hit.
+Each row records evidence ID, source ID, selected rank, original rank,
+normalized relevance, redundancy penalty, final MMR selection score, and a short
+reason. This makes source diversity auditable per result card instead of only
+showing aggregate selected-source counts.
+
 Search hints are syntax scaffolds for medical search workflows outside the
 local retrieval index. PubMed hints prefer a conservative combination of
 title/abstract text words and MeSH-review warnings; FHIR hints produce resource
@@ -582,7 +588,9 @@ Retrieval is a two-stage architecture with deterministic defaults:
 3. Source-aware MMR selection chooses the final `top_k` hits from the ranked
    candidate list. It keeps relevance as the primary signal while penalizing
    redundant chunks from sources already selected, which reduces repeated
-   same-document evidence in operator review.
+   same-document evidence in operator review. The diversity handoff context
+   records `selected_hits` so operators can inspect the relevance/redundancy
+   tradeoff for each selected item.
 4. The final package preserves `lexical_score`, `vector_score`, `rerank_score`,
    `score_components`, `source_locator.ranking_boosts`, and
    `source_locator.ranking_boost_rules` per hit so workflow explanations can
