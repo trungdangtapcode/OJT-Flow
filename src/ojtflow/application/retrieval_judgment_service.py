@@ -176,6 +176,7 @@ class RetrievalJudgmentService:
         )[:top_k]
         ideal_dcg = _discounted_cumulative_gain(ideal_ratings)
         coverage_at_k = round(judged_count / top_k, 6)
+        hit_rate_at_k = 1.0 if positive_count else 0.0
         precision_at_k = round(positive_count / top_k, 6)
         judged_precision = (
             round(positive_count / judged_count, 6) if judged_count else None
@@ -184,6 +185,7 @@ class RetrievalJudgmentService:
             _average_precision_at_k(top_ids, judgments_by_evidence, positive_judgments_total),
             6,
         )
+        mrr_at_k = round(_mean_reciprocal_rank_at_k(top_ids, judgments_by_evidence), 6)
         ndcg_at_k = (
             round(_discounted_cumulative_gain(ranked_ratings) / ideal_dcg, 6)
             if ideal_dcg
@@ -199,8 +201,10 @@ class RetrievalJudgmentService:
             "average_rating": average_rating,
             "coverage_at_k": coverage_at_k,
             "cutoff": top_k,
+            "hit_rate_at_k": hit_rate_at_k,
             "judged_count": judged_count,
             "judged_precision": judged_precision,
+            "mrr_at_k": mrr_at_k,
             "ndcg_at_k": ndcg_at_k,
             "not_relevant_count": not_relevant_count,
             "partial_count": partial_count,
@@ -219,9 +223,11 @@ class RetrievalJudgmentService:
             partial_count=partial_count,
             not_relevant_count=not_relevant_count,
             coverage_at_k=coverage_at_k,
+            hit_rate_at_k=hit_rate_at_k,
             precision_at_k=precision_at_k,
             judged_precision=judged_precision,
             average_precision_at_k=average_precision_at_k,
+            mrr_at_k=mrr_at_k,
             ndcg_at_k=ndcg_at_k,
             average_rating=average_rating,
             unjudged_evidence_ids=unjudged_ids,
@@ -269,6 +275,17 @@ def _average_precision_at_k(
         seen_relevant += 1
         precision_sum += seen_relevant / rank
     return precision_sum / positive_judgment_count
+
+
+def _mean_reciprocal_rank_at_k(
+    ranked_evidence_ids: list[str],
+    judgments_by_evidence: dict[str, RetrievalRelevanceJudgment],
+) -> float:
+    for rank, evidence_id in enumerate(ranked_evidence_ids, start=1):
+        judgment = judgments_by_evidence.get(evidence_id)
+        if judgment and judgment.rating > 0:
+            return 1.0 / rank
+    return 0.0
 
 
 def _discounted_cumulative_gain(ratings: list[int]) -> float:

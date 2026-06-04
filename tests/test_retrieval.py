@@ -114,9 +114,11 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     assert evaluation.judged_count == 1
     assert evaluation.unjudged_count == 1
     assert evaluation.coverage_at_k == 0.5
+    assert evaluation.hit_rate_at_k == 1.0
     assert evaluation.precision_at_k == 0.5
     assert evaluation.judged_precision == 1.0
     assert evaluation.average_precision_at_k == 1.0
+    assert evaluation.mrr_at_k == 1.0
     assert evaluation.ndcg_at_k == 1.0
     assert evaluation.unjudged_evidence_ids == ["ev_unjudged"]
     assert len(evaluation.recommendations) == 1
@@ -835,6 +837,7 @@ def test_knowledge_json_sources_are_valid() -> None:
 
     policy_rules = load_retrieval_evaluation_policy(ROOT / "knowledge")
     assert any(rule.rule_id == "label_unjudged_top_results" for rule in policy_rules)
+    assert any(rule.rule_id == "promote_first_relevant_hit" for rule in policy_rules)
 
 
 def test_static_retrieval_filters_by_standard_system() -> None:

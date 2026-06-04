@@ -291,6 +291,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Precision@k" in retrieval_page
     assert "nDCG@k" in retrieval_page
     assert "Server MAP@k" in retrieval_page
+    assert "Server HitRate@k" in retrieval_page
+    assert "Server MRR@k" in retrieval_page
     assert "Server nDCG@k" in retrieval_page
     assert "Evaluation recommendations" in retrieval_page
     assert "recommendations" in (REPO_ROOT / "frontend/src/types.ts").read_text(
@@ -298,6 +300,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     )
     assert "persistedJudgmentEvaluation" in retrieval_page
     assert "average_precision_at_k" in retrieval_page
+    assert "hit_rate_at_k" in retrieval_page
+    assert "mrr_at_k" in retrieval_page
     assert "judgmentCoverage" in retrieval_page
     assert "judgedPrecision" in retrieval_page
     assert "not_relevant" in retrieval_page

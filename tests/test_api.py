@@ -607,13 +607,16 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "partial_count": 0,
                 "not_relevant_count": 0,
                 "coverage_at_k": 0.5,
+                "hit_rate_at_k": 1.0,
                 "precision_at_k": 0.5,
                 "judged_precision": 1.0,
                 "average_precision_at_k": 1.0,
+                "mrr_at_k": 1.0,
                 "ndcg_at_k": 1.0,
                 "average_rating": 3.0,
                 "unjudged_evidence_ids": ["ev_missing"],
                 "judgment_ids": ["rj_existing"],
+                "recommendations": [],
             }
 
         def upsert(self, **kwargs):
@@ -688,6 +691,8 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
     assert summary.json()["data"]["total_count"] == 1
     assert evaluated.status_code == 200
     assert evaluated.json()["data"]["coverage_at_k"] == 0.5
+    assert evaluated.json()["data"]["hit_rate_at_k"] == 1.0
+    assert evaluated.json()["data"]["mrr_at_k"] == 1.0
     assert evaluated.json()["data"]["ndcg_at_k"] == 1.0
     assert saved.status_code == 200
     assert saved.json()["data"]["judgment_id"] == "rj_saved"

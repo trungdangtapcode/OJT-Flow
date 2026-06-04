@@ -41,6 +41,19 @@
       }
     },
     {
+      "rule_id": "promote_first_relevant_hit",
+      "metric": "mrr_at_k",
+      "operator": "lt",
+      "threshold": 0.5,
+      "severity": "warning",
+      "min_positive_count": 1,
+      "message": "MRR@k is {mrr_at_k}, so the first relevant hit is not near the top.",
+      "suggested_action": "Inspect top negative hits and adjust query expansion, reranking, or ranking boost rules before relying on this profile.",
+      "metadata": {
+        "tuning_stage": "first_relevant_rank"
+      }
+    },
+    {
       "rule_id": "review_noise_before_corpus_expansion",
       "metric": "not_relevant_count",
       "operator": "gt",

@@ -1772,16 +1772,26 @@ function RelevanceJudgmentSummary({
         />
       </div>
       {persistedEvaluation ? (
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <JudgmentMetricCard
             label="Server coverage"
             tone={persistedEvaluation.coverage_at_k >= 0.5 ? "success" : "warning"}
             value={formatPercent(persistedEvaluation.coverage_at_k)}
           />
           <JudgmentMetricCard
+            label="Server HitRate@k"
+            tone={persistedEvaluation.hit_rate_at_k >= 1 ? "success" : "warning"}
+            value={formatPercent(persistedEvaluation.hit_rate_at_k)}
+          />
+          <JudgmentMetricCard
             label="Server MAP@k"
             tone={persistedEvaluation.average_precision_at_k >= 0.5 ? "success" : "warning"}
             value={formatDecimal(persistedEvaluation.average_precision_at_k)}
+          />
+          <JudgmentMetricCard
+            label="Server MRR@k"
+            tone={persistedEvaluation.mrr_at_k >= 0.5 ? "success" : "warning"}
+            value={formatDecimal(persistedEvaluation.mrr_at_k)}
           />
           <JudgmentMetricCard
             label="Server nDCG@k"

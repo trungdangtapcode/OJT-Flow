@@ -396,9 +396,11 @@ export type RetrievalJudgmentEvaluationResult = {
   partial_count: number;
   not_relevant_count: number;
   coverage_at_k: number;
+  hit_rate_at_k: number;
   precision_at_k: number;
   judged_precision?: number | null;
   average_precision_at_k: number;
+  mrr_at_k: number;
   ndcg_at_k?: number | null;
   average_rating?: number | null;
   unjudged_evidence_ids: string[];

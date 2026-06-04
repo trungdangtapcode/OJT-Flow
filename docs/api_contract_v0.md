@@ -1299,9 +1299,10 @@ query:
 }
 ```
 
-Response data includes `coverage_at_k`, `precision_at_k`, `judged_precision`,
-`average_precision_at_k`, `ndcg_at_k`, per-value counts, unjudged evidence IDs,
-the judgment IDs that contributed to the score, and policy-driven
+Response data includes `coverage_at_k`, `hit_rate_at_k`, `precision_at_k`,
+`judged_precision`, `average_precision_at_k`, `mrr_at_k`, `ndcg_at_k`,
+per-value counts, unjudged evidence IDs, the judgment IDs that contributed to
+the score, and policy-driven
 `recommendations[]` with severity, metric, message, suggested action, evidence
 IDs, and rule metadata. This endpoint is intended for operator-facing
 evaluation of the current ranked result list; it does not mutate judgments or

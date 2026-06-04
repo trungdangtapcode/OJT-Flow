@@ -822,13 +822,13 @@ inventory as aggregate counts, average rating, latest update time, and sample
 limit for the active user/query.
 `POST /api/v1/retrieval/judgments/evaluate` accepts the active query, ranked
 evidence IDs, and optional cutoff, then scores that ranked list against stored
-judgments. It returns Coverage@k, Precision@k, judged precision, MAP@k, nDCG@k,
-per-value counts, contributing judgment IDs, unjudged evidence IDs, and
-policy-driven `recommendations[]`. The recommendation rules are loaded from
-`knowledge/retrieval/evaluation_policy.json` by default and can be overridden
-with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime counterpart to
-the offline evaluation harness: it makes current operator searches measurable
-and actionable without copying labels into fixture files.
+judgments. It returns Coverage@k, HitRate@k, Precision@k, judged precision,
+MAP@k, MRR@k, nDCG@k, per-value counts, contributing judgment IDs, unjudged
+evidence IDs, and policy-driven `recommendations[]`. The recommendation rules
+are loaded from `knowledge/retrieval/evaluation_policy.json` by default and can
+be overridden with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime
+counterpart to the offline evaluation harness: it makes current operator
+searches measurable and actionable without copying labels into fixture files.
 
 Each durable judgment stores:
 
@@ -865,6 +865,7 @@ and reports:
 - recall@k: expected source coverage in the returned hits.
 - precision@k: fraction of returned hits with a non-zero judgment.
 - MAP@k: average precision across positively judged sources.
+- MRR@k: reciprocal rank of the first positively judged returned source.
 - NDCG@k: graded ranking quality against the ideal judged-source order.
 - reciprocal rank: rank-aware score for the first expected source.
 - selected source count: source diversity after final selection.
