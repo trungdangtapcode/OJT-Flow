@@ -104,6 +104,68 @@ def test_query_analysis_marks_applied_filter_suggestions() -> None:
     assert suggestions[("standard_system", "UCUM")] is False
 
 
+def test_query_analysis_uses_data_driven_filter_suggestion_rules(tmp_path, monkeypatch) -> None:
+    registry_path = tmp_path / "filter_suggestion_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_filter_suggestion_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_ucum_filter",
+                        "field": "standard_system",
+                        "value": "CustomUCUM",
+                        "reason": "Custom UCUM filter reason",
+                        "confidence": 0.67,
+                        "match": {"any_standards": ["UCUM"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_FILTER_SUGGESTION_RULES_PATH", str(registry_path))
+
+    analysis = analyze_query(RetrievalQuery(query="UCUM units"))
+    suggestions = {
+        (suggestion.field, suggestion.value): suggestion
+        for suggestion in analysis.filter_suggestions
+    }
+
+    assert suggestions[("standard_system", "CustomUCUM")].reason == "Custom UCUM filter reason"
+    assert suggestions[("standard_system", "CustomUCUM")].confidence == 0.67
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_filter_suggestion_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "reloaded_ucum_filter",
+                        "field": "standard_system",
+                        "value": "ReloadedUCUM",
+                        "reason": "Reloaded UCUM filter reason",
+                        "confidence": 0.72,
+                        "match": {"any_standards": ["UCUM"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="UCUM units"))
+    reloaded_suggestions = {
+        (suggestion.field, suggestion.value): suggestion
+        for suggestion in reloaded.filter_suggestions
+    }
+
+    assert ("standard_system", "CustomUCUM") not in reloaded_suggestions
+    assert reloaded_suggestions[("standard_system", "ReloadedUCUM")].reason == (
+        "Reloaded UCUM filter reason"
+    )
+
+
 def test_query_analysis_reports_quality_diagnostics() -> None:
     analysis = analyze_query(RetrievalQuery(query="help"))
 
@@ -475,6 +537,7 @@ def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
     assert sources["standard:clinical_data_standards_map_v1"].source_type == EvidenceSourceType.HEALTHCARE_STANDARD
     assert sources["dictionary:medical_search_playbook_v1"].clinical_domain == "retrieval"
     assert sources["dictionary:query_expansion_rules_v1"].standard_system == "ojtflow_retrieval"
+    assert sources["dictionary:filter_suggestion_rules_v1"].standard_system == "ojtflow_retrieval"
     assert sources["dictionary:search_hint_targets_v1"].standard_system == "ojtflow_retrieval"
 
 
@@ -536,6 +599,7 @@ def test_knowledge_json_sources_are_valid() -> None:
         ROOT / "knowledge/terminologies/medical_concepts.json",
         ROOT / "knowledge/terminologies/fhir_search_parameters.json",
         ROOT / "knowledge/retrieval/query_expansion_rules.json",
+        ROOT / "knowledge/retrieval/filter_suggestion_rules.json",
         ROOT / "knowledge/retrieval/search_hint_targets.json",
         ROOT / "knowledge/source_catalog/official_healthcare_sources.json",
     ]:

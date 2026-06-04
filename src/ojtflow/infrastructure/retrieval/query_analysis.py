@@ -28,9 +28,19 @@ DEFAULT_MEDICAL_CONCEPT_REGISTRY = (
 DEFAULT_QUERY_EXPANSION_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_expansion_rules.json"
 )
+DEFAULT_FILTER_SUGGESTION_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "filter_suggestion_rules.json"
+)
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
 )
+
+SUPPORTED_FILTER_SUGGESTION_FIELDS = {
+    "clinical_domain",
+    "source_type",
+    "standard_system",
+    "trust_level",
+}
 
 
 @dataclass(frozen=True)
@@ -43,6 +53,29 @@ class QueryExpansionRule:
     expanded_terms: tuple[str, ...]
     standards: tuple[str, ...]
     variant: str
+
+
+@dataclass(frozen=True)
+class FilterSuggestionMatch:
+    """Matcher for a metadata filter suggestion rule."""
+
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_rule_ids: tuple[str, ...] = ()
+    any_candidate_domains: tuple[str, ...] = ()
+    any_candidate_standards: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class FilterSuggestionRule:
+    """One auditable metadata filter suggestion rule."""
+
+    rule_id: str
+    field: str
+    value: str
+    reason: str
+    confidence: float
+    match: FilterSuggestionMatch
 
 
 @dataclass(frozen=True)
@@ -254,6 +287,153 @@ def _ensure_unique_rule_ids(rules: tuple[QueryExpansionRule, ...], *, path: Path
         )
 
 
+def _filter_suggestion_rules() -> tuple[FilterSuggestionRule, ...]:
+    path = os.environ.get("OJT_FILTER_SUGGESTION_RULES_PATH")
+    return _load_filter_suggestion_rules(path or str(DEFAULT_FILTER_SUGGESTION_RULE_REGISTRY))
+
+
+def _load_filter_suggestion_rules(path_text: str) -> tuple[FilterSuggestionRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid filter suggestion registry at {path}: expected rules list")
+
+    rules = tuple(_filter_suggestion_rule(record, path=path) for record in records)
+    _ensure_unique_filter_suggestion_rule_ids(rules, path=path)
+    return rules
+
+
+def _filter_suggestion_rule(record: Any, *, path: Path) -> FilterSuggestionRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid filter suggestion registry at {path}: rule must be an object")
+    required = ("rule_id", "field", "value", "reason", "confidence", "match")
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(
+            f"Invalid filter suggestion registry at {path}: missing {missing_text}"
+        )
+    field = _required_filter_suggestion_text(record["field"], field="field", path=path)
+    if field not in SUPPORTED_FILTER_SUGGESTION_FIELDS:
+        allowed = ", ".join(sorted(SUPPORTED_FILTER_SUGGESTION_FIELDS))
+        raise ValueError(
+            f"Invalid filter suggestion registry at {path}: field must be one of {allowed}"
+        )
+    return FilterSuggestionRule(
+        rule_id=_required_filter_suggestion_text(record["rule_id"], field="rule_id", path=path),
+        field=field,
+        value=_required_filter_suggestion_text(record["value"], field="value", path=path),
+        reason=_required_filter_suggestion_text(record["reason"], field="reason", path=path),
+        confidence=_confidence(record["confidence"], path=path),
+        match=_filter_suggestion_match(record["match"], path=path),
+    )
+
+
+def _filter_suggestion_match(record: Any, *, path: Path) -> FilterSuggestionMatch:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid filter suggestion registry at {path}: match must be an object")
+    match = FilterSuggestionMatch(
+        any_concepts=_optional_filter_suggestion_text_tuple(
+            record.get("any_concepts"),
+            field="any_concepts",
+            path=path,
+        ),
+        any_standards=_optional_filter_suggestion_text_tuple(
+            record.get("any_standards"),
+            field="any_standards",
+            path=path,
+        ),
+        any_rule_ids=_optional_filter_suggestion_text_tuple(
+            record.get("any_rule_ids"),
+            field="any_rule_ids",
+            path=path,
+        ),
+        any_candidate_domains=_optional_filter_suggestion_text_tuple(
+            record.get("any_candidate_domains"),
+            field="any_candidate_domains",
+            path=path,
+        ),
+        any_candidate_standards=_optional_filter_suggestion_text_tuple(
+            record.get("any_candidate_standards"),
+            field="any_candidate_standards",
+            path=path,
+        ),
+    )
+    if not any(
+        (
+            match.any_concepts,
+            match.any_standards,
+            match.any_rule_ids,
+            match.any_candidate_domains,
+            match.any_candidate_standards,
+        )
+    ):
+        raise ValueError(
+            f"Invalid filter suggestion registry at {path}: match must include at least one criterion"
+        )
+    return match
+
+
+def _confidence(value: Any, *, path: Path) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid filter suggestion registry at {path}: confidence must be a number"
+        ) from exc
+    if confidence < 0.0 or confidence > 1.0:
+        raise ValueError(
+            f"Invalid filter suggestion registry at {path}: confidence must be between 0 and 1"
+        )
+    return confidence
+
+
+def _optional_filter_suggestion_text_tuple(
+    value: Any,
+    *,
+    field: str,
+    path: Path,
+) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid filter suggestion registry at {path}: {field} must be a list")
+    return tuple(
+        normalized
+        for item in value
+        for normalized in [" ".join(str(item).split())]
+        if normalized
+    )
+
+
+def _required_filter_suggestion_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid filter suggestion registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _ensure_unique_filter_suggestion_rule_ids(
+    rules: tuple[FilterSuggestionRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid filter suggestion registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
 def _search_hint_target(target: str) -> SearchHintTarget:
     targets = {item.target: item for item in _search_hint_targets()}
     return targets.get(
@@ -461,67 +641,52 @@ def _filter_suggestions(
     rule_ids: list[str],
     concept_candidates: list[RetrievalConceptCandidate],
 ) -> list[RetrievalFilterSuggestion]:
-    suggestions: list[RetrievalFilterSuggestion] = []
-    concept_set = set(concepts)
-    if concept_set.intersection(
-        {
-            "laboratory_observation_identity",
-            "hba1c_laboratory_test",
-            "unit_normalization",
-            "fhir_observation_profile",
-        }
-    ) or {"LOINC", "UCUM"}.intersection(standards):
-        suggestions.append(
+    return _dedupe_suggestions(
+        [
             _suggestion(
                 query,
-                field="clinical_domain",
-                value="laboratory",
-                reason="Detected laboratory observation context.",
-                rule_id="suggest_laboratory_domain",
-                confidence=0.92,
+                field=rule.field,
+                value=rule.value,
+                reason=rule.reason,
+                rule_id=rule.rule_id,
+                confidence=rule.confidence,
             )
-        )
-    for domain in _dedupe(
+            for rule in _filter_suggestion_rules()
+            if _filter_suggestion_rule_matches(
+                rule,
+                concepts=concepts,
+                standards=standards,
+                rule_ids=rule_ids,
+                concept_candidates=concept_candidates,
+            )
+        ]
+    )
+
+
+def _filter_suggestion_rule_matches(
+    rule: FilterSuggestionRule,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> bool:
+    match = rule.match
+    candidate_domains = _dedupe(
         candidate.clinical_domain
         for candidate in concept_candidates
         if candidate.clinical_domain
-    ):
-        suggestions.append(
-            _suggestion(
-                query,
-                field="clinical_domain",
-                value=domain,
-                reason=f"Detected {domain} controlled-vocabulary concept.",
-                rule_id=f"suggest_domain_{domain}",
-                confidence=0.82,
-            )
+    )
+    candidate_standards = _dedupe(candidate.standard_system for candidate in concept_candidates)
+    return any(
+        (
+            _has_intersection(concepts, match.any_concepts),
+            _has_intersection(standards, match.any_standards),
+            _has_intersection(rule_ids, match.any_rule_ids),
+            _has_intersection(candidate_domains, match.any_candidate_domains),
+            _has_intersection(candidate_standards, match.any_candidate_standards),
         )
-    for standard in standards:
-        standard_value = _standard_filter_value(standard)
-        if not standard_value:
-            continue
-        suggestions.append(
-            _suggestion(
-                query,
-                field="standard_system",
-                value=standard_value,
-                reason=f"Detected {standard_value} standard context.",
-                rule_id=f"suggest_standard_{standard_value.lower()}",
-                confidence=0.86,
-            )
-        )
-    if "phi_review_context" in rule_ids:
-        suggestions.append(
-            _suggestion(
-                query,
-                field="standard_system",
-                value="ojtflow_policy",
-                reason="Detected sensitive identifier review context.",
-                rule_id="suggest_governance_policy",
-                confidence=0.78,
-            )
-        )
-    return _dedupe_suggestions(suggestions)
+    )
 
 
 def _query_diagnostics(
@@ -879,6 +1044,11 @@ def _standard_filter_value(standard: str) -> str | None:
     if standard == "OJTFlow schema":
         return "ojtflow_schema"
     return None
+
+
+def _has_intersection(left: Iterable[str], right: Iterable[str]) -> bool:
+    right_set = {value.lower() for value in right}
+    return bool(right_set and {value.lower() for value in left}.intersection(right_set))
 
 
 def _dedupe_suggestions(

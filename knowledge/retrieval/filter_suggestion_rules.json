@@ -1,0 +1,175 @@
+{
+  "version": "retrieval_filter_suggestion_rules.v1",
+  "rules": [
+    {
+      "rule_id": "suggest_laboratory_domain",
+      "field": "clinical_domain",
+      "value": "laboratory",
+      "reason": "Detected laboratory observation context.",
+      "confidence": 0.92,
+      "match": {
+        "any_concepts": [
+          "laboratory_observation_identity",
+          "hba1c_laboratory_test",
+          "unit_normalization",
+          "fhir_observation_profile"
+        ],
+        "any_standards": ["FHIR", "LOINC", "UCUM"],
+        "any_candidate_domains": ["laboratory"]
+      }
+    },
+    {
+      "rule_id": "suggest_medication_domain",
+      "field": "clinical_domain",
+      "value": "medication",
+      "reason": "Detected medication controlled-vocabulary context.",
+      "confidence": 0.82,
+      "match": {
+        "any_concepts": [
+          "medication_normalization",
+          "regulatory_drug_safety_search"
+        ],
+        "any_candidate_domains": ["medication"],
+        "any_standards": ["RxNorm", "openFDA"]
+      }
+    },
+    {
+      "rule_id": "suggest_literature_domain",
+      "field": "clinical_domain",
+      "value": "literature",
+      "reason": "Detected biomedical literature or trial-search context.",
+      "confidence": 0.82,
+      "match": {
+        "any_concepts": [
+          "biomedical_literature_search",
+          "clinical_trial_search"
+        ],
+        "any_candidate_domains": ["literature"],
+        "any_standards": ["MeSH", "ClinicalTrials.gov"]
+      }
+    },
+    {
+      "rule_id": "suggest_analytics_domain",
+      "field": "clinical_domain",
+      "value": "analytics",
+      "reason": "Detected observational analytics export context.",
+      "confidence": 0.82,
+      "match": {
+        "any_concepts": ["observational_analytics_export"],
+        "any_candidate_domains": ["analytics"],
+        "any_standards": ["OMOP"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_fhir",
+      "field": "standard_system",
+      "value": "FHIR",
+      "reason": "Detected FHIR standard context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["FHIR"],
+        "any_candidate_standards": ["FHIR"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_loinc",
+      "field": "standard_system",
+      "value": "LOINC",
+      "reason": "Detected LOINC standard context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["LOINC"],
+        "any_candidate_standards": ["LOINC"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_ucum",
+      "field": "standard_system",
+      "value": "UCUM",
+      "reason": "Detected UCUM standard context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["UCUM"],
+        "any_candidate_standards": ["UCUM"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_rxnorm",
+      "field": "standard_system",
+      "value": "RxNorm",
+      "reason": "Detected RxNorm standard context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["RxNorm"],
+        "any_candidate_standards": ["RxNorm"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_omop",
+      "field": "standard_system",
+      "value": "OMOP",
+      "reason": "Detected OMOP standard context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["OMOP"],
+        "any_candidate_standards": ["OMOP"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_mesh",
+      "field": "standard_system",
+      "value": "MeSH",
+      "reason": "Detected MeSH/PubMed literature-search context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["MeSH"],
+        "any_candidate_standards": ["MeSH"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_clinicaltrials_gov",
+      "field": "standard_system",
+      "value": "ClinicalTrials.gov",
+      "reason": "Detected ClinicalTrials.gov trial-search context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["ClinicalTrials.gov"],
+        "any_candidate_standards": ["ClinicalTrials.gov"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_openfda",
+      "field": "standard_system",
+      "value": "openFDA",
+      "reason": "Detected openFDA regulatory drug-safety context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["openFDA"],
+        "any_candidate_standards": ["openFDA"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_ojtflow_schema",
+      "field": "standard_system",
+      "value": "ojtflow_schema",
+      "reason": "Detected OJTFlow schema or tabular data-quality context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["OJTFlow schema"],
+        "any_rule_ids": ["csv_tabular_quality"]
+      }
+    },
+    {
+      "rule_id": "suggest_governance_policy",
+      "field": "standard_system",
+      "value": "ojtflow_policy",
+      "reason": "Detected sensitive identifier review context.",
+      "confidence": 0.78,
+      "match": {
+        "any_concepts": ["sensitive_identifier_review"],
+        "any_rule_ids": ["phi_review_context"],
+        "any_standards": ["OJTFlow policy"]
+      }
+    }
+  ]
+}

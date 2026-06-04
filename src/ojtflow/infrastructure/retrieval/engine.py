@@ -620,6 +620,15 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             "ojtflow_retrieval",
         ),
         (
+            "chunk_dictionary_filter_suggestion_rules_v1",
+            "dictionary:filter_suggestion_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Filter Suggestion Rule Registry",
+            knowledge_root / "retrieval/filter_suggestion_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
             "chunk_dictionary_search_hint_targets_v1",
             "dictionary:search_hint_targets_v1",
             EvidenceSourceType.DATA_DICTIONARY,

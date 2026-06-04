@@ -115,6 +115,7 @@ Seeded v0 sources include:
 - OMOP CDM analytics export direction
 - MeSH/PubMed biomedical literature-search direction
 - query expansion rule registry for deterministic healthcare retrieval variants
+- filter suggestion rule registry for deterministic self-query metadata suggestions
 - medical search hint target registry for external target rationale and warnings
 - an official healthcare source catalog covering MeSH, RxNorm/RxNav, LOINC,
   FHIR R4, UCUM, MedlinePlus, openFDA, and ClinicalTrials.gov
@@ -135,6 +136,9 @@ not a bulk data dump. It now contains:
   seed registry used by deterministic query analysis.
 - `knowledge/retrieval/query_expansion_rules.json`: deterministic query
   expansion rules used by the analyzer before first-stage retrieval.
+- `knowledge/retrieval/filter_suggestion_rules.json`: deterministic metadata
+  filter suggestion rules for fields such as `clinical_domain` and
+  `standard_system`.
 - `knowledge/retrieval/search_hint_targets.json`: target metadata for
   external medical search hints, including operator rationale and warnings.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
@@ -228,11 +232,20 @@ The public retrieval package exposes this under
 
 Filter suggestions are a deterministic self-query feature: they recommend
 metadata filters such as `clinical_domain=laboratory` or
-`standard_system=UCUM`, but do not apply them silently. The Retrieval console
-shows confidence and whether each suggestion is already applied. Supported
-suggestions can be applied explicitly from the trace panel, which updates the
-query-builder filter state and reruns the search through the same typed
-`/retrieval/search` request path.
+`standard_system=UCUM`, but do not apply them silently. The analyzer loads those
+rules from `knowledge/retrieval/filter_suggestion_rules.json`; each rule
+declares a `rule_id`, filter field, filter value, reason, confidence, and match
+criteria over detected concepts, standards, query-expansion rule IDs, and
+controlled-vocabulary candidate metadata. Code still allowlists supported
+filter fields (`clinical_domain`, `standard_system`, `source_type`, and
+`trust_level`) before accepting registry rules.
+`OJT_FILTER_SUGGESTION_RULES_PATH` can point the runtime to a
+deployment-specific rule pack.
+
+The Retrieval console shows confidence and whether each suggestion is already
+applied. Supported suggestions can be applied explicitly from the trace panel,
+which updates the query-builder filter state and reruns the search through the
+same typed `/retrieval/search` request path.
 
 Deterministic query expansion rules are loaded from
 `knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query
