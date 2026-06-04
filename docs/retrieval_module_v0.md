@@ -513,6 +513,7 @@ OJT_RERANK_CANDIDATE_LIMIT=20
 OJT_RERANK_SCORE_WEIGHT=0.08
 OJT_RETRIEVAL_DIVERSITY_ENABLED=true
 OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72
+OJT_RETRIEVAL_HNSW_EF_SEARCH=100
 ```
 
 `OJT_RERANK_PROVIDER` supports `none` and `huggingface`. The Hugging Face
@@ -529,6 +530,15 @@ keeps relevance dominant while reducing duplicate-source evidence in the final
 operator-visible list. Retrieval packages report the selection mode, lambda,
 candidate source count, selected source count, and duplicate selected source
 count under `handoff_context.diversity`.
+
+`OJT_RETRIEVAL_HNSW_EF_SEARCH` controls the per-query pgvector HNSW search
+candidate depth for Postgres vector retrieval. pgvector defaults this value to
+40; OJTFlow defaults to 100 for healthcare evidence retrieval where missing a
+relevant source is usually worse than a small latency increase. The adapter sets
+it transaction-locally before vector candidate retrieval, so the setting affects
+only the current search query and does not leak into other database sessions.
+Increase it when recall is weak; lower it when latency is the stricter
+constraint.
 
 Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
 to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,

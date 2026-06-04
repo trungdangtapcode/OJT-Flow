@@ -85,6 +85,7 @@ async def runtime_config(
                 "chunk_overlap_chars": settings.retrieval_chunk_overlap_chars,
                 "diversity_enabled": settings.retrieval_diversity_enabled,
                 "diversity_lambda": settings.retrieval_diversity_lambda,
+                "hnsw_ef_search": settings.retrieval_hnsw_ef_search,
             },
             "upload": {
                 "max_upload_bytes": settings.max_upload_bytes,

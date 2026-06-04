@@ -52,6 +52,7 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.google_frontend_redirect_uri == "http://localhost:5173/auth/callback"
     assert settings.max_inline_data_bytes == 1048576
     assert settings.embedding_model == "deterministic-hash-v0"
+    assert settings.retrieval_hnsw_ef_search == 100
     assert settings.resolved_knowledge_dir == REPO_ROOT / "knowledge"
     assert settings.resolved_migrations_dir == REPO_ROOT / "sql/postgres/migrations"
 
@@ -617,6 +618,7 @@ def test_retrieval_chunk_overlap_must_be_smaller_than_chunk_size(monkeypatch) ->
 def test_retrieval_diversity_settings_are_configurable(monkeypatch) -> None:
     monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_ENABLED", "false")
     monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", "0.35")
+    monkeypatch.setenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", "200")
     clear_settings_cache()
 
     try:
@@ -626,11 +628,24 @@ def test_retrieval_diversity_settings_are_configurable(monkeypatch) -> None:
 
     assert settings.retrieval_diversity_enabled is False
     assert settings.retrieval_diversity_lambda == 0.35
+    assert settings.retrieval_hnsw_ef_search == 200
 
 
 @pytest.mark.parametrize("bad_lambda", ["-0.1", "1.1"])
 def test_retrieval_diversity_lambda_must_be_probability(monkeypatch, bad_lambda) -> None:
     monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", bad_lambda)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValidationError):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_value", ["0", "-1", "1001"])
+def test_retrieval_hnsw_ef_search_must_be_bounded(monkeypatch, bad_value) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", bad_value)
     clear_settings_cache()
 
     try:
@@ -798,6 +813,7 @@ def test_runtime_docs_explain_embedding_provider_validation() -> None:
     assert "CrossEncoder" in docs
     assert "OJT_RETRIEVAL_DIVERSITY_ENABLED" in docs
     assert "OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72" in docs
+    assert "OJT_RETRIEVAL_HNSW_EF_SEARCH" in docs
     assert "source-aware MMR" in docs
     assert "deterministic-hash-v0" in docs
     assert "OJT_EMBEDDING_DIMENSIONS=384" in docs

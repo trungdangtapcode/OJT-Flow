@@ -59,6 +59,7 @@ HUGGINGFACE_EMBEDDING_DIMENSIONS = 384
 HUGGINGFACE_RERANK_MODEL = "BAAI/bge-reranker-base"
 DEFAULT_HF_EMBEDDING_CACHE_DIR = Path("var/huggingface")
 DEFAULT_RETRIEVAL_CORPUS_DIRS = (Path("knowledge/corpus"),)
+DEFAULT_RETRIEVAL_HNSW_EF_SEARCH = 100
 DEFAULT_STORAGE_BACKEND: StorageBackend = "postgres"
 DEFAULT_POSTGRES_DSN = "postgresql://ojtflow:ojtflow@localhost:5432/ojtflow"
 DEFAULT_DATABASE_PATH = Path("var/ojtflow.db")
@@ -199,6 +200,12 @@ class Settings(BaseModel):
         alias="OJT_RETRIEVAL_DIVERSITY_LAMBDA",
         ge=0,
         le=1,
+    )
+    retrieval_hnsw_ef_search: int = Field(
+        default=DEFAULT_RETRIEVAL_HNSW_EF_SEARCH,
+        alias="OJT_RETRIEVAL_HNSW_EF_SEARCH",
+        ge=1,
+        le=1000,
     )
     rerank_provider: RerankProvider = Field(default="none", alias="OJT_RERANK_PROVIDER")
     rerank_model: str = Field(
@@ -378,6 +385,9 @@ def get_settings() -> Settings:
         ),
         OJT_RETRIEVAL_DIVERSITY_LAMBDA=float(
             os.getenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", "0.72")
+        ),
+        OJT_RETRIEVAL_HNSW_EF_SEARCH=int(
+            os.getenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", str(DEFAULT_RETRIEVAL_HNSW_EF_SEARCH))
         ),
         OJT_RERANK_PROVIDER=_parse_rerank_provider(os.getenv("OJT_RERANK_PROVIDER")),
         OJT_RERANK_MODEL=_parse_rerank_model(os.getenv("OJT_RERANK_MODEL")),

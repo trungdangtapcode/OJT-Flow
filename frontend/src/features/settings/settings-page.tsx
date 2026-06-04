@@ -242,6 +242,16 @@ export function SettingsPage() {
                         : "disabled"
                   }
                 />
+                <SettingRow
+                  label="HNSW search"
+                  value={
+                    runtime
+                      ? runtime.retrieval?.hnsw_ef_search
+                        ? `ef_search ${runtime.retrieval.hnsw_ef_search}`
+                        : "Postgres vector tuning unavailable"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                />
               </RuntimeFactGroup>
             </div>
 

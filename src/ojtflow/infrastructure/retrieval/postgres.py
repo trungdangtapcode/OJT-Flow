@@ -42,6 +42,7 @@ class PostgresRetrievalRepository:
         corpus_dirs: tuple[Path, ...] | None = None,
         chunk_max_chars: int = 1200,
         chunk_overlap_chars: int = 160,
+        hnsw_ef_search: int = 100,
         seed_defaults: bool = True,
     ) -> None:
         self.backbone = backbone
@@ -55,6 +56,7 @@ class PostgresRetrievalRepository:
         self.corpus_dirs = corpus_dirs or (self.knowledge_root / "corpus",)
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap_chars = chunk_overlap_chars
+        self.hnsw_ef_search = hnsw_ef_search
         if seed_defaults:
             self.seed_defaults()
 
@@ -295,6 +297,11 @@ class PostgresRetrievalRepository:
         )
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
+                if vector_literal is not None:
+                    cursor.execute(
+                        "select set_config('hnsw.ef_search', %s, true)",
+                        (str(self.hnsw_ef_search),),
+                    )
                 cursor.execute(
                     f"""
                     select

@@ -108,6 +108,7 @@ def _build_workflow_service() -> WorkflowService:
             corpus_dirs=settings.resolved_retrieval_corpus_dirs,
             chunk_max_chars=settings.retrieval_chunk_max_chars,
             chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            hnsw_ef_search=settings.retrieval_hnsw_ef_search,
         )
     elif settings.storage_backend == "sqlite":
         backbone = SQLiteBackboneStore(

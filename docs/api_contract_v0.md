@@ -696,6 +696,7 @@ Response data includes:
 - `retrieval.corpus_dir_count`
 - `retrieval.chunk_max_chars`
 - `retrieval.chunk_overlap_chars`
+- `retrieval.hnsw_ef_search`
 - `upload.max_upload_bytes`
 - `upload.max_inline_data_bytes`
 - `upload.allowed_extensions`
@@ -733,7 +734,10 @@ Example:
     "retrieval": {
       "corpus_dir_count": 1,
       "chunk_max_chars": 1200,
-      "chunk_overlap_chars": 160
+      "chunk_overlap_chars": 160,
+      "diversity_enabled": true,
+      "diversity_lambda": 0.72,
+      "hnsw_ef_search": 100
     },
     "upload": {
       "max_upload_bytes": 26214400,
@@ -745,6 +749,11 @@ Example:
   "error": null
 }
 ```
+
+`retrieval.hnsw_ef_search` is the Postgres pgvector HNSW query-depth setting
+applied transaction-locally for vector candidate retrieval. Higher values
+increase recall and latency; lower values reduce latency and can miss more
+approximate-nearest-neighbor candidates.
 
 `GET /api/v1/runtime/readiness`
 

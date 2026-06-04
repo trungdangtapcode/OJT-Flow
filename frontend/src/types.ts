@@ -552,6 +552,7 @@ export type RuntimeConfig = {
     chunk_overlap_chars: number;
     diversity_enabled?: boolean;
     diversity_lambda?: number;
+    hnsw_ef_search?: number;
   };
   upload: {
     max_upload_bytes: number;

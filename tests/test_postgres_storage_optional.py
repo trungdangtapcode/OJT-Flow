@@ -5,6 +5,7 @@ import pytest
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision, WorkflowStatus
+from ojtflow.core.contracts.retrieval import RetrievalQuery
 from ojtflow.core.errors import NotFoundError
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
@@ -26,6 +27,46 @@ class _FakePostgresBackbone:
         self.outputs_dir = data_dir / "outputs"
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
+
+
+class _FakeRetrievalCursor:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, tuple[object, ...]]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    def execute(self, sql: str, params: tuple[object, ...] = ()) -> None:
+        self.executed.append((sql, params))
+
+    def fetchall(self) -> list[dict]:
+        return []
+
+
+class _FakeRetrievalConnection:
+    def __init__(self, cursor: _FakeRetrievalCursor) -> None:
+        self._cursor = cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    def cursor(self) -> _FakeRetrievalCursor:
+        return self._cursor
+
+
+class _FakeRetrievalBackbone(_FakePostgresBackbone):
+    def __init__(self, data_dir: Path) -> None:
+        super().__init__(data_dir)
+        self.cursor = _FakeRetrievalCursor()
+
+    def connect(self) -> _FakeRetrievalConnection:
+        return _FakeRetrievalConnection(self.cursor)
 
 
 def test_postgres_dataset_store_rejects_file_refs_outside_artifact_roots(
@@ -50,6 +91,29 @@ def test_postgres_dataset_store_rejects_file_refs_outside_artifact_roots(
         store.get_text(f"file://evil-host{safe_file.resolve().as_uri().removeprefix('file://')}")
     with pytest.raises(NotFoundError, match="absolute file URI"):
         store.get_text("file:var/outputs/relative.txt")
+
+
+def test_postgres_retrieval_sets_hnsw_ef_search_for_vector_queries(tmp_path: Path) -> None:
+    backbone = _FakeRetrievalBackbone(tmp_path / "var")
+    repository = PostgresRetrievalRepository(
+        backbone,
+        ROOT / "knowledge",
+        hnsw_ef_search=175,
+        seed_defaults=False,
+    )
+    repository._vector_column_dimensions = lambda: 64
+
+    chunks, warnings = repository._load_candidate_chunks(
+        RetrievalQuery(query="FHIR Observation lab evidence", top_k=3)
+    )
+
+    assert chunks == []
+    assert warnings == []
+    assert backbone.cursor.executed[0] == (
+        "select set_config('hnsw.ef_search', %s, true)",
+        ("175",),
+    )
+    assert "from ojtflow.knowledge_chunks" in backbone.cursor.executed[1][0]
 
 
 @pytest.mark.skipif(

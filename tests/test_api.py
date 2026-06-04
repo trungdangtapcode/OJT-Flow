@@ -893,6 +893,7 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     monkeypatch.setenv("OJT_RERANK_SCORE_WEIGHT", "0.2")
     monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_ENABLED", "true")
     monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", "0.6")
+    monkeypatch.setenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", "150")
     monkeypatch.setenv("OJT_MAX_INLINE_DATA_BYTES", "4096")
     clear_settings_cache()
     clear_workflow_service_cache()
@@ -926,6 +927,7 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         }
         assert body["retrieval"]["diversity_enabled"] is True
         assert body["retrieval"]["diversity_lambda"] == 0.6
+        assert body["retrieval"]["hnsw_ef_search"] == 150
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text
