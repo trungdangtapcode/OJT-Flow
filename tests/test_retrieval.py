@@ -276,6 +276,56 @@ def test_query_analysis_builds_medical_search_hints() -> None:
     assert "subject=Patient/<id>" in fhir_hints["fhir"].query
 
 
+def test_query_analysis_uses_data_driven_search_hint_targets(tmp_path, monkeypatch) -> None:
+    registry_path = tmp_path / "search_hint_targets.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_search_hint_targets.v1",
+                "targets": [
+                    {
+                        "target": "pubmed",
+                        "label": "Custom PubMed",
+                        "rationale": "Custom PubMed rationale",
+                        "warnings": ["Custom PubMed warning"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_SEARCH_HINT_TARGETS_PATH", str(registry_path))
+
+    analysis = analyze_query(RetrievalQuery(query="PubMed HbA1c systematic review"))
+    hint = {hint.target: hint for hint in analysis.search_hints}["pubmed"]
+
+    assert hint.rationale == "Custom PubMed rationale"
+    assert hint.warnings == ["Custom PubMed warning"]
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_search_hint_targets.v1",
+                "targets": [
+                    {
+                        "target": "pubmed",
+                        "label": "Reloaded PubMed",
+                        "rationale": "Reloaded PubMed rationale",
+                        "warnings": ["Reloaded PubMed warning"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="PubMed HbA1c systematic review"))
+    reloaded_hint = {hint.target: hint for hint in reloaded.search_hints}["pubmed"]
+
+    assert reloaded_hint.rationale == "Reloaded PubMed rationale"
+    assert reloaded_hint.warnings == ["Reloaded PubMed warning"]
+
+
 def test_query_analysis_uses_mesh_seed_concepts_in_pubmed_hint() -> None:
     analysis = analyze_query(
         RetrievalQuery(query="PubMed hypertension systematic review")
@@ -425,6 +475,7 @@ def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
     assert sources["standard:clinical_data_standards_map_v1"].source_type == EvidenceSourceType.HEALTHCARE_STANDARD
     assert sources["dictionary:medical_search_playbook_v1"].clinical_domain == "retrieval"
     assert sources["dictionary:query_expansion_rules_v1"].standard_system == "ojtflow_retrieval"
+    assert sources["dictionary:search_hint_targets_v1"].standard_system == "ojtflow_retrieval"
 
 
 def test_static_retrieval_integrity_report_matches_seeded_knowledge() -> None:
@@ -485,6 +536,7 @@ def test_knowledge_json_sources_are_valid() -> None:
         ROOT / "knowledge/terminologies/medical_concepts.json",
         ROOT / "knowledge/terminologies/fhir_search_parameters.json",
         ROOT / "knowledge/retrieval/query_expansion_rules.json",
+        ROOT / "knowledge/retrieval/search_hint_targets.json",
         ROOT / "knowledge/source_catalog/official_healthcare_sources.json",
     ]:
         parsed = json.loads(path.read_text(encoding="utf-8"))

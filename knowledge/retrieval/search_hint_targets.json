@@ -1,0 +1,50 @@
+{
+  "version": "retrieval_search_hint_targets.v1",
+  "targets": [
+    {
+      "target": "pubmed",
+      "label": "PubMed",
+      "rationale": "Use PubMed automatic term mapping for broad discovery, then verify MeSH translations and title/abstract text-word coverage.",
+      "warnings": [
+        "Confirm preferred MeSH headings in PubMed Search Details or the MeSH database before using this as a final literature strategy.",
+        "Quoted phrases, field tags, and wildcards can change PubMed automatic term mapping behavior."
+      ]
+    },
+    {
+      "target": "fhir",
+      "label": "FHIR search",
+      "rationale": "Use FHIR resource-specific search parameters first and fall back to text search only when structured fields are unavailable.",
+      "warnings": [
+        "This is a template only; replace placeholders with validated identifiers, codes, and dates.",
+        "FHIR servers vary in which optional resource search parameters they implement."
+      ]
+    },
+    {
+      "target": "clinicaltrials_gov",
+      "label": "ClinicalTrials.gov API v2",
+      "rationale": "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, intervention, recruitment status, and eligibility fields.",
+      "warnings": [
+        "Trial status and eligibility can change; verify the API version and dataTimestamp before using results in a workflow.",
+        "Trial records provide research context and are not clinical treatment recommendations."
+      ]
+    },
+    {
+      "target": "openfda_drug_label",
+      "label": "openFDA drug label",
+      "rationale": "Use openFDA drug labeling for public regulatory label context, boxed-warning review, and current label text retrieval.",
+      "warnings": [
+        "openFDA label data is public regulatory information, not clinical advice.",
+        "Verify effective_time, product identity, and active ingredient before citing a label record."
+      ]
+    },
+    {
+      "target": "openfda_drug_event",
+      "label": "openFDA adverse event",
+      "rationale": "Use openFDA adverse event reports for public FAERS signal context after medication identity is normalized.",
+      "warnings": [
+        "FAERS/openFDA adverse event reports are spontaneous reports and cannot establish causality or incidence.",
+        "Use adverse-event counts as signal context only, with source and date provenance."
+      ]
+    }
+  ]
+}

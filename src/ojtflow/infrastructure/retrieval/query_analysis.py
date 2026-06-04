@@ -28,6 +28,9 @@ DEFAULT_MEDICAL_CONCEPT_REGISTRY = (
 DEFAULT_QUERY_EXPANSION_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_expansion_rules.json"
 )
+DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +43,16 @@ class QueryExpansionRule:
     expanded_terms: tuple[str, ...]
     standards: tuple[str, ...]
     variant: str
+
+
+@dataclass(frozen=True)
+class SearchHintTarget:
+    """Operator-facing metadata for one external search target."""
+
+    target: str
+    label: str
+    rationale: str
+    warnings: tuple[str, ...]
 
 
 def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
@@ -238,6 +251,95 @@ def _ensure_unique_rule_ids(rules: tuple[QueryExpansionRule, ...], *, path: Path
         duplicate_text = ", ".join(sorted(duplicates))
         raise ValueError(
             f"Invalid query expansion registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
+def _search_hint_target(target: str) -> SearchHintTarget:
+    targets = {item.target: item for item in _search_hint_targets()}
+    return targets.get(
+        target,
+        SearchHintTarget(
+            target=target,
+            label=target,
+            rationale="Review target-specific search syntax before use.",
+            warnings=(),
+        ),
+    )
+
+
+def _search_hint_targets() -> tuple[SearchHintTarget, ...]:
+    path = os.environ.get("OJT_SEARCH_HINT_TARGETS_PATH")
+    return _load_search_hint_targets(path or str(DEFAULT_SEARCH_HINT_TARGET_REGISTRY))
+
+
+def _load_search_hint_targets(path_text: str) -> tuple[SearchHintTarget, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("targets") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid search hint target registry at {path}: expected targets list")
+
+    targets = tuple(_search_hint_target_record(record, path=path) for record in records)
+    _ensure_unique_search_hint_targets(targets, path=path)
+    return targets
+
+
+def _search_hint_target_record(record: Any, *, path: Path) -> SearchHintTarget:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid search hint target registry at {path}: target must be an object")
+    required = ("target", "label", "rationale", "warnings")
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(
+            f"Invalid search hint target registry at {path}: missing {missing_text}"
+        )
+    return SearchHintTarget(
+        target=_required_search_hint_text(record["target"], field="target", path=path),
+        label=_required_search_hint_text(record["label"], field="label", path=path),
+        rationale=_required_search_hint_text(record["rationale"], field="rationale", path=path),
+        warnings=_search_hint_text_tuple(record["warnings"], field="warnings", path=path),
+    )
+
+
+def _search_hint_text_tuple(value: Any, *, field: str, path: Path) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid search hint target registry at {path}: {field} must be a list")
+    items = tuple(
+        normalized
+        for item in value
+        for normalized in [" ".join(str(item).split())]
+        if normalized
+    )
+    if not items:
+        raise ValueError(f"Invalid search hint target registry at {path}: {field} cannot be empty")
+    return items
+
+
+def _required_search_hint_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid search hint target registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _ensure_unique_search_hint_targets(
+    targets: tuple[SearchHintTarget, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for target in targets:
+        if target.target in seen:
+            duplicates.add(target.target)
+        seen.add(target.target)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid search hint target registry at {path}: duplicate target {duplicate_text}"
         )
 
 
@@ -516,18 +618,13 @@ def _pubmed_search_hint(
         concept_candidates=concept_candidates,
     )
     text_query = " AND ".join(terms) if terms else query.query
+    target = _search_hint_target("pubmed")
     return RetrievalSearchHint(
-        target="pubmed",
+        target=target.target,
         query=text_query,
         url=f"https://pubmed.ncbi.nlm.nih.gov/?term={quote_plus(text_query)}",
-        rationale=(
-            "Use PubMed automatic term mapping for broad discovery, then verify "
-            "MeSH translations and title/abstract text-word coverage."
-        ),
-        warnings=[
-            "Confirm preferred MeSH headings in PubMed Search Details or the MeSH database before using this as a final literature strategy.",
-            "Quoted phrases, field tags, and wildcards can change PubMed automatic term mapping behavior.",
-        ],
+        rationale=target.rationale,
+        warnings=list(target.warnings),
     )
 
 
@@ -537,24 +634,14 @@ def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
         template = (
             "Observation?code=<loinc-code>&subject=Patient/<id>&date=ge<yyyy-mm-dd>"
         )
-        rationale = (
-            "FHIR Observation search should bind lab concepts through code, subject, "
-            "and date parameters after validated source fields are available."
-        )
     else:
         template = f"{resource_type}?_text=<clinical-text>&_profile=<profile-url>"
-        rationale = (
-            "FHIR resource search should start with resource-specific parameters and "
-            "only fall back to _text when structured fields are unavailable."
-        )
+    target = _search_hint_target("fhir")
     return RetrievalSearchHint(
-        target="fhir",
+        target=target.target,
         query=template,
-        rationale=rationale,
-        warnings=[
-            "This is a template only; replace placeholders with validated identifiers, codes, and dates.",
-            "FHIR servers vary in which optional resource search parameters they implement.",
-        ],
+        rationale=target.rationale,
+        warnings=list(target.warnings),
     )
 
 
@@ -592,18 +679,13 @@ def _clinicaltrials_search_hint(
     )
     query_string = "&".join(f"{key}={quote_plus(value)}" for key, value in params)
     url = f"https://clinicaltrials.gov/api/v2/studies?{query_string}"
+    target = _search_hint_target("clinicaltrials_gov")
     return RetrievalSearchHint(
-        target="clinicaltrials_gov",
+        target=target.target,
         query=url,
         url=url,
-        rationale=(
-            "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, "
-            "intervention, recruitment status, and eligibility fields."
-        ),
-        warnings=[
-            "Trial status and eligibility can change; verify the API version and dataTimestamp before using results in a workflow.",
-            "Trial records provide research context and are not clinical treatment recommendations.",
-        ],
+        rationale=target.rationale,
+        warnings=list(target.warnings),
     )
 
 
@@ -627,32 +709,22 @@ def _openfda_search_hints(
         "https://api.fda.gov/drug/event.json?"
         f"search=patient.drug.openfda.generic_name:{encoded_drug}&limit=10"
     )
+    label_target = _search_hint_target("openfda_drug_label")
+    event_target = _search_hint_target("openfda_drug_event")
     return [
         RetrievalSearchHint(
-            target="openfda_drug_label",
+            target=label_target.target,
             query=label_url,
             url=label_url,
-            rationale=(
-                "Use openFDA drug labeling for public regulatory label context, "
-                "boxed-warning review, and current label text retrieval."
-            ),
-            warnings=[
-                "openFDA label data is public regulatory information, not clinical advice.",
-                "Verify effective_time, product identity, and active ingredient before citing a label record.",
-            ],
+            rationale=label_target.rationale,
+            warnings=list(label_target.warnings),
         ),
         RetrievalSearchHint(
-            target="openfda_drug_event",
+            target=event_target.target,
             query=event_url,
             url=event_url,
-            rationale=(
-                "Use openFDA adverse event reports for public FAERS signal context "
-                "after medication identity is normalized."
-            ),
-            warnings=[
-                "FAERS/openFDA adverse event reports are spontaneous reports and cannot establish causality or incidence.",
-                "Use adverse-event counts as signal context only, with source and date provenance.",
-            ],
+            rationale=event_target.rationale,
+            warnings=list(event_target.warnings),
         ),
     ]
 

@@ -115,6 +115,7 @@ Seeded v0 sources include:
 - OMOP CDM analytics export direction
 - MeSH/PubMed biomedical literature-search direction
 - query expansion rule registry for deterministic healthcare retrieval variants
+- medical search hint target registry for external target rationale and warnings
 - an official healthcare source catalog covering MeSH, RxNorm/RxNav, LOINC,
   FHIR R4, UCUM, MedlinePlus, openFDA, and ClinicalTrials.gov
 - a public dataset ingestion plan that keeps large third-party corpora out of
@@ -134,6 +135,8 @@ not a bulk data dump. It now contains:
   seed registry used by deterministic query analysis.
 - `knowledge/retrieval/query_expansion_rules.json`: deterministic query
   expansion rules used by the analyzer before first-stage retrieval.
+- `knowledge/retrieval/search_hint_targets.json`: target metadata for
+  external medical search hints, including operator rationale and warnings.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
   parameter templates for resource-level search hints.
 - `knowledge/corpus/clinical_data_standards_map.md`: project-scope map from
@@ -214,7 +217,7 @@ The public retrieval package exposes this under
     {
       "target": "fhir",
       "query": "Observation?code=<loinc-code>&subject=Patient/<id>&date=ge<yyyy-mm-dd>",
-      "rationale": "FHIR Observation search should bind lab concepts through code, subject, and date parameters after validated source fields are available.",
+      "rationale": "Use FHIR resource-specific search parameters first and fall back to text search only when structured fields are unavailable.",
       "warnings": [
         "This is a template only; replace placeholders with validated identifiers, codes, and dates."
       ]
@@ -265,6 +268,12 @@ automatically and are not clinical recommendations. Each hint carries the
 search syntax in `query` and may include a launchable `url` when the target has
 a stable public endpoint. The React trace renders those hints with copy/open
 actions from backend data instead of hardcoding external search URLs in the UI.
+Target rationale and warnings are loaded from
+`knowledge/retrieval/search_hint_targets.json`, while provider-specific query
+syntax, URL encoding, and template construction remain deterministic analyzer
+logic. The analyzer reads the registry on request so trusted target metadata can
+change without a code edit. `OJT_SEARCH_HINT_TARGETS_PATH` can point the runtime
+to a deployment-specific target registry.
 For example, `PubMed systematic review HbA1c units` produces a `pubmed` hint
 that combines HbA1c title/abstract terms, unit terms, and publication-type
 terms, plus a PubMed URL using the same encoded search statement, while warning
