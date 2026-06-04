@@ -262,8 +262,18 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Relevance judgment" in retrieval_page
     assert "relevanceJudgments" in retrieval_page
     assert "judgmentsForComparison" in retrieval_page
+    assert "RelevanceJudgmentSummary" in retrieval_page
+    assert "Judgment metrics" in retrieval_page
+    assert "relevanceJudgmentMetrics" in retrieval_page
     assert "relevanceJudgmentRating" in retrieval_page
+    assert "judgmentsForRunHits" in retrieval_page
+    assert "discountedCumulativeGain" in retrieval_page
+    assert "Precision@k" in retrieval_page
+    assert "nDCG@k" in retrieval_page
+    assert "judgmentCoverage" in retrieval_page
+    assert "judgedPrecision" in retrieval_page
     assert "not_relevant" in retrieval_page
+    assert "judgment-aware metrics" in frontend_architecture
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page

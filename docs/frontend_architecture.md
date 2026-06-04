@@ -183,6 +183,9 @@ baseline payload, summaries, deltas, metrics, evidence changes, and rank
 movement so tuning notes can be reproduced outside the browser. Result cards
 should collect explicit relevance judgments for the query-document pair and
 include those judgments in comparison reports as imported-judgment scaffolding.
+The results panel should summarize judgment-aware metrics from current
+in-session judgments, including coverage, Precision@k, judged precision, and
+nDCG@k.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.

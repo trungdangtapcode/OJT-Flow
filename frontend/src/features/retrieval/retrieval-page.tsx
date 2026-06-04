@@ -117,6 +117,18 @@ type RelevanceJudgment = {
   value: RelevanceJudgmentValue;
 };
 type RelevanceJudgmentIndex = Record<string, RelevanceJudgment>;
+type RelevanceJudgmentMetrics = {
+  averageRating: number | null;
+  judgedCount: number;
+  judgedPrecision: number | null;
+  judgmentCoverage: number;
+  ndcgAtK: number | null;
+  notRelevantCount: number;
+  partialCount: number;
+  precisionAtK: number;
+  relevantCount: number;
+  totalHits: number;
+};
 type RetrievalRunComparison = {
   addedEvidenceIds: string[];
   activePayload: RetrievalSearchPayload;
@@ -1436,6 +1448,10 @@ function SearchResults({
     ? activeFacetFiltersFromPayload(submittedSearchPayload)
     : activeFilters;
   const diversitySelections = diversitySelectionByEvidenceId(packageData);
+  const runJudgments = runId
+    ? judgmentsForRunHits(runId, packageData.hits, relevanceJudgments)
+    : [];
+  const judgmentMetrics = relevanceJudgmentMetrics(packageData.hits, runJudgments);
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -1463,6 +1479,7 @@ function SearchResults({
             payload={submittedSearchPayload}
           />
         ) : null}
+        <RelevanceJudgmentSummary metrics={judgmentMetrics} />
         <ResultFacets
           activeFilters={resultFilters}
           facets={packageData.facets}
@@ -1567,6 +1584,72 @@ function ResultFacets({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function RelevanceJudgmentSummary({ metrics }: { metrics: RelevanceJudgmentMetrics }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Judgment metrics
+        </div>
+        <Badge variant={metrics.judgedCount ? "success" : "muted"}>
+          {formatCount(metrics.judgedCount, "judged hit")}
+        </Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <JudgmentMetricCard
+          label="Coverage"
+          tone={metrics.judgmentCoverage >= 0.5 ? "success" : "warning"}
+          value={formatPercent(metrics.judgmentCoverage)}
+        />
+        <JudgmentMetricCard
+          label="Precision@k"
+          tone={metrics.precisionAtK >= 0.5 ? "success" : "warning"}
+          value={formatPercent(metrics.precisionAtK)}
+        />
+        <JudgmentMetricCard
+          label="Judged precision"
+          tone={(metrics.judgedPrecision ?? 0) >= 0.5 ? "success" : "warning"}
+          value={formatNullablePercent(metrics.judgedPrecision)}
+        />
+        <JudgmentMetricCard
+          label="nDCG@k"
+          tone={(metrics.ndcgAtK ?? 0) >= 0.5 ? "success" : "warning"}
+          value={formatNullableDecimal(metrics.ndcgAtK)}
+        />
+      </div>
+      {metrics.judgedCount ? (
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          <Badge variant="success">{formatCount(metrics.relevantCount, "relevant")}</Badge>
+          <Badge variant="warning">{formatCount(metrics.partialCount, "partial")}</Badge>
+          <Badge variant="destructive">
+            {formatCount(metrics.notRelevantCount, "not relevant")}
+          </Badge>
+          <Badge variant="muted">
+            average rating {formatNullableDecimal(metrics.averageRating)}
+          </Badge>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function JudgmentMetricCard({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "success" | "warning";
+  value: string;
+}) {
+  return (
+    <div className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2">
+      <span className="text-xs font-bold text-muted-foreground">{label}</span>
+      <Badge variant={tone}>{value}</Badge>
     </div>
   );
 }
@@ -3748,8 +3831,73 @@ function judgmentsForComparison(
     .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId));
 }
 
+function judgmentsForRunHits(
+  runId: string,
+  hits: RetrievalHit[],
+  judgments: RelevanceJudgmentIndex,
+): RelevanceJudgment[] {
+  return hits
+    .map((hit) => judgments[relevanceJudgmentKey(runId, hit.evidence.evidence_id)] ?? null)
+    .filter((judgment): judgment is RelevanceJudgment => judgment !== null);
+}
+
 function relevanceJudgmentKey(runId: string, evidenceId: string): string {
   return `${runId}:${evidenceId}`;
+}
+
+function relevanceJudgmentMetrics(
+  hits: RetrievalHit[],
+  judgments: RelevanceJudgment[],
+): RelevanceJudgmentMetrics {
+  const totalHits = hits.length;
+  const ratingsByEvidenceId = new Map(
+    judgments.map((judgment) => [
+      judgment.evidenceId,
+      relevanceJudgmentRating(judgment.value),
+    ]),
+  );
+  const rankedRatings = hits.map(
+    (hit) => ratingsByEvidenceId.get(hit.evidence.evidence_id) ?? 0,
+  );
+  const judgedRatings = judgments.map((judgment) =>
+    relevanceJudgmentRating(judgment.value),
+  );
+  const relevantCount = judgments.filter(
+    (judgment) => judgment.value === "relevant",
+  ).length;
+  const partialCount = judgments.filter(
+    (judgment) => judgment.value === "partial",
+  ).length;
+  const notRelevantCount = judgments.filter(
+    (judgment) => judgment.value === "not_relevant",
+  ).length;
+  const positiveJudgments = relevantCount + partialCount;
+  const dcg = discountedCumulativeGain(rankedRatings);
+  const idealDcg = discountedCumulativeGain(
+    [...rankedRatings].sort((left, right) => right - left),
+  );
+
+  return {
+    averageRating: judgedRatings.length
+      ? judgedRatings.reduce((total, rating) => total + rating, 0) / judgedRatings.length
+      : null,
+    judgedCount: judgments.length,
+    judgedPrecision: judgments.length ? positiveJudgments / judgments.length : null,
+    judgmentCoverage: totalHits ? judgments.length / totalHits : 0,
+    ndcgAtK: idealDcg ? dcg / idealDcg : null,
+    notRelevantCount,
+    partialCount,
+    precisionAtK: totalHits ? positiveJudgments / totalHits : 0,
+    relevantCount,
+    totalHits,
+  };
+}
+
+function discountedCumulativeGain(ratings: number[]): number {
+  return ratings.reduce((total, rating, index) => {
+    if (rating <= 0) return total;
+    return total + (2 ** rating - 1) / Math.log2(index + 2);
+  }, 0);
 }
 
 function relevanceJudgmentRating(value: RelevanceJudgmentValue): number {
@@ -3880,6 +4028,14 @@ function formatPercent(value: number): string {
 function formatDecimal(value: number): string {
   if (!Number.isFinite(value)) return "n/a";
   return value.toFixed(1);
+}
+
+function formatNullablePercent(value: number | null): string {
+  return value === null ? "n/a" : formatPercent(value);
+}
+
+function formatNullableDecimal(value: number | null): string {
+  return value === null ? "n/a" : formatDecimal(value);
 }
 
 function formatRunTime(submittedAt: string): string {
