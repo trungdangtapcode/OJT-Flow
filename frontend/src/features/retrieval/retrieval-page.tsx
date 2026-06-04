@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+  BrainCircuit,
   Database,
   FileSearch,
   Gauge,
@@ -40,6 +41,7 @@ import type {
   RetrievalHit,
   RetrievalPackage,
   RetrievalSource,
+  RuntimeConfig,
 } from "../../types";
 
 const defaultQuery = "HbA1c lab CSV missing units FHIR Observation";
@@ -129,7 +131,7 @@ export function RetrievalPage() {
 
       <RetrievalSummary
         packageData={packageData}
-        runtimeProvider={runtimeQuery.data?.embedding.provider}
+        runtime={runtimeQuery.data}
         sources={sources}
         sourcesLoading={sourcesQuery.isLoading}
       />
@@ -300,18 +302,24 @@ export function RetrievalPage() {
 
 function RetrievalSummary({
   packageData,
-  runtimeProvider,
+  runtime,
   sources,
   sourcesLoading,
 }: {
   packageData: RetrievalPackage | undefined;
-  runtimeProvider: string | undefined;
+  runtime: RuntimeConfig | undefined;
   sources: RetrievalSource[];
   sourcesLoading: boolean;
 }) {
   const graph = packageData?.handoff_context.graph_context;
+  const packageRuntime = packageData ? rankingStackFromPackage(packageData) : null;
+  const rerankerEnabled = Boolean(
+    packageRuntime?.reranker.enabled ?? runtime?.rerank?.enabled,
+  );
+  const embeddingProvider = packageRuntime?.embedding.provider ?? runtime?.embedding.provider;
+  const rerankerProvider = packageRuntime?.reranker.provider ?? runtime?.rerank?.provider;
   return (
-    <SummaryStrip>
+    <SummaryStrip columns={5}>
       <SummaryStripItem
         icon={Database}
         label="Sources"
@@ -336,9 +344,22 @@ function RetrievalSummary({
       <SummaryStripItem
         icon={Network}
         label="Graph nodes"
-        supporting={runtimeProvider ? `${runtimeProvider} embeddings` : "Runtime loading"}
+        supporting={embeddingProvider ? `${embeddingProvider} embeddings` : "Runtime loading"}
         tone="success"
         value={graph?.nodes.length ?? 0}
+      />
+      <SummaryStripItem
+        icon={BrainCircuit}
+        label="Reranker"
+        supporting={
+          rerankerProvider
+            ? rerankerEnabled
+              ? `${rerankerProvider} second stage`
+              : `${rerankerProvider} disabled`
+            : "Runtime loading"
+        }
+        tone={rerankerEnabled ? "success" : "neutral"}
+        value={rerankerEnabled ? "on" : "off"}
       />
     </SummaryStrip>
   );
@@ -371,7 +392,10 @@ function SearchResults({ packageData }: { packageData: RetrievalPackage | undefi
             {formatCount(packageData.trace.candidates_seen, "candidate")}
           </CardDescription>
         </div>
-        <Badge variant="muted">{packageData.trace.strategy}</Badge>
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          <Badge variant="muted">{packageData.trace.strategy}</Badge>
+          <RerankBadge packageData={packageData} />
+        </div>
       </CardHeader>
       <CardContent className="grid gap-3 pt-4">
         {packageData.hits.map((hit, index) => (
@@ -472,6 +496,7 @@ function ScoreMeter({ label, value }: { label: string; value: number }) {
 
 function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined }) {
   const trace = packageData?.trace;
+  const stack = packageData ? rankingStackFromPackage(packageData) : null;
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="border-b border-border bg-card/70">
@@ -489,6 +514,14 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
             <TraceFact label="Strategy" value={trace.strategy} />
             <TraceFact label="Candidates" value={String(trace.candidates_seen)} />
             <TraceFact
+              label="Embedding"
+              value={stack ? formatEmbeddingStack(stack) : "unknown"}
+            />
+            <TraceFact
+              label="Reranker"
+              value={stack ? formatRerankerStack(stack) : "unknown"}
+            />
+            <TraceFact
               label="Filters"
               value={Object.keys(trace.filters_applied).length ? JSON.stringify(trace.filters_applied) : "none"}
             />
@@ -500,6 +533,14 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
       </CardContent>
     </Card>
   );
+}
+
+function RerankBadge({ packageData }: { packageData: RetrievalPackage }) {
+  const stack = rankingStackFromPackage(packageData);
+  if (!stack.reranker.enabled) {
+    return <Badge variant="muted">first stage only</Badge>;
+  }
+  return <Badge variant="success">reranked</Badge>;
 }
 
 function GraphPanel({ graphContext }: { graphContext: RetrievalGraphContext | undefined }) {
@@ -687,6 +728,74 @@ function GraphCounter({ label, value }: { label: string; value: number }) {
       <div className="mt-1 text-xl font-black tabular-nums">{value}</div>
     </div>
   );
+}
+
+type RankingStack = {
+  embedding: {
+    dimensions: number | null;
+    model: string;
+    provider: string;
+  };
+  reranker: {
+    device: string | null;
+    enabled: boolean;
+    model: string;
+    provider: string;
+  };
+};
+
+function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
+  const embedding = recordValue(packageData.handoff_context.embedding);
+  const reranker = recordValue(packageData.handoff_context.reranker);
+  const rerankerProvider = stringValue(reranker.provider, "none");
+  return {
+    embedding: {
+      dimensions: numberValue(embedding.dimensions),
+      model: stringValue(embedding.model, "unknown"),
+      provider: stringValue(embedding.provider, "unknown"),
+    },
+    reranker: {
+      device: optionalStringValue(reranker.device),
+      enabled: booleanValue(reranker.enabled) && rerankerProvider !== "none",
+      model: stringValue(reranker.model, "none"),
+      provider: rerankerProvider,
+    },
+  };
+}
+
+function formatEmbeddingStack(stack: RankingStack): string {
+  const dimensions = stack.embedding.dimensions ? ` / ${stack.embedding.dimensions}d` : "";
+  return `${stack.embedding.provider} / ${stack.embedding.model}${dimensions}`;
+}
+
+function formatRerankerStack(stack: RankingStack): string {
+  if (!stack.reranker.enabled) {
+    return `${stack.reranker.provider} disabled`;
+  }
+  const device = stack.reranker.device ? ` / ${stack.reranker.device}` : "";
+  return `${stack.reranker.provider} / ${stack.reranker.model}${device}`;
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function optionalStringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanValue(value: unknown): boolean {
+  return value === true;
 }
 
 function parseFields(value: string) {
