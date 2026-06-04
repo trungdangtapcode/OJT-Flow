@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -22,6 +22,34 @@ class RetrievalQuery(ContractModel):
     resource_type: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
     filters: dict[str, Any] = Field(default_factory=dict)
+
+
+RetrievalJudgmentValue = Literal["relevant", "partial", "not_relevant"]
+
+
+class RetrievalRelevanceJudgmentWrite(ContractModel):
+    """Validated operator relevance judgment before persistence metadata."""
+
+    query: NonBlankStr
+    evidence_id: NonBlankStr
+    value: RetrievalJudgmentValue
+    rating: int = Field(ge=0, le=3)
+    source_id: NonBlankStr | None = None
+    source_type: EvidenceSourceType | None = None
+    source_version: NonBlankStr | None = None
+    run_id: NonBlankStr | None = None
+    search_signature: NonBlankStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalRelevanceJudgment(RetrievalRelevanceJudgmentWrite):
+    """Durable relevance judgment for search evaluation and tuning."""
+
+    judgment_id: NonBlankStr
+    owner_user_id: NonBlankStr
+    query_hash: NonBlankStr
+    created_at: NonBlankStr
+    updated_at: NonBlankStr
 
 
 class RetrievalSnippet(ContractModel):

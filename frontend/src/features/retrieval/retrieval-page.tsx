@@ -35,7 +35,10 @@ import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-stri
 import { Table, TBody, TD, TH, THead, TR } from "../../components/ui/table";
 import {
   useRetrievalReindexMutation,
+  useDeleteRetrievalJudgmentMutation,
   useRetrievalIntegrityQuery,
+  useRetrievalJudgmentMutation,
+  useRetrievalJudgmentsQuery,
   useRetrievalPresetsQuery,
   useRetrievalSearchOptionsQuery,
   useRetrievalSearchMutation,
@@ -56,6 +59,7 @@ import type {
   RetrievalFacets,
   RetrievalQualitySignal,
   RetrievalQueryVariant,
+  RetrievalRelevanceJudgment,
   RetrievalScoreComponent,
   RetrievalSearchPayload,
   RetrievalSearchOption,
@@ -112,8 +116,12 @@ type RelevanceJudgmentValue = "relevant" | "partial" | "not_relevant";
 type RelevanceJudgment = {
   evidenceId: string;
   judgedAt: string;
+  judgmentId?: string | null;
   query: string;
+  rating: number;
   runId: string;
+  searchSignature?: string | null;
+  sourceId?: string | null;
   value: RelevanceJudgmentValue;
 };
 type RelevanceJudgmentIndex = Record<string, RelevanceJudgment>;
@@ -214,6 +222,8 @@ export function RetrievalPage() {
   });
   const searchMutation = useRetrievalSearchMutation();
   const reindexMutation = useRetrievalReindexMutation();
+  const upsertJudgmentMutation = useRetrievalJudgmentMutation();
+  const deleteJudgmentMutation = useDeleteRetrievalJudgmentMutation();
   const [query, setQuery] = React.useState("");
   const [fields, setFields] = React.useState("");
   const [schemaId, setSchemaId] = React.useState("");
@@ -241,6 +251,10 @@ export function RetrievalPage() {
     () => searchRuns.find((run) => run.runId === activeRunId) ?? null,
     [activeRunId, searchRuns],
   );
+  const persistedJudgmentsQuery = useRetrievalJudgmentsQuery({
+    query: activeRun?.payload.query ?? null,
+    limit: 500,
+  });
   const activeRunComparison = React.useMemo(() => {
     if (!activeRun) return null;
     const baselineRun = comparisonRunForActive(
@@ -372,6 +386,29 @@ export function RetrievalPage() {
     });
   }, [searchRuns]);
 
+  React.useEffect(() => {
+    if (!activeRun || !persistedJudgmentsQuery.data) return;
+    const hitEvidenceIds = new Set(
+      activeRun.packageData.hits.map((hit) => hit.evidence.evidence_id),
+    );
+    const matchingJudgments = persistedJudgmentsQuery.data.filter((judgment) =>
+      hitEvidenceIds.has(judgment.evidence_id),
+    );
+    if (!matchingJudgments.length) return;
+    setRelevanceJudgments((current) => {
+      const next = { ...current };
+      for (const judgment of matchingJudgments) {
+        const key = relevanceJudgmentKey(activeRun.runId, judgment.evidence_id);
+        next[key] = relevanceJudgmentFromPersisted(judgment, {
+          query: activeRun.payload.query,
+          runId: activeRun.runId,
+          signature: activeRun.signature,
+        });
+      }
+      return next;
+    });
+  }, [activeRun, persistedJudgmentsQuery.data]);
+
   const applySearchFilter = (field: SupportedFilterField, value: string) => {
     markCustomSearch();
     const overrides: Partial<RetrievalSearchPayload> = {};
@@ -464,27 +501,73 @@ export function RetrievalPage() {
   const setHitJudgment = (
     runId: string | null,
     queryText: string,
-    evidenceId: string,
+    searchSignature: string | null,
+    evidence: Evidence,
     value: RelevanceJudgmentValue,
   ) => {
     if (!runId) return;
+    const evidenceId = evidence.evidence_id;
     const key = relevanceJudgmentKey(runId, evidenceId);
-    setRelevanceJudgments((current) => {
-      if (current[key]?.value === value) {
+    const existing = relevanceJudgments[key] ?? null;
+    if (existing?.value === value) {
+      setRelevanceJudgments((current) => {
         const { [key]: _removed, ...remaining } = current;
         return remaining;
+      });
+      if (existing.judgmentId) {
+        deleteJudgmentMutation.mutate(existing.judgmentId);
       }
+      return;
+    }
+    const rating = relevanceJudgmentRating(value);
+    setRelevanceJudgments((current) => {
       return {
         ...current,
         [key]: {
           evidenceId,
           judgedAt: new Date().toISOString(),
+          judgmentId: existing?.judgmentId ?? null,
           query: queryText,
+          rating,
           runId,
+          searchSignature,
+          sourceId: evidence.source_id,
           value,
         },
       };
     });
+    upsertJudgmentMutation.mutate(
+      {
+        query: queryText,
+        evidence_id: evidenceId,
+        source_id: evidence.source_id,
+        source_type: evidence.source_type,
+        source_version: evidence.source_version ?? null,
+        value,
+        rating,
+        run_id: runId,
+        search_signature: searchSignature,
+        metadata: {
+          trust_level: evidence.trust_level,
+          review_surface: "retrieval_console",
+        },
+      },
+      {
+        onSuccess: (persisted) => {
+          setRelevanceJudgments((current) => {
+            if (current[key]?.value !== value) return current;
+            return {
+              ...current,
+              [key]: relevanceJudgmentFromPersisted(persisted, {
+                query: queryText,
+                runId,
+                signature: searchSignature ?? "",
+              }),
+            };
+          });
+        },
+      },
+    );
   };
 
   const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
@@ -780,11 +863,12 @@ export function RetrievalPage() {
             isSearchPending={searchMutation.isPending}
             isStale={isSearchResultStale}
             onApplyFacet={applySearchFilter}
-            onSetJudgment={(evidenceId, value) =>
+            onSetJudgment={(evidence, value) =>
               setHitJudgment(
                 activeRun?.runId ?? null,
                 activeRun?.payload.query ?? submittedSearchPayload?.query ?? "",
-                evidenceId,
+                activeRun?.signature ?? lastSearchSignature,
+                evidence,
                 value,
               )
             }
@@ -1421,7 +1505,7 @@ function SearchResults({
   isSearchPending: boolean;
   isStale: boolean;
   onApplyFacet: (field: SupportedFilterField, value: string) => void;
-  onSetJudgment: (evidenceId: string, value: RelevanceJudgmentValue) => void;
+  onSetJudgment: (evidence: Evidence, value: RelevanceJudgmentValue) => void;
   onRestoreSubmittedSearch: () => void;
   packageData: RetrievalPackage | undefined;
   relevanceJudgments: RelevanceJudgmentIndex;
@@ -1499,9 +1583,7 @@ function SearchResults({
                 : null
             }
             key={hit.evidence.evidence_id}
-            onSetJudgment={(value) =>
-              onSetJudgment(hit.evidence.evidence_id, value)
-            }
+            onSetJudgment={(value) => onSetJudgment(hit.evidence, value)}
           />
         ))}
         {!packageData.hits.length ? (
@@ -3794,7 +3876,7 @@ function comparisonReportFromComparison(
       evidence_id: judgment.evidenceId,
       judged_at: judgment.judgedAt,
       query: judgment.query,
-      rating: relevanceJudgmentRating(judgment.value),
+      rating: judgment.rating,
       run_id: judgment.runId,
       value: judgment.value,
     })),
@@ -3831,6 +3913,23 @@ function judgmentsForComparison(
     .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId));
 }
 
+function relevanceJudgmentFromPersisted(
+  judgment: RetrievalRelevanceJudgment,
+  run: { query: string; runId: string; signature: string },
+): RelevanceJudgment {
+  return {
+    evidenceId: judgment.evidence_id,
+    judgedAt: judgment.updated_at,
+    judgmentId: judgment.judgment_id,
+    query: run.query,
+    rating: judgment.rating,
+    runId: run.runId,
+    searchSignature: run.signature,
+    sourceId: judgment.source_id ?? null,
+    value: judgment.value,
+  };
+}
+
 function judgmentsForRunHits(
   runId: string,
   hits: RetrievalHit[],
@@ -3853,15 +3952,13 @@ function relevanceJudgmentMetrics(
   const ratingsByEvidenceId = new Map(
     judgments.map((judgment) => [
       judgment.evidenceId,
-      relevanceJudgmentRating(judgment.value),
+      judgment.rating,
     ]),
   );
   const rankedRatings = hits.map(
     (hit) => ratingsByEvidenceId.get(hit.evidence.evidence_id) ?? 0,
   );
-  const judgedRatings = judgments.map((judgment) =>
-    relevanceJudgmentRating(judgment.value),
-  );
+  const judgedRatings = judgments.map((judgment) => judgment.rating);
   const relevantCount = judgments.filter(
     (judgment) => judgment.value === "relevant",
   ).length;
@@ -3901,7 +3998,7 @@ function discountedCumulativeGain(ratings: number[]): number {
 }
 
 function relevanceJudgmentRating(value: RelevanceJudgmentValue): number {
-  if (value === "relevant") return 2;
+  if (value === "relevant") return 3;
   if (value === "partial") return 1;
   return 0;
 }

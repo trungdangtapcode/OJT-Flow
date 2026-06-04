@@ -323,6 +323,39 @@ export type RetrievalSearchOptions = {
   top_k_values: number[];
 };
 
+export type RetrievalJudgmentValue = "relevant" | "partial" | "not_relevant";
+
+export type RetrievalRelevanceJudgment = {
+  judgment_id: string;
+  owner_user_id: string;
+  query: string;
+  query_hash: string;
+  evidence_id: string;
+  value: RetrievalJudgmentValue;
+  rating: number;
+  source_id?: string | null;
+  source_type?: string | null;
+  source_version?: string | null;
+  run_id?: string | null;
+  search_signature?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RetrievalJudgmentPayload = {
+  query: string;
+  evidence_id: string;
+  value: RetrievalJudgmentValue;
+  rating?: number | null;
+  source_id?: string | null;
+  source_type?: string | null;
+  source_version?: string | null;
+  run_id?: string | null;
+  search_signature?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
 export type RetrievalSearchFilters = {
   trust_level?: string | null;
   clinical_domain?: string | null;

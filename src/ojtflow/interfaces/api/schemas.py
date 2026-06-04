@@ -209,6 +209,37 @@ class RetrievalSearchRequest(ContractModel):
     }
 
 
+class RetrievalJudgmentRequest(ContractModel):
+    query: NonBlankStr
+    evidence_id: NonBlankStr
+    value: Literal["relevant", "partial", "not_relevant"]
+    rating: int | None = Field(default=None, ge=0, le=3)
+    source_id: NonBlankStr | None = None
+    source_type: EvidenceSourceType | None = None
+    source_version: NonBlankStr | None = None
+    run_id: NonBlankStr | None = None
+    search_signature: NonBlankStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "query": "FHIR Observation HbA1c unit",
+                    "evidence_id": "ev_schema_lab_result_v1",
+                    "source_id": "schema:lab_result_v1",
+                    "source_type": "schema",
+                    "value": "relevant",
+                    "rating": 3,
+                    "run_id": "browser-run-1",
+                    "search_signature": "{\"query\":\"FHIR Observation HbA1c unit\"}",
+                    "metadata": {"review_surface": "retrieval_console"},
+                }
+            ]
+        }
+    }
+
+
 class RetrievalReindexRequest(ContractModel):
     include_seeded: bool = True
     include_corpus: bool = True

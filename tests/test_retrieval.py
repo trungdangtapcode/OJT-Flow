@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.embeddings import (
@@ -31,6 +32,7 @@ from ojtflow.infrastructure.retrieval.engine import (
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 from ojtflow.infrastructure.retrieval.reranking import HuggingFaceCrossEncoderReranker
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
+from ojtflow.infrastructure.storage.in_memory import InMemoryRetrievalJudgmentRepository
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +41,43 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_retrieval_query_rejects_blank_query() -> None:
     with pytest.raises(ValidationError):
         RetrievalQuery(query=" \n\t ")
+
+
+def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None:
+    service = RetrievalJudgmentService(InMemoryRetrievalJudgmentRepository())
+
+    first = service.upsert(
+        owner_user_id="usr_a",
+        query="FHIR Observation HbA1c unit",
+        evidence_id="ev_fhir_observation",
+        value="partial",
+        source_id="standard:fhir_observation_r4",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        run_id="run_1",
+    )
+    updated = service.upsert(
+        owner_user_id="usr_a",
+        query="FHIR Observation HbA1c unit",
+        evidence_id="ev_fhir_observation",
+        value="relevant",
+        source_id="standard:fhir_observation_r4",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        run_id="run_2",
+    )
+    other_user = service.upsert(
+        owner_user_id="usr_b",
+        query="FHIR Observation HbA1c unit",
+        evidence_id="ev_fhir_observation",
+        value="not_relevant",
+    )
+
+    listed = service.list(owner_user_id="usr_a", query="FHIR Observation HbA1c unit")
+
+    assert first.judgment_id == updated.judgment_id
+    assert updated.rating == 3
+    assert updated.run_id == "run_2"
+    assert other_user.judgment_id != updated.judgment_id
+    assert [judgment.judgment_id for judgment in listed] == [updated.judgment_id]
 
 
 def test_query_variants_include_fields_schema_and_format() -> None:

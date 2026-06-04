@@ -182,7 +182,9 @@ Comparison output should include a copyable JSON report with the active payload,
 baseline payload, summaries, deltas, metrics, evidence changes, and rank
 movement so tuning notes can be reproduced outside the browser. Result cards
 should collect explicit relevance judgments for the query-document pair and
-include those judgments in comparison reports as imported-judgment scaffolding.
+persist those judgments through `/retrieval/judgments` so rerun queries can
+hydrate prior labels for matching evidence. Comparison reports should include
+the available judgments as imported-judgment scaffolding.
 The results panel should summarize judgment-aware metrics from current
 in-session judgments, including coverage, Precision@k, judged precision, and
 nDCG@k.

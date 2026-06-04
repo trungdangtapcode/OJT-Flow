@@ -14,11 +14,16 @@ except ImportError:  # pragma: no cover - exercised only when optional dependenc
 
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.retrieval import (
+    RetrievalRelevanceJudgment,
+    RetrievalRelevanceJudgmentWrite,
+)
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryItem, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError, OJTFlowError
 from ojtflow.core.ids import new_id
+from ojtflow.core.time import utc_now
 from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
 from ojtflow.infrastructure.storage.file_refs import artifact_path_from_file_ref
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
@@ -527,3 +532,147 @@ class PostgresEventRepository:
                 )
                 rows = cursor.fetchall()
         return [WorkflowEvent.model_validate(row["event_json"]) for row in rows]
+
+
+class PostgresRetrievalJudgmentRepository:
+    """Postgres-backed user retrieval relevance judgments."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        write: RetrievalRelevanceJudgmentWrite,
+    ) -> RetrievalRelevanceJudgment:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select judgment_id, created_at
+                    from ojtflow.retrieval_relevance_judgments
+                    where owner_user_id = %s and query_hash = %s and evidence_id = %s
+                    """,
+                    (owner_user_id, query_hash, write.evidence_id),
+                )
+                existing = cursor.fetchone()
+                judgment_id = existing["judgment_id"] if existing else new_id("rj")
+                created_at = existing["created_at"].isoformat() if existing else now
+                cursor.execute(
+                    """
+                    insert into ojtflow.retrieval_relevance_judgments (
+                        judgment_id, owner_user_id, query_hash, query_text,
+                        evidence_id, source_id, source_type, source_version, run_id,
+                        search_signature, value, rating, metadata, created_at, updated_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::jsonb, %s::timestamptz, %s::timestamptz
+                    )
+                    on conflict(owner_user_id, query_hash, evidence_id) do update set
+                        query_text = excluded.query_text,
+                        source_id = excluded.source_id,
+                        source_type = excluded.source_type,
+                        source_version = excluded.source_version,
+                        run_id = excluded.run_id,
+                        search_signature = excluded.search_signature,
+                        value = excluded.value,
+                        rating = excluded.rating,
+                        metadata = excluded.metadata,
+                        updated_at = excluded.updated_at
+                    returning *
+                    """,
+                    (
+                        judgment_id,
+                        owner_user_id,
+                        query_hash,
+                        write.query,
+                        write.evidence_id,
+                        write.source_id,
+                        write.source_type.value if write.source_type else None,
+                        write.source_version,
+                        write.run_id,
+                        write.search_signature,
+                        write.value,
+                        write.rating,
+                        json.dumps(write.metadata),
+                        created_at,
+                        now,
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        return _postgres_judgment_from_row(row)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str | None = None,
+        run_id: str | None = None,
+        evidence_id: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalRelevanceJudgment]:
+        clauses = ["owner_user_id = %s"]
+        params: list[object] = [owner_user_id]
+        if query_hash is not None:
+            clauses.append("query_hash = %s")
+            params.append(query_hash)
+        if run_id is not None:
+            clauses.append("run_id = %s")
+            params.append(run_id)
+        if evidence_id is not None:
+            clauses.append("evidence_id = %s")
+            params.append(evidence_id)
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select * from ojtflow.retrieval_relevance_judgments
+                    where {' and '.join(clauses)}
+                    order by updated_at desc, judgment_id asc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_judgment_from_row(row) for row in rows]
+
+    def delete(self, *, owner_user_id: str, judgment_id: str) -> None:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    delete from ojtflow.retrieval_relevance_judgments
+                    where owner_user_id = %s and judgment_id = %s
+                    """,
+                    (owner_user_id, judgment_id),
+                )
+                deleted = cursor.rowcount
+            connection.commit()
+        if deleted == 0:
+            raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
+
+
+def _postgres_judgment_from_row(row) -> RetrievalRelevanceJudgment:
+    metadata = row["metadata"] if isinstance(row["metadata"], dict) else {}
+    return RetrievalRelevanceJudgment(
+        judgment_id=row["judgment_id"],
+        owner_user_id=row["owner_user_id"],
+        query=row["query_text"],
+        query_hash=row["query_hash"],
+        evidence_id=row["evidence_id"],
+        source_id=row["source_id"],
+        source_type=row["source_type"],
+        source_version=row["source_version"],
+        run_id=row["run_id"],
+        search_signature=row["search_signature"],
+        value=row["value"],
+        rating=int(row["rating"]),
+        metadata=metadata,
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )

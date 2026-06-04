@@ -6,18 +6,29 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
+from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
+from ojtflow.core.contracts.base import NonBlankStr
 from ojtflow.core.contracts.retrieval import RetrievalQuery
 from ojtflow.infrastructure.retrieval.presets import (
     load_retrieval_search_options,
     load_retrieval_search_presets,
 )
-from ojtflow.interfaces.api.deps import get_api_settings, get_workflow_service, require_authentication
+from ojtflow.interfaces.api.deps import (
+    get_api_settings,
+    get_retrieval_judgment_service,
+    get_workflow_service,
+    require_authentication,
+)
 from ojtflow.interfaces.api.limits import enforce_inline_json_limit
 from ojtflow.interfaces.api.responses import ok
-from ojtflow.interfaces.api.schemas import RetrievalReindexRequest, RetrievalSearchRequest
+from ojtflow.interfaces.api.schemas import (
+    RetrievalJudgmentRequest,
+    RetrievalReindexRequest,
+    RetrievalSearchRequest,
+)
 
 router = APIRouter(tags=["retrieval"])
 
@@ -78,6 +89,64 @@ async def get_retrieval_search_options(
     return ok(load_retrieval_search_options(settings.resolved_knowledge_dir))
 
 
+@router.get("/retrieval/judgments")
+async def list_retrieval_judgments(
+    query_text: str | None = Query(default=None, alias="query"),
+    run_id: str | None = None,
+    evidence_id: str | None = None,
+    limit: int = Query(default=500, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalJudgmentService = Depends(get_retrieval_judgment_service),
+) -> dict:
+    return ok(
+        service.list(
+            owner_user_id=authenticated.user.user_id,
+            query=_optional_query_value(query_text),
+            run_id=_optional_query_value(run_id),
+            evidence_id=_optional_query_value(evidence_id),
+            limit=limit,
+        )
+    )
+
+
+@router.put("/retrieval/judgments")
+async def upsert_retrieval_judgment(
+    request: RetrievalJudgmentRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalJudgmentService = Depends(get_retrieval_judgment_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    enforce_inline_json_limit(request, settings, field_name="retrieval_judgment")
+    return ok(
+        service.upsert(
+            owner_user_id=authenticated.user.user_id,
+            query=request.query,
+            evidence_id=request.evidence_id,
+            value=request.value,
+            rating=request.rating,
+            source_id=request.source_id,
+            source_type=request.source_type,
+            source_version=request.source_version,
+            run_id=request.run_id,
+            search_signature=request.search_signature,
+            metadata=request.metadata,
+        )
+    )
+
+
+@router.delete("/retrieval/judgments/{judgment_id}")
+async def delete_retrieval_judgment(
+    judgment_id: NonBlankStr,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalJudgmentService = Depends(get_retrieval_judgment_service),
+) -> dict:
+    service.delete(
+        owner_user_id=authenticated.user.user_id,
+        judgment_id=judgment_id,
+    )
+    return ok({"deleted": True, "judgment_id": judgment_id})
+
+
 @router.get("/retrieval/sources")
 async def list_retrieval_sources(
     authenticated: AuthenticatedSession = Depends(require_authentication),
@@ -122,3 +191,10 @@ def _filter_value(value: Any) -> Any:
     if hasattr(value, "value"):
         return value.value
     return value
+
+
+def _optional_query_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None

@@ -23,6 +23,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         "004",
         "005",
         "006",
+        "007",
     ]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
@@ -30,6 +31,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
     assert migrations[3].name == "evidence_retrieval_source_types"
     assert migrations[4].name == "workflow_owner_scope"
     assert migrations[5].name == "semantic_embedding_vector"
+    assert migrations[6].name == "retrieval_relevance_judgments"
     assert all(len(migration.checksum) == 64 for migration in migrations)
 
 
@@ -158,3 +160,16 @@ def test_semantic_embedding_vector_migration_uses_384_dimensions() -> None:
     assert "drop column if exists embedding" in sql
     assert "embedding vector(384)" in sql
     assert "using hnsw" in sql
+
+
+def test_retrieval_relevance_judgment_migration_has_user_scoped_labels() -> None:
+    sql = (ROOT / "sql/postgres/migrations/007_retrieval_relevance_judgments.sql").read_text()
+
+    assert "ojtflow.retrieval_relevance_judgments" in sql
+    assert "owner_user_id text not null" in sql
+    assert "query_hash text not null" in sql
+    assert "evidence_id text not null" in sql
+    assert "unique (owner_user_id, query_hash, evidence_id)" in sql
+    assert "retrieval_judgments_value_check" in sql
+    assert "retrieval_judgments_rating_check" in sql
+    assert "idx_retrieval_judgments_owner_query" in sql

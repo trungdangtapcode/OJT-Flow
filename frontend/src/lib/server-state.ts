@@ -6,9 +6,10 @@ import {
   API_BASE_URL,
   chatWithAssistant,
   createWorkflow,
+  deleteRetrievalJudgment,
   getExtractorInventory,
-  getRetrievalSearchOptions,
   getRetrievalIntegrity,
+  getRetrievalSearchOptions,
   getRuntimeConfig,
   getRuntimeHealth,
   getRuntimeReadiness,
@@ -16,6 +17,7 @@ import {
   getWorkflowOutput,
   getWorkflowStats,
   listAssistantTools,
+  listRetrievalJudgments,
   listRetrievalPresets,
   listRetrievalSources,
   listReviewSummaries,
@@ -27,10 +29,12 @@ import {
   submitReview,
   updateRuntimeAssistantSettings,
   updateRuntimeRetrievalSettings,
+  upsertRetrievalJudgment,
   uploadFileWorkflow,
 } from "../api";
 import type {
   AssistantChatPayload,
+  RetrievalJudgmentPayload,
   RetrievalReindexPayload,
   RetrievalSearchPayload,
   RuntimeAssistantSettingsPayload,
@@ -47,6 +51,8 @@ export const queryKeys = {
   events: (workflowId: string | null) => ["workflow-events", workflowId] as const,
   schemas: ["schemas"] as const,
   retrievalSources: ["retrieval-sources"] as const,
+  retrievalJudgments: (params: Record<string, unknown>) =>
+    ["retrieval-judgments", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
@@ -197,6 +203,39 @@ export function useRetrievalIntegrityQuery(params: {
 export function useRetrievalSearchMutation() {
   return useMutation({
     mutationFn: (payload: RetrievalSearchPayload) => searchRetrieval(payload),
+  });
+}
+
+export function useRetrievalJudgmentsQuery(params: {
+  query?: string | null;
+  run_id?: string | null;
+  evidence_id?: string | null;
+  limit?: number;
+}) {
+  return useQuery({
+    enabled: Boolean(params.query || params.run_id || params.evidence_id),
+    queryKey: queryKeys.retrievalJudgments(params),
+    queryFn: () => listRetrievalJudgments(params),
+  });
+}
+
+export function useRetrievalJudgmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RetrievalJudgmentPayload) => upsertRetrievalJudgment(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
+    },
+  });
+}
+
+export function useDeleteRetrievalJudgmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (judgmentId: string) => deleteRetrievalJudgment(judgmentId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
+    },
   });
 }
 

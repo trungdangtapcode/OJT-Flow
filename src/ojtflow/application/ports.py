@@ -19,6 +19,8 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
     RetrievalPackage,
     RetrievalQuery,
+    RetrievalRelevanceJudgment,
+    RetrievalRelevanceJudgmentWrite,
     RetrievalSource,
 )
 from ojtflow.core.contracts.storage import DatasetRecord
@@ -163,6 +165,28 @@ class RetrievalRepository(Protocol):
         include_seeded: bool = True,
         include_corpus: bool = False,
     ) -> RetrievalIntegrityReport: ...
+
+
+class RetrievalJudgmentRepository(Protocol):
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        write: RetrievalRelevanceJudgmentWrite,
+    ) -> RetrievalRelevanceJudgment: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str | None = None,
+        run_id: str | None = None,
+        evidence_id: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalRelevanceJudgment]: ...
+
+    def delete(self, *, owner_user_id: str, judgment_id: str) -> None: ...
 
 
 class AssistantPlanner(Protocol):

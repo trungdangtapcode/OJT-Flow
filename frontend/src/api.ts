@@ -7,7 +7,9 @@ import type {
   AuthSessionResponse,
   ExtractorInventory,
   RetrievalIntegrityReport,
+  RetrievalJudgmentPayload,
   RetrievalPackage,
+  RetrievalRelevanceJudgment,
   RetrievalReindexPayload,
   RetrievalReindexResult,
   RetrievalSearchPayload,
@@ -378,6 +380,35 @@ export function listRetrievalPresets(): Promise<RetrievalSearchPreset[]> {
 
 export function getRetrievalSearchOptions(): Promise<RetrievalSearchOptions> {
   return request<RetrievalSearchOptions>("/retrieval/search-options");
+}
+
+export function listRetrievalJudgments(params: {
+  query?: string | null;
+  run_id?: string | null;
+  evidence_id?: string | null;
+  limit?: number;
+}): Promise<RetrievalRelevanceJudgment[]> {
+  return request<RetrievalRelevanceJudgment[]>(
+    `/retrieval/judgments${queryString(params)}`,
+  );
+}
+
+export function upsertRetrievalJudgment(
+  payload: RetrievalJudgmentPayload,
+): Promise<RetrievalRelevanceJudgment> {
+  return request<RetrievalRelevanceJudgment>("/retrieval/judgments", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteRetrievalJudgment(judgmentId: string): Promise<{
+  deleted: boolean;
+  judgment_id: string;
+}> {
+  return request(`/retrieval/judgments/${pathSegment(judgmentId)}`, {
+    method: "DELETE",
+  });
 }
 
 export function chatWithAssistant(

@@ -12,6 +12,7 @@ from ojtflow.application.auth_service import AuthService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
+from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings, get_settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
@@ -31,18 +32,21 @@ from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
     InMemoryEventRepository,
+    InMemoryRetrievalJudgmentRepository,
     InMemoryWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.postgres import (
     PostgresBackboneStore,
     PostgresDatasetStore,
     PostgresEventRepository,
+    PostgresRetrievalJudgmentRepository,
     PostgresWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.sqlite import (
     SQLiteBackboneStore,
     SQLiteDatasetStore,
     SQLiteEventRepository,
+    SQLiteRetrievalJudgmentRepository,
     SQLiteWorkflowRepository,
 )
 
@@ -148,6 +152,30 @@ def _build_workflow_service() -> WorkflowService:
     )
 
 
+@lru_cache(maxsize=1)
+def _build_retrieval_judgment_service() -> RetrievalJudgmentService:
+    """Build durable retrieval relevance judgment services."""
+
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryRetrievalJudgmentRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteRetrievalJudgmentRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresRetrievalJudgmentRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return RetrievalJudgmentService(repository)
+
+
 def _build_retrieval_repository(
     settings: Settings,
     knowledge_root,
@@ -233,6 +261,12 @@ async def get_medical_evidence_service() -> MedicalEvidenceService:
     """Return healthcare evidence service."""
 
     return _build_medical_evidence_service()
+
+
+async def get_retrieval_judgment_service() -> RetrievalJudgmentService:
+    """Return durable retrieval relevance judgment service."""
+
+    return _build_retrieval_judgment_service()
 
 
 async def get_assistant_service() -> AssistantService:
@@ -359,4 +393,5 @@ def clear_workflow_service_cache() -> None:
     _build_workflow_service.cache_clear()
     _build_auth_service.cache_clear()
     _build_medical_evidence_service.cache_clear()
+    _build_retrieval_judgment_service.cache_clear()
     _build_assistant_service.cache_clear()

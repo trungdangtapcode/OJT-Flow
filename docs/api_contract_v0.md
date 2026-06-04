@@ -1263,6 +1263,43 @@ includes `version`, `detected_formats[]` with `value`, `label`, and optional
 format and top-K controls so Markdown, FHIR-like, and future intake/search
 profiles can be added through trusted data.
 
+`GET /api/v1/retrieval/judgments` returns durable relevance judgments for the
+authenticated user. Optional query parameters:
+
+- `query`: exact query text; the backend hashes it for lookup.
+- `run_id`: browser/search run identifier.
+- `evidence_id`: evidence item identifier.
+- `limit`: default `500`, maximum `1000`.
+
+`PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
+judgment:
+
+```json
+{
+  "query": "FHIR Observation HbA1c unit",
+  "evidence_id": "ev_schema_lab_result_v1",
+  "source_id": "schema:lab_result_v1",
+  "source_type": "schema",
+  "value": "relevant",
+  "rating": 3,
+  "run_id": "browser-run-1",
+  "search_signature": "{\"query\":\"FHIR Observation HbA1c unit\"}",
+  "metadata": {
+    "review_surface": "retrieval_console"
+  }
+}
+```
+
+The durable key is `(owner_user_id, query_hash, evidence_id)`. `run_id` and
+`search_signature` are stored as trace metadata but are not the durable identity,
+so rerunning the same query can reload prior labels for matching evidence.
+`value` is one of `relevant`, `partial`, or `not_relevant`; `rating` is a graded
+0-3 relevance score used by retrieval evaluation. If the UI omits `rating`, the
+backend derives it from `value`.
+
+`DELETE /api/v1/retrieval/judgments/{judgment_id}` removes one judgment owned by
+the authenticated user.
+
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,
 and chunk count. The seeded source inventory includes local schema/governance

@@ -22,6 +22,7 @@ from ojtflow.interfaces.api.deps import (
     clear_workflow_service_cache,
     get_auth_service,
     get_medical_evidence_service,
+    get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
 )
@@ -540,6 +541,117 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
             "owner_user_id": "usr_api_test",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeRetrievalJudgmentService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def list(self, **kwargs):
+            self.calls.append({"method": "list", **kwargs})
+            return [
+                {
+                    "judgment_id": "rj_existing",
+                    "owner_user_id": kwargs["owner_user_id"],
+                    "query": kwargs["query"],
+                    "query_hash": "0" * 64,
+                    "evidence_id": "ev_schema",
+                    "source_id": "schema:lab_result_v1",
+                    "source_type": "schema",
+                    "source_version": None,
+                    "run_id": kwargs["run_id"],
+                    "search_signature": None,
+                    "value": "relevant",
+                    "rating": 3,
+                    "metadata": {},
+                    "created_at": "2026-06-04T00:00:00+00:00",
+                    "updated_at": "2026-06-04T00:00:00+00:00",
+                }
+            ]
+
+        def upsert(self, **kwargs):
+            self.calls.append({"method": "upsert", **kwargs})
+            return {
+                "judgment_id": "rj_saved",
+                "owner_user_id": kwargs["owner_user_id"],
+                "query": kwargs["query"],
+                "query_hash": "1" * 64,
+                "evidence_id": kwargs["evidence_id"],
+                "source_id": kwargs["source_id"],
+                "source_type": kwargs["source_type"],
+                "source_version": kwargs["source_version"],
+                "run_id": kwargs["run_id"],
+                "search_signature": kwargs["search_signature"],
+                "value": kwargs["value"],
+                "rating": kwargs["rating"],
+                "metadata": kwargs["metadata"],
+                "created_at": "2026-06-04T00:00:00+00:00",
+                "updated_at": "2026-06-04T00:00:00+00:00",
+            }
+
+        def delete(self, **kwargs):
+            self.calls.append({"method": "delete", **kwargs})
+
+    fake_service = FakeRetrievalJudgmentService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_judgment_service() -> FakeRetrievalJudgmentService:
+        return fake_service
+
+    app.dependency_overrides[get_retrieval_judgment_service] = fake_judgment_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        listed = await client.get(
+            "/api/v1/retrieval/judgments",
+            params={"query": "FHIR Observation HbA1c", "run_id": "run_1"},
+        )
+        saved = await client.put(
+            "/api/v1/retrieval/judgments",
+            json={
+                "query": "FHIR Observation HbA1c",
+                "evidence_id": "ev_schema",
+                "source_id": "schema:lab_result_v1",
+                "source_type": "schema",
+                "value": "relevant",
+                "rating": 3,
+                "run_id": "run_1",
+                "search_signature": "signature",
+                "metadata": {"review_surface": "retrieval_console"},
+            },
+        )
+        deleted = await client.delete("/api/v1/retrieval/judgments/rj_saved")
+
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["judgment_id"] == "rj_existing"
+    assert saved.status_code == 200
+    assert saved.json()["data"]["judgment_id"] == "rj_saved"
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] == {"deleted": True, "judgment_id": "rj_saved"}
+    assert fake_service.calls[0] == {
+        "method": "list",
+        "owner_user_id": "usr_api_test",
+        "query": "FHIR Observation HbA1c",
+        "run_id": "run_1",
+        "evidence_id": None,
+        "limit": 500,
+    }
+    assert fake_service.calls[1]["method"] == "upsert"
+    assert fake_service.calls[1]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[1]["value"] == "relevant"
+    assert fake_service.calls[1]["metadata"] == {"review_surface": "retrieval_console"}
+    assert fake_service.calls[2] == {
+        "method": "delete",
+        "owner_user_id": "usr_api_test",
+        "judgment_id": "rj_saved",
+    }
 
 
 @pytest.mark.asyncio

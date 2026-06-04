@@ -797,6 +797,29 @@ The Docker image uses `pgvector/pgvector:pg16` so the optional vector column and
 HNSW index are available. If pgvector is unavailable in a different deployment,
 the migration keeps lexical retrieval and JSON embeddings operational.
 
+## Durable Relevance Judgments
+
+Operators can label retrieved evidence from the Retrieval console. The frontend
+persists those labels through `PUT /api/v1/retrieval/judgments`, lists them with
+`GET /api/v1/retrieval/judgments?query=...`, and removes them with
+`DELETE /api/v1/retrieval/judgments/{judgment_id}`. Judgments are scoped to the
+authenticated `owner_user_id` and keyed by `(owner_user_id, query_hash,
+evidence_id)`, so rerunning the same query can hydrate prior labels for the
+same evidence even when browser-local run IDs change.
+
+Each durable judgment stores:
+
+- query text plus SHA-256 query hash.
+- evidence ID and optional source ID/type/version.
+- UI value: `relevant`, `partial`, or `not_relevant`.
+- graded rating from 0 to 3 for evaluation handoff.
+- optional browser run ID, search signature, and metadata.
+
+The current UI uses durable judgments for operator continuity and comparison
+reports. The offline fixture evaluator remains file-backed for release checks;
+a later evaluation dashboard can promote stored production judgments into
+curated eval sets once review and governance rules are defined.
+
 ## Evaluation Harness
 
 The retrieval module includes a deterministic offline eval runner:
