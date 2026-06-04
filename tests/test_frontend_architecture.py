@@ -220,6 +220,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "useRetrievalSearchOptionsQuery" in retrieval_page
     assert "formatOptions" in retrieval_page
     assert "mergeSearchOptions" in retrieval_page
+    assert "categoryFilter" in retrieval_page
+    assert "presetSearch" in retrieval_page
+    assert "presetMatchesSearch" in retrieval_page
+    assert "Filter retrieval presets" in retrieval_page
+    assert "Preset categories" in retrieval_page
     assert '<option value="csv">CSV</option>' not in retrieval_page
     assert '<option value="fhir_like">FHIR-like</option>' not in retrieval_page
     assert "defaultQuery" not in retrieval_page
@@ -244,6 +249,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "/retrieval/presets" in frontend_architecture
     assert "/retrieval/search-options" in frontend_architecture
     assert "trusted knowledge data" in frontend_architecture
+    assert "Preset category filters" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:

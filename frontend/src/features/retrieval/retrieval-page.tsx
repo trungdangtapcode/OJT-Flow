@@ -674,6 +674,14 @@ function SearchPresetStrip({
   onApplyPreset: (preset: RetrievalSearchPreset) => void;
   presets: RetrievalSearchPreset[];
 }) {
+  const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
+  const [presetSearch, setPresetSearch] = React.useState("");
+  const categories = uniqueValues(presets.map((preset) => preset.category));
+  const filteredPresets = presets.filter((preset) => {
+    if (categoryFilter && preset.category !== categoryFilter) return false;
+    return presetMatchesSearch(preset, presetSearch);
+  });
+
   if (isLoading) {
     return (
       <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm font-semibold text-muted-foreground">
@@ -696,10 +704,51 @@ function SearchPresetStrip({
         <div className="text-xs font-bold uppercase text-muted-foreground">
           Search presets
         </div>
-        <Badge variant="muted">{presets.length} data-driven</Badge>
+        <Badge variant="muted">
+          {filteredPresets.length}/{presets.length} data-driven
+        </Badge>
       </div>
       <div className="grid gap-2">
-        {presets.map((preset) => {
+        <Input
+          aria-label="Filter retrieval presets"
+          onChange={(event) => setPresetSearch(event.target.value)}
+          placeholder="Filter presets"
+          value={presetSearch}
+        />
+        {categories.length ? (
+          <div className="flex min-w-0 flex-wrap gap-2" aria-label="Preset categories">
+            <button
+              aria-pressed={!categoryFilter}
+              className={presetFilterClass(!categoryFilter)}
+              onClick={() => setCategoryFilter(null)}
+              type="button"
+            >
+              All
+            </button>
+            {categories.map((category) => {
+              const active = categoryFilter === category;
+              return (
+                <button
+                  aria-pressed={active}
+                  className={presetFilterClass(active)}
+                  key={category}
+                  onClick={() => setCategoryFilter(category)}
+                  type="button"
+                >
+                  {humanize(category)}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+      <div className="grid gap-2">
+        {filteredPresets.length ? null : (
+          <Notice title="No matching presets">
+            Adjust the preset filter or category to show trusted retrieval examples.
+          </Notice>
+        )}
+        {filteredPresets.map((preset) => {
           const active = activePresetId === preset.preset_id;
           return (
             <button
@@ -2354,6 +2403,36 @@ function retrievalSearchSignature(payload: RetrievalSearchPayload): string {
 
 function uniqueValues(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort();
+}
+
+function presetFilterClass(active: boolean) {
+  return cn(
+    "rounded-full border px-3 py-1 text-xs font-bold transition-colors",
+    active
+      ? "border-primary bg-primary/10 text-primary"
+      : "border-border bg-background text-muted-foreground hover:bg-muted",
+  );
+}
+
+function presetMatchesSearch(preset: RetrievalSearchPreset, search: string) {
+  const normalizedSearch = search.trim().toLowerCase();
+  if (!normalizedSearch) return true;
+
+  return [
+    preset.label,
+    preset.description,
+    preset.query,
+    preset.category,
+    preset.schema_id,
+    preset.detected_format,
+    preset.resource_type,
+    preset.clinical_domain,
+    preset.standard_system,
+    preset.source_type,
+    ...preset.fields,
+    ...preset.target_sources,
+    ...preset.launch_hint_targets,
+  ].some((value) => value?.toLowerCase().includes(normalizedSearch));
 }
 
 function mergeSearchOptions(
