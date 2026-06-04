@@ -829,6 +829,10 @@ are loaded from `knowledge/retrieval/evaluation_policy.json` by default and can
 be overridden with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime
 counterpart to the offline evaluation harness: it makes current operator
 searches measurable and actionable without copying labels into fixture files.
+The Retrieval UI can copy a `retrieval_judgment_evaluation` JSON report with
+server metrics, local in-session metrics, stored-label summary,
+recommendations, ranked evidence IDs, unjudged IDs, and contributing judgment
+IDs for offline relevance-tuning notes.
 
 Each durable judgment stores:
 

@@ -199,6 +199,10 @@ HitRate@k, MAP@k, MRR@k, nDCG@k, unjudged-hit count, and policy-driven
 recommendations. This keeps rank-aware evaluation tied to the durable judgment
 store rather than browser-local state, and turns poor coverage or ordering into
 explicit next actions for the operator.
+The same panel should provide a copyable `retrieval_judgment_evaluation` JSON
+report containing server metrics, local in-session metrics, stored-label
+summary, recommendations, and relevant evidence IDs for offline relevance
+tuning notes.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.
