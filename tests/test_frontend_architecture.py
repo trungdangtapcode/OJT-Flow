@@ -191,6 +191,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "packageData.handoff_context.reranker" in retrieval_page
     assert "packageData.handoff_context.diversity" in retrieval_page
     assert "runtime?.rerank?.enabled" in retrieval_page
+    assert "rankingBoostRulesFromHit" in retrieval_page
+    assert "ranking_boost_rules" in retrieval_page
+    assert "Ranking signals" in retrieval_page
     assert "applyFilterSuggestion" in retrieval_page
     assert "applySearchFilter" in retrieval_page
     assert "clearSearchFilter" in retrieval_page
@@ -243,6 +246,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "launchable hint" in retrieval_page
     assert "copyTextToClipboard" in retrieval_page
     assert "Embedding and rerank provider state" in frontend_architecture
+    assert "per-hit ranking boost signals" in frontend_architecture
     assert "source coverage" in frontend_architecture
     assert "explicit operator apply" in frontend_architecture
     assert "actionable refinements" in frontend_architecture

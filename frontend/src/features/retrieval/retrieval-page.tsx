@@ -1129,6 +1129,7 @@ function isSupportedFilterField(value: string): value is SupportedFilterField {
 
 function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
   const evidence = hit.evidence;
+  const rankingBoostRules = rankingBoostRulesFromHit(hit);
   return (
     <article className="grid min-w-0 gap-3 rounded-md border border-border bg-card p-3 shadow-sm">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -1166,6 +1167,22 @@ function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
         <ScoreMeter label="Vector" value={hit.vector_score} />
         <ScoreMeter label="Rerank" value={hit.rerank_score} />
       </div>
+
+      {rankingBoostRules.length ? (
+        <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+          <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
+            <Gauge className="h-3.5 w-3.5 shrink-0" />
+            <span>Ranking signals</span>
+          </div>
+          <div className="flex min-w-0 flex-wrap gap-1.5">
+            {rankingBoostRules.map((ruleId) => (
+              <Badge className="max-w-full break-words" key={ruleId} variant="muted">
+                {formatRankingSignal(ruleId)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {hit.matched_terms.slice(0, 12).map((term) => (
@@ -2319,6 +2336,14 @@ function formatDiversityTrace(diversity: DiversityStack): string {
   const lambda = diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2);
   const duplicateText = `${diversity.duplicateSelectedSourceCount} duplicate selected`;
   return `${diversity.selectionMode} / lambda ${lambda} / ${formatSourceCoverage(diversity)} sources / ${duplicateText}`;
+}
+
+function rankingBoostRulesFromHit(hit: RetrievalHit): string[] {
+  return stringArrayValue(hit.source_locator.ranking_boost_rules);
+}
+
+function formatRankingSignal(ruleId: string): string {
+  return humanize(ruleId.replace(/^boost_/, ""));
 }
 
 function recordValue(value: unknown): Record<string, unknown> {

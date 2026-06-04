@@ -136,8 +136,11 @@ can be added through trusted registry data. The route
 must surface embedding and rerank provider metadata from runtime config and
 retrieval handoff context so operators can distinguish first-stage hybrid
 searches from searches refined by second-stage reranking. It must also surface
-source coverage from retrieval diversity metadata so redundant single-source
-results are visible during evidence review. Query-analysis filter suggestions
+per-hit ranking boost signals from `source_locator.ranking_boost_rules` so
+operator review can see which deterministic ranking policy influenced each
+selected evidence item. It must also surface source coverage from retrieval
+diversity metadata so redundant single-source results are visible during
+evidence review. Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see
 the reason, confidence, and existing applied state. Result facets should also be
