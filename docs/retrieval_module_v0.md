@@ -327,6 +327,10 @@ bucket updates the query-builder filter state and reruns the same typed
 Applied refinements are shown as active chips next to the query builder; each
 chip can be removed independently, and operators can clear all metadata
 refinements before rerunning the typed search.
+The console also tracks a deterministic signature of the submitted request. If
+operators change the query builder after a result package is displayed, the
+results header is marked with pending changes until the current request shape is
+submitted again.
 In v0 these facets are computed over selected hits, not the full indexed corpus,
 so the counts match the evidence cards visible in the Retrieval console.
 

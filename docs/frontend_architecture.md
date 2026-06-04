@@ -136,7 +136,9 @@ actionable refinements: applying a visible facet bucket must update the query
 builder filter state and rerun the typed retrieval search instead of mutating
 results locally. Selected refinements should remain visible as removable chips
 with a clear-all action so operators can audit and undo the active search
-constraints.
+constraints. If the query builder changes after a search, the results panel
+must show that ranked evidence has pending changes until the current request
+state is submitted again.
 The assistant route is the operator shortcut over those same backend contracts.
 It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
 write-gate state, executed tool calls, and compact evidence/output previews.

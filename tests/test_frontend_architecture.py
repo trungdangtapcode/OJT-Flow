@@ -198,6 +198,13 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "ActiveFilterBar" in retrieval_page
     assert "activeFilterEntries" in retrieval_page
     assert "Active filters" in retrieval_page
+    assert "lastSearchSignature" in retrieval_page
+    assert "currentSearchSignature" in retrieval_page
+    assert "isSearchResultStale" in retrieval_page
+    assert "retrievalPayloadFromForm" in retrieval_page
+    assert "retrievalSearchSignature" in retrieval_page
+    assert "Search settings changed" in retrieval_page
+    assert "pending changes" in retrieval_page
     assert "onApplyFacet" in retrieval_page
     assert "aria-pressed={applied}" in retrieval_page
     assert "supportedSuggestionFilterFields" in retrieval_page
@@ -207,6 +214,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "explicit operator apply" in frontend_architecture
     assert "actionable refinements" in frontend_architecture
     assert "removable chips" in frontend_architecture
+    assert "pending changes" in frontend_architecture
 
 
 def test_settings_page_exposes_reloadable_assistant_runtime() -> None:

@@ -71,6 +71,18 @@ type ActiveFilterEntry = {
   label: string;
   displayValue: string;
 };
+type RetrievalFormState = {
+  query: string;
+  fields: string;
+  schemaId: string;
+  detectedFormat: string;
+  resourceType: string;
+  clinicalDomain: string;
+  standardSystem: string;
+  trustLevel: string;
+  sourceType: string;
+  topK: number;
+};
 type FacetSection = {
   field: SupportedFilterField;
   label: string;
@@ -107,6 +119,7 @@ export function RetrievalPage() {
   const [sourceType, setSourceType] = React.useState("");
   const [topK, setTopK] = React.useState(5);
   const [formError, setFormError] = React.useState<string | null>(null);
+  const [lastSearchSignature, setLastSearchSignature] = React.useState<string | null>(null);
 
   const packageData = searchMutation.data;
   const sources = sourcesQuery.data ?? [];
@@ -121,28 +134,32 @@ export function RetrievalPage() {
     source_type: sourceType || undefined,
     trust_level: trustLevel || undefined,
   };
+  const formState: RetrievalFormState = {
+    query,
+    fields,
+    schemaId,
+    detectedFormat,
+    resourceType,
+    clinicalDomain,
+    standardSystem,
+    trustLevel,
+    sourceType,
+    topK,
+  };
+  const currentSearchSignature = retrievalSearchSignature(retrievalPayloadFromForm(formState));
+  const isSearchResultStale = Boolean(
+    packageData && lastSearchSignature && currentSearchSignature !== lastSearchSignature,
+  );
 
   const executeSearch = async (overrides: Partial<RetrievalSearchPayload> = {}) => {
-    const normalizedQuery = query.trim();
-    if (!normalizedQuery) {
+    const payload = retrievalPayloadFromForm(formState, overrides);
+    if (!payload.query) {
       setFormError("Enter a retrieval query before searching.");
       return;
     }
     setFormError(null);
-    await searchMutation.mutateAsync({
-      query: normalizedQuery,
-      top_k: topK,
-      schema_id: schemaId || null,
-      fields: parseFields(fields),
-      detected_format: detectedFormat || null,
-      resource_type: resourceType || null,
-      clinical_domain: clinicalDomain || null,
-      standard_system: standardSystem || null,
-      trust_level: trustLevel || null,
-      source_type: sourceType || null,
-      filters: {},
-      ...overrides,
-    });
+    await searchMutation.mutateAsync(payload);
+    setLastSearchSignature(retrievalSearchSignature(payload));
   };
 
   const runSearch = async (event: React.FormEvent) => {
@@ -390,6 +407,12 @@ export function RetrievalPage() {
                 onRemove={clearSearchFilter}
               />
 
+              {isSearchResultStale ? (
+                <Notice title="Search settings changed">
+                  Run search to refresh ranked evidence with the current query builder state.
+                </Notice>
+              ) : null}
+
               <Button disabled={searchMutation.isPending} type="submit">
                 {searchMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -406,6 +429,7 @@ export function RetrievalPage() {
           <SearchResults
             activeFilters={activeFacetFilters}
             isSearchPending={searchMutation.isPending}
+            isStale={isSearchResultStale}
             onApplyFacet={applySearchFilter}
             packageData={packageData}
           />
@@ -506,11 +530,13 @@ function RetrievalSummary({
 function SearchResults({
   activeFilters,
   isSearchPending,
+  isStale,
   onApplyFacet,
   packageData,
 }: {
   activeFilters: ActiveFacetFilters;
   isSearchPending: boolean;
+  isStale: boolean;
   onApplyFacet: (field: SupportedFilterField, value: string) => void;
   packageData: RetrievalPackage | undefined;
 }) {
@@ -541,6 +567,7 @@ function SearchResults({
           </CardDescription>
         </div>
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          {isStale ? <Badge variant="warning">pending changes</Badge> : null}
           <Badge variant="muted">{packageData.trace.strategy}</Badge>
           <DiversityBadge packageData={packageData} />
           <RerankBadge packageData={packageData} />
@@ -1891,6 +1918,42 @@ function parseFields(value: string) {
     .split(/[,\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function retrievalPayloadFromForm(
+  form: RetrievalFormState,
+  overrides: Partial<RetrievalSearchPayload> = {},
+): RetrievalSearchPayload {
+  return {
+    query: form.query.trim(),
+    top_k: form.topK,
+    schema_id: form.schemaId || null,
+    fields: parseFields(form.fields),
+    detected_format: form.detectedFormat || null,
+    resource_type: form.resourceType || null,
+    clinical_domain: form.clinicalDomain || null,
+    standard_system: form.standardSystem || null,
+    trust_level: form.trustLevel || null,
+    source_type: form.sourceType || null,
+    filters: {},
+    ...overrides,
+  };
+}
+
+function retrievalSearchSignature(payload: RetrievalSearchPayload): string {
+  return JSON.stringify({
+    query: payload.query,
+    top_k: payload.top_k,
+    schema_id: payload.schema_id ?? null,
+    fields: payload.fields,
+    detected_format: payload.detected_format ?? null,
+    resource_type: payload.resource_type ?? null,
+    clinical_domain: payload.clinical_domain ?? null,
+    standard_system: payload.standard_system ?? null,
+    trust_level: payload.trust_level ?? null,
+    source_type: payload.source_type ?? null,
+    filters: payload.filters ?? {},
+  });
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {
