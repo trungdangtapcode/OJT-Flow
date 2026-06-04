@@ -1,6 +1,8 @@
 import * as React from "react";
 import {
+  AlertTriangle,
   BrainCircuit,
+  CheckCircle2,
   Database,
   FileSearch,
   Gauge,
@@ -28,6 +30,7 @@ import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-stri
 import { Table, TBody, TD, TH, THead, TR } from "../../components/ui/table";
 import {
   useRetrievalReindexMutation,
+  useRetrievalIntegrityQuery,
   useRetrievalSearchMutation,
   useRetrievalSourcesQuery,
   useRuntimeConfigQuery,
@@ -39,6 +42,7 @@ import type {
   Evidence,
   RetrievalGraphContext,
   RetrievalHit,
+  RetrievalIntegrityReport,
   RetrievalPackage,
   RetrievalCoverage,
   RetrievalFacets,
@@ -62,6 +66,11 @@ export function RetrievalPage() {
   const sourcesQuery = useRetrievalSourcesQuery();
   const schemasQuery = useSchemasQuery();
   const runtimeQuery = useRuntimeConfigQuery();
+  const [includeCorpusIntegrity, setIncludeCorpusIntegrity] = React.useState(false);
+  const integrityQuery = useRetrievalIntegrityQuery({
+    include_seeded: true,
+    include_corpus: includeCorpusIntegrity,
+  });
   const searchMutation = useRetrievalSearchMutation();
   const reindexMutation = useRetrievalReindexMutation();
   const [query, setQuery] = React.useState(defaultQuery);
@@ -152,6 +161,11 @@ export function RetrievalPage() {
         <Notice title="Retrieval index refreshed">
           {formatCount(reindexMutation.data.chunks_indexed, "chunk")} indexed with{" "}
           {String(reindexMutation.data.embedding?.provider ?? "configured")} embeddings.
+        </Notice>
+      ) : null}
+      {integrityQuery.isError ? (
+        <Notice title="Retrieval integrity could not be checked" tone="danger">
+          {workflowErrorMessage(integrityQuery.error)}
         </Notice>
       ) : null}
 
@@ -295,6 +309,13 @@ export function RetrievalPage() {
             <TracePanel packageData={packageData} />
             <GraphPanel graphContext={graphContext} />
           </div>
+          <IntegrityPanel
+            includeCorpus={includeCorpusIntegrity}
+            isFetching={integrityQuery.isFetching}
+            onRefresh={() => void integrityQuery.refetch()}
+            onToggleCorpus={() => setIncludeCorpusIntegrity((current) => !current)}
+            report={integrityQuery.data}
+          />
           <SourcesPanel isLoading={sourcesQuery.isLoading} sources={sources} />
         </div>
       </div>
@@ -931,6 +952,168 @@ function GraphPanel({ graphContext }: { graphContext: RetrievalGraphContext | un
   );
 }
 
+function IntegrityPanel({
+  includeCorpus,
+  isFetching,
+  onRefresh,
+  onToggleCorpus,
+  report,
+}: {
+  includeCorpus: boolean;
+  isFetching: boolean;
+  onRefresh: () => void;
+  onToggleCorpus: () => void;
+  report: RetrievalIntegrityReport | undefined;
+}) {
+  const status = report?.status ?? "loading";
+  const checks = report ? prioritizedIntegrityChecks(report) : [];
+  const hasWarnings = Boolean(report?.warnings.length);
+  const StatusIcon = status === "ok" ? CheckCircle2 : AlertTriangle;
+
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border bg-card/70">
+        <div className="min-w-0">
+          <CardTitle className="flex items-center gap-2">
+            <StatusIcon
+              className={cn(
+                "h-5 w-5",
+                status === "ok" ? "text-emerald-700" : "text-amber-700",
+              )}
+            />
+            Index integrity
+          </CardTitle>
+          <CardDescription>
+            {report
+              ? `${report.repository} / ${report.checked_scope}`
+              : "Checking indexed knowledge consistency"}
+          </CardDescription>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button onClick={onToggleCorpus} size="sm" type="button" variant="outline">
+            <Database className="h-4 w-4" />
+            {includeCorpus ? "Corpus on" : "Seeded only"}
+          </Button>
+          <Button disabled={isFetching} onClick={onRefresh} size="sm" type="button" variant="outline">
+            {isFetching ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4">
+        {!report ? (
+          <Notice title="Integrity check running">
+            The app is checking trusted source hashes against the active index.
+          </Notice>
+        ) : (
+          <>
+            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+              <IntegrityMetric
+                label="Status"
+                tone={integrityBadgeVariant(report.status)}
+                value={humanize(report.status)}
+              />
+              <IntegrityMetric label="Expected" value={report.expected_source_count} />
+              <IntegrityMetric label="Indexed" value={report.indexed_source_count} />
+              <IntegrityMetric label="OK" tone="success" value={report.ok_count} />
+              <IntegrityMetric label="Stale" tone={report.stale_count ? "warning" : "muted"} value={report.stale_count} />
+              <IntegrityMetric label="Missing" tone={report.missing_count ? "destructive" : "muted"} value={report.missing_count} />
+            </div>
+
+            {hasWarnings ? (
+              <TokenList items={report.warnings} title="Integrity warnings" tone="warning" />
+            ) : (
+              <TokenList items={[]} title="Integrity warnings" />
+            )}
+
+            <div className="grid gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-bold uppercase text-muted-foreground">
+                  Source checks
+                </div>
+                <Badge variant={report.extra_count ? "warning" : "muted"}>
+                  {formatCount(report.extra_count, "extra source")}
+                </Badge>
+              </div>
+              <div className="grid gap-2">
+                {checks.map((check) => (
+                  <div
+                    className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm"
+                    key={check.source_id}
+                  >
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="break-all font-mono text-xs font-bold">
+                          {check.source_id}
+                        </div>
+                        <div className="mt-1 break-words text-xs text-muted-foreground">
+                          {check.message}
+                        </div>
+                      </div>
+                      <Badge variant={integrityBadgeVariant(check.status)}>
+                        {humanize(check.status)}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-2 text-xs sm:grid-cols-4">
+                      <IntegrityFact label="Expected" value={`${check.expected_chunk_count}`} />
+                      <IntegrityFact label="Indexed" value={`${check.indexed_chunk_count}`} />
+                      <IntegrityFact label="Expected hash" value={shortHash(check.expected_hash)} />
+                      <IntegrityFact label="Indexed hash" value={shortHash(check.indexed_hash)} />
+                    </div>
+                  </div>
+                ))}
+                {!checks.length ? (
+                  <div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                    No source checks returned.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function IntegrityMetric({
+  label,
+  tone = "muted",
+  value,
+}: {
+  label: string;
+  tone?: "default" | "success" | "warning" | "destructive" | "muted";
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/20 p-2">
+      <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 min-w-0">
+        {typeof value === "string" ? (
+          <Badge variant={tone}>{value}</Badge>
+        ) : (
+          <span className={cn("text-lg font-black tabular-nums", integrityMetricToneClass(tone))}>
+            {value}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function IntegrityFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md border border-border bg-card p-2">
+      <div className="font-bold text-muted-foreground">{label}</div>
+      <div className="break-all font-mono font-semibold">{value}</div>
+    </div>
+  );
+}
+
 function SourcesPanel({
   isLoading,
   sources,
@@ -1302,6 +1485,35 @@ function diagnosticBadgeVariant(
   if (severity === "error") return "destructive";
   if (severity === "info") return "muted";
   return "default";
+}
+
+function integrityBadgeVariant(
+  status: string,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (status === "ok") return "success";
+  if (status === "missing") return "destructive";
+  if (status === "stale" || status === "extra" || status === "warning") return "warning";
+  if (status === "loading") return "muted";
+  return "default";
+}
+
+function integrityMetricToneClass(
+  tone: "default" | "success" | "warning" | "destructive" | "muted",
+) {
+  if (tone === "success") return "text-emerald-800";
+  if (tone === "warning") return "text-amber-800";
+  if (tone === "destructive") return "text-red-800";
+  return "text-foreground";
+}
+
+function prioritizedIntegrityChecks(report: RetrievalIntegrityReport) {
+  const nonOk = report.checks.filter((check) => check.status !== "ok");
+  const source = nonOk.length ? nonOk : report.checks;
+  return source.slice(0, nonOk.length ? 12 : 8);
+}
+
+function shortHash(value: string | null | undefined) {
+  return value ? value.slice(0, 12) : "-";
 }
 
 function highlightedParts(text: string, terms: string[]) {

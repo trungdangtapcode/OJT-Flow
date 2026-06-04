@@ -3,6 +3,7 @@ import type {
   AuthLoginResponse,
   AuthSessionResponse,
   ExtractorInventory,
+  RetrievalIntegrityReport,
   RetrievalPackage,
   RetrievalReindexPayload,
   RetrievalReindexResult,
@@ -364,6 +365,18 @@ export function searchRetrieval(payload: RetrievalSearchPayload): Promise<Retrie
 
 export function listRetrievalSources(): Promise<RetrievalSource[]> {
   return request<RetrievalSource[]>("/retrieval/sources");
+}
+
+export function getRetrievalIntegrity(params: {
+  include_seeded: boolean;
+  include_corpus: boolean;
+}): Promise<RetrievalIntegrityReport> {
+  return request<RetrievalIntegrityReport>(
+    `/retrieval/integrity${queryString({
+      include_seeded: String(params.include_seeded),
+      include_corpus: String(params.include_corpus),
+    })}`,
+  );
 }
 
 export function reindexRetrieval(

@@ -272,6 +272,30 @@ export type RetrievalSource = {
   chunk_count: number;
 };
 
+export type RetrievalIntegrityItem = {
+  source_id: string;
+  status: string;
+  expected_chunk_count: number;
+  indexed_chunk_count: number;
+  expected_hash?: string | null;
+  indexed_hash?: string | null;
+  message: string;
+};
+
+export type RetrievalIntegrityReport = {
+  repository: string;
+  status: string;
+  checked_scope: string;
+  expected_source_count: number;
+  indexed_source_count: number;
+  ok_count: number;
+  stale_count: number;
+  missing_count: number;
+  extra_count: number;
+  checks: RetrievalIntegrityItem[];
+  warnings: string[];
+};
+
 export type RetrievalReindexPayload = {
   include_seeded: boolean;
   include_corpus: boolean;

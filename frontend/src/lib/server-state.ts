@@ -6,6 +6,7 @@ import {
   API_BASE_URL,
   createWorkflow,
   getExtractorInventory,
+  getRetrievalIntegrity,
   getRuntimeConfig,
   getRuntimeHealth,
   getRuntimeReadiness,
@@ -37,6 +38,7 @@ export const queryKeys = {
   events: (workflowId: string | null) => ["workflow-events", workflowId] as const,
   schemas: ["schemas"] as const,
   retrievalSources: ["retrieval-sources"] as const,
+  retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
@@ -129,6 +131,16 @@ export function useRetrievalSourcesQuery() {
   return useQuery({ queryKey: queryKeys.retrievalSources, queryFn: listRetrievalSources });
 }
 
+export function useRetrievalIntegrityQuery(params: {
+  include_seeded: boolean;
+  include_corpus: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.retrievalIntegrity(params),
+    queryFn: () => getRetrievalIntegrity(params),
+  });
+}
+
 export function useRetrievalSearchMutation() {
   return useMutation({
     mutationFn: (payload: RetrievalSearchPayload) => searchRetrieval(payload),
@@ -141,6 +153,7 @@ export function useRetrievalReindexMutation() {
     mutationFn: (payload: RetrievalReindexPayload) => reindexRetrieval(payload),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-integrity"] });
       toast.success("Retrieval index refreshed");
     },
   });
