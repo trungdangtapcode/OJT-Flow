@@ -118,6 +118,8 @@ Current rules detect:
 - medication normalization cues and expand toward RxNorm terminology.
 - observational analytics/export cues and expand toward OMOP CDM evidence.
 - biomedical literature-search cues and expand toward MeSH/PubMed search.
+- clinical-trial cues and expand toward ClinicalTrials.gov API v2 search.
+- drug regulatory/safety cues and expand toward openFDA label and adverse-event search.
 
 The public retrieval package exposes this under
 `handoff_context.query_analysis`:
@@ -192,12 +194,23 @@ into `RetrievalTrace.warnings` for audit and UI visibility.
 Search hints are syntax scaffolds for medical search workflows outside the
 local retrieval index. PubMed hints prefer a conservative combination of
 title/abstract text words and MeSH-review warnings; FHIR hints produce resource
-search templates such as `Observation?code=...&subject=...&date=...`. These
-hints are never executed automatically and are not clinical recommendations.
+search templates such as `Observation?code=...&subject=...&date=...`;
+ClinicalTrials.gov hints produce API v2 study searches by condition,
+intervention, and recruitment status; openFDA hints produce public drug-label
+and adverse-event endpoint queries. These hints are never executed
+automatically and are not clinical recommendations.
 For example, `PubMed systematic review HbA1c units` produces a `pubmed` hint
 that combines HbA1c title/abstract terms, unit terms, and publication-type
 terms, while warning operators to confirm preferred MeSH headings before using
 the query as a final literature strategy.
+
+For example, `ClinicalTrials.gov diabetes metformin recruiting eligibility`
+produces a `clinicaltrials_gov` hint shaped like
+`https://clinicaltrials.gov/api/v2/studies?query.cond=Diabetes+Mellitus&query.intr=Metformin...`.
+`openFDA metformin adverse event boxed warning drug label` produces
+`openfda_drug_label` and `openfda_drug_event` hints shaped around the drug
+label and FAERS adverse-event endpoints. Both routes include warnings to verify
+timestamps, product identity, limitations, and source provenance.
 
 Research basis:
 
@@ -220,7 +233,10 @@ Research basis:
 - UCUM units: `https://ucum.nlm.nih.gov/`
 - MedlinePlus XML: `https://medlineplus.gov/xml.html`
 - openFDA APIs: `https://open.fda.gov/apis/`
+- openFDA query syntax: `https://open.fda.gov/apis/query-syntax/`
 - ClinicalTrials.gov API v2: `https://clinicaltrials.gov/data-api/api`
+- ClinicalTrials.gov search areas:
+  `https://clinicaltrials.gov/data-about-studies/search-areas`
 
 ## Snippets And Context Compression
 

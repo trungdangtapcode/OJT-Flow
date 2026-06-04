@@ -232,6 +232,43 @@ def test_query_analysis_uses_mesh_seed_concepts_in_pubmed_hint() -> None:
     assert '"Hypertension"[tiab]' in hints["pubmed"].query
 
 
+def test_query_analysis_builds_clinicaltrials_gov_hint() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(query="ClinicalTrials.gov diabetes metformin recruiting eligibility")
+    )
+    hints = {hint.target: hint for hint in analysis.search_hints}
+
+    assert "clinical_trial_search" in analysis.detected_concepts
+    assert "ClinicalTrials.gov" in analysis.standards
+    assert "clinicaltrials_gov" in hints
+    assert hints["clinicaltrials_gov"].query.startswith(
+        "https://clinicaltrials.gov/api/v2/studies?"
+    )
+    assert "query.cond=Diabetes+Mellitus" in hints["clinicaltrials_gov"].query
+    assert "query.intr=Metformin" in hints["clinicaltrials_gov"].query
+    assert "filter.overallStatus=" in hints["clinicaltrials_gov"].query
+    assert hints["clinicaltrials_gov"].warnings
+
+
+def test_query_analysis_builds_openfda_drug_hints() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(query="openFDA metformin adverse event boxed warning drug label")
+    )
+    hints = {hint.target: hint for hint in analysis.search_hints}
+
+    assert "regulatory_drug_safety_search" in analysis.detected_concepts
+    assert "openFDA" in analysis.standards
+    assert "openfda_drug_label" in hints
+    assert "openfda_drug_event" in hints
+    assert hints["openfda_drug_label"].query.startswith(
+        "https://api.fda.gov/drug/label.json?"
+    )
+    assert "openfda.generic_name:%22Metformin%22" in hints["openfda_drug_label"].query
+    assert "_exists_:boxed_warning" in hints["openfda_drug_label"].query
+    assert "patient.drug.openfda.generic_name:%22Metformin%22" in hints["openfda_drug_event"].query
+    assert hints["openfda_drug_event"].warnings
+
+
 def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
     package = repository.search(
@@ -281,6 +318,25 @@ def test_static_retrieval_ranks_pubmed_mesh_search_evidence() -> None:
     assert package.handoff_context["query_analysis"]["search_hints"][0]["target"] == "pubmed"
 
 
+def test_static_retrieval_ranks_external_medical_search_evidence() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    package = repository.search(
+        RetrievalQuery(
+            query="ClinicalTrials.gov openFDA metformin diabetes adverse event recruiting",
+            top_k=5,
+            filters={"trust_level": "approved"},
+        )
+    )
+
+    source_ids = {item.source_id for item in package.evidence}
+
+    assert "standard:clinicaltrials_gov_api" in source_ids
+    assert "standard:openfda_drug_apis" in source_ids
+    assert package.coverage is not None
+    assert any(item.value == "ClinicalTrials.gov" for item in package.coverage.standard_system)
+    assert any(item.value == "openFDA" for item in package.coverage.standard_system)
+
+
 def test_static_retrieval_lists_medical_concept_registry_source() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
 
@@ -298,6 +354,8 @@ def test_static_retrieval_lists_expanded_healthcare_knowledge_sources() -> None:
     assert sources["catalog:official_healthcare_sources_v1"].standard_system == "ojtflow_source_catalog"
     assert sources["catalog:public_dataset_ingestion_plan_v1"].standard_system == "ojtflow_source_catalog"
     assert sources["standard:fhir_search_parameters_r4_v1"].standard_system == "FHIR"
+    assert sources["standard:clinicaltrials_gov_api"].standard_system == "ClinicalTrials.gov"
+    assert sources["standard:openfda_drug_apis"].standard_system == "openFDA"
     assert sources["standard:clinical_data_standards_map_v1"].source_type == EvidenceSourceType.HEALTHCARE_STANDARD
     assert sources["dictionary:medical_search_playbook_v1"].clinical_domain == "retrieval"
 

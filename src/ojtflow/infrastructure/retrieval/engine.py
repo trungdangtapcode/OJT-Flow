@@ -541,6 +541,36 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             standard_system="MeSH",
             locator={"standard": "NLM MeSH and PubMed"},
         ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_clinicaltrials_gov_api_v0",
+            source_id="standard:clinicaltrials_gov_api",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="ClinicalTrials.gov API v2",
+            content=(
+                "ClinicalTrials.gov API v2 provides study search for clinical trial "
+                "context. OJTFlow search hints should prefer condition, intervention, "
+                "recruitment status, eligibility, NCT identifier, and dataTimestamp "
+                "verification before trial records are used as workflow evidence."
+            ),
+            clinical_domain="literature",
+            standard_system="ClinicalTrials.gov",
+            locator={"standard": "ClinicalTrials.gov API v2"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_openfda_drug_apis_v0",
+            source_id="standard:openfda_drug_apis",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="openFDA Drug APIs",
+            content=(
+                "openFDA drug APIs provide public drug label, adverse event, NDC, "
+                "recall, and Drugs@FDA retrieval context. OJTFlow should treat FAERS "
+                "adverse event records as signal context only and preserve endpoint, "
+                "query, date, product identity, and limitations in evidence."
+            ),
+            clinical_domain="medication",
+            standard_system="openFDA",
+            locator={"standard": "openFDA drug APIs"},
+        ),
     ]
 
     file_specs = [
@@ -700,7 +730,16 @@ def _facet_buckets(values: Iterable[object | None]) -> list[RetrievalFacetBucket
 def _expected_standard_values(standards: list[str]) -> list[str]:
     mapped: list[str] = []
     for standard in standards:
-        if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP", "MeSH"}:
+        if standard in {
+            "FHIR",
+            "LOINC",
+            "UCUM",
+            "RxNorm",
+            "OMOP",
+            "MeSH",
+            "ClinicalTrials.gov",
+            "openFDA",
+        }:
             mapped.append(standard)
         elif standard == "OJTFlow policy":
             mapped.append("ojtflow_policy")
@@ -839,6 +878,10 @@ def _rerank_boost(
         boost += 0.05
     if chunk.standard_system == "FHIR" and "fhir_observation_profile" in concepts:
         boost += 0.05
+    if chunk.standard_system == "ClinicalTrials.gov" and "clinical_trial_search" in concepts:
+        boost += 0.08
+    if chunk.standard_system == "openFDA" and "regulatory_drug_safety_search" in concepts:
+        boost += 0.08
     if chunk.source_type == EvidenceSourceType.TRANSFORMATION_EXAMPLE and (
         "csv_tabular_quality" in concepts
         or query.detected_format

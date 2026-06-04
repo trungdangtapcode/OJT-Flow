@@ -953,7 +953,10 @@ of deterministic query-quality checks with `code`, `severity`, `message`, and
 `suggested_action`; warning diagnostics are copied into `trace.warnings`. It
 also includes `search_hints`, deterministic external medical search syntax
 scaffolds with `target`, `query`, `rationale`, and `warnings` for workflows
-such as PubMed/MeSH literature search and FHIR resource search templates.
+such as PubMed/MeSH literature search, FHIR resource search templates,
+ClinicalTrials.gov API v2 study search, and openFDA drug label/adverse-event
+search. Current targets include `pubmed`, `fhir`, `clinicaltrials_gov`,
+`openfda_drug_label`, and `openfda_drug_event`.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.

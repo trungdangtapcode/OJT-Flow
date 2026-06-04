@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote_plus
 
 from ojtflow.core.contracts.retrieval import (
     RetrievalConceptCandidate,
@@ -195,6 +196,59 @@ CLINICAL_EXPANSION_RULES: tuple[QueryExpansionRule, ...] = (
         ),
         standards=("MeSH",),
         variant="PubMed MEDLINE MeSH title abstract systematic review clinical trial evidence",
+    ),
+    QueryExpansionRule(
+        rule_id="clinical_trial_search",
+        concept="clinical_trial_search",
+        triggers=(
+            "clinical trial",
+            "clinical trials",
+            "clinicaltrials",
+            "clinicaltrials.gov",
+            "nct",
+            "recruiting",
+            "eligibility",
+            "enrollment",
+            "intervention",
+            "phase",
+        ),
+        expanded_terms=(
+            "ClinicalTrials.gov API v2",
+            "condition search",
+            "intervention search",
+            "recruitment status filter",
+            "eligibility criteria",
+        ),
+        standards=("ClinicalTrials.gov",),
+        variant="ClinicalTrials.gov API v2 studies condition intervention eligibility recruitment status",
+    ),
+    QueryExpansionRule(
+        rule_id="regulatory_drug_safety_search",
+        concept="regulatory_drug_safety_search",
+        triggers=(
+            "openfda",
+            "faers",
+            "fda",
+            "adverse event",
+            "adverse events",
+            "side effect",
+            "side effects",
+            "boxed warning",
+            "drug label",
+            "drug labeling",
+            "recall",
+            "ndc",
+            "drug safety",
+        ),
+        expanded_terms=(
+            "openFDA drug label API",
+            "openFDA drug adverse event API",
+            "FAERS public reports",
+            "boxed warning",
+            "drug safety signal",
+        ),
+        standards=("openFDA",),
+        variant="openFDA drug label adverse event FAERS boxed warning recall NDC safety",
     ),
 )
 
@@ -574,6 +628,10 @@ def _search_hints(
                 concept_candidates=concept_candidates,
             )
         )
+    if "clinical_trial_search" in concept_set or "ClinicalTrials.gov" in standard_set:
+        hints.append(_clinicaltrials_search_hint(query, concept_candidates=concept_candidates))
+    if "regulatory_drug_safety_search" in concept_set or "openFDA" in standard_set:
+        hints.extend(_openfda_search_hints(query, concept_candidates=concept_candidates))
     if "fhir_observation_profile" in concept_set or query.resource_type:
         hints.append(_fhir_search_hint(query))
     return hints
@@ -632,6 +690,99 @@ def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
     )
 
 
+def _clinicaltrials_search_hint(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> RetrievalSearchHint:
+    condition_terms = [
+        candidate.display_name
+        for candidate in concept_candidates
+        if candidate.standard_system == "MeSH"
+        and (candidate.clinical_domain or "") == "literature"
+        and "metformin" not in candidate.display_name.lower()
+    ]
+    intervention_terms = [
+        candidate.display_name
+        for candidate in concept_candidates
+        if candidate.standard_system == "RxNorm"
+        or (candidate.clinical_domain or "") == "medication"
+    ]
+    params: list[tuple[str, str]] = []
+    if condition_terms:
+        params.append(("query.cond", _join_external_terms(condition_terms, limit=2)))
+    if intervention_terms:
+        params.append(("query.intr", _join_external_terms(intervention_terms, limit=2)))
+    if not params:
+        params.append(("query.term", _fallback_external_query(query.query)))
+    params.extend(
+        [
+            ("filter.overallStatus", "RECRUITING,NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING"),
+            ("pageSize", "10"),
+            ("format", "json"),
+        ]
+    )
+    query_string = "&".join(f"{key}={quote_plus(value)}" for key, value in params)
+    return RetrievalSearchHint(
+        target="clinicaltrials_gov",
+        query=f"https://clinicaltrials.gov/api/v2/studies?{query_string}",
+        rationale=(
+            "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, "
+            "intervention, recruitment status, and eligibility fields."
+        ),
+        warnings=[
+            "Trial status and eligibility can change; verify the API version and dataTimestamp before using results in a workflow.",
+            "Trial records provide research context and are not clinical treatment recommendations.",
+        ],
+    )
+
+
+def _openfda_search_hints(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> list[RetrievalSearchHint]:
+    medication_term = _first_medication_term(query, concept_candidates)
+    if not medication_term:
+        medication_term = _fallback_external_query(query.query)
+    encoded_drug = quote_plus(f'"{medication_term}"')
+    label_search = f"openfda.generic_name:{encoded_drug}"
+    if "boxed warning" in query.query.lower():
+        label_search = f"{label_search}+AND+_exists_:boxed_warning"
+    return [
+        RetrievalSearchHint(
+            target="openfda_drug_label",
+            query=(
+                "https://api.fda.gov/drug/label.json?"
+                f"search={label_search}&sort=effective_time:desc&limit=5"
+            ),
+            rationale=(
+                "Use openFDA drug labeling for public regulatory label context, "
+                "boxed-warning review, and current label text retrieval."
+            ),
+            warnings=[
+                "openFDA label data is public regulatory information, not clinical advice.",
+                "Verify effective_time, product identity, and active ingredient before citing a label record.",
+            ],
+        ),
+        RetrievalSearchHint(
+            target="openfda_drug_event",
+            query=(
+                "https://api.fda.gov/drug/event.json?"
+                f"search=patient.drug.openfda.generic_name:{encoded_drug}&limit=10"
+            ),
+            rationale=(
+                "Use openFDA adverse event reports for public FAERS signal context "
+                "after medication identity is normalized."
+            ),
+            warnings=[
+                "FAERS/openFDA adverse event reports are spontaneous reports and cannot establish causality or incidence.",
+                "Use adverse-event counts as signal context only, with source and date provenance.",
+            ],
+        ),
+    ]
+
+
 def _pubmed_term_groups(
     query: RetrievalQuery,
     *,
@@ -668,6 +819,50 @@ def _pubmed_term_groups(
         if token_terms:
             groups.append(" AND ".join(f"{token}[tiab]" for token in token_terms))
     return _dedupe(groups)
+
+
+def _join_external_terms(terms: list[str], *, limit: int) -> str:
+    return " ".join(_dedupe(terms)[:limit])
+
+
+def _fallback_external_query(text: str) -> str:
+    stopwords = {
+        "and",
+        "the",
+        "for",
+        "with",
+        "api",
+        "search",
+        "clinical",
+        "trial",
+        "trials",
+        "openfda",
+        "fda",
+        "adverse",
+        "event",
+        "events",
+        "label",
+        "drug",
+        "safety",
+        "recruiting",
+        "eligibility",
+    }
+    terms = [
+        token
+        for token in _tokens(text)
+        if len(token) > 2 and token not in stopwords
+    ][:6]
+    return " ".join(terms) if terms else text.strip()
+
+
+def _first_medication_term(
+    query: RetrievalQuery,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> str:
+    for candidate in concept_candidates:
+        if candidate.standard_system == "RxNorm" or (candidate.clinical_domain or "") == "medication":
+            return candidate.display_name
+    return ""
 
 
 def _tiab_or_group(terms: list[str]) -> str:
@@ -722,7 +917,16 @@ def _suggestion(
 
 
 def _standard_filter_value(standard: str) -> str | None:
-    if standard in {"FHIR", "LOINC", "UCUM", "RxNorm", "OMOP", "MeSH"}:
+    if standard in {
+        "FHIR",
+        "LOINC",
+        "UCUM",
+        "RxNorm",
+        "OMOP",
+        "MeSH",
+        "ClinicalTrials.gov",
+        "openFDA",
+    }:
         return standard
     if standard == "OJTFlow policy":
         return "ojtflow_policy"

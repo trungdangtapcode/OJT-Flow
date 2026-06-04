@@ -22,8 +22,10 @@ Use a layered search stack:
 6. Reranking refines top candidates when a reranker is configured.
 7. Source-aware diversity prevents one document family from dominating the final
    context.
-8. Coverage diagnostics report missing expected standards such as FHIR, LOINC,
-   UCUM, RxNorm, OMOP, or MeSH.
+8. External medical search hints are generated for PubMed, FHIR,
+   ClinicalTrials.gov, and openFDA, but never executed automatically.
+9. Coverage diagnostics report missing expected standards such as FHIR, LOINC,
+   UCUM, RxNorm, OMOP, MeSH, ClinicalTrials.gov, or openFDA.
 
 ## Medical Query Patterns
 
@@ -47,6 +49,23 @@ Literature query:
 - Expected standards: MeSH and PubMed field behavior.
 - Useful evidence: MeSH descriptor candidates, title/abstract term groups,
   publication type filters, and warning text about Automatic Term Mapping.
+
+Clinical trial query:
+
+- Example: `ClinicalTrials.gov diabetes metformin recruiting eligibility`
+- Expected standards: ClinicalTrials.gov, plus RxNorm/MeSH when concepts are
+  detected.
+- Useful evidence: API v2 `/studies` query template, condition/intervention
+  terms, recruitment-status filters, NCT ID handling, and dataTimestamp
+  verification.
+
+Drug regulatory/safety query:
+
+- Example: `openFDA metformin adverse event boxed warning drug label`
+- Expected standards: openFDA and RxNorm when medication identity is detected.
+- Useful evidence: drug label endpoint query, drug adverse-event endpoint
+  query, product identity, effective dates, FAERS limitations, and endpoint
+  provenance.
 
 Analytics query:
 
