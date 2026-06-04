@@ -18,14 +18,17 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalSource,
+    RetrievalSnippet,
     RetrievalTrace,
 )
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
+SNIPPET_SEGMENT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n{2,}|\r\n{2,}")
 DEFAULT_EMBEDDING_DIMENSIONS = 64
 RRF_K = 60
+SNIPPET_MAX_CHARS = 280
 
 
 @dataclass(frozen=True)
@@ -209,6 +212,11 @@ def rank_chunks(
                     rerank_score=round(rerank, 6),
                     matched_terms=matched_terms[chunk.chunk_id][:12],
                     source_locator=chunk.locator,
+                    snippet=snippet_from_chunk(
+                        chunk,
+                        query_tokens=query_tokens,
+                        matched_terms=matched_terms[chunk.chunk_id],
+                    ),
                 ),
             )
         )
@@ -305,6 +313,55 @@ def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence
         locator=locator,
         confidence=round(confidence, 4),
         trust_level=chunk.trust_level,
+    )
+
+
+def snippet_from_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    query_tokens: set[str],
+    matched_terms: list[str],
+) -> RetrievalSnippet:
+    """Extract the most query-relevant sentence/window from a chunk."""
+
+    content = _snippet_source_text(chunk.content)
+    if not content:
+        content = chunk.title
+    segments = _snippet_segments(content)
+    ranked_segments = [
+        (
+            _snippet_score(segment_text, query_tokens=query_tokens, matched_terms=matched_terms),
+            start,
+            end,
+            segment_text,
+        )
+        for start, end, segment_text in segments
+    ]
+    ranked_segments.sort(
+        key=lambda item: (
+            item[0],
+            -abs(len(item[3]) - SNIPPET_MAX_CHARS),
+        ),
+        reverse=True,
+    )
+    _, start, _end, text = (
+        ranked_segments[0] if ranked_segments[0][0] > 0 else (0.0, *segments[0])
+    )
+    cropped_start, cropped_text = _crop_snippet(
+        text,
+        start_char=start,
+        matched_terms=matched_terms,
+    )
+    snippet_terms = [
+        term
+        for term in matched_terms
+        if term in set(tokenize(cropped_text))
+    ][:8]
+    return RetrievalSnippet(
+        text=cropped_text,
+        start_char=cropped_start,
+        end_char=cropped_start + len(cropped_text),
+        matched_terms=snippet_terms,
     )
 
 
@@ -511,6 +568,75 @@ def _lexical_score(
     phrase_boost = 0.15 if query_text.lower() in chunk.content.lower() else 0.0
     title_boost = 0.08 if any(token in tokenize(chunk.title) for token in query_tokens) else 0.0
     return overlap + phrase_boost + title_boost
+
+
+def _snippet_source_text(content: str) -> str:
+    text = re.sub(r"^#{1,6}\s+", "", content, flags=re.MULTILINE)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _snippet_segments(content: str) -> list[tuple[int, int, str]]:
+    segments: list[tuple[int, int, str]] = []
+    cursor = 0
+    for match in SNIPPET_SEGMENT_PATTERN.finditer(content):
+        end = match.start()
+        segment = content[cursor:end].strip()
+        if segment:
+            start = content.find(segment, cursor, end + len(segment))
+            segments.append((start, start + len(segment), segment))
+        cursor = match.end()
+    tail = content[cursor:].strip()
+    if tail:
+        start = content.find(tail, cursor)
+        segments.append((start, start + len(tail), tail))
+    if not segments and content:
+        segments.append((0, len(content), content))
+    return segments
+
+
+def _snippet_score(
+    text: str,
+    *,
+    query_tokens: set[str],
+    matched_terms: list[str],
+) -> float:
+    text_tokens = set(tokenize(text))
+    matched = set(matched_terms)
+    if not text_tokens:
+        return 0.0
+    exact_overlap = len(text_tokens.intersection(matched))
+    query_overlap = len(text_tokens.intersection(query_tokens))
+    density = exact_overlap / max(1, len(text_tokens))
+    return exact_overlap * 2.0 + query_overlap * 0.25 + density
+
+
+def _crop_snippet(
+    text: str,
+    *,
+    start_char: int,
+    matched_terms: list[str],
+) -> tuple[int, str]:
+    if len(text) <= SNIPPET_MAX_CHARS:
+        return start_char, text
+    lower_text = text.lower()
+    first_match = min(
+        (
+            index
+            for term in matched_terms
+            if term
+            for index in [lower_text.find(term.lower())]
+            if index >= 0
+        ),
+        default=0,
+    )
+    local_start = max(0, first_match - SNIPPET_MAX_CHARS // 3)
+    local_end = min(len(text), local_start + SNIPPET_MAX_CHARS)
+    local_start = max(0, local_end - SNIPPET_MAX_CHARS)
+    raw = text[local_start:local_end]
+    leading_trim = len(raw) - len(raw.lstrip())
+    return start_char + local_start + leading_trim, raw.strip()
 
 
 def _rerank_boost(

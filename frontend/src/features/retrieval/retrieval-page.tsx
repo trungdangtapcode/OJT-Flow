@@ -447,7 +447,11 @@ function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
         </div>
       </div>
 
-      <p className="break-words text-sm leading-6">{formatClaim(evidence.claim)}</p>
+      {hit.snippet ? <SnippetBlock snippet={hit.snippet} /> : null}
+
+      <p className="break-words text-sm leading-6 text-muted-foreground">
+        {formatClaim(evidence.claim)}
+      </p>
 
       <div className="grid gap-2 md:grid-cols-3">
         <ScoreMeter label="Lexical" value={hit.lexical_score} />
@@ -484,6 +488,42 @@ function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
         </pre>
       </details>
     </article>
+  );
+}
+
+function SnippetBlock({ snippet }: { snippet: NonNullable<RetrievalHit["snippet"]> }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold uppercase text-primary">Best snippet</span>
+        <span className="font-mono text-xs font-semibold text-muted-foreground">
+          {snippet.start_char}-{snippet.end_char}
+        </span>
+      </div>
+      <p className="break-words text-sm leading-6">
+        <HighlightedText terms={snippet.matched_terms} text={formatClaim(snippet.text)} />
+      </p>
+    </div>
+  );
+}
+
+function HighlightedText({ text, terms }: { text: string; terms: string[] }) {
+  const parts = highlightedParts(text, terms);
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.highlight ? (
+          <mark
+            className="rounded bg-amber-100 px-0.5 font-bold text-amber-950"
+            key={`${part.text}-${index}`}
+          >
+            {part.text}
+          </mark>
+        ) : (
+          <React.Fragment key={`${part.text}-${index}`}>{part.text}</React.Fragment>
+        ),
+      )}
+    </>
   );
 }
 
@@ -915,6 +955,32 @@ function booleanValue(value: unknown): boolean {
 function stringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function highlightedParts(text: string, terms: string[]) {
+  const normalizedTerms = Array.from(
+    new Set(
+      terms
+        .map((term) => term.trim())
+        .filter((term) => term.length > 1)
+        .sort((left, right) => right.length - left.length),
+    ),
+  );
+  if (!normalizedTerms.length) {
+    return [{ text, highlight: false }];
+  }
+  const pattern = new RegExp(`(${normalizedTerms.map(escapeRegExp).join("|")})`, "gi");
+  return text
+    .split(pattern)
+    .filter(Boolean)
+    .map((part) => ({
+      text: part,
+      highlight: normalizedTerms.some((term) => part.toLowerCase() === term.toLowerCase()),
+    }));
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseFields(value: string) {

@@ -922,6 +922,7 @@ Response data is a `RetrievalPackage`:
 - `hits[].vector_score`
 - `hits[].rerank_score`
 - `hits[].matched_terms`
+- `hits[].snippet`
 - `evidence`
 - `trace.strategy`
 - `trace.query_variants`
@@ -941,6 +942,9 @@ for downstream agents. Current values include
 It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
 such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
 produced expanded query variants.
+`hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
+`matched_terms`, and `extraction_strategy`. The full source claim remains in
+`hits[].evidence.claim`.
 
 Retrieval endpoints require an authenticated session. Searches without
 `workflow_id` run over the approved knowledge inventory. Searches with
