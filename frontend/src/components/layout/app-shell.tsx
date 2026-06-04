@@ -119,11 +119,11 @@ export function AppShell() {
             </div>
             <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
               <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card px-2.5 shadow-sm md:max-w-[18rem]">
-                {user?.avatar_url ? (
-                  <img alt="" className="h-6 w-6 rounded-full" src={user.avatar_url} />
-                ) : (
-                  <UserCircle className="h-6 w-6 shrink-0 text-muted-foreground" />
-                )}
+                <UserAvatar
+                  avatarUrl={user?.avatar_url}
+                  displayName={user?.display_name}
+                  email={user?.email}
+                />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-bold max-sm:text-xs">{user?.display_name || user?.email}</div>
                   <div className="truncate text-[11px] leading-4 text-muted-foreground max-sm:hidden">{user?.email}</div>
@@ -161,4 +161,62 @@ export function AppShell() {
       </main>
     </div>
   );
+}
+
+function UserAvatar({
+  avatarUrl,
+  displayName,
+  email,
+}: {
+  avatarUrl?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+}) {
+  const [failedUrl, setFailedUrl] = React.useState<string | null>(null);
+  const usableAvatarUrl = avatarUrl && avatarUrl !== failedUrl ? avatarUrl : null;
+  const initials = userInitials(displayName, email);
+
+  React.useEffect(() => {
+    setFailedUrl(null);
+  }, [avatarUrl]);
+
+  if (usableAvatarUrl) {
+    return (
+      <img
+        alt={displayName || email || "User avatar"}
+        className="h-6 w-6 shrink-0 rounded-full border border-border bg-muted object-cover"
+        onError={() => setFailedUrl(usableAvatarUrl)}
+        referrerPolicy="no-referrer"
+        src={usableAvatarUrl}
+      />
+    );
+  }
+
+  if (initials) {
+    return (
+      <span
+        aria-label={displayName || email || "User avatar"}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-primary/10 text-[10px] font-black uppercase text-primary"
+      >
+        {initials}
+      </span>
+    );
+  }
+
+  return <UserCircle className="h-6 w-6 shrink-0 text-muted-foreground" />;
+}
+
+function userInitials(displayName?: string | null, email?: string | null) {
+  const source = (displayName || email?.split("@")[0] || "").trim();
+  if (!source) return "";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${firstGrapheme(parts[0])}${firstGrapheme(parts[parts.length - 1])}`.toUpperCase();
+  }
+  const compact = source.replace(/[^A-Za-z0-9]/g, "");
+  return compact.slice(0, 2).toUpperCase() || firstGrapheme(source).toUpperCase();
+}
+
+function firstGrapheme(value: string) {
+  return Array.from(value)[0] ?? "";
 }
