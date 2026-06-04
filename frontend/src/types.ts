@@ -177,6 +177,15 @@ export type RetrievalCoverage = {
   warnings: string[];
 };
 
+export type RetrievalQualitySignal = {
+  code: string;
+  severity: string;
+  message: string;
+  suggested_action: string;
+  evidence_ids: string[];
+  metadata: Record<string, unknown>;
+};
+
 export type RetrievalGraphNode = {
   id: string;
   label: string;
@@ -259,6 +268,7 @@ export type RetrievalPackage = {
   evidence: Evidence[];
   coverage?: RetrievalCoverage | null;
   facets?: RetrievalFacets | null;
+  quality_signals?: RetrievalQualitySignal[];
   trace: RetrievalTrace;
   handoff_context: {
     graph_context?: RetrievalGraphContext;

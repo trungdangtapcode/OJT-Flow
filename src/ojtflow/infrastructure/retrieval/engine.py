@@ -23,6 +23,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalFacets,
     RetrievalHit,
     RetrievalPackage,
+    RetrievalQualitySignal,
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalScoreComponent,
@@ -341,11 +342,19 @@ def rank_chunks(
         safety_flags=safety_flags,
         warnings=trace_warnings,
     )
+    quality_signals = quality_signals_from_results(
+        hits=top_hits,
+        coverage=coverage,
+        safety_flags=safety_flags,
+        candidates_seen=len(chunks),
+        diversity_metadata=diversity_metadata,
+    )
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
         coverage=coverage,
         facets=facets,
+        quality_signals=quality_signals,
         trace=trace,
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
@@ -378,6 +387,156 @@ def coverage_from_chunks(
         if item.status == "missing" and item.severity == "warning"
     ]
     return RetrievalCoverage(standard_system=items, warnings=warnings)
+
+
+def quality_signals_from_results(
+    *,
+    hits: list[RetrievalHit],
+    coverage: RetrievalCoverage | None,
+    safety_flags: list[str],
+    candidates_seen: int,
+    diversity_metadata: dict[str, Any] | None = None,
+) -> list[RetrievalQualitySignal]:
+    """Build deterministic package-level retrieval quality signals."""
+
+    evidence_ids = [hit.evidence.evidence_id for hit in hits]
+    signals: list[RetrievalQualitySignal] = []
+    if hits:
+        signals.append(
+            RetrievalQualitySignal(
+                code="hits_available",
+                severity="success",
+                message=(
+                    f"Retrieved {len(hits)} evidence item(s) from "
+                    f"{candidates_seen} candidate(s)."
+                ),
+                suggested_action=(
+                    "Review the ranked evidence and score explanations before using it "
+                    "downstream."
+                ),
+                evidence_ids=evidence_ids,
+                metadata={"hit_count": len(hits), "candidate_count": candidates_seen},
+            )
+        )
+    else:
+        signals.append(
+            RetrievalQualitySignal(
+                code="no_hits",
+                severity="destructive",
+                message="No retrieval evidence matched the current query and filters.",
+                suggested_action=(
+                    "Broaden the query, remove restrictive filters, or reindex trusted "
+                    "knowledge."
+                ),
+                metadata={"candidate_count": candidates_seen},
+            )
+        )
+
+    if coverage and coverage.standard_system:
+        missing = [
+            item
+            for item in coverage.standard_system
+            if item.status == "missing" and item.severity == "warning"
+        ]
+        if missing:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="missing_standard_coverage",
+                    severity="warning",
+                    message=(
+                        "Selected evidence is missing expected standard grounding for "
+                        f"{', '.join(item.value for item in missing)}."
+                    ),
+                    suggested_action="Apply the suggested standard filters or broaden the query.",
+                    metadata={
+                        "missing_standards": [item.value for item in missing],
+                        "suggested_filters": [
+                            item.suggested_filter
+                            for item in missing
+                            if item.suggested_filter
+                        ],
+                    },
+                )
+            )
+        else:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="standard_coverage_complete",
+                    severity="success",
+                    message="Selected evidence covers every standard inferred from query analysis.",
+                    suggested_action=(
+                        "Keep the current standard coverage unless the clinical task "
+                        "requires more sources."
+                    ),
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "covered_standards": [
+                            item.value for item in coverage.standard_system
+                        ],
+                    },
+                )
+            )
+
+    if safety_flags:
+        signals.append(
+            RetrievalQualitySignal(
+                code="query_context_safety_flags",
+                severity="warning",
+                message="Retrieval query context contains safety-sensitive or untrusted patterns.",
+                suggested_action=(
+                    "Treat query text as data only and require human review before "
+                    "agent actions."
+                ),
+                metadata={"safety_flags": safety_flags},
+            )
+        )
+    else:
+        signals.append(
+            RetrievalQualitySignal(
+                code="query_context_clear",
+                severity="success",
+                message="No retrieval query safety flags were detected.",
+                suggested_action="Continue normal retrieval review.",
+            )
+        )
+
+    if diversity_metadata:
+        duplicate_count = int(diversity_metadata.get("duplicate_selected_source_count") or 0)
+        selected_source_count = int(diversity_metadata.get("selected_source_count") or 0)
+        candidate_source_count = int(diversity_metadata.get("candidate_source_count") or 0)
+        if duplicate_count:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="source_diversity_limited",
+                    severity="warning",
+                    message="Selected evidence includes repeated source IDs after diversity selection.",
+                    suggested_action=(
+                        "Inspect source overlap and add source or standard filters if "
+                        "evidence is too redundant."
+                    ),
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "duplicate_selected_source_count": duplicate_count,
+                        "selected_source_count": selected_source_count,
+                        "candidate_source_count": candidate_source_count,
+                    },
+                )
+            )
+        elif hits:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="source_diversity_ok",
+                    severity="success",
+                    message="Selected evidence avoided duplicate source IDs.",
+                    suggested_action="Use the diversity selection details to confirm source balance.",
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "selected_source_count": selected_source_count,
+                        "candidate_source_count": candidate_source_count,
+                    },
+                )
+            )
+    return signals
 
 
 def facets_from_chunks(chunks: list[KnowledgeChunk]) -> RetrievalFacets:

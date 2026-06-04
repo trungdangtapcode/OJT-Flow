@@ -130,6 +130,17 @@ class RetrievalTrace(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RetrievalQualitySignal(ContractModel):
+    """Operator-facing quality gate signal for one retrieval package."""
+
+    code: NonBlankStr
+    severity: NonBlankStr
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+    evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalFilterSuggestion(ContractModel):
     """Metadata filter suggested by deterministic self-query analysis."""
 
@@ -234,6 +245,7 @@ class RetrievalPackage(ContractModel):
     evidence: list[Evidence] = Field(default_factory=list)
     coverage: RetrievalCoverage | None = None
     facets: RetrievalFacets | None = None
+    quality_signals: list[RetrievalQualitySignal] = Field(default_factory=list)
     trace: RetrievalTrace
     handoff_context: dict[str, Any] = Field(default_factory=dict)
 

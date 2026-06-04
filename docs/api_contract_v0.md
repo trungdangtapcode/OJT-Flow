@@ -1184,6 +1184,8 @@ Response data is a `RetrievalPackage`:
 - `evidence`
 - `coverage`
 - `facets`
+- `quality_signals[]` with `code`, `severity`, `message`,
+  `suggested_action`, `evidence_ids`, and `metadata`
 - `trace.strategy`
 - `trace.query_variants`
 - `trace.query_variant_details[]` with `variant`, `source`, `reason`, and
@@ -1228,6 +1230,11 @@ missing expected standards. Missing expected standards are returned as
 `coverage.warnings` and copied into `trace.warnings`.
 `facets` summarizes the final selected hits into buckets for `source_type`,
 `clinical_domain`, `standard_system`, and `trust_level`.
+`quality_signals` is a deterministic retrieval-quality checklist for operator
+review. It summarizes whether the package has hits, whether expected standard
+coverage is complete, whether query-context safety flags were detected, and
+whether selected evidence is source-diverse. These signals are observability and
+review guidance, not clinical decision support.
 
 Retrieval endpoints require an authenticated session. Searches without
 `workflow_id` run over the approved knowledge inventory. Searches with

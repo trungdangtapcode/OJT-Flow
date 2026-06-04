@@ -498,6 +498,54 @@ Research basis:
 - RAGAS context recall:
   `https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/context_recall/`
 
+## Retrieval Quality Signals
+
+`RetrievalPackage.quality_signals` is the package-level checklist that turns
+trace metadata into operator-facing quality gates:
+
+```json
+[
+  {
+    "code": "hits_available",
+    "severity": "success",
+    "message": "Retrieved 5 evidence item(s) from 12 candidate(s).",
+    "suggested_action": "Review the ranked evidence and score explanations before using it downstream.",
+    "evidence_ids": ["ev_123"],
+    "metadata": {
+      "hit_count": 5,
+      "candidate_count": 12
+    }
+  },
+  {
+    "code": "missing_standard_coverage",
+    "severity": "warning",
+    "message": "Selected evidence is missing expected standard grounding for UCUM.",
+    "suggested_action": "Apply the suggested standard filters or broaden the query.",
+    "evidence_ids": [],
+    "metadata": {
+      "missing_standards": ["UCUM"],
+      "suggested_filters": [{"standard_system": "UCUM"}]
+    }
+  }
+]
+```
+
+Current signals are deterministic and derived from selected hits, coverage
+diagnostics, query safety flags, and source-diversity metadata. They are meant
+to make retrieval review faster and more auditable: a reviewer can see whether
+the result set is empty, under-covered, safety-sensitive, or source-redundant
+without reading raw trace JSON first. They do not score clinical correctness or
+replace a human review.
+
+Research basis:
+
+- LlamaIndex retrieval evaluation overview:
+  `https://docs.llamaindex.ai/en/stable/module_guides/evaluating/index.html`
+- LlamaIndex observability overview:
+  `https://docs.llamaindex.ai/en/stable/module_guides/observability/`
+- RAGAS available retrieval metrics:
+  `https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/`
+
 ## API
 
 The React operations console exposes these contracts through `/retrieval`.

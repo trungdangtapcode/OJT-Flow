@@ -148,6 +148,9 @@ diversity metadata so redundant single-source results are visible during
 evidence review. Result cards must render per-hit diversity selection details
 from `handoff_context.diversity.selected_hits` when present, including original
 rank, normalized relevance, redundancy, MMR score, and selection reason.
+The trace panel must render `quality_signals` as a compact retrieval-quality
+checklist with severity, message, suggested action, and evidence references so
+operators can review package readiness without opening raw JSON.
 Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see

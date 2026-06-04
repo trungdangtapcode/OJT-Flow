@@ -835,6 +835,33 @@ def test_retrieval_coverage_reports_missing_expected_standard() -> None:
     assert coverage.warnings == [coverage_by_standard["UCUM"].reason]
 
 
+def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="fhir_only",
+                source_id="standard:fhir_observation",
+                source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+                title="FHIR Observation",
+                content="FHIR Observation requires resourceType and valueQuantity structure.",
+                standard_system="FHIR",
+            )
+        ],
+        RetrievalQuery(query="FHIR valueQuantity UCUM unit", top_k=1),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+    signals = {signal.code: signal for signal in package.quality_signals}
+
+    assert signals["hits_available"].severity == "success"
+    assert signals["missing_standard_coverage"].severity == "warning"
+    assert signals["missing_standard_coverage"].metadata["missing_standards"] == ["UCUM"]
+    assert signals["missing_standard_coverage"].metadata["suggested_filters"] == [
+        {"standard_system": "UCUM"}
+    ]
+    assert signals["query_context_clear"].severity == "success"
+
+
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:
     chunk = KnowledgeChunk(
         chunk_id="snippet_test",

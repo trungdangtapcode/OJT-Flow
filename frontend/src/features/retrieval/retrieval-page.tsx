@@ -52,6 +52,7 @@ import type {
   RetrievalPackage,
   RetrievalCoverage,
   RetrievalFacets,
+  RetrievalQualitySignal,
   RetrievalQueryVariant,
   RetrievalScoreComponent,
   RetrievalSearchPayload,
@@ -1402,6 +1403,7 @@ function TracePanel({
   const diversity = packageData ? diversityFromPackage(packageData) : null;
   const queryAnalysis = packageData ? queryAnalysisFromPackage(packageData) : null;
   const coverage = packageData?.coverage;
+  const qualitySignals = packageData?.quality_signals ?? [];
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="border-b border-border bg-card/70">
@@ -1438,6 +1440,7 @@ function TracePanel({
               label="Filters"
               value={Object.keys(trace.filters_applied).length ? JSON.stringify(trace.filters_applied) : "none"}
             />
+            <QualitySignalList signals={qualitySignals} />
             <QueryAnalysisBlock
               analysis={queryAnalysis}
               isSearchPending={isSearchPending}
@@ -1455,6 +1458,70 @@ function TracePanel({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function QualitySignalList({ signals }: { signals: RetrievalQualitySignal[] }) {
+  if (!signals.length) {
+    return <TokenList items={[]} title="Retrieval quality" />;
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Retrieval quality
+        </div>
+        <Badge variant={qualitySignalSummaryVariant(signals)}>
+          {formatCount(signals.length, "signal")}
+        </Badge>
+      </div>
+      <div className="grid gap-2">
+        {signals.map((signal) => {
+          const warning = signal.severity === "warning" || signal.severity === "destructive";
+          return (
+            <div
+              className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
+              key={signal.code}
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {warning ? (
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  )}
+                  <span className="break-words font-bold">{humanize(signal.code)}</span>
+                </span>
+                <Badge variant={qualitySignalBadgeVariant(signal.severity)}>
+                  {humanize(signal.severity)}
+                </Badge>
+              </div>
+              <div className="break-words text-muted-foreground">{signal.message}</div>
+              <div className="break-words font-semibold text-foreground">
+                {signal.suggested_action}
+              </div>
+              {signal.evidence_ids.length ? (
+                <div className="flex min-w-0 flex-wrap gap-1">
+                  {signal.evidence_ids.slice(0, 4).map((evidenceId) => (
+                    <code
+                      className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px]"
+                      key={`${signal.code}-${evidenceId}`}
+                    >
+                      {evidenceId}
+                    </code>
+                  ))}
+                  {signal.evidence_ids.length > 4 ? (
+                    <span className="rounded bg-muted px-1.5 py-1 font-bold text-muted-foreground">
+                      +{signal.evidence_ids.length - 4}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -2757,6 +2824,31 @@ function diagnosticBadgeVariant(
   if (severity === "error") return "destructive";
   if (severity === "info") return "muted";
   return "default";
+}
+
+function qualitySignalBadgeVariant(
+  severity: string,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (severity === "success") return "success";
+  if (severity === "warning") return "warning";
+  if (severity === "destructive" || severity === "error") return "destructive";
+  if (severity === "info") return "muted";
+  return "default";
+}
+
+function qualitySignalSummaryVariant(
+  signals: RetrievalQualitySignal[],
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (
+    signals.some(
+      (signal) => signal.severity === "destructive" || signal.severity === "error",
+    )
+  ) {
+    return "destructive";
+  }
+  if (signals.some((signal) => signal.severity === "warning")) return "warning";
+  if (signals.some((signal) => signal.severity === "success")) return "success";
+  return "muted";
 }
 
 function integrityBadgeVariant(

@@ -33,6 +33,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     default_healthcare_chunks,
     evidence_from_chunk,
     facets_from_chunks,
+    quality_signals_from_results,
     retrieval_safety_flags,
     snippet_from_chunk,
     sources_from_chunks,
@@ -133,6 +134,12 @@ class LlamaIndexRetrievalRepository:
             evidence=[hit.evidence for hit in hits],
             coverage=coverage,
             facets=facets_from_chunks(selected_chunks),
+            quality_signals=quality_signals_from_results(
+                hits=hits,
+                coverage=coverage,
+                safety_flags=safety_flags,
+                candidates_seen=filtered_node_count,
+            ),
             trace=trace,
             handoff_context={
                 "retrieval_contract": "retrieval_package.v0",
@@ -598,11 +605,18 @@ def _empty_package(
 ) -> RetrievalPackage:
     query_analysis = analyze_query(query)
     safety_flags = retrieval_safety_flags(query)
+    coverage = RetrievalCoverage()
     return RetrievalPackage(
         hits=[],
         evidence=[],
-        coverage=RetrievalCoverage(),
+        coverage=coverage,
         facets=RetrievalFacets(),
+        quality_signals=quality_signals_from_results(
+            hits=[],
+            coverage=coverage,
+            safety_flags=safety_flags,
+            candidates_seen=0,
+        ),
         trace=RetrievalTrace(
             strategy=strategy,
             query_variants=query_analysis.query_variants,

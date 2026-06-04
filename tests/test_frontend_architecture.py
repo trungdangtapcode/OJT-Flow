@@ -189,6 +189,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "scoreComponentsFromHit" in retrieval_page
     assert "ScoreExplanation" in retrieval_page
     assert "Score explanation" in retrieval_page
+    assert "QualitySignalList" in retrieval_page
+    assert "Retrieval quality" in retrieval_page
+    assert "quality_signals" in retrieval_page
+    assert "qualitySignalBadgeVariant" in retrieval_page
     assert "queryVariantsFromTrace" in retrieval_page
     assert "QueryVariantList" in retrieval_page
     assert "Query rewrites" in retrieval_page
