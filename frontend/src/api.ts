@@ -3,6 +3,11 @@ import type {
   AuthLoginResponse,
   AuthSessionResponse,
   ExtractorInventory,
+  RetrievalPackage,
+  RetrievalReindexPayload,
+  RetrievalReindexResult,
+  RetrievalSearchPayload,
+  RetrievalSource,
   RuntimeConfig,
   RuntimeHealth,
   RuntimeReadiness,
@@ -348,6 +353,26 @@ export function submitReview(
 
 export function listSchemas(): Promise<SchemaEntry[]> {
   return request<SchemaEntry[]>("/schemas");
+}
+
+export function searchRetrieval(payload: RetrievalSearchPayload): Promise<RetrievalPackage> {
+  return request<RetrievalPackage>("/retrieval/search", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listRetrievalSources(): Promise<RetrievalSource[]> {
+  return request<RetrievalSource[]>("/retrieval/sources");
+}
+
+export function reindexRetrieval(
+  payload: RetrievalReindexPayload,
+): Promise<RetrievalReindexResult> {
+  return request<RetrievalReindexResult>("/retrieval/reindex", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getExtractorInventory(): Promise<ExtractorInventory> {

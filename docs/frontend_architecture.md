@@ -25,8 +25,8 @@ that do not claim runtime state unavailable to the auth gate.
 - `src/components/ui` contains reusable low-level UI primitives.
 - `src/components/domain` contains reusable domain presentation components such
   as workflow status and validation severity badges.
-- `src/features/*` contains product workflows: workbench, workflows, reviews,
-  schemas, audit, and settings.
+- `src/features/*` contains product workflows: workbench, workflows, retrieval,
+  reviews, schemas, audit, and settings.
 - `src/api.ts` is the frontend API boundary. Feature components call query hooks,
   not raw fetch logic. It parses response bodies through text-first JSON parsing
   so malformed upstream JSON becomes a structured `ApiRequestError` instead of a
@@ -81,7 +81,9 @@ output, and audit. Evidence uses structured rows on desktop and compact cards
 on mobile so source, claim, trust, and confidence stay comparable without
 forcing horizontal overflow. Retrieval trace safety flags must be visible in
 the Evidence tab so operators can distinguish trusted evidence from
-safety-sensitive query context.
+safety-sensitive query context. Graph handoff summary must also be visible in
+the Evidence tab whenever the backend emits `graph_context`, because evidence
+without entity/triple visibility is too weak for regulated review.
 The workflow detail implementation keeps this split visible in code:
 `workflow-detail.tsx` is the query and tab-routing shell,
 `workflow-detail-chrome.tsx` owns loading/failure/fact-strip chrome,
@@ -116,6 +118,12 @@ owns repeated intake controls and operational side panels; and
 `workbench-utils.ts` owns pure formatting and upload-file validation helpers.
 Keep backend calls in the page through server-state hooks and keep pure file
 validation reusable so upload guard behavior remains testable without UI state.
+The retrieval route is the operator surface for direct search. It owns query
+builder state, calls `/retrieval/search` through typed server-state hooks,
+lists trusted sources, refreshes the retrieval index, and renders rank signals,
+trace warnings, safety flags, and Graph-NER handoff context. It should stay an
+inspection console, not a separate workflow executor: workflow creation remains
+in Workbench and workflow-scoped evidence remains in Workflow Detail.
 Settings is an operator readiness surface, not a prose documentation page. It
 should show status facts first, then group runtime configuration into compact
 sections, summarize readiness/security/inventory counts before detailed rows,

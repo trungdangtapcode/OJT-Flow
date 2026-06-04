@@ -62,6 +62,12 @@ without silently normalizing clinical concepts.
 
 ## API
 
+The React operations console exposes these contracts through `/retrieval`.
+Operators can run direct evidence searches, inspect rank components, verify
+query variants and filters, see safety warnings, inspect the graph handoff, list
+trusted sources, and trigger explicit reindexing. Workflow-scoped evidence is
+still rendered inside the Workflow Detail Evidence tab.
+
 Search:
 
 ```http
