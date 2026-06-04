@@ -45,7 +45,7 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 - Deterministic CSV-to-JSON conversion after approval.
 - Evidence-grounded explanation report with medical intended-use limitation.
 - Healthcare-aware retrieval module with Postgres full-text search, pgvector-ready
-  storage, deterministic local embeddings, and static fallback.
+  storage, OpenAI semantic embeddings, deterministic test embeddings, and static fallback.
 - FastAPI routes for workflows, review, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
 - Authenticated runtime diagnostics for sanitized configuration and readiness
   checks.
@@ -152,6 +152,9 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_EMBEDDING_PROVIDER=deterministic`
 - `OJT_EMBEDDING_MODEL=deterministic-hash-v0`
 - `OJT_EMBEDDING_DIMENSIONS=64`
+- `OJT_OPENAI_API_KEY=` or `OPENAI_API_KEY=`
+- `OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1`
+- `OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0`
 
 `OJT_STORAGE_BACKEND` must be one of `postgres`, `sqlite`, or `memory`.
 Postgres is the production-like default. SQLite is a local single-file fallback.
@@ -185,12 +188,21 @@ lowercase, and must be simple supported suffixes such as `.csv` or `.pdf`.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, paths, wildcards, or
 extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER=deterministic` and
-`OJT_EMBEDDING_MODEL=deterministic-hash-v0` are the only implemented embedding
-provider/model pair in v0. They are validated at settings load so runtime
-diagnostics cannot claim an external embedding provider that the retrieval
-adapter is not actually using. `OJT_EMBEDDING_DIMENSIONS=64` is also fixed in
-v0 because the Postgres retrieval schema uses `embedding vector(64)`.
+`OJT_EMBEDDING_PROVIDER` supports `deterministic` and `openai`. Deterministic
+mode is for offline tests and demos. OpenAI mode uses the Embeddings API with
+`OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY` when the project-specific
+variable is not set. Recommended CPU-safe semantic retrieval settings are:
+
+```text
+OJT_EMBEDDING_PROVIDER=openai
+OJT_EMBEDDING_MODEL=text-embedding-3-small
+OJT_EMBEDDING_DIMENSIONS=384
+```
+
+The Postgres semantic vector schema uses `embedding vector(384)`. Retrieval
+still stores JSON embeddings and performs Python reranking if pgvector is not
+available or if the configured provider dimension does not match the vector
+column.
 
 The frontend container proxies `/api/*` and `/health` requests to the API
 container in Docker. No API keys or ADC credential files are committed; pass

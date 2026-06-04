@@ -11,6 +11,7 @@ from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, R
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
+    build_query_variants,
     chunk_metadata_json,
     default_healthcare_chunks,
     rank_chunks,
@@ -25,7 +26,7 @@ class PostgresRetrievalRepository:
         self,
         backbone: PostgresBackboneStore,
         knowledge_root: Path | str,
-        embedding_provider: DeterministicEmbeddingProvider | None = None,
+        embedding_provider: Any | None = None,
         seed_defaults: bool = True,
     ) -> None:
         self.backbone = backbone
@@ -38,10 +39,12 @@ class PostgresRetrievalRepository:
         """Idempotently load bundled healthcare knowledge into retrieval tables."""
 
         chunks = default_healthcare_chunks(self.knowledge_root)
-        has_vector = self._has_vector_column()
+        vector_dimensions = self._vector_column_dimensions()
+        chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
+        embeddings = self.embedding_provider.embed_documents(chunk_texts)
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
-                for chunk in chunks:
+                for chunk, embedding in zip(chunks, embeddings, strict=True):
                     cursor.execute(
                         """
                         insert into ojtflow.knowledge_documents (
@@ -69,7 +72,6 @@ class PostgresRetrievalRepository:
                             chunk_metadata_json(chunk),
                         ),
                     )
-                    embedding = self.embedding_provider.embed(f"{chunk.title}\n{chunk.content}")
                     cursor.execute(
                         """
                         insert into ojtflow.knowledge_chunks (
@@ -110,7 +112,7 @@ class PostgresRetrievalRepository:
                             json.dumps(embedding),
                         ),
                     )
-                    if has_vector:
+                    if vector_dimensions == len(embedding):
                         cursor.execute(
                             """
                             update ojtflow.knowledge_chunks
@@ -183,7 +185,21 @@ class PostgresRetrievalRepository:
         query: RetrievalQuery,
     ) -> tuple[list[KnowledgeChunk], list[str]]:
         where_sql, filter_params = _filters_sql(query.filters)
-        params = [query.query, query.query, *filter_params]
+        vector_dimensions = self._vector_column_dimensions()
+        vector_literal: str | None = None
+        if vector_dimensions == self.embedding_provider.dimensions:
+            query_text = " ".join(build_query_variants(query))
+            vector_literal = _vector_literal(self.embedding_provider.embed_query(query_text))
+
+        params: list[Any] = [query.query, query.query]
+        if vector_literal is not None:
+            params.append(vector_literal)
+        params.extend(filter_params)
+        vector_select = (
+            ", embedding <=> %s::vector as vector_distance"
+            if vector_literal is not None
+            else ", null::double precision as vector_distance"
+        )
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -205,9 +221,14 @@ class PostgresRetrievalRepository:
                             websearch_to_tsquery('english', %s)
                         ) as lexical_rank,
                         search_vector @@ websearch_to_tsquery('english', %s) as lexical_match
+                        {vector_select}
                     from ojtflow.knowledge_chunks
                     {where_sql}
-                    order by lexical_match desc, lexical_rank desc, updated_at desc
+                    order by
+                        lexical_match desc,
+                        lexical_rank desc,
+                        vector_distance asc nulls last,
+                        updated_at desc
                     limit 200
                     """,
                     tuple(params),
@@ -215,28 +236,47 @@ class PostgresRetrievalRepository:
                 rows = cursor.fetchall()
 
         warnings: list[str] = []
+        if vector_dimensions is None:
+            warnings.append(
+                "Postgres pgvector column is unavailable; retrieval used full-text candidates "
+                "and JSON/Python vector reranking."
+            )
+        elif vector_dimensions != self.embedding_provider.dimensions:
+            warnings.append(
+                "Postgres pgvector dimension does not match the configured embedding provider; "
+                "retrieval used full-text candidates and JSON/Python vector reranking."
+            )
         if rows and not any(row["lexical_match"] for row in rows):
             warnings.append(
                 "No full-text match; ranked filtered knowledge chunks by fallback scoring."
             )
         return [_row_to_chunk(row) for row in rows], warnings
 
-    def _has_vector_column(self) -> bool:
+    def _vector_column_dimensions(self) -> int | None:
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    select exists (
-                        select 1
-                        from information_schema.columns
-                        where table_schema = 'ojtflow'
-                          and table_name = 'knowledge_chunks'
-                          and column_name = 'embedding'
-                    ) as has_vector
+                    select format_type(attribute.atttypid, attribute.atttypmod) as data_type
+                    from pg_attribute attribute
+                    join pg_class class on class.oid = attribute.attrelid
+                    join pg_namespace namespace on namespace.oid = class.relnamespace
+                    where namespace.nspname = 'ojtflow'
+                      and class.relname = 'knowledge_chunks'
+                      and attribute.attname = 'embedding'
+                      and not attribute.attisdropped
                     """
                 )
                 row = cursor.fetchone()
-        return bool(row and row["has_vector"])
+        if not row:
+            return None
+        data_type = str(row["data_type"])
+        if not data_type.startswith("vector(") or not data_type.endswith(")"):
+            return None
+        try:
+            return int(data_type.removeprefix("vector(").removesuffix(")"))
+        except ValueError:
+            return None
 
 
 def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:

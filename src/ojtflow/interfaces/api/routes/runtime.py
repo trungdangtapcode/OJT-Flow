@@ -64,6 +64,8 @@ async def runtime_config(
                 "provider": settings.embedding_provider,
                 "model": settings.embedding_model,
                 "dimensions": settings.embedding_dimensions,
+                "openai_configured": bool(settings.openai_api_key),
+                "openai_base_url_configured": bool(settings.openai_embedding_base_url),
             },
             "upload": {
                 "max_upload_bytes": settings.max_upload_bytes,

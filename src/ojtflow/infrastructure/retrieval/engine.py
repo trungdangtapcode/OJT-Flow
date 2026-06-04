@@ -53,6 +53,8 @@ class DeterministicEmbeddingProvider:
 
     def __init__(self, dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS) -> None:
         self.dimensions = dimensions
+        self.provider_name = "deterministic"
+        self.model = "deterministic-hash-v0"
 
     def embed(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
@@ -66,14 +68,50 @@ class DeterministicEmbeddingProvider:
             return vector
         return [value / magnitude for value in vector]
 
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_document(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_document(text) for text in texts]
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider_name,
+            "model": self.model,
+            "dimensions": self.dimensions,
+            "normalized": True,
+        }
+
 
 class NullEmbeddingProvider:
     """Embedding provider used when vector retrieval is disabled."""
 
     dimensions = DEFAULT_EMBEDDING_DIMENSIONS
+    provider_name = "none"
+    model = "none"
 
     def embed(self, text: str) -> list[float]:
         return [0.0] * self.dimensions
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_document(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_document(text) for text in texts]
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider_name,
+            "model": self.model,
+            "dimensions": self.dimensions,
+            "normalized": False,
+        }
 
 
 def tokenize(text: str) -> list[str]:
@@ -110,11 +148,11 @@ def rank_chunks(
     chunks: list[KnowledgeChunk],
     query: RetrievalQuery,
     *,
-    embedding_provider: DeterministicEmbeddingProvider | NullEmbeddingProvider | None = None,
+    embedding_provider: Any | None = None,
     strategy: str = "deterministic_hybrid",
     warnings: list[str] | None = None,
 ) -> RetrievalPackage:
-    """Rank chunks using lexical overlap, deterministic vectors, and simple rerank boosts."""
+    """Rank chunks using lexical overlap, configured vectors, and simple rerank boosts."""
 
     provider = embedding_provider or DeterministicEmbeddingProvider()
     variants = build_query_variants(query)
@@ -126,17 +164,19 @@ def rank_chunks(
         )
     query_text = " ".join(variants)
     query_tokens = set(tokenize(query_text))
-    query_vector = provider.embed(query_text)
+    query_vector = provider.embed_query(query_text)
+    chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
+    document_vectors = provider.embed_documents(chunk_texts)
 
     lexical_ranked: list[tuple[KnowledgeChunk, float, list[str]]] = []
     vector_ranked: list[tuple[KnowledgeChunk, float]] = []
-    for chunk in chunks:
+    for chunk, document_vector in zip(chunks, document_vectors, strict=True):
         chunk_tokens = set(tokenize(f"{chunk.title} {chunk.content} {chunk.source_id}"))
         matched = sorted(query_tokens.intersection(chunk_tokens))
         lexical_score = _lexical_score(query_tokens, chunk_tokens, query.query, chunk)
         vector_score = cosine_similarity(
             query_vector,
-            provider.embed(f"{chunk.title}\n{chunk.content}"),
+            document_vector,
         )
         lexical_ranked.append((chunk, lexical_score, matched))
         vector_ranked.append((chunk, vector_score))
@@ -195,6 +235,7 @@ def rank_chunks(
             "schema_id": query.schema_id,
             "strategy": strategy,
             "safety_flags": safety_flags,
+            "embedding": provider.metadata(),
         },
     )
 

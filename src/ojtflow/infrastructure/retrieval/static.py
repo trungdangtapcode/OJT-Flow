@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
@@ -74,7 +75,7 @@ class StaticRetrievalRepository:
     def __init__(
         self,
         root: Path | str,
-        embedding_provider: DeterministicEmbeddingProvider | None = None,
+        embedding_provider: Any | None = None,
     ) -> None:
         self.root = Path(root)
         self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()

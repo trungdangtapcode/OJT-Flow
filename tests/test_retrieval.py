@@ -1,10 +1,13 @@
 from pathlib import Path
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
+from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.infrastructure.retrieval.embeddings import OpenAIEmbeddingProvider
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     build_query_variants,
@@ -99,3 +102,58 @@ def test_deterministic_embedding_is_stable() -> None:
 
     assert provider.embed("lab unit") == provider.embed("lab unit")
     assert len(provider.embed("lab unit")) == 16
+
+
+def test_openai_embedding_provider_batches_and_normalizes_vectors() -> None:
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = request.read()
+        body = __import__("json").loads(payload)
+        requests.append(body)
+        data = []
+        for index, _text in enumerate(body["input"]):
+            data.append(
+                {
+                    "object": "embedding",
+                    "index": index,
+                    "embedding": [3.0, 4.0, 0.0],
+                }
+            )
+        return httpx.Response(
+            200,
+            json={"object": "list", "data": data, "model": body["model"]},
+        )
+
+    provider = OpenAIEmbeddingProvider(
+        api_key="test-key",
+        model="text-embedding-3-small",
+        dimensions=3,
+        base_url="https://api.openai.test/v1",
+        timeout_seconds=1,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    embeddings = provider.embed_documents(["FHIR Observation", "UCUM units"])
+
+    assert embeddings == [[0.6, 0.8, 0.0], [0.6, 0.8, 0.0]]
+    assert requests == [
+        {
+            "model": "text-embedding-3-small",
+            "input": ["FHIR Observation", "UCUM units"],
+            "encoding_format": "float",
+            "dimensions": 3,
+        }
+    ]
+    assert provider.metadata()["provider"] == "openai"
+
+
+def test_openai_embedding_provider_requires_api_key() -> None:
+    with pytest.raises(DependencyUnavailableError, match="OpenAI embeddings require"):
+        OpenAIEmbeddingProvider(
+            api_key="",
+            model="text-embedding-3-small",
+            dimensions=384,
+            base_url="https://api.openai.test/v1",
+            timeout_seconds=1,
+        )

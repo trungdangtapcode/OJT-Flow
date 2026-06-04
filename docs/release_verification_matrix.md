@@ -72,7 +72,7 @@ Use the active virtualenv Python for `PYTHON_BIN` when running locally.
 | Claim | Evidence |
 | --- | --- |
 | Retrieval uses trusted healthcare knowledge inventory | `tests/test_retrieval.py::test_static_retrieval_ranks_healthcare_evidence_with_trace` and retrieval endpoint tests. |
-| Postgres mode uses full-text search, deterministic vector scoring, fusion, and reranking | `tests/test_postgres_migrations.py::test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback` plus Docker E2E retrieval-backed workflow tests. |
+| Postgres mode uses full-text search, configured vector scoring, fusion, and reranking | `tests/test_postgres_migrations.py::test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback`, `tests/test_postgres_migrations.py::test_semantic_embedding_vector_migration_uses_384_dimensions`, and retrieval-backed workflow tests. |
 | Retrieval trace exposes strategy, variants, filters, candidate counts, selected IDs, safety flags, and warnings | `tests/test_retrieval.py`, `tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error`, and browser Evidence-tab checks. |
 | Runtime readiness probes retrieval through the same service path used by workflows | `tests/test_api.py::test_runtime_readiness_returns_sanitized_operational_checks`, `tests/test_api.py::test_runtime_readiness_requires_trusted_schema_inventory`, and `tests/test_api.py::test_runtime_readiness_requires_retrieval_sources`. |
 | Retrieval query context is treated as data | `tests/test_retrieval.py::test_retrieval_trace_flags_untrusted_query_context` and blank/trimmed boundary tests in `tests/test_api.py`. |

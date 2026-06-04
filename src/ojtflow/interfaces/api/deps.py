@@ -16,7 +16,7 @@ from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
-from ojtflow.infrastructure.retrieval.engine import DeterministicEmbeddingProvider
+from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
@@ -90,7 +90,7 @@ def _build_workflow_service() -> WorkflowService:
 
     settings = get_settings()
     knowledge_root = settings.resolved_knowledge_dir
-    embedding_provider = DeterministicEmbeddingProvider(settings.embedding_dimensions)
+    embedding_provider = build_embedding_provider(settings)
     if settings.storage_backend == "memory":
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()

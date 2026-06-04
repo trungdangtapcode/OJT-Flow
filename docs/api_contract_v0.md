@@ -54,6 +54,9 @@ OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,
 OJT_EMBEDDING_PROVIDER=deterministic
 OJT_EMBEDDING_MODEL=deterministic-hash-v0
 OJT_EMBEDDING_DIMENSIONS=64
+OJT_OPENAI_API_KEY=
+OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1
+OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0
 ```
 
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
@@ -113,12 +116,14 @@ Values may include or omit the leading dot and are normalized to lowercase.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, path-like values,
 wildcards, or extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER=deterministic` and
-`OJT_EMBEDDING_MODEL=deterministic-hash-v0` are the only implemented embedding
-provider/model pair in v0. Other provider names or model IDs are rejected during
-settings load until a real adapter is added. `OJT_EMBEDDING_DIMENSIONS=64` is
-fixed in v0 because the Postgres retrieval schema uses `embedding vector(64)`;
-other dimensions are rejected during settings load.
+`OJT_EMBEDDING_PROVIDER` supports `deterministic` and `openai`. Deterministic
+mode is for offline tests and demos. OpenAI mode uses `OJT_OPENAI_API_KEY` or,
+when that is blank, `OPENAI_API_KEY`. The recommended semantic retrieval
+configuration is `OJT_EMBEDDING_PROVIDER=openai`,
+`OJT_EMBEDDING_MODEL=text-embedding-3-small`, and
+`OJT_EMBEDDING_DIMENSIONS=384`, matching the Postgres `embedding vector(384)`
+schema. Other provider names, incompatible deterministic model IDs, and invalid
+dimension values are rejected during settings load.
 
 Boundary string fields that drive tool behavior must remain non-blank after
 trimming. Whitespace-only workflow instructions, workflow data, direct
@@ -642,6 +647,8 @@ Response data includes:
 - `embedding.provider`
 - `embedding.model`
 - `embedding.dimensions`
+- `embedding.openai_configured`
+- `embedding.openai_base_url_configured`
 - `upload.max_upload_bytes`
 - `upload.max_inline_data_bytes`
 - `upload.allowed_extensions`
@@ -667,9 +674,11 @@ Example:
       "state_ttl_seconds": 600
     },
     "embedding": {
-      "provider": "deterministic",
-      "model": "deterministic-hash-v0",
-      "dimensions": 64
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimensions": 384,
+      "openai_configured": true,
+      "openai_base_url_configured": true
     },
     "upload": {
       "max_upload_bytes": 26214400,

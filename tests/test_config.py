@@ -425,7 +425,7 @@ def test_auth_cookie_domain_must_be_dns_domain(monkeypatch, bad_domain) -> None:
         clear_settings_cache()
 
 
-def test_embedding_settings_accept_only_implemented_provider(monkeypatch) -> None:
+def test_embedding_settings_accept_deterministic_provider(monkeypatch) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", " DETERMINISTIC ")
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", " deterministic-hash-v0 ")
     monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", " 64 ")
@@ -441,7 +441,25 @@ def test_embedding_settings_accept_only_implemented_provider(monkeypatch) -> Non
     assert settings.embedding_dimensions == 64
 
 
-@pytest.mark.parametrize("bad_provider", ["", "   ", "openai", "vertex", "sentence-transformers"])
+def test_embedding_settings_accept_openai_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", " OPENAI ")
+    monkeypatch.setenv("OJT_EMBEDDING_MODEL", " text-embedding-3-small ")
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", " 384 ")
+    monkeypatch.setenv("OPENAI_API_KEY", "host-key")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.embedding_provider == "openai"
+    assert settings.embedding_model == "text-embedding-3-small"
+    assert settings.embedding_dimensions == 384
+    assert settings.openai_api_key == "host-key"
+
+
+@pytest.mark.parametrize("bad_provider", ["", "   ", "vertex", "sentence-transformers"])
 def test_embedding_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", bad_provider)
     clear_settings_cache()
@@ -453,8 +471,8 @@ def test_embedding_provider_must_match_implemented_adapter(monkeypatch, bad_prov
         clear_settings_cache()
 
 
-@pytest.mark.parametrize("bad_model", ["", "   ", "text-embedding-3-large", "hash-v1"])
-def test_embedding_model_must_match_implemented_adapter(monkeypatch, bad_model) -> None:
+@pytest.mark.parametrize("bad_model", ["", "   ", "hash-v1"])
+def test_deterministic_embedding_model_must_match_adapter(monkeypatch, bad_model) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", bad_model)
     clear_settings_cache()
 
@@ -466,10 +484,23 @@ def test_embedding_model_must_match_implemented_adapter(monkeypatch, bad_model) 
 
 
 @pytest.mark.parametrize("bad_dimensions", ["", "   ", "0", "1", "128", "not-a-number"])
-def test_embedding_dimensions_must_match_postgres_vector_schema(
+def test_deterministic_embedding_dimensions_must_match_adapter(
     monkeypatch,
     bad_dimensions,
 ) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", bad_dimensions)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid embedding dimensions"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_dimensions", ["", "   ", "0", "-1", "not-a-number"])
+def test_openai_embedding_dimensions_must_be_positive(monkeypatch, bad_dimensions) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "openai")
     monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", bad_dimensions)
     clear_settings_cache()
 
@@ -629,10 +660,11 @@ def test_runtime_docs_explain_embedding_provider_validation() -> None:
     )
 
     assert "OJT_EMBEDDING_PROVIDER" in docs
-    assert "only implemented embedding provider" in docs
+    assert "OJT_EMBEDDING_PROVIDER=openai" in docs
+    assert "OJT_OPENAI_API_KEY" in docs
     assert "deterministic-hash-v0" in docs
-    assert "OJT_EMBEDDING_DIMENSIONS=64" in docs
-    assert "vector(64)" in docs
+    assert "OJT_EMBEDDING_DIMENSIONS=384" in docs
+    assert "vector(384)" in docs
 
 
 def test_runtime_docs_explain_auth_cookie_name_validation() -> None:
