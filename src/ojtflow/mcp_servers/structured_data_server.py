@@ -183,4 +183,11 @@ def supported_formats() -> str:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    mcp.run()
+    import os
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    host = os.getenv("MCP_HOST", "0.0.0.0")
+    port = int(os.getenv("MCP_PORT", "7001"))
+    if transport == "http":
+        mcp.run(transport="streamable-http", host=host, port=port)
+    else:
+        mcp.run()

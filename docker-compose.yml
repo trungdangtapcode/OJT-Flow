@@ -102,6 +102,107 @@ services:
       retries: 12
       start_period: 10s
 
+  mcp-structured-data:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "ojtflow.mcp_servers.structured_data_server"]
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "7001"
+      OJT_STORAGE_BACKEND: postgres
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+    ports:
+      - "${OJT_MCP_STRUCTURED_DATA_PORT:-7001}:7001"
+    volumes:
+      - app_data:/app/var
+    profiles:
+      - mcp
+
+  mcp-schema-validation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "ojtflow.mcp_servers.schema_validation_server"]
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "7002"
+      OJT_STORAGE_BACKEND: postgres
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+    ports:
+      - "${OJT_MCP_SCHEMA_VALIDATION_PORT:-7002}:7002"
+    volumes:
+      - app_data:/app/var
+    profiles:
+      - mcp
+
+  mcp-rag-context:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "ojtflow.mcp_servers.rag_context_server"]
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "7003"
+      OJT_STORAGE_BACKEND: postgres
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+    ports:
+      - "${OJT_MCP_RAG_CONTEXT_PORT:-7003}:7003"
+    volumes:
+      - app_data:/app/var
+    profiles:
+      - mcp
+
+  mcp-workflow-audit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "ojtflow.mcp_servers.workflow_audit_server"]
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "7004"
+      OJT_STORAGE_BACKEND: postgres
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_DATA_DIR: /app/var
+    ports:
+      - "${OJT_MCP_WORKFLOW_AUDIT_PORT:-7004}:7004"
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - mcp
+
+  mcp-human-review:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "ojtflow.mcp_servers.human_review_server"]
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "7005"
+      OJT_STORAGE_BACKEND: postgres
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_DATA_DIR: /app/var
+    ports:
+      - "${OJT_MCP_HUMAN_REVIEW_PORT:-7005}:7005"
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - mcp
+
 volumes:
   postgres_data:
   app_data:

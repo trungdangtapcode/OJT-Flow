@@ -214,4 +214,11 @@ def schema_resource(schema_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    mcp.run()
+    import os
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    host = os.getenv("MCP_HOST", "0.0.0.0")
+    port = int(os.getenv("MCP_PORT", "7002"))
+    if transport == "http":
+        mcp.run(transport="streamable-http", host=host, port=port)
+    else:
+        mcp.run()
