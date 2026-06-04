@@ -260,6 +260,7 @@ Run:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m pytest
+python scripts/evaluate-retrieval.py
 cd frontend && npm run build
 ```
 
@@ -272,3 +273,35 @@ docker compose up --build
 The Docker image uses `pgvector/pgvector:pg16` so the optional vector column and
 HNSW index are available. If pgvector is unavailable in a different deployment,
 the migration keeps lexical retrieval and JSON embeddings operational.
+
+## Evaluation Harness
+
+The retrieval module includes a deterministic offline eval runner:
+
+```bash
+python scripts/evaluate-retrieval.py
+python scripts/evaluate-retrieval.py --json
+```
+
+Cases live in `tests/fixtures/retrieval_eval_cases.json`. Each case defines a
+query, optional schema/fields/resource context, `top_k`, filters, and expected
+source IDs. The runner evaluates the static trusted knowledge repository and
+reports:
+
+- hit@k: whether at least one expected source appears in the top `k`.
+- recall@k: expected source coverage in the returned hits.
+- precision@k: fraction of returned hits that are expected sources.
+- reciprocal rank: rank-aware score for the first expected source.
+- selected source count: source diversity after final selection.
+
+The release check runs this eval before Docker/E2E. The fixture set is small on
+purpose: it is a smoke benchmark for healthcare grounding regressions, not a
+replacement for a larger curated clinical retrieval benchmark. Add cases when
+new standards, corpora, or workflow domains are added.
+
+Metric choices follow standard ranked-retrieval evaluation practice:
+precision/recall at a cutoff and reciprocal rank are the core signals for
+whether known relevant evidence is retrieved early enough for a user or agent to
+trust the workflow. References: Stanford IR ranked retrieval evaluation
+(`https://nlp.stanford.edu/IR-book/html/htmledition/evaluation-of-ranked-retrieval-results-1.html`)
+and NIST `trec_eval` (`https://github.com/usnistgov/trec_eval`).

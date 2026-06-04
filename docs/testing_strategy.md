@@ -85,10 +85,11 @@ Run the full local release check:
 PYTHON_BIN=python scripts/release-check.sh
 ```
 
-The script runs backend tests, frontend build, Docker stack rebuild, runtime
-asset freshness, browser E2E, E2E cleanup, a Postgres residue assertion for
-Playwright test users/workflows, successful-run local Playwright report cleanup,
-and both `git diff --check` and `git diff --cached --check`. Set
+The script runs backend tests, deterministic retrieval quality evaluation,
+frontend build, Docker stack rebuild, runtime asset freshness, browser E2E,
+E2E cleanup, a Postgres residue assertion for Playwright test users/workflows,
+successful-run local Playwright report cleanup, and both `git diff --check` and
+`git diff --cached --check`. Set
 `PYTHON_BIN` to your active virtualenv Python when needed. Use
 `OJT_RELEASE_CHECK_SKIP_DOCKER_BUILD=1` only if the Docker stack is already
 rebuilt from the current source, and `OJT_RELEASE_CHECK_SKIP_E2E=1` only for a

@@ -1,3 +1,5 @@
+import json
+import subprocess
 from pathlib import Path
 
 import httpx
@@ -12,6 +14,10 @@ from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.embeddings import (
     HuggingFaceEmbeddingProvider,
     OpenAIEmbeddingProvider,
+)
+from ojtflow.infrastructure.retrieval.evaluation import (
+    evaluate_retrieval_repository,
+    load_eval_cases,
 )
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
@@ -404,3 +410,36 @@ def test_static_retrieval_reindex_adds_local_corpus(tmp_path: Path) -> None:
 
     assert result["corpus"]["files_indexed"] == 1
     assert any(item.source_id.startswith("corpus:") for item in package.evidence)
+
+
+def test_retrieval_eval_fixture_passes_static_repository() -> None:
+    cases = load_eval_cases(ROOT / "tests/fixtures/retrieval_eval_cases.json")
+    summary = evaluate_retrieval_repository(
+        StaticRetrievalRepository(ROOT / "knowledge"),
+        cases,
+    )
+
+    assert summary.passed is True
+    assert summary.case_count == 4
+    assert summary.hit_rate_at_k == 1.0
+    assert summary.mean_reciprocal_rank == 1.0
+    assert summary.total_missing_source_ids == 0
+    assert all(result.first_relevant_rank == 1 for result in summary.results)
+
+
+def test_retrieval_eval_cli_outputs_json_summary() -> None:
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/evaluate-retrieval.py"),
+            "--json",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    summary = json.loads(result.stdout)
+
+    assert summary["passed"] is True
+    assert summary["case_count"] == 4
+    assert summary["hit_rate_at_k"] == 1.0

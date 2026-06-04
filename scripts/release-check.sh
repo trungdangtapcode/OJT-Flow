@@ -68,6 +68,8 @@ run_step "Python test suite" \
   env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="${repo_root}/src" \
   "${python_bin}" -m pytest -q
 
+run_step "Retrieval quality evaluation" "${python_bin}" "${repo_root}/scripts/evaluate-retrieval.py"
+
 run_frontend_step "Frontend TypeScript/Vite build" npm run build
 
 if [[ "${skip_docker_build}" != "1" ]]; then
