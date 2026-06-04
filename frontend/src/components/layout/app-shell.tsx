@@ -132,6 +132,18 @@ export function AppShell() {
                 </div>
               </div>
               <Button
+                asChild
+                className="shrink-0 max-sm:h-11 max-sm:w-11 max-sm:px-0"
+                title="Assistant"
+                type="button"
+                variant="outline"
+              >
+                <Link aria-label="Open assistant" to="/assistant">
+                  <Bot className="h-4 w-4" />
+                  <span className="max-sm:hidden">Assistant</span>
+                </Link>
+              </Button>
+              <Button
                 aria-label="Refresh application data"
                 className="max-sm:h-11 max-sm:w-11"
                 disabled={refreshing}

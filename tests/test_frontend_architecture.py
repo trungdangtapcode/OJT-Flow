@@ -60,6 +60,9 @@ RETRIEVAL_PAGE = (
 SETTINGS_PAGE = (
     REPO_ROOT / "frontend" / "src" / "features" / "settings" / "settings-page.tsx"
 )
+ASSISTANT_PAGE = (
+    REPO_ROOT / "frontend" / "src" / "features" / "assistant" / "assistant-page.tsx"
+)
 WORKBENCH_SPLIT_FILES = [
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-controls.tsx",
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-examples.ts",
@@ -215,6 +218,27 @@ def test_settings_page_exposes_reloadable_assistant_runtime() -> None:
     assert "updateRuntimeAssistantSettings" in server_state
     assert '"/runtime/assistant-settings"' in api_module
     assert "Assistant runtime" in frontend_architecture
+
+
+def test_assistant_ui_surfaces_tool_layer() -> None:
+    assistant_page = ASSISTANT_PAGE.read_text(encoding="utf-8")
+    app_shell = APP_SHELL.read_text(encoding="utf-8")
+    api_module = API_MODULE.read_text(encoding="utf-8")
+    server_state = (FRONTEND_SRC / "lib" / "server-state.ts").read_text(encoding="utf-8")
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'to="/assistant"' in app_shell
+    assert "Open assistant" in app_shell
+    assert "AssistantToolSpec" in assistant_page
+    assert "ToolCatalogPanel" in assistant_page
+    assert "Assistant tool catalog" in assistant_page
+    assert "useAssistantToolsQuery" in assistant_page
+    assert "listAssistantTools" in api_module
+    assert '"/assistant/tools"' in api_module
+    assert "assistantTools" in server_state
+    assert "server allowlisted assistant/MCP tools" in frontend_architecture
 
 
 def test_frontend_browser_storage_is_not_used_for_auth_or_state() -> None:

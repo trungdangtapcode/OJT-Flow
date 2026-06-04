@@ -14,6 +14,7 @@ import {
   getWorkflow,
   getWorkflowOutput,
   getWorkflowStats,
+  listAssistantTools,
   listRetrievalSources,
   listReviewSummaries,
   listSchemas,
@@ -49,6 +50,7 @@ export const queryKeys = {
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
+  assistantTools: ["assistant-tools"] as const,
 };
 
 export const runtimeConfig = {
@@ -199,6 +201,10 @@ export function useAssistantChatMutation() {
       }
     },
   });
+}
+
+export function useAssistantToolsQuery() {
+  return useQuery({ queryKey: queryKeys.assistantTools, queryFn: listAssistantTools });
 }
 
 export function useRetrievalReindexMutation() {

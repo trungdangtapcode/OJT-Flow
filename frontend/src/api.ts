@@ -2,6 +2,7 @@ import type {
   ApiEnvelope,
   AssistantChatPayload,
   AssistantResponse,
+  AssistantToolSpec,
   AuthLoginResponse,
   AuthSessionResponse,
   ExtractorInventory,
@@ -376,6 +377,10 @@ export function chatWithAssistant(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function listAssistantTools(): Promise<AssistantToolSpec[]> {
+  return request<AssistantToolSpec[]>("/assistant/tools");
 }
 
 export function listRetrievalSources(): Promise<RetrievalSource[]> {

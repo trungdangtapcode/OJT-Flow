@@ -138,6 +138,9 @@ results locally.
 The assistant route is the operator shortcut over those same backend contracts.
 It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
 write-gate state, executed tool calls, and compact evidence/output previews.
+It should also show the server allowlisted assistant/MCP tools from
+`/assistant/tools` before a command is run, so users can see what the assistant
+can do without reading backend docs or waiting for a transcript.
 It must not duplicate workflow detail, retrieval console, or review-decision
 logic; it should route users into the underlying workflow/retrieval artifacts
 once a command has produced durable state or evidence.

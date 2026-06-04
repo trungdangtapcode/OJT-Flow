@@ -634,6 +634,30 @@ is the explicit mode for validation without a schema profile.
 
 ## Assistant Chat
 
+`GET /api/v1/assistant/tools`
+
+Returns the server-owned assistant/MCP tool catalog. This is a read-only
+operator discovery endpoint; it exposes tool names, descriptions, permission
+scope, approval requirement, and JSON input schema, but no secrets or executable
+client code.
+
+Example response data:
+
+```json
+[
+  {
+    "name": "validate_with_evidence",
+    "description": "Validate submitted healthcare data and retrieve trusted evidence that explains schema, unit, date, PHI, and interoperability issues.",
+    "permission_scope": "data:validate",
+    "requires_approval": false,
+    "input_schema": {
+      "type": "object",
+      "required": ["data"]
+    }
+  }
+]
+```
+
 `POST /api/v1/assistant/chat`
 
 ```json

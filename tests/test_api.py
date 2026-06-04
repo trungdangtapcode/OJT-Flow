@@ -839,6 +839,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         extractors = await client.get("/api/v1/parse/extractors")
         runtime_config = await client.get("/api/v1/runtime/config")
         runtime_readiness = await client.get("/api/v1/runtime/readiness")
+        assistant_tools = await client.get("/api/v1/assistant/tools")
         retrieval = await client.post(
             "/api/v1/retrieval/search",
             json={"query": "lab result schema", "top_k": 1},
@@ -890,6 +891,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(runtime_config, expected_code="unauthorized")
     assert runtime_readiness.status_code == 401
     _assert_error_envelope(runtime_readiness, expected_code="unauthorized")
+    assert assistant_tools.status_code == 401
+    _assert_error_envelope(assistant_tools, expected_code="unauthorized")
     assert retrieval.status_code == 401
     _assert_error_envelope(retrieval, expected_code="unauthorized")
     assert retrieval_reindex.status_code == 401
@@ -2772,6 +2775,27 @@ async def test_assistant_chat_runs_retrieval_tool_without_llm_tokens(monkeypatch
     assert body["findings"][0]["title"] == "Trusted evidence retrieved"
     assert body["evidence_summary"][0]["source_id"]
     assert "Retrieved" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.get("/api/v1/assistant/tools")
+
+    assert response.status_code == 200
+    tools = response.json()["data"]
+    tool_names = {tool["name"] for tool in tools}
+    assert "validate_with_evidence" in tool_names
+    assert "start_workflow" in tool_names
+    start_workflow = next(tool for tool in tools if tool["name"] == "start_workflow")
+    assert start_workflow["requires_approval"] is True
+    assert start_workflow["permission_scope"] == "data:transform"
+    assert start_workflow["input_schema"]["type"] == "object"
 
 
 @pytest.mark.asyncio

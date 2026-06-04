@@ -19,6 +19,17 @@ from ojtflow.interfaces.api.schemas import AssistantChatRequest
 router = APIRouter(tags=["assistant"])
 
 
+@router.get("/assistant/tools")
+async def assistant_tools(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: AssistantService = Depends(get_assistant_service),
+) -> dict:
+    """Return the allowlisted assistant/MCP tools visible to this user."""
+
+    del authenticated
+    return ok(service.tool_specs)
+
+
 @router.post("/assistant/chat")
 async def assistant_chat(
     request: AssistantChatRequest,

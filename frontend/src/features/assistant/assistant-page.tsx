@@ -20,12 +20,18 @@ import {
 } from "../../components/ui/card";
 import { Label, Textarea } from "../../components/ui/form";
 import { Notice } from "../../components/ui/notice";
-import { useAssistantChatMutation, useRuntimeConfigQuery, workflowErrorMessage } from "../../lib/server-state";
+import {
+  useAssistantChatMutation,
+  useAssistantToolsQuery,
+  useRuntimeConfigQuery,
+  workflowErrorMessage,
+} from "../../lib/server-state";
 import { cn, humanize } from "../../lib/utils";
 import type {
   AssistantEvidenceSummary,
   AssistantFinding,
   AssistantResponse,
+  AssistantToolSpec,
   AssistantToolResult,
   AssistantTranscriptItem,
   Evidence,
@@ -75,6 +81,7 @@ const assistantExamples = [
 
 export function AssistantPage() {
   const runtimeQuery = useRuntimeConfigQuery();
+  const toolsQuery = useAssistantToolsQuery();
   const assistantMutation = useAssistantChatMutation();
   const [message, setMessage] = React.useState(defaultMessage);
   const [contextText, setContextText] = React.useState(defaultContext);
@@ -143,86 +150,94 @@ export function AssistantPage() {
       />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(360px,0.78fr)_minmax(0,1.22fr)]">
-        <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70">
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-primary" />
-              Command
-            </CardTitle>
-            <CardDescription>Ask for validation, evidence, workflow status, or review work.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
-              {formError ? (
-                <Notice title="Command blocked" tone="danger">
-                  {formError}
-                </Notice>
-              ) : null}
+        <div className="grid min-w-0 gap-4">
+          <Card className="min-w-0 overflow-hidden">
+            <CardHeader className="border-b border-border bg-card/70">
+              <CardTitle className="flex items-center gap-2">
+                <Bot className="h-5 w-5 text-primary" />
+                Command
+              </CardTitle>
+              <CardDescription>Ask for validation, evidence, workflow status, or review work.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+                {formError ? (
+                  <Notice title="Command blocked" tone="danger">
+                    {formError}
+                  </Notice>
+                ) : null}
 
-              <Label>
-                Message
-                <Textarea
-                  className="min-h-24 resize-y"
-                  onChange={(event) => setMessage(event.target.value)}
-                  value={message}
-                />
-              </Label>
+                <Label>
+                  Message
+                  <Textarea
+                    className="min-h-24 resize-y"
+                    onChange={(event) => setMessage(event.target.value)}
+                    value={message}
+                  />
+                </Label>
 
-              <div className="flex flex-wrap gap-2">
-                {assistantExamples.map((example) => (
-                  <Button
-                    key={example.label}
-                    onClick={() => {
-                      setMessage(example.message);
-                      setContextText(example.context);
-                    }}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {example.label}
-                  </Button>
-                ))}
-              </div>
-
-              <details className="rounded-md border border-border bg-muted/25">
-                <summary className="cursor-pointer px-3 py-2 text-sm font-black">
-                  Advanced context
-                </summary>
-                <div className="border-t border-border p-3">
-                  <Label>
-                    Context JSON
-                    <Textarea
-                      className="min-h-48 resize-y font-mono text-xs"
-                      onChange={(event) => setContextText(event.target.value)}
-                      spellCheck={false}
-                      value={contextText}
-                    />
-                  </Label>
+                <div className="flex flex-wrap gap-2">
+                  {assistantExamples.map((example) => (
+                    <Button
+                      key={example.label}
+                      onClick={() => {
+                        setMessage(example.message);
+                        setContextText(example.context);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {example.label}
+                    </Button>
+                  ))}
                 </div>
-              </details>
 
-              <label className="flex items-center gap-2 rounded-md border border-border bg-muted/35 px-3 py-2 text-sm font-semibold">
-                <input
-                  checked={executeWriteActions}
-                  className="h-4 w-4 accent-primary"
-                  onChange={(event) => setExecuteWriteActions(event.target.checked)}
-                  type="checkbox"
-                />
-                Execute write actions
-              </label>
+                <details className="rounded-md border border-border bg-muted/25">
+                  <summary className="cursor-pointer px-3 py-2 text-sm font-black">
+                    Advanced context
+                  </summary>
+                  <div className="border-t border-border p-3">
+                    <Label>
+                      Context JSON
+                      <Textarea
+                        className="min-h-48 resize-y font-mono text-xs"
+                        onChange={(event) => setContextText(event.target.value)}
+                        spellCheck={false}
+                        value={contextText}
+                      />
+                    </Label>
+                  </div>
+                </details>
 
-              <Button disabled={assistantMutation.isPending} type="submit">
-                {assistantMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-                Run command
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+                <label className="flex items-center gap-2 rounded-md border border-border bg-muted/35 px-3 py-2 text-sm font-semibold">
+                  <input
+                    checked={executeWriteActions}
+                    className="h-4 w-4 accent-primary"
+                    onChange={(event) => setExecuteWriteActions(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Execute write actions
+                </label>
+
+                <Button disabled={assistantMutation.isPending} type="submit">
+                  {assistantMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  Run command
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <ToolCatalogPanel
+            error={toolsQuery.isError ? workflowErrorMessage(toolsQuery.error) : null}
+            isLoading={toolsQuery.isLoading}
+            tools={toolsQuery.data ?? []}
+          />
+        </div>
 
         <div className="grid min-w-0 gap-4">
           {transcript.length === 0 ? (
@@ -244,6 +259,68 @@ export function AssistantPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ToolCatalogPanel({
+  error,
+  isLoading,
+  tools,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  tools: AssistantToolSpec[];
+}) {
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="text-base">Assistant tool catalog</CardTitle>
+            <CardDescription>Server allowlist used by chat and local MCP clients.</CardDescription>
+          </div>
+          <Badge variant="muted">{isLoading ? "loading" : `${tools.length} tools`}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-2 pt-4">
+        {error ? (
+          <Notice title="Tool catalog unavailable" tone="danger">
+            {error}
+          </Notice>
+        ) : null}
+        {!error && isLoading ? (
+          <div className="grid gap-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div
+                aria-hidden="true"
+                className="h-16 rounded-md border border-border bg-muted/35"
+                key={index}
+              />
+            ))}
+          </div>
+        ) : null}
+        {!error && !isLoading ? (
+          <div className="grid gap-2">
+            {tools.map((tool) => (
+              <div className="rounded-md border border-border bg-muted/20 p-3" key={tool.name}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1 break-words font-mono text-sm font-black">
+                    {tool.name}
+                  </div>
+                  <Badge variant={tool.requires_approval ? "warning" : "success"}>
+                    {tool.requires_approval ? "approval" : "read/run"}
+                  </Badge>
+                  <Badge variant="muted">{humanize(tool.permission_scope)}</Badge>
+                </div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  {tool.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 

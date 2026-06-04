@@ -14,6 +14,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantPlan,
     AssistantResponse,
     AssistantToolPlan,
+    AssistantToolSpec,
 )
 
 
@@ -30,6 +31,12 @@ class AssistantService:
         self.tool_executor = tool_executor
         self.planner = planner
         self.max_tool_calls = max_tool_calls
+
+    @property
+    def tool_specs(self) -> list[AssistantToolSpec]:
+        """Return the backend allowlist visible to assistant and MCP clients."""
+
+        return self.tool_executor.tool_specs
 
     async def chat(
         self,

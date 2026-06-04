@@ -53,6 +53,11 @@ Tool execution remains deterministic:
 
 ## API Entry Point
 
+`GET /api/v1/assistant/tools` returns the same server allowlist used by chat
+and MCP wrappers. UI clients should use it to show available tools, permission
+scope, approval requirements, and input schemas instead of hardcoding a tool
+catalog.
+
 `POST /api/v1/assistant/chat`
 
 ```json

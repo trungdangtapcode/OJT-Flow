@@ -328,6 +328,14 @@ export type AssistantChatPayload = {
   execute_write_actions?: boolean;
 };
 
+export type AssistantToolSpec = {
+  name: string;
+  description: string;
+  permission_scope: string;
+  requires_approval: boolean;
+  input_schema: Record<string, unknown>;
+};
+
 export type AssistantToolResult = {
   tool_name: string;
   status: "completed" | "failed" | "requires_approval" | "skipped";
