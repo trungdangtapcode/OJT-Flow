@@ -283,9 +283,11 @@ requested fields in matched terms, detected format presence, applied
 clinical-domain filter match, chunk trust level, source type, standard system,
 matched query terms, detected concepts, and query-expansion rule IDs.
 `OJT_RANKING_BOOST_RULES_PATH` can point the runtime to a deployment-specific
-ranking policy. Applied boost rule IDs are copied into each hit's
-`source_locator.ranking_boost_rules` so ranking influence is visible in API
-payloads and the Retrieval console's locator details.
+ranking policy. Applied boosts are copied into each hit's
+`source_locator.ranking_boosts` as rule ID, weight, and reason objects so
+ranking influence is visible in API payloads and the Retrieval console. The
+legacy `source_locator.ranking_boost_rules` ID list is preserved for compact
+audit views and older clients.
 
 Search hints are syntax scaffolds for medical search workflows outside the
 local retrieval index. PubMed hints prefer a conservative combination of
@@ -567,9 +569,9 @@ Retrieval is a two-stage architecture with deterministic defaults:
    redundant chunks from sources already selected, which reduces repeated
    same-document evidence in operator review.
 4. The final package preserves `lexical_score`, `vector_score`, `rerank_score`,
-   and `source_locator.ranking_boost_rules` per hit so workflow explanations can
-   show why evidence was selected instead of hiding relevance behind a single
-   opaque score.
+   `source_locator.ranking_boosts`, and `source_locator.ranking_boost_rules`
+   per hit so workflow explanations can show why evidence was selected instead
+   of hiding relevance behind a single opaque score.
 
 Second-stage reranking is disabled by default because it downloads a model and
 adds inference latency. Enable it only in environments that intentionally

@@ -85,6 +85,22 @@ class RankingBoostRule:
     any_of: tuple[RankingBoostCondition, ...] = ()
 
 
+@dataclass(frozen=True)
+class AppliedRankingBoost:
+    """One ranking boost applied to a specific hit."""
+
+    rule_id: str
+    weight: float
+    reason: str
+
+    def as_locator_payload(self) -> dict[str, Any]:
+        return {
+            "rule_id": self.rule_id,
+            "weight": self.weight,
+            "reason": self.reason,
+        }
+
+
 class DeterministicEmbeddingProvider:
     """Stable local embedding provider for tests, demos, and lexical fallback.
 
@@ -932,9 +948,9 @@ def _ranking_boost(
     matched_terms: list[str],
     *,
     query_analysis: RetrievalQueryAnalysis,
-) -> tuple[float, list[str]]:
+) -> tuple[float, list[AppliedRankingBoost]]:
     boost = 0.0
-    applied_rule_ids: list[str] = []
+    applied_rules: list[AppliedRankingBoost] = []
     for rule in _ranking_boost_rules():
         if _ranking_boost_rule_matches(
             rule,
@@ -944,8 +960,14 @@ def _ranking_boost(
             query_analysis=query_analysis,
         ):
             boost += rule.weight
-            applied_rule_ids.append(rule.rule_id)
-    return boost, applied_rule_ids
+            applied_rules.append(
+                AppliedRankingBoost(
+                    rule_id=rule.rule_id,
+                    weight=rule.weight,
+                    reason=rule.reason,
+                )
+            )
+    return boost, applied_rules
 
 
 def _ranking_boost_rule_matches(
@@ -1201,11 +1223,15 @@ def _ensure_unique_ranking_boost_rule_ids(
 def _hit_source_locator(
     chunk: KnowledgeChunk,
     *,
-    applied_boost_rules: list[str],
+    applied_boost_rules: list[AppliedRankingBoost],
 ) -> dict[str, Any]:
     locator = dict(chunk.locator)
     if applied_boost_rules:
-        locator["ranking_boost_rules"] = applied_boost_rules
+        locator["ranking_boost_rules"] = [rule.rule_id for rule in applied_boost_rules]
+        locator["ranking_boosts"] = [
+            rule.as_locator_payload()
+            for rule in applied_boost_rules
+        ]
     return locator
 
 

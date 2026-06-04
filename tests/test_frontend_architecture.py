@@ -191,8 +191,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "packageData.handoff_context.reranker" in retrieval_page
     assert "packageData.handoff_context.diversity" in retrieval_page
     assert "runtime?.rerank?.enabled" in retrieval_page
-    assert "rankingBoostRulesFromHit" in retrieval_page
+    assert "rankingBoostSignalsFromHit" in retrieval_page
+    assert "ranking_boosts" in retrieval_page
     assert "ranking_boost_rules" in retrieval_page
+    assert "Ranking boost rule applied." in retrieval_page
     assert "Ranking signals" in retrieval_page
     assert "applyFilterSuggestion" in retrieval_page
     assert "applySearchFilter" in retrieval_page

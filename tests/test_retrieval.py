@@ -529,6 +529,13 @@ def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch)
     assert package.hits[0].source_locator["ranking_boost_rules"] == [
         "custom_boost_standard"
     ]
+    assert package.hits[0].source_locator["ranking_boosts"] == [
+        {
+            "rule_id": "custom_boost_standard",
+            "weight": 0.5,
+            "reason": "Custom ranking boost",
+        }
+    ]
 
     registry_path.write_text(
         json.dumps(
@@ -568,6 +575,13 @@ def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch)
     assert reloaded.hits[0].evidence.source_id == "source:general"
     assert reloaded.hits[0].source_locator["ranking_boost_rules"] == [
         "reloaded_boost_general"
+    ]
+    assert reloaded.hits[0].source_locator["ranking_boosts"] == [
+        {
+            "rule_id": "reloaded_boost_general",
+            "weight": 0.5,
+            "reason": "Reloaded ranking boost",
+        }
     ]
 
 

@@ -1129,7 +1129,7 @@ function isSupportedFilterField(value: string): value is SupportedFilterField {
 
 function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
   const evidence = hit.evidence;
-  const rankingBoostRules = rankingBoostRulesFromHit(hit);
+  const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   return (
     <article className="grid min-w-0 gap-3 rounded-md border border-border bg-card p-3 shadow-sm">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -1168,17 +1168,30 @@ function HitCard({ hit, index }: { hit: RetrievalHit; index: number }) {
         <ScoreMeter label="Rerank" value={hit.rerank_score} />
       </div>
 
-      {rankingBoostRules.length ? (
+      {rankingBoostSignals.length ? (
         <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
           <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
             <Gauge className="h-3.5 w-3.5 shrink-0" />
             <span>Ranking signals</span>
           </div>
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {rankingBoostRules.map((ruleId) => (
-              <Badge className="max-w-full break-words" key={ruleId} variant="muted">
-                {formatRankingSignal(ruleId)}
-              </Badge>
+          <div className="grid gap-1.5">
+            {rankingBoostSignals.map((signal) => (
+              <div
+                className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs"
+                key={signal.ruleId}
+              >
+                <Badge className="max-w-full break-words" variant="muted">
+                  {signal.label}
+                </Badge>
+                {signal.weight !== null ? (
+                  <span className="font-mono font-semibold text-muted-foreground">
+                    +{formatScore(signal.weight)}
+                  </span>
+                ) : null}
+                <span className="min-w-0 flex-1 break-words font-semibold text-muted-foreground">
+                  {signal.reason}
+                </span>
+              </div>
             ))}
           </div>
         </div>
@@ -2228,6 +2241,13 @@ type FilterSuggestionStack = {
   value: string;
 };
 
+type RankingBoostSignal = {
+  label: string;
+  reason: string;
+  ruleId: string;
+  weight: number | null;
+};
+
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   const embedding = recordValue(packageData.handoff_context.embedding);
   const frameworkComponents = recordValue(packageData.handoff_context.framework_components);
@@ -2338,8 +2358,31 @@ function formatDiversityTrace(diversity: DiversityStack): string {
   return `${diversity.selectionMode} / lambda ${lambda} / ${formatSourceCoverage(diversity)} sources / ${duplicateText}`;
 }
 
-function rankingBoostRulesFromHit(hit: RetrievalHit): string[] {
-  return stringArrayValue(hit.source_locator.ranking_boost_rules);
+function rankingBoostSignalsFromHit(hit: RetrievalHit): RankingBoostSignal[] {
+  const detailedSignals = rankingBoostDetailsValue(hit.source_locator.ranking_boosts);
+  if (detailedSignals.length) return detailedSignals;
+  return stringArrayValue(hit.source_locator.ranking_boost_rules).map((ruleId) => ({
+    label: formatRankingSignal(ruleId),
+    reason: "Ranking boost rule applied.",
+    ruleId,
+    weight: null,
+  }));
+}
+
+function rankingBoostDetailsValue(value: unknown): RankingBoostSignal[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => {
+      const ruleId = stringValue(item.rule_id, "");
+      return {
+        label: formatRankingSignal(ruleId),
+        reason: stringValue(item.reason, "Ranking boost rule applied."),
+        ruleId,
+        weight: numberValue(item.weight),
+      };
+    })
+    .filter((item) => item.ruleId);
 }
 
 function formatRankingSignal(ruleId: string): string {
