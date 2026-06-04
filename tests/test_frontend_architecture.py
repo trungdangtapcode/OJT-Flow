@@ -234,6 +234,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "createSearchRun" in retrieval_page
     assert "restoreSearchRun" in retrieval_page
     assert "retrievalRunSummary" in retrieval_page
+    assert "SearchRunComparison" in retrieval_page
+    assert "Run comparison" in retrieval_page
+    assert "compareSearchRuns" in retrieval_page
+    assert "comparisonRunForActive" in retrieval_page
+    assert "addedEvidenceIds" in retrieval_page
+    assert "retainedEvidenceIds" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
     assert "Restore submitted search" in retrieval_page
@@ -280,6 +286,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "removable chips" in frontend_architecture
     assert "pending changes" in frontend_architecture
     assert "submitted request summary" in frontend_architecture
+    assert "compare recent search packages" in frontend_architecture
     assert "restore the query builder" in frontend_architecture
     assert "copyable and launchable" in frontend_architecture
     assert "/retrieval/presets" in frontend_architecture

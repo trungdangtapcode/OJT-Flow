@@ -172,8 +172,10 @@ being edited. When displayed evidence is stale, operators must be able to
 restore the query builder to the submitted request without changing the result
 package or issuing another search. The Retrieval console should keep a compact
 in-session history of recent unique search runs with hit count, candidate count,
-warnings, quality issue count, and top source so operators can compare and
-restore recent result packages without rerunning every query.
+warnings, quality issue count, and top source so operators can compare recent search packages
+and restore recent result packages without rerunning every query. The active
+run comparison should show deltas and evidence IDs that were
+added, removed, or retained so relevance tuning remains inspectable.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.

@@ -107,6 +107,19 @@ type RetrievalRunSummary = {
   topSourceId: string | null;
   warningCount: number;
 };
+type RetrievalRunComparison = {
+  addedEvidenceIds: string[];
+  baselineQuery: string;
+  candidateDelta: number;
+  hitDelta: number;
+  qualityWarningDelta: number;
+  removedEvidenceIds: string[];
+  retainedEvidenceIds: string[];
+  topSourceAfter: string | null;
+  topSourceBefore: string | null;
+  topSourceChanged: boolean;
+  warningDelta: number;
+};
 
 const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
   "clinical_domain",
@@ -152,6 +165,11 @@ export function RetrievalPage() {
     () => searchRuns.find((run) => run.runId === activeRunId) ?? null,
     [activeRunId, searchRuns],
   );
+  const activeRunComparison = React.useMemo(() => {
+    if (!activeRun) return null;
+    const baselineRun = comparisonRunForActive(searchRuns, activeRun.runId);
+    return baselineRun ? compareSearchRuns(activeRun, baselineRun) : null;
+  }, [activeRun, searchRuns]);
   const packageData = activeRun?.packageData ?? searchMutation.data;
   const presets = presetsQuery.data ?? [];
   const searchOptions = searchOptionsQuery.data;
@@ -613,6 +631,7 @@ export function RetrievalPage() {
           </Card>
           <SearchRunHistory
             activeRunId={activeRunId}
+            comparison={activeRunComparison}
             isSearchPending={searchMutation.isPending}
             onClear={clearSearchRuns}
             onRestore={restoreSearchRun}
@@ -727,12 +746,14 @@ function RetrievalSummary({
 
 function SearchRunHistory({
   activeRunId,
+  comparison,
   isSearchPending,
   onClear,
   onRestore,
   runs,
 }: {
   activeRunId: string | null;
+  comparison: RetrievalRunComparison | null;
   isSearchPending: boolean;
   onClear: () => void;
   onRestore: (run: RetrievalSearchRun) => void;
@@ -811,8 +832,128 @@ function SearchRunHistory({
             </button>
           );
         })}
+        {comparison ? <SearchRunComparison comparison={comparison} /> : null}
       </CardContent>
     </Card>
+  );
+}
+
+function SearchRunComparison({ comparison }: { comparison: RetrievalRunComparison }) {
+  return (
+    <div
+      aria-label="Search run comparison"
+      className="mt-1 grid gap-3 rounded-md border border-border bg-muted/25 p-3 text-sm"
+    >
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Run comparison
+        </div>
+        <Badge variant={comparison.topSourceChanged ? "warning" : "success"}>
+          {comparison.topSourceChanged ? "top source changed" : "top source stable"}
+        </Badge>
+      </div>
+      <div className="break-words text-xs leading-5 text-muted-foreground">
+        Compared with: {comparison.baselineQuery}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <RunComparisonMetric
+          delta={comparison.hitDelta}
+          label="Hits"
+          positiveIsGood
+        />
+        <RunComparisonMetric
+          delta={comparison.candidateDelta}
+          label="Candidates"
+          positiveIsGood
+        />
+        <RunComparisonMetric
+          delta={comparison.warningDelta}
+          label="Warnings"
+          positiveIsGood={false}
+        />
+        <RunComparisonMetric
+          delta={comparison.qualityWarningDelta}
+          label="Quality issues"
+          positiveIsGood={false}
+        />
+      </div>
+      <div className="grid gap-2">
+        <RunComparisonEvidenceChange
+          evidenceIds={comparison.addedEvidenceIds}
+          label="Added evidence"
+          variant="success"
+        />
+        <RunComparisonEvidenceChange
+          evidenceIds={comparison.removedEvidenceIds}
+          label="Removed evidence"
+          variant="warning"
+        />
+        <RunComparisonEvidenceChange
+          evidenceIds={comparison.retainedEvidenceIds}
+          label="Retained evidence"
+          variant="muted"
+        />
+      </div>
+      <div className="break-words text-xs font-semibold text-muted-foreground">
+        Top source: {comparison.topSourceBefore ?? "none"} to{" "}
+        {comparison.topSourceAfter ?? "none"}
+      </div>
+    </div>
+  );
+}
+
+function RunComparisonMetric({
+  delta,
+  label,
+  positiveIsGood,
+}: {
+  delta: number;
+  label: string;
+  positiveIsGood: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+      <span className="text-xs font-bold text-muted-foreground">{label}</span>
+      <Badge variant={deltaBadgeVariant(delta, positiveIsGood)}>
+        {formatSignedDelta(delta)}
+      </Badge>
+    </div>
+  );
+}
+
+function RunComparisonEvidenceChange({
+  evidenceIds,
+  label,
+  variant,
+}: {
+  evidenceIds: string[];
+  label: string;
+  variant: "success" | "warning" | "muted";
+}) {
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-muted-foreground">{label}</span>
+        <Badge variant={variant}>{evidenceIds.length}</Badge>
+      </div>
+      {evidenceIds.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {evidenceIds.slice(0, 4).map((evidenceId) => (
+            <span
+              className="max-w-full break-words rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground"
+              key={evidenceId}
+            >
+              {evidenceId}
+            </span>
+          ))}
+          {evidenceIds.length > 4 ? (
+            <span className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground">
+              +{evidenceIds.length - 4}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -3109,6 +3250,56 @@ function createSearchRun(
   };
 }
 
+function comparisonRunForActive(
+  runs: RetrievalSearchRun[],
+  activeRunId: string,
+): RetrievalSearchRun | null {
+  const activeIndex = runs.findIndex((run) => run.runId === activeRunId);
+  if (activeIndex < 0) return null;
+  return (
+    runs.slice(activeIndex + 1).find((run) => run.runId !== activeRunId) ??
+    runs.find((run) => run.runId !== activeRunId) ??
+    null
+  );
+}
+
+function compareSearchRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalRunComparison {
+  const activeEvidenceIds = evidenceIdsFromRun(activeRun);
+  const baselineEvidenceIds = evidenceIdsFromRun(baselineRun);
+  const activeEvidenceIdSet = new Set(activeEvidenceIds);
+  const baselineEvidenceIdSet = new Set(baselineEvidenceIds);
+
+  return {
+    addedEvidenceIds: activeEvidenceIds.filter(
+      (evidenceId) => !baselineEvidenceIdSet.has(evidenceId),
+    ),
+    baselineQuery: baselineRun.payload.query,
+    candidateDelta:
+      activeRun.summary.candidateCount - baselineRun.summary.candidateCount,
+    hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
+    qualityWarningDelta:
+      activeRun.summary.qualityWarningCount - baselineRun.summary.qualityWarningCount,
+    removedEvidenceIds: baselineEvidenceIds.filter(
+      (evidenceId) => !activeEvidenceIdSet.has(evidenceId),
+    ),
+    retainedEvidenceIds: activeEvidenceIds.filter((evidenceId) =>
+      baselineEvidenceIdSet.has(evidenceId),
+    ),
+    topSourceAfter: activeRun.summary.topSourceId,
+    topSourceBefore: baselineRun.summary.topSourceId,
+    topSourceChanged:
+      activeRun.summary.topSourceId !== baselineRun.summary.topSourceId,
+    warningDelta: activeRun.summary.warningCount - baselineRun.summary.warningCount,
+  };
+}
+
+function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {
+  return run.packageData.hits.map((hit) => hit.evidence.evidence_id);
+}
+
 function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary {
   return {
     candidateCount: packageData.trace.candidates_seen,
@@ -3131,6 +3322,19 @@ function searchRunSummaryVariant(
   if (summary.qualityWarningCount > 0 || summary.warningCount > 0) return "warning";
   if (summary.hitCount > 0) return "success";
   return "destructive";
+}
+
+function deltaBadgeVariant(
+  delta: number,
+  positiveIsGood: boolean,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (delta === 0) return "muted";
+  const good = positiveIsGood ? delta > 0 : delta < 0;
+  return good ? "success" : "warning";
+}
+
+function formatSignedDelta(delta: number): string {
+  return delta > 0 ? `+${delta}` : String(delta);
 }
 
 function formatRunTime(submittedAt: string): string {
