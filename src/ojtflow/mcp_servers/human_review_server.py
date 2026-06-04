@@ -17,6 +17,8 @@ from typing import Any
 from fastmcp import FastMCP
 
 from ojtflow.config import get_settings
+from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.errors import NotFoundError
 from ojtflow.infrastructure.storage.sqlite import (
     SQLiteBackboneStore,
     SQLiteWorkflowRepository,
@@ -58,12 +60,11 @@ def list_pending_reviews() -> dict[str, Any]:
         count: Total number of pending reviews.
     """
     repo = _workflow_repo()
-    page = repo.list_workflows(status_filter="needs_human_review", limit=50, offset=0)
+    states = repo.list(status=WorkflowStatus.NEEDS_HUMAN_REVIEW, limit=50)
 
     pending_out = []
-    for w in page.items:
-        state = repo.get_workflow(w.workflow_id)
-        if state is None or state.review is None:
+    for state in states:
+        if state.review is None:
             continue
         pending_out.append(
             {
@@ -98,8 +99,9 @@ def get_review_context(workflow_id: str) -> dict[str, Any]:
         decision_guide: Explanation of each allowed decision.
     """
     repo = _workflow_repo()
-    state = repo.get_workflow(workflow_id)
-    if state is None:
+    try:
+        state = repo.get(workflow_id)
+    except NotFoundError:
         return {"found": False, "workflow_id": workflow_id}
     if state.review is None:
         return {
@@ -169,9 +171,11 @@ def format_review_briefing(workflow_id: str) -> dict[str, Any]:
         briefing: A structured summary ready to show to a human reviewer.
     """
     repo = _workflow_repo()
-    state = repo.get_workflow(workflow_id)
-
-    if state is None or state.review is None:
+    try:
+        state = repo.get(workflow_id)
+    except NotFoundError:
+        return {"found": False, "workflow_id": workflow_id}
+    if state.review is None:
         return {"found": False, "workflow_id": workflow_id}
 
     critical_issues = []

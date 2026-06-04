@@ -10,12 +10,13 @@ Run locally:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
 from ojtflow.config import get_settings
+from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.errors import NotFoundError
 from ojtflow.infrastructure.storage.sqlite import (
     SQLiteBackboneStore,
     SQLiteEventRepository,
@@ -51,7 +52,6 @@ def _get_repos() -> tuple[SQLiteWorkflowRepository, SQLiteEventRepository]:
 def list_workflows(
     status: str | None = None,
     limit: int = 10,
-    offset: int = 0,
 ) -> dict[str, Any]:
     """List recent workflows with their current status.
 
@@ -59,37 +59,30 @@ def list_workflows(
         status: Optional filter — one of 'created', 'running', 'needs_human_review',
                 'completed', 'failed', 'cancelled'.
         limit: Maximum number of results (default 10, max 50).
-        offset: Pagination offset.
 
     Returns:
         workflows: List of workflow summaries.
-        total: Total count matching the filter.
+        count: Total count returned.
     """
     limit = min(limit, 50)
     workflow_repo, _ = _get_repos()
-    page = workflow_repo.list_workflows(
-        status_filter=status,
-        limit=limit,
-        offset=offset,
-    )
+
+    ws = WorkflowStatus(status) if status else None
+    states = workflow_repo.list(status=ws, limit=limit)
+
     workflows_out = [
         {
-            "workflow_id": w.workflow_id,
-            "status": w.status,
-            "created_at": w.created_at,
-            "updated_at": w.updated_at,
-            "step_count": w.step_count,
-            "issue_count": w.issue_count,
-            "requires_review": w.requires_review,
+            "workflow_id": s.workflow_id,
+            "status": s.status.value,
+            "created_at": s.created_at,
+            "updated_at": s.updated_at,
+            "step_count": len(s.steps or []),
+            "has_review": s.review is not None,
+            "review_status": s.review.status.value if s.review else None,
         }
-        for w in page.items
+        for s in states
     ]
-    return {
-        "workflows": workflows_out,
-        "total": page.total,
-        "limit": limit,
-        "offset": offset,
-    }
+    return {"workflows": workflows_out, "count": len(workflows_out)}
 
 
 @mcp.tool()
@@ -103,19 +96,18 @@ def get_workflow_detail(workflow_id: str) -> dict[str, Any]:
         Full workflow state including steps, validation report, and review status.
     """
     workflow_repo, _ = _get_repos()
-    state = workflow_repo.get_workflow(workflow_id)
-    if state is None:
+    try:
+        state = workflow_repo.get(workflow_id)
+    except NotFoundError:
         return {"found": False, "workflow_id": workflow_id}
 
     steps_out = [
         {
-            "step_id": step.step_id,
             "name": step.name,
             "status": step.status,
-            "started_at": step.started_at,
-            "completed_at": step.completed_at,
             "summary": step.summary,
             "issue_count": step.issue_count,
+            "completed_at": step.completed_at,
         }
         for step in (state.steps or [])
     ]
@@ -130,14 +122,12 @@ def get_workflow_detail(workflow_id: str) -> dict[str, Any]:
             "proposed_action": state.review.proposed_action,
             "decision": state.review.decision.value if state.review.decision else None,
             "decided_by": state.review.decided_by,
-            "decided_at": state.review.decided_at,
         }
 
     validation_out = None
     if state.validation_report:
         validation_out = {
             "valid": state.validation_report.valid,
-            "schema_id": state.validation_report.schema_id,
             "requires_review": state.validation_report.requires_review,
             "severity_summary": state.validation_report.severity_summary,
             "issue_count": len(state.validation_report.issues),
@@ -152,7 +142,6 @@ def get_workflow_detail(workflow_id: str) -> dict[str, Any]:
         "steps": steps_out,
         "review": review_out,
         "validation_report": validation_out,
-        "failure": state.failure.model_dump() if state.failure else None,
     }
 
 
@@ -160,12 +149,9 @@ def get_workflow_detail(workflow_id: str) -> dict[str, Any]:
 def get_workflow_events(workflow_id: str, limit: int = 20) -> dict[str, Any]:
     """Get the audit event timeline for a specific workflow.
 
-    Each event records an action that occurred during workflow execution.
-    Events are append-only and form the authoritative audit trail.
-
     Args:
         workflow_id: The workflow ID.
-        limit: Maximum number of events to return (default 20, max 100).
+        limit: Maximum number of events (default 20, max 100).
 
     Returns:
         events: Chronological list of audit events.
@@ -173,16 +159,15 @@ def get_workflow_events(workflow_id: str, limit: int = 20) -> dict[str, Any]:
     """
     limit = min(limit, 100)
     _, event_repo = _get_repos()
-    events = event_repo.list_events(workflow_id, limit=limit)
+    events = event_repo.list_for_workflow(workflow_id)[:limit]
 
     events_out = [
         {
             "event_id": ev.event_id,
             "timestamp": ev.timestamp,
-            "event_type": ev.event_type,
-            "actor_type": ev.actor_type,
+            "event_type": ev.event_type.value,
             "actor_id": ev.actor_id,
-            "severity": ev.severity,
+            "severity": ev.severity.value,
             "summary": ev.summary,
         }
         for ev in events
@@ -195,44 +180,43 @@ def get_pending_reviews() -> dict[str, Any]:
     """List all workflows currently waiting for human review.
 
     Returns:
-        pending: List of workflows in NEEDS_HUMAN_REVIEW status.
-        count: Number of pending reviews.
+        pending: List of workflows needing review with their review question.
+        count: Number pending.
     """
     workflow_repo, _ = _get_repos()
-    page = workflow_repo.list_workflows(status_filter="needs_human_review", limit=50, offset=0)
+    states = workflow_repo.list(status=WorkflowStatus.NEEDS_HUMAN_REVIEW, limit=50)
 
     pending_out = [
         {
-            "workflow_id": w.workflow_id,
-            "created_at": w.created_at,
-            "updated_at": w.updated_at,
+            "workflow_id": s.workflow_id,
+            "updated_at": s.updated_at,
+            "question": s.review.question if s.review else None,
+            "trigger": s.review.trigger if s.review else None,
         }
-        for w in page.items
+        for s in states
     ]
     return {"pending": pending_out, "count": len(pending_out)}
 
 
 @mcp.tool()
 def generate_audit_summary(workflow_id: str) -> dict[str, Any]:
-    """Generate a human-readable audit summary for a completed workflow.
-
-    Reconstructs the full story: what was submitted, what happened at each step,
-    whether review was required, and what decision was made.
+    """Generate a human-readable audit summary for a workflow.
 
     Args:
         workflow_id: The workflow ID to summarise.
 
     Returns:
-        summary: Structured audit narrative suitable for review reports.
+        summary: Structured audit narrative.
     """
     workflow_repo, event_repo = _get_repos()
-    state = workflow_repo.get_workflow(workflow_id)
-    if state is None:
+    try:
+        state = workflow_repo.get(workflow_id)
+    except NotFoundError:
         return {"found": False, "workflow_id": workflow_id}
 
-    events = event_repo.list_events(workflow_id, limit=100)
+    events = event_repo.list_for_workflow(workflow_id)
     step_names = [step.name for step in (state.steps or [])]
-    event_types = [ev.event_type for ev in events]
+    event_types = list(dict.fromkeys(ev.event_type.value for ev in events))
 
     review_summary = None
     if state.review:
@@ -249,12 +233,10 @@ def generate_audit_summary(workflow_id: str) -> dict[str, Any]:
         "final_status": state.status.value,
         "steps_executed": step_names,
         "event_count": len(events),
-        "event_types_seen": list(dict.fromkeys(event_types)),
+        "event_types_seen": event_types,
         "review_required": state.review is not None,
         "review_summary": review_summary,
-        "validation_passed": (
-            state.validation_report.valid if state.validation_report else None
-        ),
+        "validation_passed": state.validation_report.valid if state.validation_report else None,
         "created_at": state.created_at,
         "updated_at": state.updated_at,
     }
@@ -268,10 +250,7 @@ def generate_audit_summary(workflow_id: str) -> dict[str, Any]:
 @mcp.resource("ojtflow://audit/workflow-statuses")
 def workflow_statuses_resource() -> str:
     """All valid workflow status values."""
-    statuses = [
-        "created", "running", "needs_human_review",
-        "approved", "rejected", "completed", "failed", "cancelled",
-    ]
+    statuses = [s.value for s in WorkflowStatus]
     return json.dumps({"statuses": statuses})
 
 
