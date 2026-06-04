@@ -266,6 +266,7 @@ export type RetrievalSearchPreset = {
   preset_id: string;
   label: string;
   description: string;
+  category?: string | null;
   query: string;
   top_k: number;
   fields: string[];
@@ -276,6 +277,20 @@ export type RetrievalSearchPreset = {
   standard_system?: string | null;
   trust_level?: string | null;
   source_type?: string | null;
+  target_sources: string[];
+  launch_hint_targets: string[];
+};
+
+export type RetrievalSearchOption = {
+  value: string;
+  label: string;
+  description?: string | null;
+};
+
+export type RetrievalSearchOptions = {
+  version: string;
+  detected_formats: RetrievalSearchOption[];
+  top_k_values: number[];
 };
 
 export type RetrievalSearchFilters = {

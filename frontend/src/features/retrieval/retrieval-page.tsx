@@ -35,6 +35,7 @@ import {
   useRetrievalReindexMutation,
   useRetrievalIntegrityQuery,
   useRetrievalPresetsQuery,
+  useRetrievalSearchOptionsQuery,
   useRetrievalSearchMutation,
   useRetrievalSourcesQuery,
   useRuntimeConfigQuery,
@@ -52,6 +53,7 @@ import type {
   RetrievalCoverage,
   RetrievalFacets,
   RetrievalSearchPayload,
+  RetrievalSearchOption,
   RetrievalSearchPreset,
   RetrievalSource,
   RuntimeConfig,
@@ -92,6 +94,7 @@ const supportedSuggestionFilterFields = new Set<SupportedFilterField>([
 
 export function RetrievalPage() {
   const presetsQuery = useRetrievalPresetsQuery();
+  const searchOptionsQuery = useRetrievalSearchOptionsQuery();
   const sourcesQuery = useRetrievalSourcesQuery();
   const schemasQuery = useSchemasQuery();
   const runtimeQuery = useRuntimeConfigQuery();
@@ -121,6 +124,7 @@ export function RetrievalPage() {
 
   const packageData = searchMutation.data;
   const presets = presetsQuery.data ?? [];
+  const searchOptions = searchOptionsQuery.data;
   const sources = sourcesQuery.data ?? [];
   const domains = uniqueValues(sources.map((source) => source.clinical_domain));
   const standards = uniqueValues(sources.map((source) => source.standard_system));
@@ -136,13 +140,13 @@ export function RetrievalPage() {
     ...presets.map((preset) => preset.source_type),
     sourceType,
   ]);
+  const formatOptions = mergeSearchOptions(
+    searchOptions?.detected_formats ?? [],
+    presets.map((preset) => preset.detected_format),
+    detectedFormat,
+  );
   const topKOptions = uniqueNumberValues([
-    3,
-    5,
-    8,
-    10,
-    15,
-    20,
+    ...(searchOptions?.top_k_values ?? []),
     topK,
     ...presets.map((preset) => preset.top_k),
   ]);
@@ -367,6 +371,11 @@ export function RetrievalPage() {
                   {workflowErrorMessage(presetsQuery.error)}
                 </Notice>
               ) : null}
+              {searchOptionsQuery.isError ? (
+                <Notice title="Search options unavailable">
+                  {workflowErrorMessage(searchOptionsQuery.error)}
+                </Notice>
+              ) : null}
 
               <SearchPresetStrip
                 activePresetId={activePresetId}
@@ -442,10 +451,11 @@ export function RetrievalPage() {
                     value={detectedFormat}
                   >
                     <option value="">Any format</option>
-                    <option value="csv">CSV</option>
-                    <option value="json">JSON</option>
-                    <option value="yaml">YAML</option>
-                    <option value="fhir_like">FHIR-like</option>
+                    {formatOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </Select>
                 </Label>
                 <Label>
@@ -706,7 +716,14 @@ function SearchPresetStrip({
               type="button"
             >
               <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="break-words font-black">{preset.label}</span>
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="break-words font-black">{preset.label}</span>
+                  {preset.category ? (
+                    <span className="rounded-full bg-muted px-2 py-1 text-xs font-bold text-muted-foreground">
+                      {humanize(preset.category)}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="rounded-full bg-muted px-2 py-1 text-xs font-bold text-muted-foreground">
                   top {preset.top_k}
                 </span>
@@ -714,6 +731,26 @@ function SearchPresetStrip({
               <span className="break-words text-xs leading-5 text-muted-foreground">
                 {preset.description}
               </span>
+              {preset.target_sources.length || preset.launch_hint_targets.length ? (
+                <span className="flex min-w-0 flex-wrap gap-1 pt-1">
+                  {preset.target_sources.slice(0, 3).map((source) => (
+                    <span
+                      className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground"
+                      key={source}
+                    >
+                      {source}
+                    </span>
+                  ))}
+                  {preset.launch_hint_targets.slice(0, 2).map((target) => (
+                    <span
+                      className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground"
+                      key={target}
+                    >
+                      {humanize(target)}
+                    </span>
+                  ))}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -2317,6 +2354,25 @@ function retrievalSearchSignature(payload: RetrievalSearchPayload): string {
 
 function uniqueValues(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort();
+}
+
+function mergeSearchOptions(
+  options: RetrievalSearchOption[],
+  additionalValues: Array<string | null | undefined>,
+  currentValue: string,
+) {
+  const merged = new Map<string, RetrievalSearchOption>();
+  for (const option of options) {
+    if (!option.value) continue;
+    merged.set(option.value, option);
+  }
+  for (const value of [...additionalValues, currentValue]) {
+    if (!value || merged.has(value)) continue;
+    merged.set(value, { value, label: humanize(value) });
+  }
+  return Array.from(merged.values()).sort((left, right) =>
+    left.label.localeCompare(right.label),
+  );
 }
 
 function uniqueNumberValues(values: Array<number | null | undefined>) {

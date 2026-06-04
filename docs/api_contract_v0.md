@@ -1230,10 +1230,18 @@ not silently accept filters that the ranking layer cannot enforce.
 
 `GET /api/v1/retrieval/presets` returns data-driven operator query presets
 loaded from `knowledge/retrieval/search_presets.json`. Each preset includes
-`preset_id`, `label`, `description`, `query`, `top_k`, `fields`, and optional
-schema, format, resource, clinical-domain, standard, trust, and source-type
-constraints. The frontend uses these presets to seed the query builder instead
-of hardcoding healthcare search examples in React.
+`preset_id`, `label`, `description`, optional `category`, `query`, `top_k`,
+`fields`, optional schema, format, resource, clinical-domain, standard, trust,
+source-type constraints, target source labels, and launch-hint target names. The
+frontend uses these presets to seed the query builder instead of hardcoding
+healthcare search examples in React.
+
+`GET /api/v1/retrieval/search-options` returns data-driven query-builder
+controls loaded from `knowledge/retrieval/search_options.json`. The response
+includes `version`, `detected_formats[]` with `value`, `label`, and optional
+`description`, plus `top_k_values[]`. The Retrieval UI uses this endpoint for
+format and top-K controls so Markdown, FHIR-like, and future intake/search
+profiles can be added through trusted data.
 
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,

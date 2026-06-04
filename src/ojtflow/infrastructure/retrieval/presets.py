@@ -3,25 +3,33 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from ojtflow.core.contracts.retrieval import RetrievalSearchPreset
+from ojtflow.core.contracts.retrieval import (
+    RetrievalSearchOption,
+    RetrievalSearchOptions,
+    RetrievalSearchPreset,
+)
 
 
 DEFAULT_PRESET_PATH = Path("retrieval/search_presets.json")
+DEFAULT_OPTIONS_PATH = Path("retrieval/search_options.json")
 
 
 def load_retrieval_search_presets(knowledge_root: Path) -> list[RetrievalSearchPreset]:
     """Load operator retrieval presets from the trusted knowledge directory."""
 
-    return list(_load_retrieval_search_presets(str(knowledge_root / DEFAULT_PRESET_PATH)))
+    return list(_load_retrieval_search_presets(knowledge_root / DEFAULT_PRESET_PATH))
 
 
-@lru_cache(maxsize=8)
-def _load_retrieval_search_presets(path_text: str) -> tuple[RetrievalSearchPreset, ...]:
-    path = Path(path_text)
+def load_retrieval_search_options(knowledge_root: Path) -> RetrievalSearchOptions:
+    """Load retrieval query-builder options from the trusted knowledge directory."""
+
+    return _load_retrieval_search_options(knowledge_root / DEFAULT_OPTIONS_PATH)
+
+
+def _load_retrieval_search_presets(path: Path) -> tuple[RetrievalSearchPreset, ...]:
     if not path.exists():
         return ()
 
@@ -36,6 +44,20 @@ def _load_retrieval_search_presets(path_text: str) -> tuple[RetrievalSearchPrese
     )
     _ensure_unique_ids(presets, path=path)
     return presets
+
+
+def _load_retrieval_search_options(path: Path) -> RetrievalSearchOptions:
+    if not path.exists():
+        return RetrievalSearchOptions()
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid retrieval search options registry at {path}: expected object")
+
+    options = RetrievalSearchOptions.model_validate(raw)
+    _ensure_unique_option_values(options.detected_formats, field="detected_formats", path=path)
+    _ensure_valid_top_k_values(options.top_k_values, path=path)
+    return options
 
 
 def _preset_record(record: Any, *, path: Path) -> dict[str, Any]:
@@ -55,4 +77,38 @@ def _ensure_unique_ids(presets: tuple[RetrievalSearchPreset, ...], *, path: Path
         duplicate_text = ", ".join(sorted(duplicates))
         raise ValueError(
             f"Invalid retrieval preset registry at {path}: duplicate preset_id {duplicate_text}"
+        )
+
+
+def _ensure_unique_option_values(
+    options: list[RetrievalSearchOption],
+    *,
+    field: str,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for option in options:
+        if option.value in seen:
+            duplicates.add(option.value)
+        seen.add(option.value)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid retrieval search options registry at {path}: "
+            f"duplicate {field} value {duplicate_text}"
+        )
+
+
+def _ensure_valid_top_k_values(values: list[int], *, path: Path) -> None:
+    invalid = [value for value in values if value < 1 or value > 20]
+    if invalid:
+        invalid_text = ", ".join(str(value) for value in invalid)
+        raise ValueError(
+            f"Invalid retrieval search options registry at {path}: "
+            f"top_k_values must be between 1 and 20, got {invalid_text}"
+        )
+    if len(set(values)) != len(values):
+        raise ValueError(
+            f"Invalid retrieval search options registry at {path}: duplicate top_k_values"
         )

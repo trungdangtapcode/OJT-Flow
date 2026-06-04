@@ -129,6 +129,7 @@ class RetrievalSearchPreset(ContractModel):
     preset_id: NonBlankStr
     label: NonBlankStr
     description: NonBlankStr
+    category: NonBlankStr | None = None
     query: NonBlankStr
     top_k: int = Field(default=5, ge=1, le=20)
     fields: list[NonBlankStr] = Field(default_factory=list)
@@ -139,6 +140,24 @@ class RetrievalSearchPreset(ContractModel):
     standard_system: NonBlankStr | None = None
     trust_level: TrustLevel | None = TrustLevel.APPROVED
     source_type: EvidenceSourceType | None = None
+    target_sources: list[NonBlankStr] = Field(default_factory=list)
+    launch_hint_targets: list[NonBlankStr] = Field(default_factory=list)
+
+
+class RetrievalSearchOption(ContractModel):
+    """One data-driven option for operator retrieval controls."""
+
+    value: NonBlankStr
+    label: NonBlankStr
+    description: NonBlankStr | None = None
+
+
+class RetrievalSearchOptions(ContractModel):
+    """Data-driven retrieval query-builder options loaded from trusted knowledge data."""
+
+    version: NonBlankStr = "retrieval_search_options.v1"
+    detected_formats: list[RetrievalSearchOption] = Field(default_factory=list)
+    top_k_values: list[int] = Field(default_factory=list)
 
 
 class RetrievalConceptCandidate(ContractModel):

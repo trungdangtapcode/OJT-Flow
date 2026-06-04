@@ -845,6 +845,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
             json={"query": "lab result schema", "top_k": 1},
         )
         retrieval_presets = await client.get("/api/v1/retrieval/presets")
+        retrieval_search_options = await client.get("/api/v1/retrieval/search-options")
         retrieval_reindex = await client.post(
             "/api/v1/retrieval/reindex",
             json={"include_seeded": True, "include_corpus": True},
@@ -898,6 +899,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval, expected_code="unauthorized")
     assert retrieval_presets.status_code == 401
     _assert_error_envelope(retrieval_presets, expected_code="unauthorized")
+    assert retrieval_search_options.status_code == 401
+    _assert_error_envelope(retrieval_search_options, expected_code="unauthorized")
     assert retrieval_reindex.status_code == 401
     _assert_error_envelope(retrieval_reindex, expected_code="unauthorized")
     assert retrieval_sources.status_code == 401
@@ -2751,13 +2754,26 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             preset["preset_id"] == "lab_csv_observation_quality"
             and preset["schema_id"] == "lab_result_v1"
             and "patient_id" in preset["fields"]
+            and preset["category"] == "workflow_validation"
+            and "FHIR Observation" in preset["target_sources"]
             for preset in preset_data
         )
         assert any(
             preset["preset_id"] == "drug_safety_external_search"
             and preset["standard_system"] == "RxNorm"
+            and "openfda_drug_event" in preset["launch_hint_targets"]
             for preset in preset_data
         )
+
+        search_options = await client.get("/api/v1/retrieval/search-options")
+        assert search_options.status_code == 200
+        option_data = search_options.json()["data"]
+        assert option_data["version"] == "retrieval_search_options.v1"
+        assert any(
+            option["value"] == "markdown" and option["label"] == "Markdown"
+            for option in option_data["detected_formats"]
+        )
+        assert option_data["top_k_values"] == [3, 5, 8, 10, 15, 20]
 
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})
         assert invalid.status_code == 422

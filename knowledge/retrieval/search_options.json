@@ -1,0 +1,31 @@
+{
+  "version": "retrieval_search_options.v1",
+  "detected_formats": [
+    {
+      "value": "csv",
+      "label": "CSV",
+      "description": "Tabular comma-separated healthcare records and malformed-row checks."
+    },
+    {
+      "value": "json",
+      "label": "JSON",
+      "description": "Structured JSON payloads, FHIR-like resources, and API output."
+    },
+    {
+      "value": "yaml",
+      "label": "YAML",
+      "description": "YAML configuration or schema-style healthcare metadata."
+    },
+    {
+      "value": "markdown",
+      "label": "Markdown",
+      "description": "Converted document text from MarkItDown-backed PDF, DOCX, PPTX, XLSX, or HTML intake."
+    },
+    {
+      "value": "fhir_like",
+      "label": "FHIR-like",
+      "description": "FHIR-shaped JSON resources and Bundle-style payloads for profile evidence."
+    }
+  ],
+  "top_k_values": [3, 5, 8, 10, 15, 20]
+}

@@ -7,6 +7,7 @@ import {
   chatWithAssistant,
   createWorkflow,
   getExtractorInventory,
+  getRetrievalSearchOptions,
   getRetrievalIntegrity,
   getRuntimeConfig,
   getRuntimeHealth,
@@ -46,6 +47,7 @@ export const queryKeys = {
   events: (workflowId: string | null) => ["workflow-events", workflowId] as const,
   schemas: ["schemas"] as const,
   retrievalSources: ["retrieval-sources"] as const,
+  retrievalSearchOptions: ["retrieval-search-options"] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
@@ -143,6 +145,7 @@ export function useRuntimeRetrievalSettingsMutation() {
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfig }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeReadiness }),
         queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSearchOptions }),
         queryClient.invalidateQueries({ queryKey: ["retrieval-integrity"] }),
       ]);
       toast.success("Retrieval settings reloaded");
@@ -175,6 +178,10 @@ export function useRetrievalSourcesQuery() {
 
 export function useRetrievalPresetsQuery() {
   return useQuery({ queryKey: queryKeys.retrievalPresets, queryFn: listRetrievalPresets });
+}
+
+export function useRetrievalSearchOptionsQuery() {
+  return useQuery({ queryKey: queryKeys.retrievalSearchOptions, queryFn: getRetrievalSearchOptions });
 }
 
 export function useRetrievalIntegrityQuery(params: {

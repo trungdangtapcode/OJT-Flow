@@ -217,6 +217,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "activePresetId" in retrieval_page
     assert "Loading retrieval presets" in retrieval_page
     assert "data-driven" in retrieval_page
+    assert "useRetrievalSearchOptionsQuery" in retrieval_page
+    assert "formatOptions" in retrieval_page
+    assert "mergeSearchOptions" in retrieval_page
+    assert '<option value="csv">CSV</option>' not in retrieval_page
+    assert '<option value="fhir_like">FHIR-like</option>' not in retrieval_page
     assert "defaultQuery" not in retrieval_page
     assert "activeFacetFiltersFromPayload" in retrieval_page
     assert "onApplyFacet" in retrieval_page
@@ -237,6 +242,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "restore the query builder" in frontend_architecture
     assert "copyable and launchable" in frontend_architecture
     assert "/retrieval/presets" in frontend_architecture
+    assert "/retrieval/search-options" in frontend_architecture
     assert "trusted knowledge data" in frontend_architecture
 
 

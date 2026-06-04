@@ -128,7 +128,9 @@ loads search presets from `/retrieval/presets` so healthcare examples and
 default query-builder state are managed as trusted knowledge data rather than
 hardcoded React constants. The preset selector should apply query, fields,
 schema, format, resource, and metadata constraints without executing a search;
-operators still submit explicitly. The route
+operators still submit explicitly. Format and top-K controls come from
+`/retrieval/search-options` so Markdown, FHIR-like, and future search profiles
+can be added through trusted registry data. The route
 must surface embedding and rerank provider metadata from runtime config and
 retrieval handoff context so operators can distinguish first-stage hybrid
 searches from searches refined by second-stage reranking. It must also surface

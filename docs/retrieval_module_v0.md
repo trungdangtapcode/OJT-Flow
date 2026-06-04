@@ -89,7 +89,13 @@ Operator-facing retrieval examples live in
 example searches, and metadata constraints in trusted data instead of React
 source. A preset can specify `query`, `fields`, `schema_id`, `detected_format`,
 `resource_type`, `clinical_domain`, `standard_system`, `trust_level`,
-`source_type`, and `top_k`. The Retrieval console applies a preset to the query
+`source_type`, `top_k`, `category`, `target_sources`, and
+`launch_hint_targets`. Query-builder controls that are not source inventory,
+such as detected format labels and top-K choices, live in
+`knowledge/retrieval/search_options.json` and are served through
+`GET /api/v1/retrieval/search-options`. These files are read on request, so
+operators can update trusted retrieval registry data without editing frontend
+code or restarting the API. The Retrieval console applies a preset to the query
 builder only; operators still submit the search explicitly so preset changes
 remain reviewable and stale-result state remains accurate.
 
