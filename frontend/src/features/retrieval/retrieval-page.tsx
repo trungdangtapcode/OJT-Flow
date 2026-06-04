@@ -506,6 +506,7 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
   const trace = packageData?.trace;
   const stack = packageData ? rankingStackFromPackage(packageData) : null;
   const diversity = packageData ? diversityFromPackage(packageData) : null;
+  const queryAnalysis = packageData ? queryAnalysisFromPackage(packageData) : null;
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="border-b border-border bg-card/70">
@@ -538,6 +539,7 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
               label="Filters"
               value={Object.keys(trace.filters_applied).length ? JSON.stringify(trace.filters_applied) : "none"}
             />
+            <QueryAnalysisBlock analysis={queryAnalysis} />
             <TokenList items={trace.query_variants} title="Query variants" />
             <TokenList items={trace.safety_flags.map(humanize)} title="Safety flags" tone="warning" />
             <TokenList items={trace.warnings} title="Warnings" tone="warning" />
@@ -545,6 +547,44 @@ function TracePanel({ packageData }: { packageData: RetrievalPackage | undefined
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function QueryAnalysisBlock({
+  analysis,
+}: {
+  analysis: QueryAnalysisStack | null;
+}) {
+  if (!analysis) {
+    return <TraceFact label="Query analysis" value="unavailable" />;
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Query analysis
+        </div>
+        <Badge variant="muted">{analysis.strategy}</Badge>
+      </div>
+      <div className="grid gap-2 text-xs sm:grid-cols-4">
+        <QueryAnalysisCounter label="Concepts" value={analysis.detectedConcepts.length} />
+        <QueryAnalysisCounter label="Standards" value={analysis.standards.length} />
+        <QueryAnalysisCounter label="Rules" value={analysis.ruleIds.length} />
+        <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
+      </div>
+      <TokenList items={analysis.detectedConcepts.map(humanize)} title="Detected concepts" />
+      <TokenList items={analysis.standards} title="Standard cues" />
+      <TokenList items={analysis.expandedTerms} title="Expanded terms" />
+    </div>
+  );
+}
+
+function QueryAnalysisCounter({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-border bg-card px-2 py-1.5">
+      <div className="font-bold text-muted-foreground">{label}</div>
+      <div className="text-base font-black tabular-nums">{value}</div>
+    </div>
   );
 }
 
@@ -774,6 +814,15 @@ type DiversityStack = {
   selectionMode: string;
 };
 
+type QueryAnalysisStack = {
+  detectedConcepts: string[];
+  expandedTerms: string[];
+  ruleIds: string[];
+  standards: string[];
+  strategy: string;
+  variantCount: number;
+};
+
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   const embedding = recordValue(packageData.handoff_context.embedding);
   const reranker = recordValue(packageData.handoff_context.reranker);
@@ -790,6 +839,18 @@ function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
       model: stringValue(reranker.model, "none"),
       provider: rerankerProvider,
     },
+  };
+}
+
+function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisStack {
+  const queryAnalysis = recordValue(packageData.handoff_context.query_analysis);
+  return {
+    detectedConcepts: stringArrayValue(queryAnalysis.detected_concepts),
+    expandedTerms: stringArrayValue(queryAnalysis.expanded_terms),
+    ruleIds: stringArrayValue(queryAnalysis.rule_ids),
+    standards: stringArrayValue(queryAnalysis.standards),
+    strategy: stringValue(queryAnalysis.strategy, "unknown"),
+    variantCount: stringArrayValue(queryAnalysis.query_variants).length,
   };
 }
 
@@ -849,6 +910,11 @@ function numberValue(value: unknown): number | null {
 
 function booleanValue(value: unknown): boolean {
   return value === true;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
 function parseFields(value: string) {

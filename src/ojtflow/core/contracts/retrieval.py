@@ -48,6 +48,17 @@ class RetrievalTrace(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RetrievalQueryAnalysis(ContractModel):
+    """Auditable query understanding used before first-stage retrieval."""
+
+    strategy: str = "deterministic_clinical_expansion_v0"
+    detected_concepts: list[str] = Field(default_factory=list)
+    expanded_terms: list[str] = Field(default_factory=list)
+    standards: list[str] = Field(default_factory=list)
+    rule_ids: list[str] = Field(default_factory=list)
+    query_variants: list[str] = Field(default_factory=list)
+
+
 class RetrievalPackage(ContractModel):
     """Evidence package returned to workflow state and API callers."""
 
