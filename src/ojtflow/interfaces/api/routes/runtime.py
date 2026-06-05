@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -361,13 +362,15 @@ def _retrieval_rule_pack(
     if not path.exists():
         return details
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        content = path.read_bytes()
+        raw = json.loads(content.decode("utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return {
             **details,
             "status": "error",
             "error": type(exc).__name__,
         }
+    version = raw.get("version") if isinstance(raw, dict) else None
     rules = raw.get("rules") if isinstance(raw, dict) else None
     targets = raw.get("targets") if isinstance(raw, dict) else None
     items = rules if isinstance(rules, list) else targets if isinstance(targets, list) else []
@@ -375,6 +378,8 @@ def _retrieval_rule_pack(
         **details,
         "status": "ok",
         "rule_count": len(items),
+        "version": version if isinstance(version, str) else None,
+        "content_hash": sha256(content).hexdigest(),
     }
 
 

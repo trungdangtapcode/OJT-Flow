@@ -844,7 +844,7 @@ Response data includes:
 - `retrieval.runtime_settings_configured`
 - `retrieval.runtime_settings`
 - `retrieval.rule_packs[]` with sanitized `name`, `status`, `source`,
-  `env_var`, `configured`, and `rule_count`
+  `env_var`, `configured`, `rule_count`, `version`, and `content_hash`
 - `upload.max_upload_bytes`
 - `upload.max_inline_data_bytes`
 - `upload.allowed_extensions`
@@ -853,7 +853,8 @@ Retrieval rule-pack entries may reference controlling environment variables
 such as `OJT_QUERY_EXPANSION_RULES_PATH`, `OJT_FILTER_SUGGESTION_RULES_PATH`,
 `OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_RANKING_BOOST_RULES_PATH`,
 `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, and `OJT_SEARCH_HINT_TARGETS_PATH`.
-The response exposes the env var name and loaded status, but not local paths.
+The response exposes the env var name, loaded status, rule-pack version, and
+SHA-256 content hash, but not local paths.
 
 Example:
 
@@ -1055,7 +1056,8 @@ For retrieval rule packs, `retrieval_rule_packs` verifies that data-driven
 query expansion, filter suggestion, query diagnostic, ranking boost, evaluation
 policy, and search-hint target files are loadable. If any pack is missing or
 malformed, readiness returns `status = "not_ready"` and exposes only sanitized
-pack metadata such as name, status, source, env var, and rule count.
+pack metadata such as name, status, source, env var, rule count, version, and
+content hash.
 For retrieval, `retrieval_inventory` runs a small approved-source query through
 the same workflow retrieval service path and reports only operational metadata:
 `source_count`, `probe_hit_count`, `probe_strategy`, `probe_candidates_seen`, and

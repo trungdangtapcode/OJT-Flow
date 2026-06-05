@@ -407,12 +407,15 @@ def test_settings_page_surfaces_retrieval_rule_pack_inventory() -> None:
     assert "RetrievalRulePackInventory" in settings_page
     assert "ReadinessRulePackDetails" in settings_page
     assert "retrievalRulePacksFromDetails" in settings_page
+    assert "shortRulePackHash" in settings_page
     assert "retrieval_rule_packs" in settings_page
     assert "Rule pack readiness" in settings_page
     assert "Retrieval rule packs" in settings_page
     assert "runtime?.retrieval?.rule_packs" in settings_page
     assert "RuntimeRetrievalRulePack" in types_module
     assert "rule_packs?: RuntimeRetrievalRulePack[]" in types_module
+    assert "content_hash?: string | null" in types_module
+    assert "version?: string | null" in types_module
     assert "retrieval.rule_packs[]" in api_contract
     assert "OJT_QUERY_DIAGNOSTIC_RULES_PATH" in api_contract
     assert "sanitized pack name" in frontend_architecture

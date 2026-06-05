@@ -761,6 +761,8 @@ export type RuntimeRetrievalRulePack = {
   env_var: string;
   configured: boolean;
   rule_count: number;
+  version?: string | null;
+  content_hash?: string | null;
   error?: string;
 };
 

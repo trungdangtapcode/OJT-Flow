@@ -1188,9 +1188,15 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         rule_packs = {pack["name"]: pack for pack in body["retrieval"]["rule_packs"]}
         assert rule_packs["query_expansion"]["status"] == "ok"
         assert rule_packs["query_expansion"]["rule_count"] > 0
+        assert rule_packs["query_expansion"]["version"] == "retrieval_query_expansion_rules.v1"
+        assert len(rule_packs["query_expansion"]["content_hash"]) == 64
         assert rule_packs["query_diagnostics"]["status"] == "ok"
         assert rule_packs["query_diagnostics"]["env_var"] == "OJT_QUERY_DIAGNOSTIC_RULES_PATH"
         assert rule_packs["query_diagnostics"]["source"] == "knowledge"
+        assert rule_packs["query_diagnostics"]["version"] == (
+            "retrieval_query_diagnostic_rules.v1"
+        )
+        assert len(rule_packs["query_diagnostics"]["content_hash"]) == 64
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text

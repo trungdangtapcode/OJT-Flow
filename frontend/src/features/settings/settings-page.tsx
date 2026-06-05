@@ -846,6 +846,10 @@ function RetrievalRulePackInventory({ packs }: { packs: RuntimeRetrievalRulePack
             </div>
             <div className="flex min-w-0 flex-wrap gap-1.5">
               <Badge variant="muted">{pack.rule_count} rules</Badge>
+              {pack.version ? <Badge variant="muted">{pack.version}</Badge> : null}
+              {pack.content_hash ? (
+                <Badge variant="muted">{shortRulePackHash(pack.content_hash)}</Badge>
+              ) : null}
               <Badge variant={pack.configured ? "success" : "muted"}>
                 {pack.source}
               </Badge>
@@ -1009,6 +1013,8 @@ function retrievalRulePacksFromDetails(
         typeof pack.rule_count === "number" && Number.isFinite(pack.rule_count)
           ? pack.rule_count
           : 0,
+      version: typeof pack.version === "string" ? pack.version : null,
+      content_hash: typeof pack.content_hash === "string" ? pack.content_hash : null,
       error: typeof pack.error === "string" ? pack.error : undefined,
     });
     return packs;
@@ -1018,6 +1024,10 @@ function retrievalRulePacksFromDetails(
 function runtimeRulePackStatus(value: unknown): RuntimeRetrievalRulePack["status"] {
   if (value === "ok" || value === "missing" || value === "error") return value;
   return "error";
+}
+
+function shortRulePackHash(hash: string) {
+  return hash.length > 12 ? hash.slice(0, 12) : hash;
 }
 
 function readinessLabel(readiness: RuntimeReadiness | undefined) {
@@ -1297,6 +1307,10 @@ function ReadinessRulePackDetails({ check }: { check: ReadinessCheck }) {
             </div>
             <div className="flex min-w-0 flex-wrap gap-1">
               <Badge variant="muted">{pack.rule_count} rules</Badge>
+              {pack.version ? <Badge variant="muted">{pack.version}</Badge> : null}
+              {pack.content_hash ? (
+                <Badge variant="muted">{shortRulePackHash(pack.content_hash)}</Badge>
+              ) : null}
               <Badge variant={pack.configured ? "success" : "muted"}>
                 {pack.source}
               </Badge>
