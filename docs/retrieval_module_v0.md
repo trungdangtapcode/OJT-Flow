@@ -905,7 +905,9 @@ renders that diagnosis before the detailed comparison sections, then renders
 the active/baseline profile comparison directly, including stable/changed
 status. It also compares active-vs-baseline `query_aspects`, including added,
 removed, and retained aspects, so relevance tuning can separate query-planning
-coverage drift from ranking drift.
+coverage drift from ranking drift. The copied run-comparison report and UI
+also compare coverage diagnostics, including improved, regressed, added,
+removed, and retained standard/aspect coverage items.
 It compares added, removed, and retained `quality_signals` so package
 readiness regressions are visible in the same comparison view.
 It also compares selected-hit facets for source type, clinical domain,

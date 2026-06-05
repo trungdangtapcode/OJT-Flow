@@ -113,6 +113,7 @@ type RetrievalSearchRun = {
 };
 type RetrievalRunSummary = {
   candidateCount: number;
+  coverage: RetrievalCoverageSummary[];
   hitCount: number;
   qualityWarningCount: number;
   queryAspects: QueryAspectSummary[];
@@ -121,6 +122,14 @@ type RetrievalRunSummary = {
   rulePackFingerprint: string;
   topSourceId: string | null;
   warningCount: number;
+};
+type RetrievalCoverageSummary = {
+  field: string;
+  label: string;
+  selectedCount: number;
+  status: string;
+  suggestedFilter: Record<string, string>;
+  value: string;
 };
 type QueryAspectSummary = {
   aspectId: string;
@@ -180,6 +189,7 @@ type RetrievalRunComparison = {
   baselineSubmittedAt: string;
   baselineSummary: RetrievalRunSummary;
   candidateDelta: number;
+  coverageComparison: RetrievalCoverageComparison;
   diagnosis: RetrievalComparisonDiagnosis[];
   facetComparisons: RetrievalFacetComparison[];
   hitDelta: number;
@@ -207,6 +217,17 @@ type RetrievalQueryAspectComparison = {
   added: QueryAspectSummary[];
   removed: QueryAspectSummary[];
   retained: QueryAspectSummary[];
+};
+type RetrievalCoverageComparison = {
+  added: RetrievalCoverageSummary[];
+  improved: RetrievalCoverageStatusChange[];
+  regressed: RetrievalCoverageStatusChange[];
+  removed: RetrievalCoverageSummary[];
+  retained: RetrievalCoverageSummary[];
+};
+type RetrievalCoverageStatusChange = {
+  active: RetrievalCoverageSummary;
+  baseline: RetrievalCoverageSummary;
 };
 type RetrievalQualitySignalComparison = {
   added: RetrievalQualitySignalSummary[];
@@ -1289,6 +1310,7 @@ function SearchRunComparison({
       <div className="grid gap-2">
         <RunComparisonQueryProfile comparison={comparison} />
         <RunComparisonQueryAspects comparison={comparison.queryAspectComparison} />
+        <RunComparisonCoverage comparison={comparison.coverageComparison} />
         <RunComparisonQualitySignals comparison={comparison.qualitySignalComparison} />
         <RunComparisonFacetCoverage facetComparisons={comparison.facetComparisons} />
         <RunComparisonRulePacks rulePackChanges={comparison.rulePackChanges} />
@@ -1549,6 +1571,121 @@ function QueryAspectChangeList({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function RunComparisonCoverage({
+  comparison,
+}: {
+  comparison: RetrievalCoverageComparison;
+}) {
+  const changed =
+    comparison.added.length +
+    comparison.removed.length +
+    comparison.improved.length +
+    comparison.regressed.length;
+  const total = changed + comparison.retained.length;
+  if (!total) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <span className="text-xs font-bold text-muted-foreground">Coverage diagnostics</span>
+        <Badge variant="muted">not reported</Badge>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">Coverage diagnostics</span>
+        <Badge variant={comparison.regressed.length || comparison.added.length ? "warning" : "success"}>
+          {changed ? formatCount(changed, "changed item") : "stable"}
+        </Badge>
+      </div>
+      <CoverageStatusChangeList
+        changes={comparison.improved}
+        label="Improved"
+        variant="success"
+      />
+      <CoverageStatusChangeList
+        changes={comparison.regressed}
+        label="Regressed"
+        variant="warning"
+      />
+      <CoverageSummaryList
+        items={comparison.added}
+        label="Added"
+        variant="warning"
+      />
+      <CoverageSummaryList
+        items={comparison.removed}
+        label="Removed"
+        variant="muted"
+      />
+      <CoverageSummaryList
+        items={comparison.retained}
+        label="Retained"
+        variant="muted"
+      />
+    </div>
+  );
+}
+
+function CoverageStatusChangeList({
+  changes,
+  label,
+  variant,
+}: {
+  changes: RetrievalCoverageStatusChange[];
+  label: string;
+  variant: "success" | "warning";
+}) {
+  if (!changes.length) return null;
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="font-semibold text-muted-foreground">{label}:</span>
+        {changes.slice(0, 4).map((change) => (
+          <Badge key={`${label}-${coverageComparisonKey(change.active)}`} variant={variant}>
+            {change.active.label}
+          </Badge>
+        ))}
+        {changes.length > 4 ? <Badge variant="muted">+{changes.length - 4}</Badge> : null}
+      </div>
+      <div className="grid gap-1">
+        {changes.slice(0, 2).map((change) => (
+          <div
+            className="break-words text-muted-foreground"
+            key={`${label}-${coverageComparisonKey(change.active)}-detail`}
+          >
+            {humanize(change.baseline.status)} to {humanize(change.active.status)} /{" "}
+            {change.baseline.selectedCount} to {change.active.selectedCount}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CoverageSummaryList({
+  items,
+  label,
+  variant,
+}: {
+  items: RetrievalCoverageSummary[];
+  label: string;
+  variant: "warning" | "muted";
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className="font-semibold text-muted-foreground">{label}:</span>
+      {items.slice(0, 4).map((item) => (
+        <Badge key={`${label}-${coverageComparisonKey(item)}`} variant={variant}>
+          {item.label} / {humanize(item.status)}
+        </Badge>
+      ))}
+      {items.length > 4 ? <Badge variant="muted">+{items.length - 4}</Badge> : null}
     </div>
   );
 }
@@ -4828,6 +4965,7 @@ function compareSearchRuns(
     activeRun.summary.queryProfile,
     baselineRun.summary.queryProfile,
   );
+  const coverageComparison = coverageComparisonBetweenRuns(activeRun, baselineRun);
   const facetComparisons = facetComparisonsBetweenRuns(activeRun, baselineRun);
   const qualitySignalComparison = qualitySignalComparisonBetweenRuns(
     activeRun,
@@ -4851,6 +4989,7 @@ function compareSearchRuns(
     baselineSummary: baselineRun.summary,
     candidateDelta:
       activeRun.summary.candidateCount - baselineRun.summary.candidateCount,
+    coverageComparison,
     facetComparisons,
     hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
     metrics: comparisonMetrics({
@@ -4909,6 +5048,19 @@ function comparisonDiagnosisFromComparison(
       code: "query_aspect_plan_changed",
       message: "Search aspect coverage plan changed between runs.",
       severity: "warning",
+    });
+  }
+  if (comparison.coverageComparison.regressed.length || comparison.coverageComparison.added.length) {
+    diagnosis.push({
+      code: "coverage_diagnostics_changed",
+      message: "Coverage diagnostics changed between runs.",
+      severity: "warning",
+    });
+  } else if (comparison.coverageComparison.improved.length) {
+    diagnosis.push({
+      code: "coverage_improved",
+      message: "Coverage diagnostics improved between runs.",
+      severity: "success",
     });
   }
   if (
@@ -4993,6 +5145,13 @@ function comparisonReportFromComparison(
     },
     diagnosis: comparison.diagnosis,
     metrics: comparison.metrics,
+    coverage: {
+      added: comparison.coverageComparison.added,
+      improved: comparison.coverageComparison.improved,
+      regressed: comparison.coverageComparison.regressed,
+      removed: comparison.coverageComparison.removed,
+      retained: comparison.coverageComparison.retained,
+    },
     query_aspects: {
       added: comparison.queryAspectComparison.added,
       removed: comparison.queryAspectComparison.removed,
@@ -5126,6 +5285,30 @@ function queryProfileSummaryFromPackage(packageData: RetrievalPackage): QueryPro
     profileId: queryProfile.profileId,
     retrievalMode: queryProfile.retrievalMode,
     route: queryProfile.route,
+  };
+}
+
+function coverageSummariesFromPackage(packageData: RetrievalPackage): RetrievalCoverageSummary[] {
+  const coverage = packageData.coverage;
+  const standardItems = coverage?.standard_system ?? [];
+  const aspectItems = coverage?.query_aspects ?? [];
+  return [
+    ...standardItems.map((item) => coverageSummaryFromItem(item, "standard")),
+    ...aspectItems.map((item) => coverageSummaryFromItem(item, "aspect")),
+  ].sort((left, right) => coverageComparisonKey(left).localeCompare(coverageComparisonKey(right)));
+}
+
+function coverageSummaryFromItem(
+  item: RetrievalCoverage["standard_system"][number],
+  group: "aspect" | "standard",
+): RetrievalCoverageSummary {
+  return {
+    field: item.field,
+    label: group === "standard" ? item.value : humanize(item.value),
+    selectedCount: item.selected_count,
+    status: item.status,
+    suggestedFilter: stringRecordValue(item.suggested_filter),
+    value: item.value,
   };
 }
 
@@ -5377,6 +5560,48 @@ function queryProfilesChanged(
   );
 }
 
+function coverageComparisonBetweenRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalCoverageComparison {
+  const activeCoverage = activeRun.summary.coverage;
+  const baselineCoverage = baselineRun.summary.coverage;
+  const activeByKey = new Map(activeCoverage.map((item) => [coverageComparisonKey(item), item]));
+  const baselineByKey = new Map(
+    baselineCoverage.map((item) => [coverageComparisonKey(item), item]),
+  );
+  const retained: RetrievalCoverageSummary[] = [];
+  const improved: RetrievalCoverageStatusChange[] = [];
+  const regressed: RetrievalCoverageStatusChange[] = [];
+  for (const item of activeCoverage) {
+    const baseline = baselineByKey.get(coverageComparisonKey(item));
+    if (!baseline) continue;
+    const change = { active: item, baseline };
+    const activeRank = coverageStatusRank(item);
+    const baselineRank = coverageStatusRank(baseline);
+    if (activeRank > baselineRank) improved.push(change);
+    else if (activeRank < baselineRank) regressed.push(change);
+    else retained.push(item);
+  }
+  return {
+    added: activeCoverage.filter((item) => !baselineByKey.has(coverageComparisonKey(item))),
+    improved,
+    regressed,
+    removed: baselineCoverage.filter((item) => !activeByKey.has(coverageComparisonKey(item))),
+    retained,
+  };
+}
+
+function coverageStatusRank(item: RetrievalCoverageSummary): number {
+  if (item.status === "covered") return 2;
+  if (item.status === "partial") return 1;
+  return 0;
+}
+
+function coverageComparisonKey(item: RetrievalCoverageSummary): string {
+  return `${item.field}:${item.value}`;
+}
+
 function facetComparisonsBetweenRuns(
   activeRun: RetrievalSearchRun,
   baselineRun: RetrievalSearchRun,
@@ -5462,6 +5687,7 @@ function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary
   const rulePacks = retrievalRulePacksFromPackage(packageData);
   return {
     candidateCount: packageData.trace.candidates_seen,
+    coverage: coverageSummariesFromPackage(packageData),
     hitCount: packageData.hits.length,
     qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
     queryAspects: queryAspectSummariesFromPackage(packageData),

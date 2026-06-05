@@ -1287,7 +1287,9 @@ review guidance, not clinical decision support.
 Copyable `retrieval_run_comparison` reports include active/baseline
 `query_aspects` deltas with added, removed, and retained aspect summaries. This
 lets relevance tuning notes distinguish decomposition coverage changes from
-rank, quality-signal, facet, rule-pack, and evidence changes.
+rank, quality-signal, facet, rule-pack, and evidence changes. The same report
+includes `coverage` deltas with improved, regressed, added, removed, and
+retained standard/aspect coverage diagnostics.
 
 Retrieval endpoints require an authenticated session. Searches without
 `workflow_id` run over the approved knowledge inventory. Searches with

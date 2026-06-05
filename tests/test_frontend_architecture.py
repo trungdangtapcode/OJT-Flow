@@ -216,6 +216,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "queryAspectFilterEntries" in retrieval_page
     assert "Suggested by search aspect" in retrieval_page
     assert "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`" in retrieval_page
+    assert "RunComparisonCoverage" in retrieval_page
+    assert "coverageComparisonBetweenRuns" in retrieval_page
+    assert "coverageComparison" in retrieval_page
+    assert "coverage_diagnostics_changed" in retrieval_page
     assert "query_profiles" in retrieval_page
     assert "queryProfileSummaryFromPackage" in retrieval_page
     assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_page
