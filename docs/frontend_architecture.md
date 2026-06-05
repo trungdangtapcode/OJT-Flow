@@ -240,7 +240,11 @@ summaries and copied comparison reports should include the active query-profile
 route/mode context so relevance tuning can distinguish query changes from
 adaptive-routing changes. They should also include `quality_summary` status,
 score, top action, blocker codes, and warning codes for active and baseline
-runs, plus a quality-score delta. The comparison panel should render a compact
+runs, plus a quality-score delta. Copied comparison reports should include a
+top-level summary with stable/changed status, top diagnosis, quality before/after
+state, evidence churn counts, retrieval deltas, changed dimensions, and judgment
+count so review notes can be scanned before the detailed sections. The
+comparison panel should render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, and the copyable JSON report should include the same diagnosis for
 offline tuning notes. The comparison panel should render the

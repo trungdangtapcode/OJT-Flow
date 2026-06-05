@@ -987,6 +987,11 @@ exact normalized retrieval request.
 The same reports include active/baseline `quality_summary` values and a
 `deltas.quality_score` field, and the UI comparison diagnosis flags
 `quality_summary_changed` when readiness status, score, or top action changes.
+Copied comparison reports also include a top-level `summary` object with
+stable/changed status, top diagnosis, quality before/after state, evidence
+churn counts, retrieval deltas, changed dimensions, and judgment count so
+offline relevance notes can start with a compact review summary before detailed
+payload sections.
 The copied run-comparison report also includes a compact `diagnosis[]` list
 that names likely change drivers such as query-profile changes, rule-pack
 changes, query-aspect plan changes, quality-signal changes, facet drift,
