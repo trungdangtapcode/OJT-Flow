@@ -306,7 +306,10 @@ not silently execute subqueries or make clinical recommendations. The Retrieval
 console shows aspect-suggested filters with applied-state badges based on the
 submitted retrieval trace and lets operators explicitly apply supported
 metadata filters through the same typed search path used by other filter
-suggestions.
+suggestions. The retrieval package also reports `coverage.query_aspects[]` for
+aspects with supported suggested filters, counting selected evidence that
+matches the aspect criteria and raising `missing_query_aspect_coverage` when
+the selected evidence does not cover the aspect plan.
 
 Deterministic query expansion rules are loaded from
 `knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query

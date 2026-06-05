@@ -1133,7 +1133,31 @@ def test_retrieval_coverage_reports_missing_expected_standard() -> None:
     assert coverage_by_standard["UCUM"].selected_count == 0
     assert coverage_by_standard["UCUM"].suggested_filter == {"standard_system": "UCUM"}
     assert "standard_system=UCUM" in coverage_by_standard["UCUM"].suggested_action
-    assert coverage.warnings == [coverage_by_standard["UCUM"].reason]
+    assert coverage_by_standard["UCUM"].reason in coverage.warnings
+    assert any("Lab identity and standards" in warning for warning in coverage.warnings)
+
+
+def test_retrieval_coverage_reports_query_aspect_gaps() -> None:
+    analysis = analyze_query(RetrievalQuery(query="A1c CSV missing units"))
+    chunk = KnowledgeChunk(
+        chunk_id="schema_only",
+        source_id="schema:lab_result_v1",
+        source_type=EvidenceSourceType.DATA_DICTIONARY,
+        title="Lab schema",
+        content="Lab result records require lab_name, value, unit, and date fields.",
+        standard_system="ojtflow_schema",
+    )
+
+    coverage = coverage_from_chunks([chunk], analysis)
+    aspects = {item.value: item for item in coverage.query_aspects}
+
+    assert aspects["unit_and_value_quality"].status == "covered"
+    assert aspects["unit_and_value_quality"].selected_count == 1
+    assert aspects["lab_identity_standardization"].status == "missing"
+    assert aspects["lab_identity_standardization"].suggested_filter == {
+        "clinical_domain": "laboratory"
+    }
+    assert any("Lab identity and standards" in warning for warning in coverage.warnings)
 
 
 def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
@@ -1160,12 +1184,19 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
     assert signals["missing_standard_coverage"].metadata["suggested_filters"] == [
         {"standard_system": "UCUM"}
     ]
+    assert signals["missing_query_aspect_coverage"].severity == "warning"
+    assert signals["missing_query_aspect_coverage"].metadata["missing_aspects"] == [
+        "lab_identity_standardization"
+    ]
     assert signals["query_context_clear"].severity == "success"
     assert package.quality_summary is not None
     assert package.quality_summary.status == "review"
-    assert package.quality_summary.warning_count == 1
-    assert package.quality_summary.warning_codes == ["missing_standard_coverage"]
-    assert package.quality_summary.score == 85
+    assert package.quality_summary.warning_count == 2
+    assert package.quality_summary.warning_codes == [
+        "missing_standard_coverage",
+        "missing_query_aspect_coverage",
+    ]
+    assert package.quality_summary.score == 70
 
 
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:

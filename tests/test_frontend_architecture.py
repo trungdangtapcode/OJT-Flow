@@ -408,6 +408,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "onApplyFilterSuggestion" in retrieval_page
     assert "coverageSuggestedFilter" in retrieval_page
     assert "coverageSuggestedAction" in retrieval_page
+    assert "CoverageItemList" in retrieval_page
+    assert "Aspect coverage" in retrieval_page
+    assert "coverage?.query_aspects" in retrieval_page
     assert "suggested_filter" in retrieval_page
     assert "onApplyCoverageFilter" in retrieval_page
     assert "Copy medical search hint" in retrieval_page

@@ -174,6 +174,7 @@ export type RetrievalCoverageItem = {
 
 export type RetrievalCoverage = {
   standard_system: RetrievalCoverageItem[];
+  query_aspects?: RetrievalCoverageItem[];
   warnings: string[];
 };
 

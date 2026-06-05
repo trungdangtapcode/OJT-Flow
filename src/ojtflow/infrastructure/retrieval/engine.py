@@ -27,6 +27,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQualitySummary,
     RetrievalQuery,
     RetrievalQueryAnalysis,
+    RetrievalQueryAspect,
     RetrievalScoreComponent,
     RetrievalSource,
     RetrievalSnippet,
@@ -381,16 +382,26 @@ def coverage_from_chunks(
     """Report whether final hits cover standards inferred from the query."""
 
     standard_counts = Counter(chunk.standard_system for chunk in chunks if chunk.standard_system)
-    items = [
+    standard_items = [
         _standard_coverage_item(standard, standard_counts)
         for standard in _expected_standard_values(query_analysis.standards)
     ]
+    aspect_items = [
+        item
+        for aspect in query_analysis.query_aspects
+        for item in [_query_aspect_coverage_item(aspect, chunks)]
+        if item is not None
+    ]
     warnings = [
         item.reason
-        for item in items
+        for item in [*standard_items, *aspect_items]
         if item.status == "missing" and item.severity == "warning"
     ]
-    return RetrievalCoverage(standard_system=items, warnings=warnings)
+    return RetrievalCoverage(
+        standard_system=standard_items,
+        query_aspects=aspect_items,
+        warnings=warnings,
+    )
 
 
 def quality_signals_from_results(
@@ -477,6 +488,51 @@ def quality_signals_from_results(
                         "covered_standards": [
                             item.value for item in coverage.standard_system
                         ],
+                    },
+                )
+            )
+
+    if coverage and coverage.query_aspects:
+        missing_aspects = [
+            item
+            for item in coverage.query_aspects
+            if item.status == "missing" and item.severity == "warning"
+        ]
+        if missing_aspects:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="missing_query_aspect_coverage",
+                    severity="warning",
+                    message=(
+                        "Selected evidence is missing coverage for query aspect(s): "
+                        f"{', '.join(item.value for item in missing_aspects)}."
+                    ),
+                    suggested_action=(
+                        "Apply supported aspect filters or broaden the query to retrieve "
+                        "evidence for missing search aspects."
+                    ),
+                    metadata={
+                        "missing_aspects": [item.value for item in missing_aspects],
+                        "suggested_filters": [
+                            item.suggested_filter
+                            for item in missing_aspects
+                            if item.suggested_filter
+                        ],
+                    },
+                )
+            )
+        else:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="query_aspect_coverage_complete",
+                    severity="success",
+                    message="Selected evidence covers every query aspect with supported filter criteria.",
+                    suggested_action=(
+                        "Review the search aspect plan and ranked evidence before using the "
+                        "package downstream."
+                    ),
+                    metadata={
+                        "aspect_count": len(coverage.query_aspects),
                     },
                 )
             )
@@ -1131,6 +1187,78 @@ def _standard_coverage_item(
         ),
         suggested_filter={"standard_system": standard},
     )
+
+
+def _query_aspect_coverage_item(
+    aspect: RetrievalQueryAspect,
+    chunks: list[KnowledgeChunk],
+) -> RetrievalCoverageItem | None:
+    supported_filters = {
+        field: value
+        for field, value in aspect.suggested_filters.items()
+        if field in {"clinical_domain", "standard_system", "source_type", "trust_level"}
+    }
+    if not supported_filters:
+        return None
+    selected_count = sum(
+        1 for chunk in chunks if _chunk_matches_filters(chunk, supported_filters)
+    )
+    if selected_count:
+        return RetrievalCoverageItem(
+            field="query_aspect",
+            value=aspect.aspect_id,
+            selected_count=selected_count,
+            status="covered",
+            severity="info",
+            reason=(
+                f"Selected evidence covers search aspect {aspect.label} "
+                f"using supported filter criteria."
+            ),
+            suggested_action=(
+                "Keep the current retrieval scope; selected evidence covers this "
+                "search aspect."
+            ),
+            suggested_filter=dict(supported_filters),
+        )
+    return RetrievalCoverageItem(
+        field="query_aspect",
+        value=aspect.aspect_id,
+        selected_count=0,
+        status="missing",
+        severity="warning",
+        reason=(
+            f"Search aspect {aspect.label} expected evidence matching "
+            f"{_format_filter_map(supported_filters)}, but no selected evidence matched."
+        ),
+        suggested_action=(
+            "Apply the aspect filter or broaden the query to retrieve evidence for "
+            f"{aspect.label}."
+        ),
+        suggested_filter=dict(supported_filters),
+    )
+
+
+def _chunk_matches_filters(chunk: KnowledgeChunk, filters: dict[str, str]) -> bool:
+    return all(
+        _normalized_chunk_filter_value(chunk, field) == value.lower()
+        for field, value in filters.items()
+    )
+
+
+def _normalized_chunk_filter_value(chunk: KnowledgeChunk, field: str) -> str | None:
+    if field == "clinical_domain":
+        return chunk.clinical_domain.lower() if chunk.clinical_domain else None
+    if field == "standard_system":
+        return chunk.standard_system.lower() if chunk.standard_system else None
+    if field == "source_type":
+        return chunk.source_type.value.lower()
+    if field == "trust_level":
+        return chunk.trust_level.value.lower()
+    return None
+
+
+def _format_filter_map(filters: dict[str, str]) -> str:
+    return ", ".join(f"{field}={value}" for field, value in sorted(filters.items()))
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:

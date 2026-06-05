@@ -167,6 +167,7 @@ class RetrievalCoverage(ContractModel):
     """Coverage diagnostics for final selected retrieval hits."""
 
     standard_system: list[RetrievalCoverageItem] = Field(default_factory=list)
+    query_aspects: list[RetrievalCoverageItem] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

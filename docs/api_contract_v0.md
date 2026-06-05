@@ -1271,7 +1271,11 @@ the search.
 Each `coverage.standard_system[]` item includes `suggested_action` and
 `suggested_filter` so clients can present explicit remediation controls for
 missing expected standards. Missing expected standards are returned as
-`coverage.warnings` and copied into `trace.warnings`.
+`coverage.warnings` and copied into `trace.warnings`. `coverage.query_aspects[]`
+uses the same coverage item shape for query-aspect plans that include supported
+suggested filters. These items report whether selected evidence covers each
+aspect's metadata criteria and expose the same explicit remediation filter
+contract when coverage is missing.
 `facets` summarizes the final selected hits into buckets for `source_type`,
 `clinical_domain`, `standard_system`, and `trust_level`.
 `quality_signals` is a deterministic retrieval-quality checklist for operator
