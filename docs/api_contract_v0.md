@@ -1233,6 +1233,8 @@ Response data is a `RetrievalPackage`:
 - `handoff_context.query_analysis`
 - `handoff_context.quality_policy`
 - `handoff_context.retrieval_rule_packs`
+- `handoff_context.search_request`
+- `handoff_context.search_signature`
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
@@ -1276,7 +1278,10 @@ audit records identify the exact query-expansion, diagnostic, ranking,
 query-profile, query-aspect, quality-gate, evaluation, and search-hint rule
 data used for the search. `handoff_context.quality_policy` records the active
 retrieval readiness policy version and severity scoring rules used to produce
-`quality_summary`.
+`quality_summary`. `handoff_context.search_request` records the normalized
+server-side retrieval request, and `handoff_context.search_signature` is a
+stable `sha256:<digest>` fingerprint of that request for judgment, report, and
+audit correlation.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.

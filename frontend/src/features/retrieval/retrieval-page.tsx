@@ -120,6 +120,7 @@ type RetrievalRunSummary = {
   queryProfile: QueryProfileSummary | null;
   rulePackCount: number;
   rulePackFingerprint: string;
+  serverSignature: string | null;
   topSourceId: string | null;
   warningCount: number;
 };
@@ -444,7 +445,7 @@ export function RetrievalPage() {
     }
     setFormError(null);
     const packageResult = await searchMutation.mutateAsync(payload);
-    const signature = retrievalSearchSignature(payload);
+    const signature = serverSearchSignatureFromPackage(packageResult) ?? retrievalSearchSignature(payload);
     const run = createSearchRun(payload, packageResult, signature);
     setSearchRuns((current) => [
       run,
@@ -1182,6 +1183,11 @@ function SearchRunHistory({
                   <Badge variant="muted">
                     {formatCount(run.summary.rulePackCount, "rule pack")}
                   </Badge>
+                  {run.summary.serverSignature ? (
+                    <Badge variant="muted">
+                      {formatShortSignature(run.summary.serverSignature)}
+                    </Badge>
+                  ) : null}
                   {run.summary.queryProfile ? (
                     <Badge variant="muted">
                       {humanize(run.summary.queryProfile.route)}
@@ -3044,6 +3050,7 @@ function TracePanel({
   const diversity = packageData ? diversityFromPackage(packageData) : null;
   const qualityPolicy = packageData ? qualityPolicyFromPackage(packageData) : null;
   const queryAnalysis = packageData ? queryAnalysisFromPackage(packageData) : null;
+  const searchSignature = packageData ? serverSearchSignatureFromPackage(packageData) : null;
   const coverage = packageData?.coverage;
   const qualitySignals = packageData?.quality_signals ?? [];
   return (
@@ -3081,6 +3088,10 @@ function TracePanel({
             <TraceFact
               label="Quality policy"
               value={qualityPolicy ? formatQualityPolicyTrace(qualityPolicy) : "unknown"}
+            />
+            <TraceFact
+              label="Search signature"
+              value={searchSignature ? formatShortSignature(searchSignature) : "unknown"}
             />
             <TraceFact
               label="Filters"
@@ -5034,6 +5045,10 @@ function retrievalSearchSignature(payload: RetrievalSearchPayload): string {
   });
 }
 
+function serverSearchSignatureFromPackage(packageData: RetrievalPackage): string | null {
+  return optionalStringValue(packageData.handoff_context.search_signature);
+}
+
 function createSearchRun(
   payload: RetrievalSearchPayload,
   packageData: RetrievalPackage,
@@ -5252,12 +5267,16 @@ function comparisonReportFromComparison(
     generated_at: new Date().toISOString(),
     active: {
       query: comparison.activeQuery,
+      run_id: comparison.activeRunId,
+      search_signature: comparison.activeSummary.serverSignature,
       submitted_at: comparison.activeSubmittedAt,
       payload: comparison.activePayload,
       summary: comparison.activeSummary,
     },
     baseline: {
       query: comparison.baselineQuery,
+      run_id: comparison.baselineRunId,
+      search_signature: comparison.baselineSummary.serverSignature,
       submitted_at: comparison.baselineSubmittedAt,
       payload: comparison.baselinePayload,
       summary: comparison.baselineSummary,
@@ -5821,6 +5840,7 @@ function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary
     rulePackFingerprint: rulePacks
       .map((pack) => `${pack.name}:${rulePackFingerprint(pack)}`)
       .join("|"),
+    serverSignature: serverSearchSignatureFromPackage(packageData),
     topSourceId: packageData.hits[0]?.evidence.source_id ?? null,
     warningCount: packageData.trace.warnings.length,
   };
@@ -5875,6 +5895,11 @@ function formatRunTime(submittedAt: string): string {
   const date = new Date(submittedAt);
   if (Number.isNaN(date.getTime())) return "recent";
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatShortSignature(signature: string): string {
+  const digest = signature.includes(":") ? signature.split(":").pop() ?? signature : signature;
+  return `sig ${digest.slice(0, 10)}`;
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {

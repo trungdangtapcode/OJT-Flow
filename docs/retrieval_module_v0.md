@@ -337,6 +337,13 @@ supported suggested filters, counting selected evidence that matches the aspect
 criteria and raising `missing_query_aspect_coverage` when the selected evidence
 does not cover the aspect plan.
 
+Every retrieval package includes `handoff_context.search_request` and
+`handoff_context.search_signature`. The request is the normalized server-side
+query/filter/top-k contract used by the retrieval service. The signature is a
+stable `sha256:<digest>` fingerprint of that normalized request, so browser
+history entries, copied comparison reports, durable judgments, assistant tools,
+and audit notes can reference the same backend search contract.
+
 Deterministic query expansion rules are loaded from
 `knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query
 analyzer. Each rule defines `rule_id`, `concept`, trigger terms, expanded
@@ -923,6 +930,9 @@ IDs for offline relevance-tuning notes.
 The copied evaluation report also includes the active `query_profile`, and the
 copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
+Copied run-comparison reports include active/baseline `run_id` and server
+`search_signature` values so offline relevance notes can be tied back to the
+exact normalized retrieval request.
 The copied run-comparison report also includes a compact `diagnosis[]` list
 that names likely change drivers such as query-profile changes, rule-pack
 changes, query-aspect plan changes, quality-signal changes, facet drift,

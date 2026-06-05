@@ -1613,6 +1613,17 @@ def test_retrieval_service_adds_graph_context() -> None:
     assert graph["graph_contract"] == "graph_ner_handoff.v0"
     assert any(node["type"] == "evidence" for node in graph["nodes"])
     assert any(edge["relation"] == "supports" for edge in graph["edges"])
+    assert package.handoff_context["search_signature"].startswith("sha256:")
+    assert package.handoff_context["search_request"] == {
+        "query": "FHIR Observation HbA1c unit",
+        "workflow_id": None,
+        "fields": ["patient_id", "unit"],
+        "schema_id": None,
+        "detected_format": None,
+        "resource_type": None,
+        "top_k": 3,
+        "filters": {},
+    }
 
 
 def test_retrieval_service_attaches_rule_pack_fingerprints() -> None:

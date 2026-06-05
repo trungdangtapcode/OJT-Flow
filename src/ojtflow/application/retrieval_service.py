@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import json
+from hashlib import sha256
 from typing import Any
 
 from ojtflow.application.graph_ner_service import GraphNERService
@@ -33,6 +35,7 @@ class RetrievalService:
         """Run direct retrieval."""
 
         package = self.repository.search(query)
+        package = self._attach_search_metadata(package, query)
         package = self._attach_rule_pack_metadata(package)
         return self.graph_ner.augment_package(package, query)
 
@@ -104,3 +107,39 @@ class RetrievalService:
             "retrieval_rule_packs": self.rule_packs,
         }
         return package.model_copy(update={"handoff_context": handoff_context})
+
+    def _attach_search_metadata(
+        self,
+        package: RetrievalPackage,
+        query: RetrievalQuery,
+    ) -> RetrievalPackage:
+        request = _search_request_payload(query)
+        handoff_context = {
+            **package.handoff_context,
+            "search_request": request,
+            "search_signature": _search_request_signature(request),
+        }
+        return package.model_copy(update={"handoff_context": handoff_context})
+
+
+def _search_request_payload(query: RetrievalQuery) -> dict[str, Any]:
+    return {
+        "query": query.query,
+        "workflow_id": query.workflow_id,
+        "fields": list(query.fields),
+        "schema_id": query.schema_id,
+        "detected_format": query.detected_format,
+        "resource_type": query.resource_type,
+        "top_k": query.top_k,
+        "filters": dict(query.filters),
+    }
+
+
+def _search_request_signature(request: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        request,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return f"sha256:{sha256(encoded.encode('utf-8')).hexdigest()}"
