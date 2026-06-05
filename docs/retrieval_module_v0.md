@@ -892,10 +892,13 @@ copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
 The copied run-comparison report also includes a compact `diagnosis[]` list
 that names likely change drivers such as query-profile changes, rule-pack
-changes, quality-signal changes, facet drift, top-source changes, rank movement,
-and evidence churn. The UI comparison card renders that diagnosis before the
-detailed comparison sections, then renders the active/baseline profile
-comparison directly, including stable/changed status.
+changes, query-aspect plan changes, quality-signal changes, facet drift,
+top-source changes, rank movement, and evidence churn. The UI comparison card
+renders that diagnosis before the detailed comparison sections, then renders
+the active/baseline profile comparison directly, including stable/changed
+status. It also compares active-vs-baseline `query_aspects`, including added,
+removed, and retained aspects, so relevance tuning can separate query-planning
+coverage drift from ranking drift.
 It compares added, removed, and retained `quality_signals` so package
 readiness regressions are visible in the same comparison view.
 It also compares selected-hit facets for source type, clinical domain,

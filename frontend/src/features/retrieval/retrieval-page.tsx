@@ -115,11 +115,19 @@ type RetrievalRunSummary = {
   candidateCount: number;
   hitCount: number;
   qualityWarningCount: number;
+  queryAspects: QueryAspectSummary[];
   queryProfile: QueryProfileSummary | null;
   rulePackCount: number;
   rulePackFingerprint: string;
   topSourceId: string | null;
   warningCount: number;
+};
+type QueryAspectSummary = {
+  aspectId: string;
+  label: string;
+  priority: number;
+  question: string;
+  ruleId: string;
 };
 type QueryProfileSummary = {
   complexity: string;
@@ -176,6 +184,7 @@ type RetrievalRunComparison = {
   facetComparisons: RetrievalFacetComparison[];
   hitDelta: number;
   metrics: RetrievalRunComparisonMetrics;
+  queryAspectComparison: RetrievalQueryAspectComparison;
   qualityWarningDelta: number;
   qualitySignalComparison: RetrievalQualitySignalComparison;
   queryProfileChanged: boolean;
@@ -193,6 +202,11 @@ type RetrievalComparisonDiagnosis = {
   code: string;
   message: string;
   severity: "success" | "warning" | "muted";
+};
+type RetrievalQueryAspectComparison = {
+  added: QueryAspectSummary[];
+  removed: QueryAspectSummary[];
+  retained: QueryAspectSummary[];
 };
 type RetrievalQualitySignalComparison = {
   added: RetrievalQualitySignalSummary[];
@@ -1274,6 +1288,7 @@ function SearchRunComparison({
       </div>
       <div className="grid gap-2">
         <RunComparisonQueryProfile comparison={comparison} />
+        <RunComparisonQueryAspects comparison={comparison.queryAspectComparison} />
         <RunComparisonQualitySignals comparison={comparison.qualitySignalComparison} />
         <RunComparisonFacetCoverage facetComparisons={comparison.facetComparisons} />
         <RunComparisonRulePacks rulePackChanges={comparison.rulePackChanges} />
@@ -1460,6 +1475,80 @@ function QueryProfileSummaryCard({
         {humanize(profile.route)} / {humanize(profile.retrievalMode)} /{" "}
         {humanize(profile.complexity)}
       </span>
+    </div>
+  );
+}
+
+function RunComparisonQueryAspects({
+  comparison,
+}: {
+  comparison: RetrievalQueryAspectComparison;
+}) {
+  const changed = comparison.added.length + comparison.removed.length;
+  const total = changed + comparison.retained.length;
+  if (!total) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <span className="text-xs font-bold text-muted-foreground">Search aspects</span>
+        <Badge variant="muted">not reported</Badge>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">Search aspects</span>
+        <Badge variant={changed ? "warning" : "success"}>
+          {changed ? formatCount(changed, "changed aspect") : "stable"}
+        </Badge>
+      </div>
+      <QueryAspectChangeList
+        aspects={comparison.added}
+        label="Added"
+        variant="warning"
+      />
+      <QueryAspectChangeList
+        aspects={comparison.removed}
+        label="Removed"
+        variant="warning"
+      />
+      <QueryAspectChangeList
+        aspects={comparison.retained}
+        label="Retained"
+        variant="muted"
+      />
+    </div>
+  );
+}
+
+function QueryAspectChangeList({
+  aspects,
+  label,
+  variant,
+}: {
+  aspects: QueryAspectSummary[];
+  label: string;
+  variant: "warning" | "muted";
+}) {
+  if (!aspects.length) return null;
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="font-semibold text-muted-foreground">{label}:</span>
+        {aspects.slice(0, 4).map((aspect) => (
+          <Badge key={`${label}-${aspect.aspectId}`} variant={variant}>
+            {aspect.label}
+          </Badge>
+        ))}
+        {aspects.length > 4 ? <Badge variant="muted">+{aspects.length - 4}</Badge> : null}
+      </div>
+      <div className="grid gap-1">
+        {aspects.slice(0, 2).map((aspect) => (
+          <div className="break-words text-muted-foreground" key={`${label}-${aspect.aspectId}-question`}>
+            {aspect.question}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -4640,6 +4729,7 @@ function compareSearchRuns(
     activeRun,
     baselineRun,
   );
+  const queryAspectComparison = queryAspectComparisonBetweenRuns(activeRun, baselineRun);
   const rulePackChanged = rulePackChanges.some((change) => change.status !== "stable");
   const topSourceChanged = activeRun.summary.topSourceId !== baselineRun.summary.topSourceId;
 
@@ -4667,6 +4757,7 @@ function compareSearchRuns(
       removedCount: removedEvidenceIds.length,
       activeCount: activeEvidenceIds.length,
     }),
+    queryAspectComparison,
     qualityWarningDelta:
       activeRun.summary.qualityWarningCount - baselineRun.summary.qualityWarningCount,
     qualitySignalComparison,
@@ -4703,6 +4794,16 @@ function comparisonDiagnosisFromComparison(
     diagnosis.push({
       code: "rule_pack_changed",
       message: "Retrieval rule-pack fingerprints changed between runs.",
+      severity: "warning",
+    });
+  }
+  if (
+    comparison.queryAspectComparison.added.length ||
+    comparison.queryAspectComparison.removed.length
+  ) {
+    diagnosis.push({
+      code: "query_aspect_plan_changed",
+      message: "Search aspect coverage plan changed between runs.",
       severity: "warning",
     });
   }
@@ -4753,7 +4854,7 @@ function comparisonDiagnosisFromComparison(
     diagnosis.push({
       code: "comparison_stable",
       message:
-        "Comparison is stable across query profile, rules, quality, facets, evidence, and ranks.",
+        "Comparison is stable across query profile, search aspects, rules, quality, facets, evidence, and ranks.",
       severity: "success",
     });
   }
@@ -4788,6 +4889,11 @@ function comparisonReportFromComparison(
     },
     diagnosis: comparison.diagnosis,
     metrics: comparison.metrics,
+    query_aspects: {
+      added: comparison.queryAspectComparison.added,
+      removed: comparison.queryAspectComparison.removed,
+      retained: comparison.queryAspectComparison.retained,
+    },
     quality_signals: {
       added: comparison.qualitySignalComparison.added,
       removed: comparison.qualitySignalComparison.removed,
@@ -4917,6 +5023,18 @@ function queryProfileSummaryFromPackage(packageData: RetrievalPackage): QueryPro
     retrievalMode: queryProfile.retrievalMode,
     route: queryProfile.route,
   };
+}
+
+function queryAspectSummariesFromPackage(packageData: RetrievalPackage): QueryAspectSummary[] {
+  return queryAnalysisFromPackage(packageData)
+    .queryAspects.map((aspect) => ({
+      aspectId: aspect.aspectId,
+      label: aspect.label,
+      priority: aspect.priority,
+      question: aspect.question,
+      ruleId: aspect.ruleId,
+    }))
+    .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label));
 }
 
 function rulePackStatusValue(value: unknown): RuntimeRetrievalRulePack["status"] {
@@ -5203,6 +5321,21 @@ function qualitySignalComparisonBetweenRuns(
   };
 }
 
+function queryAspectComparisonBetweenRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalQueryAspectComparison {
+  const activeAspects = activeRun.summary.queryAspects;
+  const baselineAspects = baselineRun.summary.queryAspects;
+  const activeById = new Map(activeAspects.map((aspect) => [aspect.aspectId, aspect]));
+  const baselineById = new Map(baselineAspects.map((aspect) => [aspect.aspectId, aspect]));
+  return {
+    added: activeAspects.filter((aspect) => !baselineById.has(aspect.aspectId)),
+    removed: baselineAspects.filter((aspect) => !activeById.has(aspect.aspectId)),
+    retained: activeAspects.filter((aspect) => baselineById.has(aspect.aspectId)),
+  };
+}
+
 function qualitySignalSummariesFromRun(
   run: RetrievalSearchRun,
 ): RetrievalQualitySignalSummary[] {
@@ -5227,6 +5360,7 @@ function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary
     candidateCount: packageData.trace.candidates_seen,
     hitCount: packageData.hits.length,
     qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
+    queryAspects: queryAspectSummariesFromPackage(packageData),
     queryProfile: queryProfileSummaryFromPackage(packageData),
     rulePackCount: rulePacks.length,
     rulePackFingerprint: rulePacks

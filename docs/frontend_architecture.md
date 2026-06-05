@@ -206,6 +206,9 @@ sections, and the copyable JSON report should include the same diagnosis for
 offline tuning notes. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
+query-aspect plans across active and baseline runs, including added, removed,
+and retained aspects, so operators can see whether decomposition coverage
+changed before interpreting rank movement. It should compare
 quality signal codes across active and baseline runs, including added, removed,
 and retained signals, so readiness regressions are visible without opening raw
 JSON. It should compare selected-hit facets across active and baseline runs for
