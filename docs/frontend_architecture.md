@@ -198,7 +198,9 @@ route/mode context so relevance tuning can distinguish query changes from
 adaptive-routing changes. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
-selected-hit facets across active and baseline runs for
+quality signal codes across active and baseline runs, including added, removed,
+and retained signals, so readiness regressions are visible without opening raw
+JSON. It should compare selected-hit facets across active and baseline runs for
 source type, clinical domain, standard system, and trust level, including
 added, removed, and retained values. It should also compare sanitized retrieval
 rule-pack fingerprints from the active

@@ -211,6 +211,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Profile: {run.summary.queryProfile.label}" in retrieval_page
     assert "RunComparisonQueryProfile" in retrieval_page
     assert "QueryProfileSummaryCard" in retrieval_page
+    assert "RunComparisonQualitySignals" in retrieval_page
+    assert "QualitySignalChangeList" in retrieval_page
+    assert "qualitySignalComparisonBetweenRuns" in retrieval_page
+    assert "qualitySignalSummariesFromRun" in retrieval_page
+    assert "qualitySignalComparison" in retrieval_page
+    assert "Quality signals" in retrieval_page
     assert "RunComparisonFacetCoverage" in retrieval_page
     assert "FacetValueChange" in retrieval_page
     assert "facetComparisonsBetweenRuns" in retrieval_page

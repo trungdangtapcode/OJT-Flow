@@ -875,6 +875,8 @@ copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
 The UI comparison card also renders that active/baseline profile comparison
 directly, including stable/changed status.
+It compares added, removed, and retained `quality_signals` so package
+readiness regressions are visible in the same comparison view.
 It also compares selected-hit facets for source type, clinical domain,
 standard system, and trust level so coverage drift is visible alongside rank
 movement.
