@@ -350,6 +350,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "comparisonReportFromComparison" in retrieval_page
     assert "comparisonReportSummary" in retrieval_page
     assert "summary: comparisonReportSummary(comparison, judgments)" in retrieval_page
+    assert "comparisonReportRecommendedActions" in retrieval_page
+    assert "recommended_actions: comparisonReportRecommendedActions(comparison, judgments)" in retrieval_page
     assert "changed_dimensions" in retrieval_page
     assert "judgment_count: judgments.length" in retrieval_page
     assert "retrieval_run_comparison" in retrieval_page

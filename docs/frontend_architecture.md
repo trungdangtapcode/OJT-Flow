@@ -243,7 +243,10 @@ score, top action, blocker codes, and warning codes for active and baseline
 runs, plus a quality-score delta. Copied comparison reports should include a
 top-level summary with stable/changed status, top diagnosis, quality before/after
 state, evidence churn counts, retrieval deltas, changed dimensions, and judgment
-count so review notes can be scanned before the detailed sections. The
+count so review notes can be scanned before the detailed sections. They should
+also include `recommended_actions[]` derived from quality top action, coverage
+diagnostics, profile/rule-pack changes, quality-signal changes, evidence churn,
+and missing judgments so copied reports lead directly to review decisions. The
 comparison panel should render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, and the copyable JSON report should include the same diagnosis for

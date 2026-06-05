@@ -5898,6 +5898,7 @@ function comparisonReportFromComparison(
     version: 1,
     generated_at: new Date().toISOString(),
     summary: comparisonReportSummary(comparison, judgments),
+    recommended_actions: comparisonReportRecommendedActions(comparison, judgments),
     active: {
       query: comparison.activeQuery,
       run_id: comparison.activeRunId,
@@ -6032,6 +6033,74 @@ function comparisonReportSummary(
       .map((item) => item.code),
     judgment_count: judgments.length,
   };
+}
+
+function comparisonReportRecommendedActions(
+  comparison: RetrievalRunComparison,
+  judgments: RelevanceJudgment[],
+) {
+  const actions: Array<{ action: string; reason: string; source: string }> = [];
+  const activeTopAction = comparison.activeSummary.qualitySummary?.top_action;
+  if (activeTopAction) {
+    actions.push({
+      action: activeTopAction,
+      reason: "Active retrieval package readiness policy selected this top action.",
+      source: "quality_summary.top_action",
+    });
+  }
+  if (
+    comparison.coverageComparison.regressed.length ||
+    comparison.coverageComparison.added.length
+  ) {
+    actions.push({
+      action: "Review coverage diagnostics and apply supported standard/aspect filters before accepting this run.",
+      reason: "Coverage diagnostics were added or regressed between baseline and active runs.",
+      source: "coverage",
+    });
+  }
+  if (comparison.queryProfileChanged) {
+    actions.push({
+      action: "Confirm the active query profile, route, and retrieval mode match the intended search task.",
+      reason: "Adaptive query-profile guidance changed between runs.",
+      source: "query_profile",
+    });
+  }
+  if (comparison.rulePackChanged) {
+    actions.push({
+      action: "Record the active rule-pack fingerprints with any relevance-tuning decision.",
+      reason: "Rule-pack data changed, so ranking movement may not be caused only by query edits.",
+      source: "rule_packs",
+    });
+  }
+  if (comparison.qualitySignalComparison.added.length) {
+    actions.push({
+      action: "Inspect newly added quality signals before using the active evidence package downstream.",
+      reason: "The active run added package-level quality signals.",
+      source: "quality_signals",
+    });
+  }
+  if (comparison.metrics.churnRate > 0.5 || comparison.topSourceChanged) {
+    actions.push({
+      action: "Compare added, removed, and retained evidence before treating the active run as equivalent to baseline.",
+      reason: "Evidence churn or top-source movement is high enough to affect review conclusions.",
+      source: "evidence",
+    });
+  }
+  if (!judgments.length) {
+    actions.push({
+      action: "Add explicit relevance judgments for top hits before using this comparison as an evaluation record.",
+      reason: "The copied comparison does not include any operator judgments.",
+      source: "judgments",
+    });
+  }
+  if (!actions.length) {
+    actions.push({
+      action: "Keep the active retrieval configuration; no comparison follow-up was detected.",
+      reason: "Comparison diagnostics are stable and no missing review signal was detected.",
+      source: "comparison_stable",
+    });
+  }
+  return actions;
 }
 
 function evaluationReportFromJudgmentSummary(

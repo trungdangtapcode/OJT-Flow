@@ -991,7 +991,9 @@ Copied comparison reports also include a top-level `summary` object with
 stable/changed status, top diagnosis, quality before/after state, evidence
 churn counts, retrieval deltas, changed dimensions, and judgment count so
 offline relevance notes can start with a compact review summary before detailed
-payload sections.
+payload sections. Reports also include `recommended_actions[]`, derived from
+the active quality top action, coverage diagnostics, query-profile/rule-pack
+changes, quality-signal changes, evidence churn, and missing judgments.
 The copied run-comparison report also includes a compact `diagnosis[]` list
 that names likely change drivers such as query-profile changes, rule-pack
 changes, query-aspect plan changes, quality-signal changes, facet drift,
