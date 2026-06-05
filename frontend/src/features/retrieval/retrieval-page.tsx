@@ -226,6 +226,13 @@ type RetrievalComparisonDiagnosis = {
   message: string;
   severity: "success" | "warning" | "muted";
 };
+type RetrievalComparisonRecommendedAction = {
+  action: string;
+  priority: number;
+  reason: string;
+  severity: "success" | "warning" | "destructive" | "muted";
+  source: string;
+};
 type RetrievalQueryAspectComparison = {
   added: QueryAspectSummary[];
   removed: QueryAspectSummary[];
@@ -1461,7 +1468,7 @@ function RunComparisonDiagnosis({
 function RunComparisonRecommendedActions({
   actions,
 }: {
-  actions: Array<{ action: string; reason: string; source: string }>;
+  actions: RetrievalComparisonRecommendedAction[];
 }) {
   return (
     <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
@@ -1469,14 +1476,23 @@ function RunComparisonRecommendedActions({
         <span className="font-bold text-muted-foreground">
           Recommended actions
         </span>
-        <Badge variant={actions.length ? "warning" : "success"}>
-          {actions.length ? formatCount(actions.length, "action") : "none"}
+        <Badge
+          variant={
+            actions.some((item) => item.severity === "destructive")
+              ? "destructive"
+              : actions.some((item) => item.severity === "warning")
+                ? "warning"
+                : "success"
+          }
+        >
+          {formatCount(actions.length, "action")}
         </Badge>
       </div>
       <div className="grid gap-1.5">
         {actions.map((item) => (
           <div className="grid gap-1" key={`${item.source}-${item.action}`}>
             <div className="flex min-w-0 flex-wrap items-start gap-2">
+              <Badge variant={item.severity}>P{item.priority}</Badge>
               <Badge variant="muted">{humanize(item.source)}</Badge>
               <span className="min-w-0 flex-1 break-words font-semibold">
                 {item.action}
@@ -6075,13 +6091,18 @@ function comparisonReportSummary(
 function comparisonReportRecommendedActions(
   comparison: RetrievalRunComparison,
   judgments: RelevanceJudgment[],
-) {
-  const actions: Array<{ action: string; reason: string; source: string }> = [];
+): RetrievalComparisonRecommendedAction[] {
+  const actions: RetrievalComparisonRecommendedAction[] = [];
   const activeTopAction = comparison.activeSummary.qualitySummary?.top_action;
   if (activeTopAction) {
     actions.push({
       action: activeTopAction,
+      priority: comparison.activeSummary.qualitySummary?.status === "blocked" ? 1 : 2,
       reason: "Active retrieval package readiness policy selected this top action.",
+      severity:
+        comparison.activeSummary.qualitySummary?.status === "blocked"
+          ? "destructive"
+          : "warning",
       source: "quality_summary.top_action",
     });
   }
@@ -6091,53 +6112,70 @@ function comparisonReportRecommendedActions(
   ) {
     actions.push({
       action: "Review coverage diagnostics and apply supported standard/aspect filters before accepting this run.",
+      priority: 1,
       reason: "Coverage diagnostics were added or regressed between baseline and active runs.",
+      severity: "warning",
       source: "coverage",
     });
   }
   if (comparison.queryProfileChanged) {
     actions.push({
       action: "Confirm the active query profile, route, and retrieval mode match the intended search task.",
+      priority: 3,
       reason: "Adaptive query-profile guidance changed between runs.",
+      severity: "warning",
       source: "query_profile",
     });
   }
   if (comparison.rulePackChanged) {
     actions.push({
       action: "Record the active rule-pack fingerprints with any relevance-tuning decision.",
+      priority: 3,
       reason: "Rule-pack data changed, so ranking movement may not be caused only by query edits.",
+      severity: "warning",
       source: "rule_packs",
     });
   }
   if (comparison.qualitySignalComparison.added.length) {
     actions.push({
       action: "Inspect newly added quality signals before using the active evidence package downstream.",
+      priority: 1,
       reason: "The active run added package-level quality signals.",
+      severity: "warning",
       source: "quality_signals",
     });
   }
   if (comparison.metrics.churnRate > 0.5 || comparison.topSourceChanged) {
     actions.push({
       action: "Compare added, removed, and retained evidence before treating the active run as equivalent to baseline.",
+      priority: 2,
       reason: "Evidence churn or top-source movement is high enough to affect review conclusions.",
+      severity: "warning",
       source: "evidence",
     });
   }
   if (!judgments.length) {
     actions.push({
       action: "Add explicit relevance judgments for top hits before using this comparison as an evaluation record.",
+      priority: 4,
       reason: "The copied comparison does not include any operator judgments.",
+      severity: "muted",
       source: "judgments",
     });
   }
   if (!actions.length) {
     actions.push({
       action: "Keep the active retrieval configuration; no comparison follow-up was detected.",
+      priority: 5,
       reason: "Comparison diagnostics are stable and no missing review signal was detected.",
+      severity: "success",
       source: "comparison_stable",
     });
   }
-  return actions;
+  return actions.sort(
+    (left, right) =>
+      left.priority - right.priority || left.source.localeCompare(right.source),
+  );
 }
 
 function evaluationReportFromJudgmentSummary(

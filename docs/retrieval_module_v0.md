@@ -993,7 +993,9 @@ churn counts, retrieval deltas, changed dimensions, and judgment count so
 offline relevance notes can start with a compact review summary before detailed
 payload sections. Reports also include `recommended_actions[]`, derived from
 the active quality top action, coverage diagnostics, query-profile/rule-pack
-changes, quality-signal changes, evidence churn, and missing judgments. The
+changes, quality-signal changes, evidence churn, and missing judgments. Each
+recommended action includes priority, severity, source, action, and reason; the
+list is sorted by priority before it is rendered or copied. The
 Retrieval UI renders the same recommended actions in the comparison panel so
 operators do not need to copy JSON before seeing the next review steps.
 The copied run-comparison report also includes a compact `diagnosis[]` list

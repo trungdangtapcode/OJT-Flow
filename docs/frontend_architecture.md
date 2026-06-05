@@ -246,7 +246,9 @@ state, evidence churn counts, retrieval deltas, changed dimensions, and judgment
 count so review notes can be scanned before the detailed sections. They should
 also include `recommended_actions[]` derived from quality top action, coverage
 diagnostics, profile/rule-pack changes, quality-signal changes, evidence churn,
-and missing judgments so copied reports lead directly to review decisions. The
+and missing judgments so copied reports lead directly to review decisions. Each
+recommended action should include priority, severity, source, action, and reason
+and must be sorted by priority before rendering or copying. The
 comparison panel should render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, then render the same recommended actions as a visible review checklist

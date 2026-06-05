@@ -334,6 +334,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "RunComparisonRecommendedActions" in retrieval_page
     assert "Recommended actions" in retrieval_page
     assert "actions={comparisonReportRecommendedActions(comparison, judgments)}" in retrieval_page
+    assert "RetrievalComparisonRecommendedAction" in retrieval_page
+    assert "priority: comparison.activeSummary.qualitySummary?.status === \"blocked\" ? 1 : 2" in retrieval_page
+    assert "left.priority - right.priority" in retrieval_page
     assert "comparisonDiagnosisFromComparison" in retrieval_page
     assert "diagnosis: comparison.diagnosis" in retrieval_page
     assert "compareSearchRuns" in retrieval_page
