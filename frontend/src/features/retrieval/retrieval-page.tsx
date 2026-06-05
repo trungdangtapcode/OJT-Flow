@@ -239,6 +239,7 @@ type RetrievalComparisonRecommendedActionSummary = {
   highest_priority: number | null;
   highest_severity: "success" | "warning" | "destructive";
   source_count: number;
+  source_counts: Record<string, number>;
   sources: string[];
 };
 type RetrievalQueryAspectComparison = {
@@ -1498,7 +1499,7 @@ function RunComparisonRecommendedActions({
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {actionSummary.sources.map((source) => (
           <Badge key={source} variant="muted">
-            {humanize(source)}
+            {humanize(source)} {actionSummary.source_counts[source] ?? 0}
           </Badge>
         ))}
       </div>
@@ -6198,6 +6199,10 @@ function comparisonRecommendedActionSummary(
   actions: RetrievalComparisonRecommendedAction[],
 ): RetrievalComparisonRecommendedActionSummary {
   const sources = new Set(actions.map((action) => action.source));
+  const sourceCounts = actions.reduce<Record<string, number>>((counts, action) => {
+    counts[action.source] = (counts[action.source] ?? 0) + 1;
+    return counts;
+  }, {});
   const highestPriority = Math.min(...actions.map((action) => action.priority));
   const hasDestructive = actions.some((action) => action.severity === "destructive");
   const hasWarning = actions.some((action) => action.severity === "warning");
@@ -6207,6 +6212,7 @@ function comparisonRecommendedActionSummary(
     highest_priority: Number.isFinite(highestPriority) ? highestPriority : null,
     highest_severity: hasDestructive ? "destructive" : hasWarning ? "warning" : "success",
     source_count: sources.size,
+    source_counts: sourceCounts,
     sources: Array.from(sources).sort(),
   };
 }

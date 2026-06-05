@@ -339,7 +339,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "recommended_action_summary: comparisonRecommendedActionSummary" in retrieval_page
     assert "highest_priority" in retrieval_page
     assert "source_count" in retrieval_page
+    assert "source_counts" in retrieval_page
     assert "actionSummary.sources.map" in retrieval_page
+    assert "actionSummary.source_counts[source]" in retrieval_page
     assert "priority: comparison.activeSummary.qualitySummary?.status === \"blocked\" ? 1 : 2" in retrieval_page
     assert "left.priority - right.priority" in retrieval_page
     assert "comparisonDiagnosisFromComparison" in retrieval_page

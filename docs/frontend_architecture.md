@@ -252,7 +252,7 @@ and must be sorted by priority before rendering or copying. Reports and UI
 headers should also expose an action summary with action count, highest
 priority, highest severity, source count, and sources so reviewers can scan
 urgency without reading every action. The UI should render the source list as
-compact chips above the detailed action rows. The
+compact chips with per-source action counts above the detailed action rows. The
 comparison panel should render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, then render the same recommended actions as a visible review checklist
