@@ -3301,6 +3301,7 @@ function QualitySignalList({ signals }: { signals: RetrievalQualitySignal[] }) {
               <div className="break-words font-semibold text-foreground">
                 {signal.suggested_action}
               </div>
+              <QualitySignalMetadataDetails signal={signal} />
               {signal.evidence_ids.length ? (
                 <div className="flex min-w-0 flex-wrap gap-1">
                   {signal.evidence_ids.slice(0, 4).map((evidenceId) => (
@@ -3321,6 +3322,36 @@ function QualitySignalList({ signals }: { signals: RetrievalQualitySignal[] }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function QualitySignalMetadataDetails({ signal }: { signal: RetrievalQualitySignal }) {
+  const details = qualitySignalMetadataDetails(signal);
+  if (!details.length) return null;
+  return (
+    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 p-2">
+      <div className="text-[11px] font-bold uppercase text-muted-foreground">
+        Signal details
+      </div>
+      <div className="grid gap-1.5">
+        {details.map((detail) => (
+          <div className="grid gap-1" key={detail.label}>
+            <span className="font-bold text-muted-foreground">{detail.label}</span>
+            <div className="flex min-w-0 flex-wrap gap-1">
+              {detail.values.map((value) => (
+                <Badge
+                  className="max-w-full break-words text-left"
+                  key={`${detail.label}-${value}`}
+                  variant={detail.variant}
+                >
+                  {value}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -5163,6 +5194,101 @@ function qualitySignalSummaryVariant(
   if (signals.some((signal) => signal.severity === "warning")) return "warning";
   if (signals.some((signal) => signal.severity === "success")) return "success";
   return "muted";
+}
+
+function qualitySignalMetadataDetails(signal: RetrievalQualitySignal): Array<{
+  label: string;
+  values: string[];
+  variant: "success" | "warning" | "destructive" | "muted";
+}> {
+  const metadata = recordValue(signal.metadata);
+  const details: Array<{
+    label: string;
+    values: string[];
+    variant: "success" | "warning" | "destructive" | "muted";
+  }> = [];
+  const missingConcepts = conceptMetadataValues(metadata.missing_concepts);
+  if (missingConcepts.length) {
+    details.push({
+      label: "Missing concepts",
+      values: missingConcepts,
+      variant: "warning",
+    });
+  }
+  const provenanceIssues = provenanceIssueMetadataValues(metadata.issues);
+  if (provenanceIssues.length) {
+    details.push({
+      label: "Provenance issues",
+      values: provenanceIssues,
+      variant: "warning",
+    });
+  }
+  const missingStandards = stringArrayValue(metadata.missing_standards);
+  if (missingStandards.length) {
+    details.push({
+      label: "Missing standards",
+      values: missingStandards,
+      variant: "warning",
+    });
+  }
+  const missingAspects = stringArrayValue(metadata.missing_aspects).map(humanize);
+  if (missingAspects.length) {
+    details.push({
+      label: "Missing aspects",
+      values: missingAspects,
+      variant: "warning",
+    });
+  }
+  const suggestedFilters = suggestedFilterMetadataValues(metadata.suggested_filters);
+  if (suggestedFilters.length) {
+    details.push({
+      label: "Suggested filters",
+      values: suggestedFilters,
+      variant: "muted",
+    });
+  }
+  return details;
+}
+
+function conceptMetadataValues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((concept) => {
+      const standard = stringValue(concept.standard_system, "standard");
+      const code = optionalStringValue(concept.code);
+      const name = stringValue(concept.display_name, stringValue(concept.concept_id, "concept"));
+      const confidence = numberValue(concept.confidence);
+      const confidenceText = confidence === null ? "" : ` / ${Math.round(confidence * 100)}%`;
+      return `${standard}${code ? ` ${code}` : ""}: ${name}${confidenceText}`;
+    })
+    .filter(Boolean);
+}
+
+function provenanceIssueMetadataValues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((issue) => {
+      const sourceId = stringValue(issue.source_id, "source");
+      const missing = stringArrayValue(issue.missing).map(humanize);
+      return `${sourceId}: missing ${missing.length ? missing.join(", ") : "metadata"}`;
+    })
+    .filter(Boolean);
+}
+
+function suggestedFilterMetadataValues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .flatMap((filter) =>
+      Object.entries(filter)
+        .map(([field, rawValue]) => {
+          const value = stringValue(rawValue, "");
+          return value ? `${humanize(field)}=${value}` : "";
+        })
+        .filter(Boolean),
+    );
 }
 
 function integrityBadgeVariant(

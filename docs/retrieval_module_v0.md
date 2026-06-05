@@ -306,6 +306,10 @@ The Retrieval console carries the same concept grounding into run comparison:
 active-vs-baseline comparisons list added, removed, and retained grounded
 concepts, and copied `retrieval_run_comparison` reports include a
 `concept_grounding` section for offline relevance-tuning notes.
+The Retrieval trace renders structured quality signal metadata directly for
+operator review, including missing concepts, provenance issues, missing
+standards/aspects, and suggested filters, so readiness diagnostics are usable
+without opening raw response JSON.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

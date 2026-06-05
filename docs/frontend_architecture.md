@@ -161,7 +161,9 @@ reports must include active/baseline server search signatures for offline audit
 correlation.
 The trace panel must render `quality_signals` as a compact retrieval-quality
 checklist with severity, message, suggested action, and evidence references so
-operators can review package readiness without opening raw JSON.
+operators can review package readiness without opening raw JSON. Known metadata
+payloads such as missing concepts, provenance issues, missing standards/aspects,
+and suggested filters must render as explicit signal details.
 It must also show `handoff_context.quality_policy` so the readiness score can
 be traced to the active data-driven gate policy, including top-hit match
 thresholds and provenance requirement scope.

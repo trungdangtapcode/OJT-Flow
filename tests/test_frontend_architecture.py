@@ -190,6 +190,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "ScoreExplanation" in retrieval_page
     assert "Score explanation" in retrieval_page
     assert "QualitySignalList" in retrieval_page
+    assert "QualitySignalMetadataDetails" in retrieval_page
+    assert "Signal details" in retrieval_page
+    assert "qualitySignalMetadataDetails" in retrieval_page
     assert "Retrieval quality" in retrieval_page
     assert "quality_signals" in retrieval_page
     assert "quality_summary" in (REPO_ROOT / "frontend/src/types.ts").read_text(

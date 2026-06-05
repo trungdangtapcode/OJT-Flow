@@ -187,6 +187,9 @@ Retrieval packages also expose `quality_summary`, a deterministic aggregate of
 `quality_signals[]` with status, 0-100 score, severity counts, blocker/warning
 codes, and the top recommended action. This gives operators and assistant tools
 a quick readiness signal without hiding the underlying quality signals. The
+Retrieval UI renders known `quality_signals[].metadata` structures, including
+missing concepts, provenance issues, missing standards/aspects, and suggested
+filters, as explicit signal details for operator review. The
 readiness score/status policy is loaded from
 `knowledge/retrieval/quality_gate_policy.json`; set
 `OJT_RETRIEVAL_QUALITY_POLICY_PATH` to use deployment-specific severity
