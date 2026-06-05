@@ -163,6 +163,11 @@ filter suggestions; unsupported profile fields should remain visible but not
 actionable. Profile filter controls must compare against the submitted
 `trace.filters_applied` payload, not the live query-builder draft, so displayed
 applied state remains tied to the visible result package.
+The same query-analysis panel should render `query_aspects` as a compact search
+aspect plan, including aspect label, review question, rationale, priority,
+suggested terms, suggested filters, and contributing rule ID. These aspects are
+operator-visible decomposition guidance and must not silently run hidden
+subqueries or mutate filters.
 Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see

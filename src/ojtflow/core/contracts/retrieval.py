@@ -278,6 +278,19 @@ class RetrievalQueryProfile(ContractModel):
     rule_ids: list[NonBlankStr] = Field(default_factory=list)
 
 
+class RetrievalQueryAspect(ContractModel):
+    """Data-driven search aspect for decomposed healthcare retrieval planning."""
+
+    aspect_id: NonBlankStr
+    label: NonBlankStr
+    question: NonBlankStr
+    rationale: NonBlankStr
+    priority: int = Field(ge=1)
+    rule_id: NonBlankStr
+    suggested_terms: list[NonBlankStr] = Field(default_factory=list)
+    suggested_filters: dict[str, str] = Field(default_factory=dict)
+
+
 class RetrievalSearchPreset(ContractModel):
     """Operator-facing retrieval query preset loaded from trusted knowledge data."""
 
@@ -344,6 +357,7 @@ class RetrievalQueryAnalysis(ContractModel):
     diagnostics: list[RetrievalQueryDiagnostic] = Field(default_factory=list)
     search_hints: list[RetrievalSearchHint] = Field(default_factory=list)
     query_profile: RetrievalQueryProfile | None = None
+    query_aspects: list[RetrievalQueryAspect] = Field(default_factory=list)
 
 
 class RetrievalPackage(ContractModel):

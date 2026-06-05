@@ -238,6 +238,7 @@ export type RetrievalQueryAnalysis = {
   diagnostics: RetrievalQueryDiagnostic[];
   search_hints: RetrievalSearchHint[];
   query_profile?: RetrievalQueryProfile | null;
+  query_aspects?: RetrievalQueryAspect[];
 };
 
 export type RetrievalConceptCandidate = {
@@ -285,6 +286,17 @@ export type RetrievalQueryProfile = {
   description: string;
   suggested_filters: Record<string, string>;
   rule_ids: string[];
+};
+
+export type RetrievalQueryAspect = {
+  aspect_id: string;
+  label: string;
+  question: string;
+  rationale: string;
+  priority: number;
+  rule_id: string;
+  suggested_terms: string[];
+  suggested_filters: Record<string, string>;
 };
 
 export type RetrievalPackage = {

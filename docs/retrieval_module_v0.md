@@ -117,6 +117,8 @@ Seeded v0 sources include:
 - MeSH/PubMed biomedical literature-search direction
 - query expansion rule registry for deterministic healthcare retrieval variants
 - filter suggestion rule registry for deterministic self-query metadata suggestions
+- query aspect rule registry for deterministic decomposition of healthcare
+  search intent into reviewable evidence aspects
 - ranking boost rule registry for deterministic domain-aware first-stage ranking policy
 - medical search hint target registry for external target rationale and warnings
 - an official healthcare source catalog covering MeSH, RxNorm/RxNav, LOINC,
@@ -147,6 +149,9 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/query_profile_rules.json`: deterministic query-profile
   rules that map concepts, standards, tokens, and candidate metadata to
   operator-visible adaptive retrieval route guidance.
+- `knowledge/retrieval/query_aspect_rules.json`: deterministic query-aspect
+  rules that decompose medical search intent into operator-visible evidence
+  aspects with questions, rationale, suggested terms, and suggested filters.
 - `knowledge/retrieval/ranking_boost_rules.json`: deterministic ranking boost
   rules for schema, field, trust-level, source-type, concept, and healthcare
   standard matches.
@@ -286,6 +291,18 @@ The Retrieval console shows confidence and whether each suggestion is already
 applied. Supported suggestions can be applied explicitly from the trace panel,
 which updates the query-builder filter state and reruns the search through the
 same typed `/retrieval/search` request path.
+
+`query_aspects` is a deterministic query-decomposition scaffold loaded from
+`knowledge/retrieval/query_aspect_rules.json`, with deployment override support
+through `OJT_QUERY_ASPECT_RULES_PATH`. Aspect rules match the same auditable
+inputs as query profiles: detected concepts, standards, query-expansion rule
+IDs, tokens, and controlled-vocabulary candidate metadata. Each matched aspect
+emits an `aspect_id`, label, review question, rationale, priority,
+contributing rule ID, suggested terms, and suggested filters. Current rules
+cover laboratory identity/standardization, unit and value quality, sensitive
+data review, medication terminology/safety, literature/external evidence, and
+observational schema context. This is a search-planning and review aid; it does
+not silently execute subqueries or make clinical recommendations.
 
 Deterministic query expansion rules are loaded from
 `knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query

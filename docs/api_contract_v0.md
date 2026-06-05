@@ -1245,7 +1245,12 @@ of deterministic query-quality checks with `code`, `severity`, `message`, and
 can include `query_profile`, a data-driven route hint with `profile_id`,
 `label`, `route`, `complexity`, `retrieval_mode`, `description`,
 `suggested_filters`, and contributing `rule_ids`; this is operator-visible
-guidance for adaptive retrieval, not a hidden automatic route change. It
+guidance for adaptive retrieval, not a hidden automatic route change. It can
+include `query_aspects`, deterministic query-decomposition rows with
+`aspect_id`, `label`, review `question`, `rationale`, `priority`, contributing
+`rule_id`, `suggested_terms`, and `suggested_filters`; these rows help users
+verify which medical evidence aspects the search should cover without silently
+running subqueries or producing clinical recommendations. It
 also includes `search_hints`, deterministic external medical search syntax
 scaffolds with `target`, `query`, optional `url`, `rationale`, and `warnings`
 for workflows such as PubMed/MeSH literature search, FHIR resource search
@@ -1256,7 +1261,8 @@ label/adverse-event search. Current targets include `pubmed`, `fhir`,
 rule-pack fingerprints with pack name, status, source, env var, rule count,
 version, and content hash. This lets copied evaluation reports and downstream
 audit records identify the exact query-expansion, diagnostic, ranking,
-query-profile, evaluation, and search-hint rule data used for the search.
+query-profile, query-aspect, evaluation, and search-hint rule data used for
+the search.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.

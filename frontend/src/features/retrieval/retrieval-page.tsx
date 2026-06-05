@@ -2450,6 +2450,10 @@ function formatFilterValue(field: SupportedFilterField, value: string): string {
   return field === "standard_system" ? value : humanize(value);
 }
 
+function formatAspectFilterValue(field: string, value: string): string {
+  return isSupportedFilterField(field) ? formatFilterValue(field, value) : value;
+}
+
 function coverageSuggestedFilter(
   item: RetrievalCoverage["standard_system"][number],
 ): CoverageFilterAction | null {
@@ -3028,6 +3032,7 @@ function QueryAnalysisBlock({
         onApplyFilter={onApplyFilterSuggestion}
         profile={analysis.queryProfile}
       />
+      <QueryAspectPlan aspects={analysis.queryAspects} />
       <QueryDiagnosticList diagnostics={analysis.diagnostics} />
       <ConceptCandidateList candidates={analysis.conceptCandidates} />
       <SearchHintList hints={analysis.searchHints} />
@@ -3039,6 +3044,65 @@ function QueryAnalysisBlock({
         suggestions={analysis.filterSuggestions}
       />
       <TokenList items={analysis.expandedTerms} title="Expanded terms" />
+    </div>
+  );
+}
+
+function QueryAspectPlan({ aspects }: { aspects: QueryAspectStack[] }) {
+  if (!aspects.length) {
+    return <TokenList items={[]} title="Search aspect plan" />;
+  }
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Search aspect plan
+        </div>
+        <Badge variant="muted">{formatCount(aspects.length, "aspect")}</Badge>
+      </div>
+      <div className="grid gap-2">
+        {aspects.map((aspect) => (
+          <div
+            className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
+            key={aspect.aspectId}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{aspect.label}</span>
+              <Badge variant="muted">priority {aspect.priority}</Badge>
+            </div>
+            <div className="break-words font-semibold text-foreground">
+              {aspect.question}
+            </div>
+            <div className="break-words text-muted-foreground">
+              {aspect.rationale}
+            </div>
+            {aspect.suggestedTerms.length ? (
+              <div className="flex min-w-0 flex-wrap gap-1">
+                {aspect.suggestedTerms.slice(0, 5).map((term) => (
+                  <Badge key={`${aspect.aspectId}-${term}`} variant="muted">
+                    {term}
+                  </Badge>
+                ))}
+                {aspect.suggestedTerms.length > 5 ? (
+                  <Badge variant="muted">+{aspect.suggestedTerms.length - 5}</Badge>
+                ) : null}
+              </div>
+            ) : null}
+            {Object.keys(aspect.suggestedFilters).length ? (
+              <div className="flex min-w-0 flex-wrap gap-1">
+                {Object.entries(aspect.suggestedFilters).map(([field, value]) => (
+                  <Badge key={`${aspect.aspectId}-${field}`} variant="success">
+                    {humanize(field)}={formatAspectFilterValue(field, value)}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+            <code className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px] text-muted-foreground">
+              {aspect.ruleId}
+            </code>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -3919,12 +3983,24 @@ type QueryAnalysisStack = {
   diagnostics: QueryDiagnosticStack[];
   expandedTerms: string[];
   filterSuggestions: FilterSuggestionStack[];
+  queryAspects: QueryAspectStack[];
   queryProfile: QueryProfileStack | null;
   ruleIds: string[];
   searchHints: SearchHintStack[];
   standards: string[];
   strategy: string;
   variantCount: number;
+};
+
+type QueryAspectStack = {
+  aspectId: string;
+  label: string;
+  priority: number;
+  question: string;
+  rationale: string;
+  ruleId: string;
+  suggestedFilters: Record<string, string>;
+  suggestedTerms: string[];
 };
 
 type QueryProfileStack = {
@@ -4025,6 +4101,7 @@ function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisS
     diagnostics: queryDiagnosticsValue(queryAnalysis.diagnostics),
     expandedTerms: stringArrayValue(queryAnalysis.expanded_terms),
     filterSuggestions: filterSuggestionsValue(queryAnalysis.filter_suggestions),
+    queryAspects: queryAspectsValue(queryAnalysis.query_aspects),
     queryProfile: queryProfileValue(queryAnalysis.query_profile),
     ruleIds: stringArrayValue(queryAnalysis.rule_ids),
     searchHints: searchHintsValue(queryAnalysis.search_hints),
@@ -4165,6 +4242,24 @@ function queryProfileValue(value: unknown): QueryProfileStack | null {
     ruleIds: stringArrayValue(profile.rule_ids),
     suggestedFilters: stringRecordValue(profile.suggested_filters),
   };
+}
+
+function queryAspectsValue(value: unknown): QueryAspectStack[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      aspectId: stringValue(item.aspect_id, ""),
+      label: stringValue(item.label, "Search aspect"),
+      priority: numberValue(item.priority) ?? 100,
+      question: stringValue(item.question, "Review this search aspect."),
+      rationale: stringValue(item.rationale, "Aspect generated from query analysis."),
+      ruleId: stringValue(item.rule_id, ""),
+      suggestedFilters: stringRecordValue(item.suggested_filters),
+      suggestedTerms: stringArrayValue(item.suggested_terms),
+    }))
+    .filter((item) => item.aspectId)
+    .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label));
 }
 
 function queryProfileFilterEntries(

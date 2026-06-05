@@ -434,6 +434,84 @@ def test_query_analysis_uses_data_driven_query_profile_rules(tmp_path, monkeypat
     assert reloaded.query_profile.retrieval_mode == "hybrid_reloaded"
 
 
+def test_query_analysis_builds_data_driven_query_aspects() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="A1c CSV missing units patient_id",
+            fields=["lab_name", "unit", "patient_id"],
+            detected_format="csv",
+        )
+    )
+
+    aspects = {aspect.aspect_id: aspect for aspect in analysis.query_aspects}
+
+    assert "lab_identity_standardization" in aspects
+    assert "unit_and_value_quality" in aspects
+    assert "phi_review_governance" in aspects
+    assert aspects["lab_identity_standardization"].suggested_filters == {
+        "clinical_domain": "laboratory"
+    }
+    assert "UCUM computable unit" in aspects["unit_and_value_quality"].suggested_terms
+    assert aspects["phi_review_governance"].rule_id == "aspect_phi_review_governance"
+
+
+def test_query_analysis_uses_data_driven_query_aspect_rules(tmp_path, monkeypatch) -> None:
+    registry_path = tmp_path / "query_aspect_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_aspect_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_aspect_rule",
+                        "aspect_id": "custom_registry_aspect",
+                        "label": "Custom registry aspect",
+                        "question": "What custom registry aspect should be searched?",
+                        "rationale": "Custom aspect from test registry.",
+                        "priority": 1,
+                        "suggested_terms": ["custom term"],
+                        "suggested_filters": {"clinical_domain": "custom"},
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_QUERY_ASPECT_RULES_PATH", str(registry_path))
+
+    analysis = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert len(analysis.query_aspects) == 1
+    assert analysis.query_aspects[0].aspect_id == "custom_registry_aspect"
+    assert analysis.query_aspects[0].suggested_terms == ["custom term"]
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_aspect_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "reloaded_aspect_rule",
+                        "aspect_id": "reloaded_registry_aspect",
+                        "label": "Reloaded registry aspect",
+                        "question": "What reloaded aspect should be searched?",
+                        "rationale": "Reloaded aspect from test registry.",
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert len(reloaded.query_aspects) == 1
+    assert reloaded.query_aspects[0].aspect_id == "reloaded_registry_aspect"
+    assert reloaded.query_aspects[0].rule_id == "reloaded_aspect_rule"
+
+
 def test_query_analysis_uses_data_driven_expansion_rules(tmp_path, monkeypatch) -> None:
     registry_path = tmp_path / "query_expansion_rules.json"
     registry_path.write_text(

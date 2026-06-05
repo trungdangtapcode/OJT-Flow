@@ -205,6 +205,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "QueryProfileCard" in retrieval_page
     assert "queryProfileValue" in retrieval_page
     assert "query_profile" in retrieval_page
+    assert "QueryAspectPlan" in retrieval_page
+    assert "queryAspectsValue" in retrieval_page
+    assert "query_aspects" in retrieval_page
+    assert "Search aspect plan" in retrieval_page
     assert "query_profiles" in retrieval_page
     assert "queryProfileSummaryFromPackage" in retrieval_page
     assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_page

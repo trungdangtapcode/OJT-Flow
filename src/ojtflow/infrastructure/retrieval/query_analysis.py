@@ -17,6 +17,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalFilterSuggestion,
     RetrievalQuery,
     RetrievalQueryAnalysis,
+    RetrievalQueryAspect,
     RetrievalQueryDiagnostic,
     RetrievalQueryProfile,
     RetrievalQueryVariant,
@@ -38,6 +39,9 @@ DEFAULT_QUERY_DIAGNOSTIC_RULE_REGISTRY = (
 )
 DEFAULT_QUERY_PROFILE_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_profile_rules.json"
+)
+DEFAULT_QUERY_ASPECT_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_aspect_rules.json"
 )
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
@@ -127,6 +131,33 @@ class QueryProfileRule:
 
 
 @dataclass(frozen=True)
+class QueryAspectMatch:
+    """Matcher for a data-driven query aspect rule."""
+
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_rule_ids: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    any_candidate_domains: tuple[str, ...] = ()
+    any_candidate_standards: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class QueryAspectRule:
+    """One data-driven decomposed search aspect."""
+
+    rule_id: str
+    aspect_id: str
+    label: str
+    question: str
+    rationale: str
+    priority: int
+    suggested_terms: tuple[str, ...]
+    suggested_filters: dict[str, str]
+    match: QueryAspectMatch
+
+
+@dataclass(frozen=True)
 class SearchHintTarget:
     """Operator-facing metadata for one external search target."""
 
@@ -168,6 +199,8 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         ]
     )
     rule_ids = _dedupe(rule.rule_id for rule in matched_rules)
+    candidate_domains = _candidate_domains(concept_candidates)
+    candidate_standards = _candidate_standards(concept_candidates)
     variant_details = _dedupe_query_variant_details(
         [
             *base_variants,
@@ -222,7 +255,16 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
             standards=standards,
             rule_ids=rule_ids,
             tokens=tokens,
-            concept_candidates=concept_candidates,
+            candidate_domains=candidate_domains,
+            candidate_standards=candidate_standards,
+        ),
+        query_aspects=_query_aspects(
+            concepts=concepts,
+            standards=standards,
+            rule_ids=rule_ids,
+            tokens=tokens,
+            candidate_domains=candidate_domains,
+            candidate_standards=candidate_standards,
         ),
     )
 
@@ -257,6 +299,18 @@ def _concept_candidates(
         )
     candidates.sort(key=lambda candidate: (-candidate.confidence, candidate.display_name))
     return candidates
+
+
+def _candidate_domains(candidates: list[RetrievalConceptCandidate]) -> list[str]:
+    return _dedupe(
+        candidate.clinical_domain
+        for candidate in candidates
+        if candidate.clinical_domain
+    )
+
+
+def _candidate_standards(candidates: list[RetrievalConceptCandidate]) -> list[str]:
+    return _dedupe(candidate.standard_system for candidate in candidates)
 
 
 def _concept_candidate_variant_details(
@@ -774,6 +828,156 @@ def _ensure_unique_query_profile_rule_ids(
         )
 
 
+def _query_aspect_rules() -> tuple[QueryAspectRule, ...]:
+    path = os.environ.get("OJT_QUERY_ASPECT_RULES_PATH")
+    return _load_query_aspect_rules(path or str(DEFAULT_QUERY_ASPECT_RULE_REGISTRY))
+
+
+def _load_query_aspect_rules(path_text: str) -> tuple[QueryAspectRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid query aspect registry at {path}: expected rules list")
+
+    rules = tuple(_query_aspect_rule(record, path=path) for record in records)
+    _ensure_unique_query_aspect_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_aspect_rule(record: Any, *, path: Path) -> QueryAspectRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid query aspect registry at {path}: rule must be an object")
+    required = (
+        "rule_id",
+        "aspect_id",
+        "label",
+        "question",
+        "rationale",
+        "match",
+    )
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(f"Invalid query aspect registry at {path}: missing {missing_text}")
+    match = record["match"]
+    if not isinstance(match, dict):
+        raise ValueError(f"Invalid query aspect registry at {path}: match must be an object")
+    aspect_match = QueryAspectMatch(
+        any_concepts=_query_aspect_text_tuple(match.get("any_concepts"), path=path),
+        any_standards=_query_aspect_text_tuple(match.get("any_standards"), path=path),
+        any_rule_ids=_query_aspect_text_tuple(match.get("any_rule_ids"), path=path),
+        any_tokens=_query_aspect_text_tuple(match.get("any_tokens"), path=path),
+        any_candidate_domains=_query_aspect_text_tuple(
+            match.get("any_candidate_domains"),
+            path=path,
+        ),
+        any_candidate_standards=_query_aspect_text_tuple(
+            match.get("any_candidate_standards"),
+            path=path,
+        ),
+    )
+    if not any(
+        (
+            aspect_match.any_concepts,
+            aspect_match.any_standards,
+            aspect_match.any_rule_ids,
+            aspect_match.any_tokens,
+            aspect_match.any_candidate_domains,
+            aspect_match.any_candidate_standards,
+        )
+    ):
+        raise ValueError(
+            f"Invalid query aspect registry at {path}: match must include at least one criterion"
+        )
+    suggested_filters = record.get("suggested_filters", {})
+    if not isinstance(suggested_filters, dict):
+        raise ValueError(
+            f"Invalid query aspect registry at {path}: suggested_filters must be an object"
+        )
+    return QueryAspectRule(
+        rule_id=_required_query_aspect_text(record["rule_id"], field="rule_id", path=path),
+        aspect_id=_required_query_aspect_text(
+            record["aspect_id"],
+            field="aspect_id",
+            path=path,
+        ),
+        label=_required_query_aspect_text(record["label"], field="label", path=path),
+        question=_required_query_aspect_text(
+            record["question"],
+            field="question",
+            path=path,
+        ),
+        rationale=_required_query_aspect_text(
+            record["rationale"],
+            field="rationale",
+            path=path,
+        ),
+        priority=_optional_query_aspect_int(record.get("priority"), default=100, path=path),
+        suggested_terms=_query_aspect_text_tuple(record.get("suggested_terms"), path=path),
+        suggested_filters={
+            _required_query_aspect_text(
+                key,
+                field="suggested_filters key",
+                path=path,
+            ): _required_query_aspect_text(
+                value,
+                field="suggested_filters value",
+                path=path,
+            )
+            for key, value in suggested_filters.items()
+        },
+        match=aspect_match,
+    )
+
+
+def _required_query_aspect_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid query aspect registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _optional_query_aspect_int(value: Any, *, default: int, path: Path) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, int):
+        raise ValueError(f"Invalid query aspect registry at {path}: priority must be an integer")
+    if value < 1:
+        raise ValueError(f"Invalid query aspect registry at {path}: priority must be positive")
+    return value
+
+
+def _query_aspect_text_tuple(value: Any, *, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid query aspect registry at {path}: match values must be lists")
+    return tuple(
+        _required_query_aspect_text(item, field="match value", path=path) for item in value
+    )
+
+
+def _ensure_unique_query_aspect_rule_ids(
+    rules: tuple[QueryAspectRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query aspect registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
 def _search_hint_target(target: str) -> SearchHintTarget:
     targets = {item.target: item for item in _search_hint_targets()}
     return targets.get(
@@ -1150,14 +1354,9 @@ def _query_profile(
     standards: list[str],
     rule_ids: list[str],
     tokens: set[str],
-    concept_candidates: list[RetrievalConceptCandidate],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
 ) -> RetrievalQueryProfile | None:
-    candidate_domains = [
-        candidate.clinical_domain
-        for candidate in concept_candidates
-        if candidate.clinical_domain
-    ]
-    candidate_standards = [candidate.standard_system for candidate in concept_candidates]
     matched = [
         rule
         for rule in _query_profile_rules()
@@ -1189,6 +1388,66 @@ def _query_profile(
 
 def _query_profile_rule_matches(
     rule: QueryProfileRule,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
+) -> bool:
+    match = rule.match
+    checks = [
+        _has_intersection(concepts, match.any_concepts),
+        _has_intersection(standards, match.any_standards),
+        _has_intersection(rule_ids, match.any_rule_ids),
+        _has_intersection(tokens, match.any_tokens),
+        _has_intersection(candidate_domains, match.any_candidate_domains),
+        _has_intersection(candidate_standards, match.any_candidate_standards),
+    ]
+    return any(checks)
+
+
+def _query_aspects(
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
+) -> list[RetrievalQueryAspect]:
+    matched = [
+        rule
+        for rule in _query_aspect_rules()
+        if _query_aspect_rule_matches(
+            rule,
+            concepts=concepts,
+            standards=standards,
+            rule_ids=rule_ids,
+            tokens=tokens,
+            candidate_domains=candidate_domains,
+            candidate_standards=candidate_standards,
+        )
+    ]
+    matched.sort(key=lambda rule: (rule.priority, rule.aspect_id))
+    return [
+        RetrievalQueryAspect(
+            aspect_id=rule.aspect_id,
+            label=rule.label,
+            question=rule.question,
+            rationale=rule.rationale,
+            priority=rule.priority,
+            rule_id=rule.rule_id,
+            suggested_terms=list(rule.suggested_terms),
+            suggested_filters=dict(rule.suggested_filters),
+        )
+        for rule in matched
+    ]
+
+
+def _query_aspect_rule_matches(
+    rule: QueryAspectRule,
     *,
     concepts: list[str],
     standards: list[str],
