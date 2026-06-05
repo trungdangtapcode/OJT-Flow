@@ -6147,6 +6147,11 @@ function comparisonReportSummary(
       rank_change_count: comparison.rankChanges.length,
       top_source_changed: comparison.topSourceChanged,
     },
+    top_source: {
+      before: comparison.topSourceBefore,
+      after: comparison.topSourceAfter,
+      changed: comparison.topSourceChanged,
+    },
     retrieval: {
       hit_delta: comparison.hitDelta,
       candidate_delta: comparison.candidateDelta,
