@@ -1495,6 +1495,13 @@ function RunComparisonRecommendedActions({
           </Badge>
         </span>
       </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {actionSummary.sources.map((source) => (
+          <Badge key={source} variant="muted">
+            {humanize(source)}
+          </Badge>
+        ))}
+      </div>
       <div className="grid gap-1.5">
         {actions.map((item) => (
           <div className="grid gap-1" key={`${item.source}-${item.action}`}>
