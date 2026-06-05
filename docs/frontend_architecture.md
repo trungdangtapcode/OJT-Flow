@@ -248,7 +248,10 @@ also include `recommended_actions[]` derived from quality top action, coverage
 diagnostics, profile/rule-pack changes, quality-signal changes, evidence churn,
 and missing judgments so copied reports lead directly to review decisions. Each
 recommended action should include priority, severity, source, action, and reason
-and must be sorted by priority before rendering or copying. The
+and must be sorted by priority before rendering or copying. Reports and UI
+headers should also expose an action summary with action count, highest
+priority, highest severity, source count, and sources so reviewers can scan
+urgency without reading every action. The
 comparison panel should render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, then render the same recommended actions as a visible review checklist

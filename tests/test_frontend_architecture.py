@@ -335,6 +335,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Recommended actions" in retrieval_page
     assert "actions={comparisonReportRecommendedActions(comparison, judgments)}" in retrieval_page
     assert "RetrievalComparisonRecommendedAction" in retrieval_page
+    assert "comparisonRecommendedActionSummary" in retrieval_page
+    assert "recommended_action_summary: comparisonRecommendedActionSummary" in retrieval_page
+    assert "highest_priority" in retrieval_page
+    assert "source_count" in retrieval_page
     assert "priority: comparison.activeSummary.qualitySummary?.status === \"blocked\" ? 1 : 2" in retrieval_page
     assert "left.priority - right.priority" in retrieval_page
     assert "comparisonDiagnosisFromComparison" in retrieval_page
@@ -357,7 +361,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "comparisonReportSummary" in retrieval_page
     assert "summary: comparisonReportSummary(comparison, judgments)" in retrieval_page
     assert "comparisonReportRecommendedActions" in retrieval_page
-    assert "recommended_actions: comparisonReportRecommendedActions(comparison, judgments)" in retrieval_page
+    assert "recommended_actions: recommendedActions" in retrieval_page
     assert "changed_dimensions" in retrieval_page
     assert "judgment_count: judgments.length" in retrieval_page
     assert "retrieval_run_comparison" in retrieval_page

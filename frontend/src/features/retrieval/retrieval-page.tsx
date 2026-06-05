@@ -233,6 +233,14 @@ type RetrievalComparisonRecommendedAction = {
   severity: "success" | "warning" | "destructive" | "muted";
   source: string;
 };
+type RetrievalComparisonRecommendedActionSummary = {
+  action_count: number;
+  badge_variant: "success" | "warning" | "destructive";
+  highest_priority: number | null;
+  highest_severity: "success" | "warning" | "destructive";
+  source_count: number;
+  sources: string[];
+};
 type RetrievalQueryAspectComparison = {
   added: QueryAspectSummary[];
   removed: QueryAspectSummary[];
@@ -1470,23 +1478,22 @@ function RunComparisonRecommendedActions({
 }: {
   actions: RetrievalComparisonRecommendedAction[];
 }) {
+  const actionSummary = comparisonRecommendedActionSummary(actions);
   return (
     <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="font-bold text-muted-foreground">
           Recommended actions
         </span>
-        <Badge
-          variant={
-            actions.some((item) => item.severity === "destructive")
-              ? "destructive"
-              : actions.some((item) => item.severity === "warning")
-                ? "warning"
-                : "success"
-          }
-        >
-          {formatCount(actions.length, "action")}
-        </Badge>
+        <span className="flex flex-wrap justify-end gap-1.5">
+          <Badge variant={actionSummary.badge_variant}>
+            {formatCount(actionSummary.action_count, "action")}
+          </Badge>
+          <Badge variant="muted">P{actionSummary.highest_priority}</Badge>
+          <Badge variant="muted">
+            {formatCount(actionSummary.source_count, "source")}
+          </Badge>
+        </span>
       </div>
       <div className="grid gap-1.5">
         {actions.map((item) => (
@@ -5946,12 +5953,14 @@ function comparisonReportFromComparison(
   comparison: RetrievalRunComparison,
   judgments: RelevanceJudgment[],
 ) {
+  const recommendedActions = comparisonReportRecommendedActions(comparison, judgments);
   return {
     report_type: "retrieval_run_comparison",
     version: 1,
     generated_at: new Date().toISOString(),
     summary: comparisonReportSummary(comparison, judgments),
-    recommended_actions: comparisonReportRecommendedActions(comparison, judgments),
+    recommended_action_summary: comparisonRecommendedActionSummary(recommendedActions),
+    recommended_actions: recommendedActions,
     active: {
       query: comparison.activeQuery,
       run_id: comparison.activeRunId,
@@ -6176,6 +6185,23 @@ function comparisonReportRecommendedActions(
     (left, right) =>
       left.priority - right.priority || left.source.localeCompare(right.source),
   );
+}
+
+function comparisonRecommendedActionSummary(
+  actions: RetrievalComparisonRecommendedAction[],
+): RetrievalComparisonRecommendedActionSummary {
+  const sources = new Set(actions.map((action) => action.source));
+  const highestPriority = Math.min(...actions.map((action) => action.priority));
+  const hasDestructive = actions.some((action) => action.severity === "destructive");
+  const hasWarning = actions.some((action) => action.severity === "warning");
+  return {
+    action_count: actions.length,
+    badge_variant: hasDestructive ? "destructive" : hasWarning ? "warning" : "success",
+    highest_priority: Number.isFinite(highestPriority) ? highestPriority : null,
+    highest_severity: hasDestructive ? "destructive" : hasWarning ? "warning" : "success",
+    source_count: sources.size,
+    sources: Array.from(sources).sort(),
+  };
 }
 
 function evaluationReportFromJudgmentSummary(
