@@ -195,7 +195,10 @@ baseline payload, summaries, deltas, metrics, evidence changes, and rank
 movement so tuning notes can be reproduced outside the browser. Search-run
 summaries and copied comparison reports should include the active query-profile
 route/mode context so relevance tuning can distinguish query changes from
-adaptive-routing changes. The comparison panel should render the
+adaptive-routing changes. The comparison panel should render a compact
+comparison diagnosis that names the likely change drivers before the detailed
+sections, and the copyable JSON report should include the same diagnosis for
+offline tuning notes. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
 quality signal codes across active and baseline runs, including added, removed,

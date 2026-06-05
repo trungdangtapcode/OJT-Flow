@@ -273,6 +273,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "retrievalRunSummary" in retrieval_page
     assert "SearchRunComparison" in retrieval_page
     assert "Run comparison" in retrieval_page
+    assert "RunComparisonDiagnosis" in retrieval_page
+    assert "Comparison diagnosis" in retrieval_page
+    assert "comparisonDiagnosisFromComparison" in retrieval_page
+    assert "diagnosis: comparison.diagnosis" in retrieval_page
     assert "compareSearchRuns" in retrieval_page
     assert "comparisonRunForActive" in retrieval_page
     assert "comparisonBaselineRunId" in retrieval_page

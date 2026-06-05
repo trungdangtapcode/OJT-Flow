@@ -172,6 +172,7 @@ type RetrievalRunComparison = {
   baselineSubmittedAt: string;
   baselineSummary: RetrievalRunSummary;
   candidateDelta: number;
+  diagnosis: RetrievalComparisonDiagnosis[];
   facetComparisons: RetrievalFacetComparison[];
   hitDelta: number;
   metrics: RetrievalRunComparisonMetrics;
@@ -187,6 +188,11 @@ type RetrievalRunComparison = {
   topSourceBefore: string | null;
   topSourceChanged: boolean;
   warningDelta: number;
+};
+type RetrievalComparisonDiagnosis = {
+  code: string;
+  message: string;
+  severity: "success" | "warning" | "muted";
 };
 type RetrievalQualitySignalComparison = {
   added: RetrievalQualitySignalSummary[];
@@ -1242,6 +1248,7 @@ function SearchRunComparison({
       <div className="break-words text-xs leading-5 text-muted-foreground">
         Compared with: {comparison.baselineQuery}
       </div>
+      <RunComparisonDiagnosis diagnosis={comparison.diagnosis} />
       <RunComparisonMetrics metrics={comparison.metrics} />
       <div className="grid gap-2 sm:grid-cols-2">
         <RunComparisonMetric
@@ -1290,6 +1297,45 @@ function SearchRunComparison({
       <div className="break-words text-xs font-semibold text-muted-foreground">
         Top source: {comparison.topSourceBefore ?? "none"} to{" "}
         {comparison.topSourceAfter ?? "none"}
+      </div>
+    </div>
+  );
+}
+
+function RunComparisonDiagnosis({
+  diagnosis,
+}: {
+  diagnosis: RetrievalComparisonDiagnosis[];
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">
+          Comparison diagnosis
+        </span>
+        <Badge
+          variant={diagnosis.some((item) => item.severity === "warning") ? "warning" : "success"}
+        >
+          {diagnosis.some((item) => item.severity === "warning")
+            ? formatCount(
+                diagnosis.filter((item) => item.severity === "warning").length,
+                "change driver",
+              )
+            : "stable"}
+        </Badge>
+      </div>
+      <div className="grid gap-1">
+        {diagnosis.map((item) => (
+          <div
+            className="flex min-w-0 flex-wrap items-start gap-2"
+            key={item.code}
+          >
+            <Badge variant={item.severity}>{humanize(item.code)}</Badge>
+            <span className="min-w-0 flex-1 break-words text-muted-foreground">
+              {item.message}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -4494,8 +4540,15 @@ function compareSearchRuns(
     activeRun.summary.queryProfile,
     baselineRun.summary.queryProfile,
   );
+  const facetComparisons = facetComparisonsBetweenRuns(activeRun, baselineRun);
+  const qualitySignalComparison = qualitySignalComparisonBetweenRuns(
+    activeRun,
+    baselineRun,
+  );
+  const rulePackChanged = rulePackChanges.some((change) => change.status !== "stable");
+  const topSourceChanged = activeRun.summary.topSourceId !== baselineRun.summary.topSourceId;
 
-  return {
+  const comparison: Omit<RetrievalRunComparison, "diagnosis"> = {
     addedEvidenceIds,
     activePayload: activeRun.payload,
     activeQuery: activeRun.payload.query,
@@ -4509,7 +4562,7 @@ function compareSearchRuns(
     baselineSummary: baselineRun.summary,
     candidateDelta:
       activeRun.summary.candidateCount - baselineRun.summary.candidateCount,
-    facetComparisons: facetComparisonsBetweenRuns(activeRun, baselineRun),
+    facetComparisons,
     hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
     metrics: comparisonMetrics({
       addedCount: addedEvidenceIds.length,
@@ -4521,19 +4574,95 @@ function compareSearchRuns(
     }),
     qualityWarningDelta:
       activeRun.summary.qualityWarningCount - baselineRun.summary.qualityWarningCount,
-    qualitySignalComparison: qualitySignalComparisonBetweenRuns(activeRun, baselineRun),
+    qualitySignalComparison,
     queryProfileChanged,
     rankChanges,
     removedEvidenceIds,
     retainedEvidenceIds,
     rulePackChanges,
-    rulePackChanged: rulePackChanges.some((change) => change.status !== "stable"),
+    rulePackChanged,
     topSourceAfter: activeRun.summary.topSourceId,
     topSourceBefore: baselineRun.summary.topSourceId,
-    topSourceChanged:
-      activeRun.summary.topSourceId !== baselineRun.summary.topSourceId,
+    topSourceChanged,
     warningDelta: activeRun.summary.warningCount - baselineRun.summary.warningCount,
   };
+  return {
+    ...comparison,
+    diagnosis: comparisonDiagnosisFromComparison(comparison),
+  };
+}
+
+function comparisonDiagnosisFromComparison(
+  comparison: Omit<RetrievalRunComparison, "diagnosis">,
+): RetrievalComparisonDiagnosis[] {
+  const diagnosis: RetrievalComparisonDiagnosis[] = [];
+  if (comparison.queryProfileChanged) {
+    diagnosis.push({
+      code: "query_profile_changed",
+      message:
+        "Query profile, route, retrieval mode, or complexity changed between runs.",
+      severity: "warning",
+    });
+  }
+  if (comparison.rulePackChanged) {
+    diagnosis.push({
+      code: "rule_pack_changed",
+      message: "Retrieval rule-pack fingerprints changed between runs.",
+      severity: "warning",
+    });
+  }
+  if (
+    comparison.qualitySignalComparison.added.length ||
+    comparison.qualitySignalComparison.removed.length
+  ) {
+    diagnosis.push({
+      code: "quality_signal_changed",
+      message: "Package-level quality signals were added or removed.",
+      severity: "warning",
+    });
+  }
+  if (
+    comparison.facetComparisons.some(
+      (facet) => facet.addedValues.length || facet.removedValues.length,
+    )
+  ) {
+    diagnosis.push({
+      code: "facet_coverage_changed",
+      message:
+        "Selected-hit source type, clinical domain, standard, or trust coverage changed.",
+      severity: "warning",
+    });
+  }
+  if (comparison.topSourceChanged) {
+    diagnosis.push({
+      code: "top_source_changed",
+      message: "The highest-ranked source changed between runs.",
+      severity: "warning",
+    });
+  }
+  if (comparison.rankChanges.length) {
+    diagnosis.push({
+      code: "rank_movement",
+      message: "Retained evidence moved position in the ranked result set.",
+      severity: "warning",
+    });
+  }
+  if (comparison.addedEvidenceIds.length || comparison.removedEvidenceIds.length) {
+    diagnosis.push({
+      code: "evidence_set_changed",
+      message: "The retrieved evidence set added or removed source chunks.",
+      severity: "warning",
+    });
+  }
+  if (!diagnosis.length) {
+    diagnosis.push({
+      code: "comparison_stable",
+      message:
+        "Comparison is stable across query profile, rules, quality, facets, evidence, and ranks.",
+      severity: "success",
+    });
+  }
+  return diagnosis;
 }
 
 function comparisonReportFromComparison(
@@ -4562,6 +4691,7 @@ function comparisonReportFromComparison(
       quality_warnings: comparison.qualityWarningDelta,
       warnings: comparison.warningDelta,
     },
+    diagnosis: comparison.diagnosis,
     metrics: comparison.metrics,
     quality_signals: {
       added: comparison.qualitySignalComparison.added,

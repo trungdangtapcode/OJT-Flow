@@ -873,8 +873,12 @@ IDs for offline relevance-tuning notes.
 The copied evaluation report also includes the active `query_profile`, and the
 copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
-The UI comparison card also renders that active/baseline profile comparison
-directly, including stable/changed status.
+The copied run-comparison report also includes a compact `diagnosis[]` list
+that names likely change drivers such as query-profile changes, rule-pack
+changes, quality-signal changes, facet drift, top-source changes, rank movement,
+and evidence churn. The UI comparison card renders that diagnosis before the
+detailed comparison sections, then renders the active/baseline profile
+comparison directly, including stable/changed status.
 It compares added, removed, and retained `quality_signals` so package
 readiness regressions are visible in the same comparison view.
 It also compares selected-hit facets for source type, clinical domain,
