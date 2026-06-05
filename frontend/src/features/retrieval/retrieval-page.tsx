@@ -2716,6 +2716,7 @@ function HitCard({
 }) {
   const evidence = hit.evidence;
   const aspectMatches = queryAspectMatchesFromHit(hit);
+  const conceptMatches = conceptMatchesFromHit(hit);
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   const scoreComponents = scoreComponentsFromHit(hit);
   return (
@@ -2761,6 +2762,8 @@ function HitCard({
       <ScoreExplanation components={scoreComponents} />
 
       <DiversitySelectionExplanation selection={diversitySelection} />
+
+      <ConceptMatchExplanation matches={conceptMatches} />
 
       <QueryAspectMatchExplanation matches={aspectMatches} />
 
@@ -2979,6 +2982,58 @@ function DiversitySelectionExplanation({
         <div className="break-words font-semibold text-muted-foreground">
           {selection.reason}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ConceptMatchExplanation({ matches }: { matches: ConceptMatchSignal[] }) {
+  if (!matches.length) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
+        <Network className="h-3.5 w-3.5 shrink-0" />
+        <span>Concept grounding</span>
+      </div>
+      <div className="grid gap-1.5">
+        {matches.map((match) => (
+          <div
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs"
+            key={`${match.standardSystem}-${match.conceptId}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <Badge className="max-w-full break-words" variant="success">
+                {match.standardSystem}
+                {match.code ? ` ${match.code}` : ""}
+              </Badge>
+              <span className="min-w-0 break-words font-bold">{match.displayName}</span>
+              <span className="font-mono font-semibold text-muted-foreground">
+                {Math.round(match.confidence * 100)}%
+              </span>
+            </div>
+            <div className="break-words font-semibold text-muted-foreground">
+              {match.reason}
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1">
+              {match.matchedFields.map((field) => (
+                <span
+                  className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
+                  key={`${match.conceptId}-${field}`}
+                >
+                  {humanize(field)}
+                </span>
+              ))}
+              {match.matchedAliases.slice(0, 3).map((alias) => (
+                <span
+                  className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
+                  key={`${match.conceptId}-${alias}`}
+                >
+                  {alias}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -4364,6 +4419,10 @@ type DiversitySelectionStack = {
 
 type QualityPolicyStack = {
   blockingSeverities: string[];
+  conceptGroundingRequirements: {
+    minConfidence: number | null;
+    requireDetectedConcepts: boolean | null;
+  };
   provenanceRequirements: {
     locatorAnyKeys: string[];
     requireSourceVersion: boolean | null;
@@ -4472,6 +4531,19 @@ type QueryAspectMatchSignal = {
   ruleId: string;
 };
 
+type ConceptMatchSignal = {
+  clinicalDomain: string | null;
+  code: string | null;
+  conceptId: string;
+  confidence: number;
+  displayName: string;
+  matchedAliases: string[];
+  matchedFields: string[];
+  matchedTerms: string[];
+  reason: string;
+  standardSystem: string;
+};
+
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   const embedding = recordValue(packageData.handoff_context.embedding);
   const frameworkComponents = recordValue(packageData.handoff_context.framework_components);
@@ -4536,9 +4608,18 @@ function diversityFromPackage(packageData: RetrievalPackage): DiversityStack {
 
 function qualityPolicyFromPackage(packageData: RetrievalPackage): QualityPolicyStack {
   const policy = recordValue(packageData.handoff_context.quality_policy);
+  const conceptGroundingRequirements = recordValue(
+    policy.concept_grounding_requirements,
+  );
   const provenanceRequirements = recordValue(policy.provenance_requirements);
   return {
     blockingSeverities: stringArrayValue(policy.blocking_severities),
+    conceptGroundingRequirements: {
+      minConfidence: numberValue(conceptGroundingRequirements.min_confidence),
+      requireDetectedConcepts: optionalBooleanValue(
+        conceptGroundingRequirements.require_detected_concepts,
+      ),
+    },
     provenanceRequirements: {
       locatorAnyKeys: stringArrayValue(provenanceRequirements.locator_any_keys),
       requireSourceVersion: optionalBooleanValue(
@@ -4615,6 +4696,10 @@ function formatQualityPolicyTrace(policy: QualityPolicyStack): string {
     minTopMatchedTerms === undefined
       ? null
       : `top match >= ${minTopMatchedTerms}`;
+  const conceptText =
+    policy.conceptGroundingRequirements.requireDetectedConcepts === true
+      ? `concepts >= ${(policy.conceptGroundingRequirements.minConfidence ?? 0).toFixed(2)}`
+      : null;
   const provenanceText = policy.provenanceRequirements.sourceTypes.length
     ? `provenance ${policy.provenanceRequirements.sourceTypes.length} source types`
     : null;
@@ -4622,7 +4707,7 @@ function formatQualityPolicyTrace(policy: QualityPolicyStack): string {
     warningPenalty === undefined ? null : `warning -${warningPenalty}`,
     destructivePenalty === undefined ? null : `blocker -${destructivePenalty}`,
   ].filter(Boolean);
-  return [policy.version, thresholdText, matchText, provenanceText, ...penaltyText]
+  return [policy.version, thresholdText, matchText, conceptText, provenanceText, ...penaltyText]
     .filter(Boolean)
     .join(" / ");
 }
@@ -4793,6 +4878,26 @@ function queryAspectMatchesFromHit(hit: RetrievalHit): QueryAspectMatchSignal[] 
       ruleId: stringValue(item.rule_id, ""),
     }))
     .filter((item) => item.aspectId && item.ruleId);
+}
+
+function conceptMatchesFromHit(hit: RetrievalHit): ConceptMatchSignal[] {
+  const matches = hit.source_locator.concept_matches;
+  if (!Array.isArray(matches)) return [];
+  return matches
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      clinicalDomain: optionalStringValue(item.clinical_domain),
+      code: optionalStringValue(item.code),
+      conceptId: stringValue(item.concept_id, ""),
+      confidence: numberValue(item.confidence) ?? 0,
+      displayName: stringValue(item.display_name, "Medical concept"),
+      matchedAliases: stringArrayValue(item.matched_aliases),
+      matchedFields: stringArrayValue(item.matched_fields),
+      matchedTerms: stringArrayValue(item.matched_terms),
+      reason: stringValue(item.reason, "Evidence supports this detected concept."),
+      standardSystem: stringValue(item.standard_system, "unknown"),
+    }))
+    .filter((item) => item.conceptId && item.standardSystem !== "unknown");
 }
 
 function rankingBoostDetailsValue(value: unknown): RankingBoostSignal[] {

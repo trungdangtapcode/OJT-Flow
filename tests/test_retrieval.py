@@ -819,6 +819,16 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
         and match["matched_filters"].get("clinical_domain") == "laboratory"
         for match in aspect_matches
     )
+    concept_matches = [
+        match
+        for hit in package.hits
+        for match in hit.source_locator.get("concept_matches", [])
+    ]
+    assert any(
+        match["concept_id"] == "hba1c_lab_test"
+        and match["standard_system"] == "LOINC"
+        for match in concept_matches
+    )
 
 
 def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch) -> None:
@@ -1396,6 +1406,65 @@ def test_retrieval_quality_signals_flag_weak_evidence_provenance(
     assert package.quality_summary is not None
     assert package.quality_summary.status == "review"
     assert "weak_evidence_provenance" in package.quality_summary.warning_codes
+
+
+def test_retrieval_quality_signals_flag_missing_concept_grounding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path = tmp_path / "quality_gate_policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": "custom_quality_policy.v1",
+                "severity_penalties": {
+                    "success": 0,
+                    "info": 1,
+                    "warning": 15,
+                    "destructive": 50,
+                    "error": 50,
+                },
+                "blocking_severities": ["destructive", "error"],
+                "review_severities": ["warning"],
+                "status_thresholds": {"review_score_below": 80},
+                "concept_grounding_requirements": {
+                    "require_detected_concepts": True,
+                    "min_confidence": 0.7,
+                },
+                "default_top_action": "Run retrieval before review.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_RETRIEVAL_QUALITY_POLICY_PATH", str(policy_path))
+
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="generic_lab",
+                source_id="schema:generic_lab",
+                source_type=EvidenceSourceType.SCHEMA,
+                title="Generic lab schema",
+                content="Lab records include date, value, and unit fields.",
+            )
+        ],
+        RetrievalQuery(query="HbA1c LOINC lab result", top_k=1),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+    signals = {signal.code: signal for signal in package.quality_signals}
+    concept_signal = signals["missing_concept_grounding"]
+
+    assert concept_signal.severity == "warning"
+    assert concept_signal.metadata["issue_count"] == 1
+    assert concept_signal.metadata["missing_concepts"][0]["concept_id"] == "hba1c_lab_test"
+    assert concept_signal.metadata["requirements"] == {
+        "require_detected_concepts": True,
+        "min_confidence": 0.7,
+    }
+    assert package.quality_summary is not None
+    assert package.quality_summary.status == "review"
+    assert "missing_concept_grounding" in package.quality_summary.warning_codes
 
 
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:

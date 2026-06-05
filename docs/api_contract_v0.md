@@ -198,7 +198,9 @@ native Postgres/static retrieval adapters. `llamaindex` uses the optional
 LlamaIndex adapter behind the same retrieval port and requires
 `pip install -e '.[rag-framework]'` or a Docker build with
 `OJT_PYTHON_EXTRAS=parsing,rag-framework`. The response envelope and
-`RetrievalPackage` schema remain unchanged.
+`RetrievalPackage` schema remain unchanged. Framework-backed packages also
+populate `quality_summary`, `handoff_context.quality_policy`, and per-hit
+aspect/concept locator metadata when query analysis can ground those signals.
 
 Retrieval quality gates are also policy-driven. The active
 `knowledge/retrieval/quality_gate_policy.json` policy is copied into
@@ -211,6 +213,12 @@ When selected healthcare standards, terminology systems, or data dictionaries
 lack required source version or locator metadata, `quality_signals[]` includes
 `weak_evidence_provenance` with affected evidence IDs, missing fields, and the
 active provenance requirement metadata.
+The active policy also includes `concept_grounding_requirements`. Hits may
+include `source_locator.concept_matches[]` when selected evidence supports
+detected query concepts by standard system, code, display name, alias, or exact
+matched term. If a detected controlled concept above the configured confidence
+threshold is not represented in selected evidence, `quality_signals[]` includes
+`missing_concept_grounding`.
 
 Runtime retrieval tuning recommendations are data-driven. By default,
 `POST /api/v1/retrieval/judgments/evaluate` loads policy rules from

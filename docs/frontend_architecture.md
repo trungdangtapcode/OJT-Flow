@@ -152,6 +152,9 @@ rank, normalized relevance, redundancy, MMR score, and selection reason.
 Result cards must also render `source_locator.query_aspect_matches[]` as
 per-hit aspect support, including aspect label, priority, matched filters,
 matched terms, and reason.
+Result cards must also render `source_locator.concept_matches[]` as per-hit
+concept grounding, including standard system, optional code, display name,
+confidence, matched fields, aliases, and reason.
 The trace and recent-run list must show the backend
 `handoff_context.search_signature` in compact form, and copied run-comparison
 reports must include active/baseline server search signatures for offline audit

@@ -34,5 +34,9 @@
       "document_id"
     ]
   },
+  "concept_grounding_requirements": {
+    "require_detected_concepts": true,
+    "min_confidence": 0.7
+  },
   "default_top_action": "Run retrieval before assessing package readiness."
 }

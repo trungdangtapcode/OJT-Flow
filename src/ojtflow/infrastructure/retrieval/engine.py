@@ -122,6 +122,7 @@ class RetrievalQualityPolicy:
     default_top_action: str
     ranking_thresholds: dict[str, int | float] = field(default_factory=dict)
     provenance_requirements: dict[str, Any] = field(default_factory=dict)
+    concept_grounding_requirements: dict[str, Any] = field(default_factory=dict)
 
     def penalty_for(self, severity: str) -> int:
         return self.severity_penalties.get(severity, 0)
@@ -135,6 +136,7 @@ class RetrievalQualityPolicy:
             "review_score_below": self.review_score_below,
             "ranking_thresholds": dict(self.ranking_thresholds),
             "provenance_requirements": dict(self.provenance_requirements),
+            "concept_grounding_requirements": dict(self.concept_grounding_requirements),
         }
 
 
@@ -317,7 +319,7 @@ def rank_chunks(
                     rerank_score=round(rerank, 6),
                     score_components=score_components,
                     matched_terms=matched_terms[chunk.chunk_id][:12],
-                    source_locator=_hit_source_locator(
+                    source_locator=hit_source_locator_from_chunk(
                         chunk,
                         applied_boost_rules=applied_boost_rules,
                         matched_terms=matched_terms[chunk.chunk_id],
@@ -386,6 +388,7 @@ def rank_chunks(
         candidates_seen=len(chunks),
         diversity_metadata=diversity_metadata,
         policy=quality_policy,
+        query_analysis=query_analysis,
     )
     quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
     return RetrievalPackage(
@@ -449,6 +452,7 @@ def quality_signals_from_results(
     candidates_seen: int,
     diversity_metadata: dict[str, Any] | None = None,
     policy: RetrievalQualityPolicy | None = None,
+    query_analysis: RetrievalQueryAnalysis | None = None,
 ) -> list[RetrievalQualitySignal]:
     """Build deterministic package-level retrieval quality signals."""
 
@@ -528,6 +532,32 @@ def quality_signals_from_results(
                         "issue_count": len(provenance_issues),
                         "requirements": active_policy.provenance_requirements,
                         "issues": provenance_issues,
+                    },
+                )
+            )
+        concept_issues = _concept_grounding_issues(
+            hits,
+            active_policy,
+            query_analysis=query_analysis,
+        )
+        if concept_issues:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="missing_concept_grounding",
+                    severity="warning",
+                    message=(
+                        "Selected evidence does not ground every controlled medical "
+                        "concept detected in the query."
+                    ),
+                    suggested_action=(
+                        "Apply terminology or clinical-domain filters, broaden the query, "
+                        "or add terminology-backed sources before downstream use."
+                    ),
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "issue_count": len(concept_issues),
+                        "requirements": active_policy.concept_grounding_requirements,
+                        "missing_concepts": concept_issues,
                     },
                 )
             )
@@ -799,6 +829,56 @@ def _provenance_quality_issues(
     return issues
 
 
+def _concept_grounding_issues(
+    hits: list[RetrievalHit],
+    policy: RetrievalQualityPolicy,
+    *,
+    query_analysis: RetrievalQueryAnalysis | None,
+) -> list[dict[str, Any]]:
+    requirements = policy.concept_grounding_requirements
+    if (
+        not requirements
+        or not requirements.get("require_detected_concepts")
+        or query_analysis is None
+    ):
+        return []
+    min_confidence = requirements.get("min_confidence", 0)
+    if not isinstance(min_confidence, int | float):
+        min_confidence = 0
+    candidates = [
+        candidate
+        for candidate in query_analysis.concept_candidates
+        if candidate.confidence >= float(min_confidence)
+    ]
+    if not candidates:
+        return []
+    matched_concept_ids = {
+        str(match.get("concept_id"))
+        for hit in hits
+        for match in _locator_concept_matches(hit.source_locator)
+        if match.get("concept_id")
+    }
+    issues: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if candidate.concept_id in matched_concept_ids:
+            continue
+        issues.append(
+            {
+                "concept_id": candidate.concept_id,
+                "display_name": candidate.display_name,
+                "standard_system": candidate.standard_system,
+                "code": candidate.code,
+                "confidence": candidate.confidence,
+            }
+        )
+    return issues
+
+
+def _locator_concept_matches(locator: dict[str, Any]) -> list[dict[str, Any]]:
+    matches = locator.get("concept_matches")
+    return matches if isinstance(matches, list) else []
+
+
 def _has_locator_value(locator: dict[str, Any], key: str) -> bool:
     value = locator.get(key)
     if value is None:
@@ -831,6 +911,7 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     status_thresholds = raw.get("status_thresholds")
     ranking_thresholds = raw.get("ranking_thresholds", {})
     provenance_requirements = raw.get("provenance_requirements", {})
+    concept_grounding_requirements = raw.get("concept_grounding_requirements", {})
     if not isinstance(severity_penalties, dict):
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: severity_penalties must be an object"
@@ -854,6 +935,11 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     if not isinstance(provenance_requirements, dict):
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: provenance_requirements must be an object"
+        )
+    if not isinstance(concept_grounding_requirements, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: "
+            "concept_grounding_requirements must be an object"
         )
     return RetrievalQualityPolicy(
         version=_optional_quality_policy_text(raw.get("version")) or "retrieval_quality_policy.v1",
@@ -885,6 +971,10 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
         },
         provenance_requirements=_quality_policy_provenance_requirements(
             provenance_requirements,
+            path=path,
+        ),
+        concept_grounding_requirements=_quality_policy_concept_grounding_requirements(
+            concept_grounding_requirements,
             path=path,
         ),
     )
@@ -923,6 +1013,10 @@ def _default_quality_policy() -> RetrievalQualityPolicy:
                 "table",
                 "document_id",
             ],
+        },
+        concept_grounding_requirements={
+            "require_detected_concepts": True,
+            "min_confidence": 0.7,
         },
     )
 
@@ -1008,6 +1102,29 @@ def _quality_policy_provenance_requirements(
                 "require_source_version must be a boolean"
             )
         requirements["require_source_version"] = value["require_source_version"]
+    return requirements
+
+
+def _quality_policy_concept_grounding_requirements(
+    value: dict[str, Any],
+    *,
+    path: Path,
+) -> dict[str, Any]:
+    requirements: dict[str, Any] = {}
+    if "require_detected_concepts" in value:
+        if not isinstance(value["require_detected_concepts"], bool):
+            raise ValueError(
+                f"Invalid retrieval quality policy at {path}: "
+                "require_detected_concepts must be a boolean"
+            )
+        requirements["require_detected_concepts"] = value["require_detected_concepts"]
+    if "min_confidence" in value:
+        min_confidence = _quality_policy_ranking_threshold(value["min_confidence"], path=path)
+        if min_confidence > 1:
+            raise ValueError(
+                f"Invalid retrieval quality policy at {path}: min_confidence must be 0-1"
+            )
+        requirements["min_confidence"] = min_confidence
     return requirements
 
 
@@ -2066,7 +2183,7 @@ def _ensure_unique_ranking_boost_rule_ids(
         )
 
 
-def _hit_source_locator(
+def hit_source_locator_from_chunk(
     chunk: KnowledgeChunk,
     *,
     applied_boost_rules: list[AppliedRankingBoost],
@@ -2087,7 +2204,118 @@ def _hit_source_locator(
     )
     if aspect_matches:
         locator["query_aspect_matches"] = aspect_matches
+    concept_matches = _concept_matches_for_chunk(
+        chunk,
+        matched_terms=matched_terms,
+        query_analysis=query_analysis,
+    )
+    if concept_matches:
+        locator["concept_matches"] = concept_matches
     return locator
+
+
+def _concept_matches_for_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> list[dict[str, Any]]:
+    if not query_analysis.concept_candidates:
+        return []
+    haystack = _concept_match_haystack(chunk)
+    token_set = set(tokenize(haystack))
+    matched_term_set = set(matched_terms)
+    matches: list[dict[str, Any]] = []
+    for candidate in query_analysis.concept_candidates:
+        matched_fields: list[str] = []
+        matched_aliases = [
+            alias
+            for alias in candidate.matched_aliases
+            if _concept_term_matches(alias, haystack=haystack, tokens=token_set)
+        ]
+        candidate_terms = [
+            candidate.display_name,
+            candidate.code or "",
+            candidate.concept_id,
+            *candidate.matched_aliases,
+        ]
+        matched_terms_for_candidate = sorted(
+            {
+                term
+                for term in matched_term_set
+                if any(
+                    _concept_term_matches(
+                        concept_term,
+                        haystack=term,
+                        tokens={term},
+                    )
+                    for concept_term in candidate_terms
+                    if concept_term
+                )
+            }
+        )
+        if chunk.standard_system and chunk.standard_system == candidate.standard_system:
+            matched_fields.append("standard_system")
+        if candidate.code and _concept_term_matches(
+            candidate.code,
+            haystack=haystack,
+            tokens=token_set,
+        ):
+            matched_fields.append("code")
+        if _concept_term_matches(
+            candidate.display_name,
+            haystack=haystack,
+            tokens=token_set,
+        ):
+            matched_fields.append("display_name")
+        if matched_aliases:
+            matched_fields.append("alias")
+        if matched_terms_for_candidate:
+            matched_fields.append("matched_term")
+        if not matched_fields:
+            continue
+        matches.append(
+            {
+                "concept_id": candidate.concept_id,
+                "display_name": candidate.display_name,
+                "standard_system": candidate.standard_system,
+                "code": candidate.code,
+                "clinical_domain": candidate.clinical_domain,
+                "confidence": candidate.confidence,
+                "matched_aliases": matched_aliases[:6],
+                "matched_fields": sorted(set(matched_fields)),
+                "matched_terms": matched_terms_for_candidate[:8],
+                "reason": (
+                    f"Evidence supports detected {candidate.standard_system} concept "
+                    f"{candidate.display_name}."
+                ),
+            }
+        )
+    return matches
+
+
+def _concept_match_haystack(chunk: KnowledgeChunk) -> str:
+    return " ".join(
+        [
+            chunk.chunk_id,
+            chunk.source_id,
+            chunk.title,
+            chunk.content,
+            chunk.clinical_domain or "",
+            chunk.standard_system or "",
+            json.dumps(chunk.locator, default=str, sort_keys=True),
+            json.dumps(chunk.metadata, default=str, sort_keys=True),
+        ]
+    ).lower()
+
+
+def _concept_term_matches(term: str, *, haystack: str, tokens: set[str]) -> bool:
+    normalized = " ".join(str(term).lower().split())
+    if not normalized:
+        return False
+    if " " in normalized:
+        return normalized in haystack
+    return normalized in tokens or normalized in haystack
 
 
 def _query_aspect_matches_for_chunk(

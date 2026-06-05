@@ -223,6 +223,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "QueryAspectMatchExplanation" in retrieval_page
     assert "queryAspectMatchesFromHit" in retrieval_page
     assert "Aspect support" in retrieval_page
+    assert "ConceptMatchExplanation" in retrieval_page
+    assert "conceptMatchesFromHit" in retrieval_page
+    assert "Concept grounding" in retrieval_page
+    assert "concept_grounding_requirements" in retrieval_page
     assert "serverSearchSignatureFromPackage" in retrieval_page
     assert "Search signature" in retrieval_page
     assert "search_signature: comparison.activeSummary.serverSignature" in retrieval_page

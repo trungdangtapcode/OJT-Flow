@@ -31,6 +31,8 @@ and `QueryFusionRetriever`; when `llama-index-retrievers-bm25` is installed, it
 adds BM25 to vector retrieval with reciprocal-rank fusion. The API response
 contract remains `RetrievalPackage`, so workflow state, UI rendering, assistant
 tools, and audit/explanation paths do not depend on LlamaIndex types.
+Framework retrieval also populates package readiness metadata and per-hit
+aspect/concept locator signals through the same OJTFlow retrieval contracts.
 The LlamaIndex adapter builds a reusable in-process index for the current
 trusted chunk generation and invalidates it on `reindex()`. Retrieval still
 applies OJTFlow metadata filters before returning evidence. For framework
@@ -290,6 +292,16 @@ affected evidence IDs, missing fields, and active requirement metadata. This
 keeps clinical search packages aligned with FHIR-style provenance expectations
 and PubMed/NLM-style citation metadata instead of treating anonymous text as
 equivalent to a traceable medical source.
+The policy also declares `concept_grounding_requirements`. When enabled, the
+retriever compares detected controlled-vocabulary concepts against selected-hit
+metadata, codes, display names, aliases, and matched terms. Supporting hits
+expose `source_locator.concept_matches[]` with concept ID, display name,
+standard system, optional code, confidence, matched fields, aliases, and a
+reason. If a detected concept above the configured confidence threshold is not
+represented by selected evidence, retrieval emits `missing_concept_grounding`.
+This keeps the package aligned with coded medical search practice such as FHIR
+`Coding`/`CodeableConcept`, LOINC code/display search, and RxNorm concept
+grounding.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

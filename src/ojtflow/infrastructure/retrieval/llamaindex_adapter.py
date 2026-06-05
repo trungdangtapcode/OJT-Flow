@@ -29,11 +29,14 @@ from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
+    active_quality_policy,
     coverage_from_chunks,
     default_healthcare_chunks,
     evidence_from_chunk,
     facets_from_chunks,
+    hit_source_locator_from_chunk,
     quality_signals_from_results,
+    quality_summary_from_signals,
     retrieval_safety_flags,
     snippet_from_chunk,
     sources_from_chunks,
@@ -110,7 +113,11 @@ class LlamaIndexRetrievalRepository:
             query=query,
             top_k=query.top_k,
         )
-        hits, selected_chunks = _hits_from_nodes(results, query_text=query_text)
+        hits, selected_chunks = _hits_from_nodes(
+            results,
+            query_analysis=query_analysis,
+            query_text=query_text,
+        )
         coverage = coverage_from_chunks(selected_chunks, query_analysis)
         warnings.extend(coverage.warnings)
         safety_flags = retrieval_safety_flags(query)
@@ -129,17 +136,26 @@ class LlamaIndexRetrievalRepository:
             safety_flags=safety_flags,
             warnings=warnings,
         )
+        quality_policy = active_quality_policy()
+        quality_signals = quality_signals_from_results(
+            hits=hits,
+            coverage=coverage,
+            safety_flags=safety_flags,
+            candidates_seen=filtered_node_count,
+            policy=quality_policy,
+            query_analysis=query_analysis,
+        )
+        quality_summary = quality_summary_from_signals(
+            quality_signals,
+            policy=quality_policy,
+        )
         return RetrievalPackage(
             hits=hits,
             evidence=[hit.evidence for hit in hits],
             coverage=coverage,
             facets=facets_from_chunks(selected_chunks),
-            quality_signals=quality_signals_from_results(
-                hits=hits,
-                coverage=coverage,
-                safety_flags=safety_flags,
-                candidates_seen=filtered_node_count,
-            ),
+            quality_signals=quality_signals,
+            quality_summary=quality_summary,
             trace=trace,
             handoff_context={
                 "retrieval_contract": "retrieval_package.v0",
@@ -162,6 +178,8 @@ class LlamaIndexRetrievalRepository:
                 "query_fields": query.fields,
                 "schema_id": query.schema_id,
                 "embedding": self.embedding_provider.metadata(),
+                "quality_policy": quality_policy.metadata(),
+                "quality_summary": quality_summary.model_dump(),
                 "query_analysis": query_analysis.model_dump(),
             },
         )
@@ -518,6 +536,7 @@ def _normalized_metadata_filter_value(value: Any) -> str | None:
 def _hits_from_nodes(
     results: list[Any],
     *,
+    query_analysis: Any,
     query_text: str,
 ) -> tuple[list[RetrievalHit], list[KnowledgeChunk]]:
     query_tokens = set(tokenize(query_text))
@@ -550,7 +569,12 @@ def _hits_from_nodes(
                     )
                 ],
                 matched_terms=matched_terms[:12],
-                source_locator=chunk.locator,
+                source_locator=hit_source_locator_from_chunk(
+                    chunk,
+                    applied_boost_rules=[],
+                    matched_terms=matched_terms,
+                    query_analysis=query_analysis,
+                ),
                 snippet=snippet_from_chunk(
                     chunk,
                     query_tokens=query_tokens,
@@ -606,17 +630,23 @@ def _empty_package(
     query_analysis = analyze_query(query)
     safety_flags = retrieval_safety_flags(query)
     coverage = RetrievalCoverage()
+    quality_policy = active_quality_policy()
+    quality_signals = quality_signals_from_results(
+        hits=[],
+        coverage=coverage,
+        safety_flags=safety_flags,
+        candidates_seen=0,
+        policy=quality_policy,
+        query_analysis=query_analysis,
+    )
+    quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
     return RetrievalPackage(
         hits=[],
         evidence=[],
         coverage=coverage,
         facets=RetrievalFacets(),
-        quality_signals=quality_signals_from_results(
-            hits=[],
-            coverage=coverage,
-            safety_flags=safety_flags,
-            candidates_seen=0,
-        ),
+        quality_signals=quality_signals,
+        quality_summary=quality_summary,
         trace=RetrievalTrace(
             strategy=strategy,
             query_variants=query_analysis.query_variants,
@@ -630,6 +660,8 @@ def _empty_package(
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
             "framework": "llamaindex",
+            "quality_policy": quality_policy.metadata(),
+            "quality_summary": quality_summary.model_dump(),
             "query_analysis": query_analysis.model_dump(),
         },
     )
