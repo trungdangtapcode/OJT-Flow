@@ -158,6 +158,8 @@ confidence, matched fields, aliases, and reason.
 Result cards must render a compact evidence provenance summary with source
 version and key locator fields such as standard, URL, path, PMID, DOI, API,
 resource, table, document, and chunk identifiers before the raw JSON details.
+URL/API values, PubMed IDs, and DOIs must render as external links when they can
+be safely normalized.
 The trace and recent-run list must show the backend
 `handoff_context.search_signature` in compact form, and copied run-comparison
 reports must include active/baseline server search signatures for offline audit

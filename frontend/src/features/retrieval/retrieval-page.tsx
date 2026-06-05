@@ -2984,7 +2984,19 @@ function EvidenceProvenanceSummary({
             key={`${entry.label}-${entry.value}`}
           >
             <span className="shrink-0 font-bold text-foreground">{entry.label}:</span>
-            <span className="min-w-0 break-words">{entry.value}</span>
+            {entry.href ? (
+              <a
+                className="inline-flex min-w-0 items-center gap-1 break-words text-primary underline-offset-2 hover:underline"
+                href={entry.href}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <span className="min-w-0 break-words">{entry.value}</span>
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            ) : (
+              <span className="min-w-0 break-words">{entry.value}</span>
+            )}
           </span>
         ))}
       </div>
@@ -4696,6 +4708,7 @@ type ConceptMatchSignal = {
   standardSystem: string;
 };
 type EvidenceProvenanceEntry = {
+  href: string | null;
   label: string;
   value: string;
 };
@@ -5060,7 +5073,7 @@ function provenanceEntriesFromEvidence(evidence: Evidence): EvidenceProvenanceEn
   const locator = evidence.locator;
   const entries: EvidenceProvenanceEntry[] = [];
   const sourceVersion = optionalStringValue(evidence.source_version);
-  if (sourceVersion) entries.push({ label: "Version", value: sourceVersion });
+  if (sourceVersion) entries.push({ href: null, label: "Version", value: sourceVersion });
   const locatorFields: Array<[string, string]> = [
     ["Standard", "standard"],
     ["System", "standard_system"],
@@ -5076,9 +5089,24 @@ function provenanceEntriesFromEvidence(evidence: Evidence): EvidenceProvenanceEn
   ];
   for (const [label, key] of locatorFields) {
     const value = locatorSummaryValue(locator[key]);
-    if (value) entries.push({ label, value });
+    if (value) {
+      entries.push({ href: provenanceHrefForLocator(key, value), label, value });
+    }
   }
   return uniqueProvenanceEntries(entries).slice(0, 8);
+}
+
+function provenanceHrefForLocator(key: string, value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if ((key === "url" || key === "api") && /^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (key === "doi") return `https://doi.org/${encodeURIComponent(trimmed)}`;
+  if (key === "pmid" && /^[0-9]+$/.test(trimmed)) {
+    return `https://pubmed.ncbi.nlm.nih.gov/${trimmed}/`;
+  }
+  return null;
 }
 
 function locatorSummaryValue(value: unknown): string | null {
