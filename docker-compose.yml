@@ -55,6 +55,8 @@ services:
       OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-deterministic}
       OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-deterministic-hash-v0}
       OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-64}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
     ports:
       - "${OJT_API_PORT:-8000}:8000"
     volumes:
