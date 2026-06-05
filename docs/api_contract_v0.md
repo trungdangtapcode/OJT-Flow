@@ -186,7 +186,12 @@ own framework score row while preserving the same field shape.
 Retrieval packages also expose `quality_summary`, a deterministic aggregate of
 `quality_signals[]` with status, 0-100 score, severity counts, blocker/warning
 codes, and the top recommended action. This gives operators and assistant tools
-a quick readiness signal without hiding the underlying quality signals.
+a quick readiness signal without hiding the underlying quality signals. The
+readiness score/status policy is loaded from
+`knowledge/retrieval/quality_gate_policy.json`; set
+`OJT_RETRIEVAL_QUALITY_POLICY_PATH` to use deployment-specific severity
+penalties, blocking severities, review severities, and score thresholds without
+changing application code.
 
 `OJT_RETRIEVAL_FRAMEWORK` supports `custom` and `llamaindex`. `custom` keeps the
 native Postgres/static retrieval adapters. `llamaindex` uses the optional
@@ -1226,6 +1231,7 @@ Response data is a `RetrievalPackage`:
 - `handoff_context`
 - `handoff_context.graph_context`
 - `handoff_context.query_analysis`
+- `handoff_context.quality_policy`
 - `handoff_context.retrieval_rule_packs`
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
@@ -1261,8 +1267,10 @@ label/adverse-event search. Current targets include `pubmed`, `fhir`,
 rule-pack fingerprints with pack name, status, source, env var, rule count,
 version, and content hash. This lets copied evaluation reports and downstream
 audit records identify the exact query-expansion, diagnostic, ranking,
-query-profile, query-aspect, evaluation, and search-hint rule data used for
-the search.
+query-profile, query-aspect, quality-gate, evaluation, and search-hint rule
+data used for the search. `handoff_context.quality_policy` records the active
+retrieval readiness policy version and severity scoring rules used to produce
+`quality_summary`.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.

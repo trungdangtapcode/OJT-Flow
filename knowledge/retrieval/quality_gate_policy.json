@@ -1,0 +1,16 @@
+{
+  "version": "retrieval_quality_policy.v1",
+  "severity_penalties": {
+    "success": 0,
+    "info": 5,
+    "warning": 15,
+    "destructive": 40,
+    "error": 40
+  },
+  "blocking_severities": ["destructive", "error"],
+  "review_severities": ["warning"],
+  "status_thresholds": {
+    "review_score_below": 85
+  },
+  "default_top_action": "Run retrieval before assessing package readiness."
+}

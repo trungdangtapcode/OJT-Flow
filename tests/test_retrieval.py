@@ -1199,6 +1199,55 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
     assert package.quality_summary.score == 70
 
 
+def test_retrieval_quality_summary_uses_data_driven_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path = tmp_path / "quality_gate_policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": "custom_quality_policy.v1",
+                "severity_penalties": {
+                    "success": 0,
+                    "info": 1,
+                    "warning": 5,
+                    "destructive": 50,
+                    "error": 50,
+                },
+                "blocking_severities": ["destructive", "error"],
+                "review_severities": [],
+                "status_thresholds": {"review_score_below": 80},
+                "default_top_action": "Run retrieval before review.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_RETRIEVAL_QUALITY_POLICY_PATH", str(policy_path))
+
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="fhir_only",
+                source_id="standard:fhir_observation",
+                source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+                title="FHIR Observation",
+                content="FHIR Observation requires resourceType and valueQuantity structure.",
+                standard_system="FHIR",
+            )
+        ],
+        RetrievalQuery(query="FHIR valueQuantity UCUM unit", top_k=1),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+
+    assert package.quality_summary is not None
+    assert package.quality_summary.score == 90
+    assert package.quality_summary.status == "ready"
+    assert package.handoff_context["quality_policy"]["version"] == "custom_quality_policy.v1"
+    assert package.handoff_context["quality_policy"]["severity_penalties"]["warning"] == 5
+
+
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:
     chunk = KnowledgeChunk(
         chunk_id="snippet_test",

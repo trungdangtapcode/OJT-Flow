@@ -46,6 +46,11 @@ RULE_PACK_SPECS: tuple[tuple[str, Path, str], ...] = (
         "OJT_RETRIEVAL_EVALUATION_POLICY_PATH",
     ),
     (
+        "quality_gate_policy",
+        Path("retrieval/quality_gate_policy.json"),
+        "OJT_RETRIEVAL_QUALITY_POLICY_PATH",
+    ),
+    (
         "search_hint_targets",
         Path("retrieval/search_hint_targets.json"),
         "OJT_SEARCH_HINT_TARGETS_PATH",

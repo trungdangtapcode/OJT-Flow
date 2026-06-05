@@ -9,6 +9,7 @@ import re
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,9 @@ RRF_K = 60
 SNIPPET_MAX_CHARS = 280
 DEFAULT_RANKING_BOOST_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "ranking_boost_rules.json"
+)
+DEFAULT_QUALITY_GATE_POLICY_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "quality_gate_policy.json"
 )
 
 
@@ -103,6 +107,30 @@ class AppliedRankingBoost:
             "rule_id": self.rule_id,
             "weight": self.weight,
             "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class RetrievalQualityPolicy:
+    """Data-driven policy for package-level retrieval readiness scoring."""
+
+    version: str
+    severity_penalties: dict[str, int]
+    blocking_severities: tuple[str, ...]
+    review_severities: tuple[str, ...]
+    review_score_below: int
+    default_top_action: str
+
+    def penalty_for(self, severity: str) -> int:
+        return self.severity_penalties.get(severity, 0)
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "version": self.version,
+            "severity_penalties": dict(self.severity_penalties),
+            "blocking_severities": list(self.blocking_severities),
+            "review_severities": list(self.review_severities),
+            "review_score_below": self.review_score_below,
         }
 
 
@@ -351,7 +379,8 @@ def rank_chunks(
         candidates_seen=len(chunks),
         diversity_metadata=diversity_metadata,
     )
-    quality_summary = quality_summary_from_signals(quality_signals)
+    quality_policy = active_quality_policy()
+    quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
@@ -369,6 +398,7 @@ def rank_chunks(
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,
             "diversity": diversity_metadata,
+            "quality_policy": quality_policy.metadata(),
             "quality_summary": quality_summary.model_dump(),
             "query_analysis": query_analysis.model_dump(),
         },
@@ -601,31 +631,37 @@ def quality_signals_from_results(
 
 def quality_summary_from_signals(
     signals: list[RetrievalQualitySignal],
+    *,
+    policy: RetrievalQualityPolicy | None = None,
 ) -> RetrievalQualitySummary:
     """Summarize package quality signals into an operator-readiness score."""
 
-    success_count = sum(1 for signal in signals if signal.severity == "success")
-    warning_signals = [signal for signal in signals if signal.severity == "warning"]
+    active_policy = policy or active_quality_policy()
+    success_count = sum(
+        1
+        for signal in signals
+        if active_policy.penalty_for(signal.severity) == 0 and signal.severity == "success"
+    )
+    warning_signals = [
+        signal for signal in signals if signal.severity in active_policy.review_severities
+    ]
     destructive_signals = [
         signal
         for signal in signals
-        if signal.severity in {"destructive", "error"}
+        if signal.severity in active_policy.blocking_severities
     ]
     info_count = sum(1 for signal in signals if signal.severity == "info")
     score = max(
         0,
         min(
             100,
-            100
-            - 40 * len(destructive_signals)
-            - 15 * len(warning_signals)
-            - 5 * info_count,
+            100 - sum(active_policy.penalty_for(signal.severity) for signal in signals),
         ),
     )
     status = "ready"
     if destructive_signals:
         status = "blocked"
-    elif warning_signals or score < 85:
+    elif warning_signals or score < active_policy.review_score_below:
         status = "review"
     top_signal = (
         destructive_signals[0]
@@ -646,11 +682,125 @@ def quality_summary_from_signals(
         top_action=(
             top_signal.suggested_action
             if top_signal
-            else "Run retrieval before assessing package readiness."
+            else active_policy.default_top_action
         ),
         blocker_codes=[signal.code for signal in destructive_signals],
         warning_codes=[signal.code for signal in warning_signals],
     )
+
+
+def active_quality_policy() -> RetrievalQualityPolicy:
+    """Load the active retrieval quality policy from trusted data."""
+
+    path = os.environ.get("OJT_RETRIEVAL_QUALITY_POLICY_PATH")
+    return _load_quality_policy(path or str(DEFAULT_QUALITY_GATE_POLICY_REGISTRY))
+
+
+@lru_cache(maxsize=4)
+def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
+    path = Path(path_text)
+    if not path.exists():
+        return _default_quality_policy()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid retrieval quality policy at {path}: expected object")
+    severity_penalties = raw.get("severity_penalties")
+    blocking_severities = raw.get("blocking_severities")
+    review_severities = raw.get("review_severities")
+    status_thresholds = raw.get("status_thresholds")
+    if not isinstance(severity_penalties, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: severity_penalties must be an object"
+        )
+    if not isinstance(blocking_severities, list):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: blocking_severities must be a list"
+        )
+    if not isinstance(review_severities, list):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: review_severities must be a list"
+        )
+    if not isinstance(status_thresholds, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: status_thresholds must be an object"
+        )
+    return RetrievalQualityPolicy(
+        version=_optional_quality_policy_text(raw.get("version")) or "retrieval_quality_policy.v1",
+        severity_penalties={
+            _required_quality_policy_text(key, path=path): _quality_policy_penalty(
+                value,
+                path=path,
+            )
+            for key, value in severity_penalties.items()
+        },
+        blocking_severities=tuple(
+            _required_quality_policy_text(value, path=path) for value in blocking_severities
+        ),
+        review_severities=tuple(
+            _required_quality_policy_text(value, path=path) for value in review_severities
+        ),
+        review_score_below=_quality_policy_score_threshold(
+            status_thresholds.get("review_score_below"),
+            path=path,
+        ),
+        default_top_action=_optional_quality_policy_text(raw.get("default_top_action"))
+        or _default_quality_policy().default_top_action,
+    )
+
+
+def _default_quality_policy() -> RetrievalQualityPolicy:
+    return RetrievalQualityPolicy(
+        version="retrieval_quality_policy.v1",
+        severity_penalties={
+            "success": 0,
+            "info": 5,
+            "warning": 15,
+            "destructive": 40,
+            "error": 40,
+        },
+        blocking_severities=("destructive", "error"),
+        review_severities=("warning",),
+        review_score_below=85,
+        default_top_action="Run retrieval before assessing package readiness.",
+    )
+
+
+def _required_quality_policy_text(value: Any, *, path: Path) -> str:
+    text = _optional_quality_policy_text(value)
+    if not text:
+        raise ValueError(f"Invalid retrieval quality policy at {path}: value cannot be blank")
+    return text
+
+
+def _optional_quality_policy_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None
+
+
+def _quality_policy_penalty(value: Any, *, path: Path) -> int:
+    if not isinstance(value, int):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: severity penalty must be an integer"
+        )
+    if value < 0 or value > 100:
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: severity penalty must be 0-100"
+        )
+    return value
+
+
+def _quality_policy_score_threshold(value: Any, *, path: Path) -> int:
+    if not isinstance(value, int):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: review_score_below must be an integer"
+        )
+    if value < 0 or value > 100:
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: review_score_below must be 0-100"
+        )
+    return value
 
 
 def facets_from_chunks(chunks: list[KnowledgeChunk]) -> RetrievalFacets:
@@ -1006,6 +1156,15 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             EvidenceSourceType.DATA_DICTIONARY,
             "Retrieval Evaluation Policy Registry",
             knowledge_root / "retrieval/evaluation_policy.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_quality_gate_policy_v1",
+            "dictionary:retrieval_quality_gate_policy_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Retrieval Quality Gate Policy Registry",
+            knowledge_root / "retrieval/quality_gate_policy.json",
             "retrieval",
             "ojtflow_retrieval",
         ),

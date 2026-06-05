@@ -158,6 +158,10 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/evaluation_policy.json`: runtime retrieval evaluation
   policy that converts durable judgment metrics into operator-facing tuning
   recommendations.
+- `knowledge/retrieval/quality_gate_policy.json`: retrieval package readiness
+  policy that maps quality signal severities to score penalties, blocking
+  severities, review severities, and the score threshold below which a package
+  requires review.
 - `knowledge/retrieval/search_hint_targets.json`: target metadata for
   external medical search hints, including operator rationale and warnings.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
@@ -261,6 +265,21 @@ The public retrieval package exposes this under
   ]
 }
 ```
+
+## Readiness Policy
+
+Retrieval readiness is data-driven through
+`knowledge/retrieval/quality_gate_policy.json` or
+`OJT_RETRIEVAL_QUALITY_POLICY_PATH`. The engine still emits deterministic
+`quality_signals[]`, but `quality_summary.score`, `quality_summary.status`, and
+the top review action now use the active policy instead of embedded severity
+penalties. The active policy metadata is copied into
+`handoff_context.quality_policy` so workflow explanations, assistant tools, and
+operators can see which scoring policy produced the readiness state.
+
+This is separate from `evaluation_policy.json`: quality gates assess the current
+retrieval package before downstream use, while evaluation policy turns durable
+human relevance judgments into tuning recommendations.
 
 `query_profile` is loaded from
 `knowledge/retrieval/query_profile_rules.json`, with deployment override

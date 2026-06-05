@@ -2989,6 +2989,7 @@ function TracePanel({
   const trace = packageData?.trace;
   const stack = packageData ? rankingStackFromPackage(packageData) : null;
   const diversity = packageData ? diversityFromPackage(packageData) : null;
+  const qualityPolicy = packageData ? qualityPolicyFromPackage(packageData) : null;
   const queryAnalysis = packageData ? queryAnalysisFromPackage(packageData) : null;
   const coverage = packageData?.coverage;
   const qualitySignals = packageData?.quality_signals ?? [];
@@ -3023,6 +3024,10 @@ function TracePanel({
             <TraceFact
               label="Diversity"
               value={diversity ? formatDiversityTrace(diversity) : "unknown"}
+            />
+            <TraceFact
+              label="Quality policy"
+              value={qualityPolicy ? formatQualityPolicyTrace(qualityPolicy) : "unknown"}
             />
             <TraceFact
               label="Filters"
@@ -4293,6 +4298,14 @@ type DiversitySelectionStack = {
   sourceId: string;
 };
 
+type QualityPolicyStack = {
+  blockingSeverities: string[];
+  reviewScoreBelow: number | null;
+  reviewSeverities: string[];
+  severityPenalties: Record<string, number>;
+  version: string;
+};
+
 type QueryAnalysisStack = {
   conceptCandidates: ConceptCandidateStack[];
   detectedConcepts: string[];
@@ -4441,6 +4454,17 @@ function diversityFromPackage(packageData: RetrievalPackage): DiversityStack {
   };
 }
 
+function qualityPolicyFromPackage(packageData: RetrievalPackage): QualityPolicyStack {
+  const policy = recordValue(packageData.handoff_context.quality_policy);
+  return {
+    blockingSeverities: stringArrayValue(policy.blocking_severities),
+    reviewScoreBelow: numberValue(policy.review_score_below),
+    reviewSeverities: stringArrayValue(policy.review_severities),
+    severityPenalties: numericRecordValue(policy.severity_penalties),
+    version: stringValue(policy.version, "unknown"),
+  };
+}
+
 function formatEmbeddingStack(stack: RankingStack): string {
   const dimensions = stack.embedding.dimensions ? ` / ${stack.embedding.dimensions}d` : "";
   return `${stack.embedding.provider} / ${stack.embedding.model}${dimensions}`;
@@ -4490,6 +4514,18 @@ function formatDiversityTrace(diversity: DiversityStack): string {
   const lambda = diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2);
   const duplicateText = `${diversity.duplicateSelectedSourceCount} duplicate selected`;
   return `${diversity.selectionMode} / lambda ${lambda} / ${formatSourceCoverage(diversity)} sources / ${duplicateText}`;
+}
+
+function formatQualityPolicyTrace(policy: QualityPolicyStack): string {
+  const warningPenalty = policy.severityPenalties.warning;
+  const destructivePenalty = policy.severityPenalties.destructive;
+  const thresholdText =
+    policy.reviewScoreBelow === null ? "review threshold unknown" : `review < ${policy.reviewScoreBelow}`;
+  const penaltyText = [
+    warningPenalty === undefined ? null : `warning -${warningPenalty}`,
+    destructivePenalty === undefined ? null : `blocker -${destructivePenalty}`,
+  ].filter(Boolean);
+  return [policy.version, thresholdText, ...penaltyText].join(" / ");
 }
 
 function diversitySelectionByEvidenceId(
@@ -4700,6 +4736,15 @@ function stringRecordValue(value: unknown): Record<string, string> {
     Object.entries(record)
       .map(([key, item]) => [key.trim(), typeof item === "string" ? item.trim() : ""])
       .filter(([key, item]) => key && item),
+  );
+}
+
+function numericRecordValue(value: unknown): Record<string, number> {
+  const record = recordValue(value);
+  return Object.fromEntries(
+    Object.entries(record)
+      .map(([key, item]) => [key, numberValue(item)] as const)
+      .filter((entry): entry is readonly [string, number] => entry[1] !== null),
   );
 }
 
