@@ -172,6 +172,7 @@ type RetrievalRunComparison = {
   baselineSubmittedAt: string;
   baselineSummary: RetrievalRunSummary;
   candidateDelta: number;
+  facetComparisons: RetrievalFacetComparison[];
   hitDelta: number;
   metrics: RetrievalRunComparisonMetrics;
   qualityWarningDelta: number;
@@ -185,6 +186,15 @@ type RetrievalRunComparison = {
   topSourceBefore: string | null;
   topSourceChanged: boolean;
   warningDelta: number;
+};
+type RetrievalFacetComparison = {
+  activeCount: number;
+  addedValues: string[];
+  baselineCount: number;
+  field: SupportedFilterField;
+  label: string;
+  removedValues: string[];
+  retainedValues: string[];
 };
 type RetrievalRunComparisonMetrics = {
   changedRankCount: number;
@@ -1245,6 +1255,7 @@ function SearchRunComparison({
       </div>
       <div className="grid gap-2">
         <RunComparisonQueryProfile comparison={comparison} />
+        <RunComparisonFacetCoverage facetComparisons={comparison.facetComparisons} />
         <RunComparisonRulePacks rulePackChanges={comparison.rulePackChanges} />
         <RunComparisonRankChanges rankChanges={comparison.rankChanges} />
         <RunComparisonEvidenceChange
@@ -1390,6 +1401,70 @@ function QueryProfileSummaryCard({
         {humanize(profile.route)} / {humanize(profile.retrievalMode)} /{" "}
         {humanize(profile.complexity)}
       </span>
+    </div>
+  );
+}
+
+function RunComparisonFacetCoverage({
+  facetComparisons,
+}: {
+  facetComparisons: RetrievalFacetComparison[];
+}) {
+  if (!facetComparisons.length) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <span className="text-xs font-bold text-muted-foreground">Facet coverage</span>
+        <Badge variant="muted">not reported</Badge>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">Facet coverage</span>
+        <Badge variant="muted">{formatCount(facetComparisons.length, "facet")}</Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {facetComparisons.map((facet) => (
+          <div
+            className="grid gap-1 rounded-md bg-muted/40 px-2 py-1.5"
+            key={facet.field}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="font-bold">{facet.label}</span>
+              <Badge variant={facet.addedValues.length || facet.removedValues.length ? "warning" : "success"}>
+                {facet.baselineCount} to {facet.activeCount}
+              </Badge>
+            </div>
+            <FacetValueChange values={facet.addedValues} label="Added" variant="success" />
+            <FacetValueChange values={facet.removedValues} label="Removed" variant="warning" />
+            <FacetValueChange values={facet.retainedValues} label="Retained" variant="muted" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FacetValueChange({
+  label,
+  values,
+  variant,
+}: {
+  label: string;
+  values: string[];
+  variant: "success" | "warning" | "muted";
+}) {
+  if (!values.length) return null;
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1">
+      <span className="font-semibold text-muted-foreground">{label}:</span>
+      {values.slice(0, 4).map((value) => (
+        <Badge key={`${label}-${value}`} variant={variant}>
+          {value}
+        </Badge>
+      ))}
+      {values.length > 4 ? <Badge variant="muted">+{values.length - 4}</Badge> : null}
     </div>
   );
 }
@@ -4347,6 +4422,7 @@ function compareSearchRuns(
     baselineSummary: baselineRun.summary,
     candidateDelta:
       activeRun.summary.candidateCount - baselineRun.summary.candidateCount,
+    facetComparisons: facetComparisonsBetweenRuns(activeRun, baselineRun),
     hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
     metrics: comparisonMetrics({
       addedCount: addedEvidenceIds.length,
@@ -4399,6 +4475,15 @@ function comparisonReportFromComparison(
       warnings: comparison.warningDelta,
     },
     metrics: comparison.metrics,
+    facets: comparison.facetComparisons.map((facet) => ({
+      field: facet.field,
+      label: facet.label,
+      active_count: facet.activeCount,
+      baseline_count: facet.baselineCount,
+      added_values: facet.addedValues,
+      removed_values: facet.removedValues,
+      retained_values: facet.retainedValues,
+    })),
     judgments: judgments.map((judgment) => ({
       doc_id: judgment.evidenceId,
       evidence_id: judgment.evidenceId,
@@ -4750,6 +4835,39 @@ function queryProfilesChanged(
     active?.retrievalMode !== baseline?.retrievalMode ||
     active?.route !== baseline?.route
   );
+}
+
+function facetComparisonsBetweenRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalFacetComparison[] {
+  return Array.from(supportedSuggestionFilterFields).map((field) => {
+    const activeValues = facetValuesFromRun(activeRun, field);
+    const baselineValues = facetValuesFromRun(baselineRun, field);
+    const activeSet = new Set(activeValues);
+    const baselineSet = new Set(baselineValues);
+    return {
+      activeCount: activeValues.length,
+      addedValues: activeValues.filter((value) => !baselineSet.has(value)),
+      baselineCount: baselineValues.length,
+      field,
+      label: filterFieldLabel(field),
+      removedValues: baselineValues.filter((value) => !activeSet.has(value)),
+      retainedValues: activeValues.filter((value) => baselineSet.has(value)),
+    };
+  });
+}
+
+function facetValuesFromRun(
+  run: RetrievalSearchRun,
+  field: SupportedFilterField,
+): string[] {
+  const facets = run.packageData.facets;
+  if (!facets) return [];
+  return (facets[field] ?? [])
+    .map((bucket) => bucket.value)
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {

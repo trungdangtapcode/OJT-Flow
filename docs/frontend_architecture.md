@@ -197,8 +197,11 @@ summaries and copied comparison reports should include the active query-profile
 route/mode context so relevance tuning can distinguish query changes from
 adaptive-routing changes. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
-route, retrieval mode, complexity, and stable/changed status. It
-should also compare sanitized retrieval rule-pack fingerprints from the active
+route, retrieval mode, complexity, and stable/changed status. It should compare
+selected-hit facets across active and baseline runs for
+source type, clinical domain, standard system, and trust level, including
+added, removed, and retained values. It should also compare sanitized retrieval
+rule-pack fingerprints from the active
 and baseline packages. This lets operators separate relevance changes caused by
 query/filter edits from changes caused by rule-pack data, and the copyable
 comparison report must include the same rule-pack delta.

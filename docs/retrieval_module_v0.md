@@ -875,6 +875,9 @@ copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
 The UI comparison card also renders that active/baseline profile comparison
 directly, including stable/changed status.
+It also compares selected-hit facets for source type, clinical domain,
+standard system, and trust level so coverage drift is visible alongside rank
+movement.
 Retrieval packages also copy sanitized active rule-pack metadata into
 `handoff_context.retrieval_rule_packs`, including pack name, status, source,
 environment variable, rule count, version, and content hash. The copied
