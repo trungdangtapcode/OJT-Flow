@@ -259,6 +259,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "SearchRunEvidenceSummary" in retrieval_page
     assert "searchRunScopeLabels" in retrieval_page
     assert "Run scope" in retrieval_page
+    assert "Top action" in retrieval_page
+    assert "qualitySummary: packageData.quality_summary ?? null" in retrieval_page
+    assert "qualitySummaryFingerprint" in retrieval_page
+    assert "qualitySummaryChanged" in retrieval_page
+    assert "quality_score: comparison.qualityScoreDelta" in retrieval_page
     assert "searchRunQualityBadgeVariant" in retrieval_page
     assert "RunComparisonQueryProfile" in retrieval_page
     assert "QueryProfileSummaryCard" in retrieval_page

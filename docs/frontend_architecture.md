@@ -230,13 +230,17 @@ and rank movement for retained evidence so relevance tuning remains inspectable.
 Each recent-run row should also render a compact data-derived run scope from the
 submitted payload and returned package, including quality status/score,
 coverage-gap count, grounded concept count, search-aspect count, and active
-schema/format/resource/domain/standard/source/trust/field filters.
+schema/format/resource/domain/standard/source/trust/field filters. The row must
+show `quality_summary.top_action` when present so operators see the next
+readiness action without opening raw JSON.
 Comparison output should include a copyable JSON report with the active payload,
 baseline payload, summaries, deltas, metrics, evidence changes, and rank
 movement so tuning notes can be reproduced outside the browser. Search-run
 summaries and copied comparison reports should include the active query-profile
 route/mode context so relevance tuning can distinguish query changes from
-adaptive-routing changes. The comparison panel should render a compact
+adaptive-routing changes. They should also include `quality_summary` status,
+score, top action, blocker codes, and warning codes for active and baseline
+runs, plus a quality-score delta. The comparison panel should render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, and the copyable JSON report should include the same diagnosis for
 offline tuning notes. The comparison panel should render the

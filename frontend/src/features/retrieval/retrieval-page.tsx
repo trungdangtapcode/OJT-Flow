@@ -116,6 +116,7 @@ type RetrievalRunSummary = {
   conceptGrounding: ConceptGroundingSummary[];
   coverage: RetrievalCoverageSummary[];
   hitCount: number;
+  qualitySummary: RetrievalQualitySummary | null;
   qualityWarningCount: number;
   queryAspects: QueryAspectSummary[];
   queryProfile: QueryProfileSummary | null;
@@ -205,6 +206,8 @@ type RetrievalRunComparison = {
   hitDelta: number;
   metrics: RetrievalRunComparisonMetrics;
   queryAspectComparison: RetrievalQueryAspectComparison;
+  qualityScoreDelta: number | null;
+  qualitySummaryChanged: boolean;
   qualityWarningDelta: number;
   qualitySignalComparison: RetrievalQualitySignalComparison;
   queryProfileChanged: boolean;
@@ -1259,7 +1262,7 @@ function SearchRunHistory({
 
 function SearchRunEvidenceSummary({ run }: { run: RetrievalSearchRun }) {
   const scopeLabels = searchRunScopeLabels(run.payload);
-  const qualitySummary = run.packageData.quality_summary;
+  const qualitySummary = run.summary.qualitySummary;
   return (
     <span className="grid min-w-0 gap-1 rounded-md border border-border/70 bg-background/55 p-2">
       <span className="text-xs font-bold uppercase text-muted-foreground">
@@ -1286,6 +1289,11 @@ function SearchRunEvidenceSummary({ run }: { run: RetrievalSearchRun }) {
           </Badge>
         ))}
       </span>
+      {qualitySummary?.top_action ? (
+        <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
+          Top action: {qualitySummary.top_action}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -1326,6 +1334,9 @@ function SearchRunComparison({
           </Badge>
           <Badge variant={comparison.rulePackChanged ? "warning" : "success"}>
             {comparison.rulePackChanged ? "rule packs changed" : "rule packs stable"}
+          </Badge>
+          <Badge variant={comparison.qualitySummaryChanged ? "warning" : "success"}>
+            {comparison.qualitySummaryChanged ? "quality changed" : "quality stable"}
           </Badge>
           <Button
             aria-label="Copy retrieval comparison report"
@@ -5706,6 +5717,13 @@ function compareSearchRuns(
   const queryAspectComparison = queryAspectComparisonBetweenRuns(activeRun, baselineRun);
   const rulePackChanged = rulePackChanges.some((change) => change.status !== "stable");
   const topSourceChanged = activeRun.summary.topSourceId !== baselineRun.summary.topSourceId;
+  const qualitySummaryChanged =
+    qualitySummaryFingerprint(activeRun.summary.qualitySummary) !==
+    qualitySummaryFingerprint(baselineRun.summary.qualitySummary);
+  const qualityScoreDelta =
+    activeRun.summary.qualitySummary && baselineRun.summary.qualitySummary
+      ? activeRun.summary.qualitySummary.score - baselineRun.summary.qualitySummary.score
+      : null;
 
   const comparison: Omit<RetrievalRunComparison, "diagnosis"> = {
     addedEvidenceIds,
@@ -5734,6 +5752,8 @@ function compareSearchRuns(
       activeCount: activeEvidenceIds.length,
     }),
     queryAspectComparison,
+    qualityScoreDelta,
+    qualitySummaryChanged,
     qualityWarningDelta:
       activeRun.summary.qualityWarningCount - baselineRun.summary.qualityWarningCount,
     qualitySignalComparison,
@@ -5816,6 +5836,15 @@ function comparisonDiagnosisFromComparison(
       severity: "warning",
     });
   }
+  if (comparison.qualitySummaryChanged) {
+    diagnosis.push({
+      code: "quality_summary_changed",
+      message: "Readiness status, score, or top action changed between runs.",
+      severity: comparison.qualityScoreDelta !== null && comparison.qualityScoreDelta > 0
+        ? "success"
+        : "warning",
+    });
+  }
   if (
     comparison.facetComparisons.some(
       (facet) => facet.addedValues.length || facet.removedValues.length,
@@ -5887,6 +5916,7 @@ function comparisonReportFromComparison(
     deltas: {
       candidates: comparison.candidateDelta,
       hits: comparison.hitDelta,
+      quality_score: comparison.qualityScoreDelta,
       quality_warnings: comparison.qualityWarningDelta,
       warnings: comparison.warningDelta,
     },
@@ -6516,6 +6546,17 @@ function searchRunQualityBadgeVariant(
   return "muted";
 }
 
+function qualitySummaryFingerprint(summary: RetrievalQualitySummary | null): string {
+  if (!summary) return "none";
+  return [
+    summary.status,
+    summary.score,
+    summary.top_action,
+    summary.blocker_codes.join(","),
+    summary.warning_codes.join(","),
+  ].join("|");
+}
+
 function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary {
   const rulePacks = retrievalRulePacksFromPackage(packageData);
   return {
@@ -6523,6 +6564,7 @@ function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary
     conceptGrounding: conceptGroundingSummariesFromPackage(packageData),
     coverage: coverageSummariesFromPackage(packageData),
     hitCount: packageData.hits.length,
+    qualitySummary: packageData.quality_summary ?? null,
     qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
     queryAspects: queryAspectSummariesFromPackage(packageData),
     queryProfile: queryProfileSummaryFromPackage(packageData),

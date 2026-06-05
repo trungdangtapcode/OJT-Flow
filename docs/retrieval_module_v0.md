@@ -978,10 +978,15 @@ so route or retrieval-mode changes remain visible during tuning.
 Recent-run rows also show a compact run scope generated from the submitted
 payload and returned package: quality status/score, coverage-gap count,
 grounded concept count, search-aspect count, and active schema, format,
-resource, domain, standard, source, trust, and field filters.
+resource, domain, standard, source, trust, and field filters. When
+`quality_summary.top_action` is present, the row shows it as the next readiness
+action.
 Copied run-comparison reports include active/baseline `run_id` and server
 `search_signature` values so offline relevance notes can be tied back to the
 exact normalized retrieval request.
+The same reports include active/baseline `quality_summary` values and a
+`deltas.quality_score` field, and the UI comparison diagnosis flags
+`quality_summary_changed` when readiness status, score, or top action changes.
 The copied run-comparison report also includes a compact `diagnosis[]` list
 that names likely change drivers such as query-profile changes, rule-pack
 changes, query-aspect plan changes, quality-signal changes, facet drift,
