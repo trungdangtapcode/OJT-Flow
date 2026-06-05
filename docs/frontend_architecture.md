@@ -192,7 +192,10 @@ overlap and churn metrics, evidence IDs that were added, removed, or retained,
 and rank movement for retained evidence so relevance tuning remains inspectable.
 Comparison output should include a copyable JSON report with the active payload,
 baseline payload, summaries, deltas, metrics, evidence changes, and rank
-movement so tuning notes can be reproduced outside the browser. The comparison panel
+movement so tuning notes can be reproduced outside the browser. Search-run
+summaries and copied comparison reports should include the active query-profile
+route/mode context so relevance tuning can distinguish query changes from
+adaptive-routing changes. The comparison panel
 should also compare sanitized retrieval rule-pack fingerprints from the active
 and baseline packages. This lets operators separate relevance changes caused by
 query/filter edits from changes caused by rule-pack data, and the copyable
@@ -215,8 +218,8 @@ store rather than browser-local state, and turns poor coverage or ordering into
 explicit next actions for the operator.
 The same panel should provide a copyable `retrieval_judgment_evaluation` JSON
 report containing server metrics, local in-session metrics, stored-label
-summary, recommendations, relevant evidence IDs, and active retrieval rule-pack
-fingerprints for offline relevance tuning notes.
+summary, recommendations, relevant evidence IDs, active query-profile context,
+and active retrieval rule-pack fingerprints for offline relevance tuning notes.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.

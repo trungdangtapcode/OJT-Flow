@@ -115,10 +115,18 @@ type RetrievalRunSummary = {
   candidateCount: number;
   hitCount: number;
   qualityWarningCount: number;
+  queryProfile: QueryProfileSummary | null;
   rulePackCount: number;
   rulePackFingerprint: string;
   topSourceId: string | null;
   warningCount: number;
+};
+type QueryProfileSummary = {
+  complexity: string;
+  label: string;
+  profileId: string;
+  retrievalMode: string;
+  route: string;
 };
 type RetrievalRulePackChange = {
   active?: RuntimeRetrievalRulePack;
@@ -1110,6 +1118,11 @@ function SearchRunHistory({
                   <Badge variant="muted">
                     {formatCount(run.summary.rulePackCount, "rule pack")}
                   </Badge>
+                  {run.summary.queryProfile ? (
+                    <Badge variant="muted">
+                      {humanize(run.summary.queryProfile.route)}
+                    </Badge>
+                  ) : null}
                   {run.summary.warningCount ? (
                     <Badge variant="warning">
                       {formatCount(run.summary.warningCount, "warning")}
@@ -1119,6 +1132,12 @@ function SearchRunHistory({
                 {run.summary.topSourceId ? (
                   <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
                     Top source: {run.summary.topSourceId}
+                  </span>
+                ) : null}
+                {run.summary.queryProfile ? (
+                  <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
+                    Profile: {run.summary.queryProfile.label} /{" "}
+                    {humanize(run.summary.queryProfile.retrievalMode)}
                   </span>
                 ) : null}
               </button>
@@ -4334,6 +4353,15 @@ function comparisonReportFromComparison(
       after: comparison.topSourceAfter,
       changed: comparison.topSourceChanged,
     },
+    query_profiles: {
+      before: comparison.baselineSummary.queryProfile,
+      after: comparison.activeSummary.queryProfile,
+      changed:
+        comparison.baselineSummary.queryProfile?.profileId !==
+          comparison.activeSummary.queryProfile?.profileId ||
+        comparison.baselineSummary.queryProfile?.retrievalMode !==
+          comparison.activeSummary.queryProfile?.retrievalMode,
+    },
     rule_packs: {
       changed: comparison.rulePackChanged,
       changes: comparison.rulePackChanges.map((change) => ({
@@ -4387,6 +4415,7 @@ function evaluationReportFromJudgmentSummary(
       total_hits: metrics.totalHits,
     },
     recommendations: evaluation.recommendations,
+    query_profile: queryProfileSummaryFromPackage(packageData),
     retrieval_rule_packs: retrievalRulePacksFromPackage(packageData),
     stored_label_summary: summary,
     unjudged_evidence_ids: evaluation.unjudged_evidence_ids,
@@ -4411,6 +4440,18 @@ function retrievalRulePacksFromPackage(packageData: RetrievalPackage): RuntimeRe
       error: optionalStringValue(pack.error) ?? undefined,
     }))
     .filter((pack) => pack.name && pack.env_var);
+}
+
+function queryProfileSummaryFromPackage(packageData: RetrievalPackage): QueryProfileSummary | null {
+  const queryProfile = queryAnalysisFromPackage(packageData).queryProfile;
+  if (!queryProfile) return null;
+  return {
+    complexity: queryProfile.complexity,
+    label: queryProfile.label,
+    profileId: queryProfile.profileId,
+    retrievalMode: queryProfile.retrievalMode,
+    route: queryProfile.route,
+  };
 }
 
 function rulePackStatusValue(value: unknown): RuntimeRetrievalRulePack["status"] {
@@ -4648,6 +4689,7 @@ function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary
     candidateCount: packageData.trace.candidates_seen,
     hitCount: packageData.hits.length,
     qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
+    queryProfile: queryProfileSummaryFromPackage(packageData),
     rulePackCount: rulePacks.length,
     rulePackFingerprint: rulePacks
       .map((pack) => `${pack.name}:${rulePackFingerprint(pack)}`)

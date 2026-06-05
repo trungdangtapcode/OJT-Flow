@@ -870,6 +870,9 @@ The Retrieval UI can copy a `retrieval_judgment_evaluation` JSON report with
 server metrics, local in-session metrics, stored-label summary,
 recommendations, ranked evidence IDs, unjudged IDs, and contributing judgment
 IDs for offline relevance-tuning notes.
+The copied evaluation report also includes the active `query_profile`, and the
+copied run-comparison report includes active/baseline query-profile summaries
+so route or retrieval-mode changes remain visible during tuning.
 Retrieval packages also copy sanitized active rule-pack metadata into
 `handoff_context.retrieval_rule_packs`, including pack name, status, source,
 environment variable, rule count, version, and content hash. The copied
