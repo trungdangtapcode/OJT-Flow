@@ -1459,11 +1459,7 @@ function RunComparisonAtAGlance({
       <RunComparisonMetricCard
         label="Readiness"
         tone={comparison.qualitySummaryChanged ? "warning" : "success"}
-        value={
-          comparison.qualityScoreDelta === null
-            ? "unchanged"
-            : formatSignedDelta(comparison.qualityScoreDelta)
-        }
+        value={readinessGlanceLabel(comparison)}
       />
       <RunComparisonMetricCard
         label="Action priority"
@@ -6892,6 +6888,23 @@ function deltaBadgeVariant(
 
 function formatSignedDelta(delta: number): string {
   return delta > 0 ? `+${delta}` : String(delta);
+}
+
+function readinessGlanceLabel(comparison: RetrievalRunComparison): string {
+  const beforeStatus = humanize(
+    comparison.baselineSummary.qualitySummary?.status ?? "unknown",
+  );
+  const afterStatus = humanize(
+    comparison.activeSummary.qualitySummary?.status ?? "unknown",
+  );
+  const statusLabel =
+    beforeStatus === afterStatus ? afterStatus : `${beforeStatus} -> ${afterStatus}`;
+  const scoreLabel =
+    comparison.qualityScoreDelta === null
+      ? "score n/a"
+      : formatSignedDelta(comparison.qualityScoreDelta);
+
+  return `${statusLabel} / ${scoreLabel}`;
 }
 
 function formatPercent(value: number): string {

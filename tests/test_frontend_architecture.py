@@ -331,6 +331,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Run comparison" in retrieval_page
     assert "RunComparisonAtAGlance" in retrieval_page
     assert "Comparison at a glance" in retrieval_page
+    assert "readinessGlanceLabel" in retrieval_page
+    assert "baselineSummary.qualitySummary?.status" in retrieval_page
+    assert "activeSummary.qualitySummary?.status" in retrieval_page
     assert "Action priority" in retrieval_page
     assert "Evidence overlap" in retrieval_page
     assert "label=\"Top source\"" in retrieval_page

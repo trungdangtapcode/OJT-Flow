@@ -254,9 +254,9 @@ headers should also expose an action summary with action count, highest
 priority, highest severity, source count, and sources so reviewers can scan
 urgency without reading every action. The UI should render the source list as
 compact chips with per-source action counts above the detailed action rows. The
-comparison panel should first render an at-a-glance row for readiness delta,
-highest action priority, evidence overlap, result churn, and top-source
-stability. It should then render a compact
+comparison panel should first render an at-a-glance row for readiness status
+movement with score delta, highest action priority, evidence overlap, result
+churn, and top-source stability. It should then render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, then render the same recommended actions as a visible review checklist
 before metrics and detailed deltas. The copyable JSON report should include the
