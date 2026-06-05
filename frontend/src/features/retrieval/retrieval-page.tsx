@@ -3045,6 +3045,14 @@ function HitCard({
         {formatClaim(evidence.claim)}
       </p>
 
+      <HitEvidenceAuditStrip
+        aspectCount={aspectMatches.length}
+        conceptCount={conceptMatches.length}
+        matchedTermCount={hit.matched_terms.length}
+        provenanceCount={provenanceEntries.length}
+        rankingSignalCount={rankingBoostSignals.length}
+      />
+
       <EvidenceProvenanceSummary entries={provenanceEntries} />
 
       <RelevanceJudgmentControl judgment={judgment} onSetJudgment={onSetJudgment} />
@@ -3121,6 +3129,43 @@ function HitCard({
         </pre>
       </details>
     </article>
+  );
+}
+
+function HitEvidenceAuditStrip({
+  aspectCount,
+  conceptCount,
+  matchedTermCount,
+  provenanceCount,
+  rankingSignalCount,
+}: {
+  aspectCount: number;
+  conceptCount: number;
+  matchedTermCount: number;
+  provenanceCount: number;
+  rankingSignalCount: number;
+}) {
+  return (
+    <div
+      aria-label="Evidence support summary"
+      className="flex min-w-0 flex-wrap gap-1.5 rounded-md border border-border bg-muted/20 p-2"
+    >
+      <Badge variant={matchedTermCount ? "success" : "warning"}>
+        {formatCount(matchedTermCount, "matched term")}
+      </Badge>
+      <Badge variant={provenanceCount ? "success" : "warning"}>
+        {formatCount(provenanceCount, "provenance field")}
+      </Badge>
+      <Badge variant={conceptCount ? "success" : "muted"}>
+        {formatCount(conceptCount, "grounded concept")}
+      </Badge>
+      <Badge variant={aspectCount ? "success" : "muted"}>
+        {formatCount(aspectCount, "aspect")}
+      </Badge>
+      <Badge variant={rankingSignalCount ? "success" : "muted"}>
+        {formatCount(rankingSignalCount, "ranking signal")}
+      </Badge>
+    </div>
   );
 }
 

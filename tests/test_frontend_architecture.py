@@ -230,6 +230,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "conceptMatchesFromHit" in retrieval_page
     assert "Concept grounding" in retrieval_page
     assert "concept_grounding_requirements" in retrieval_page
+    assert "HitEvidenceAuditStrip" in retrieval_page
+    assert "Evidence support summary" in retrieval_page
+    assert "matchedTermCount" in retrieval_page
+    assert "rankingSignalCount" in retrieval_page
     assert "EvidenceProvenanceSummary" in retrieval_page
     assert "Evidence provenance" in retrieval_page
     assert "provenanceEntriesFromEvidence" in retrieval_page

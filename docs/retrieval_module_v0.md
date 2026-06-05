@@ -310,6 +310,10 @@ The Retrieval trace renders structured quality signal metadata directly for
 operator review, including missing concepts, provenance issues, missing
 standards/aspects, and suggested filters, so readiness diagnostics are usable
 without opening raw response JSON.
+Ranked evidence cards show a compact support summary before the detailed
+sections, with data-derived counts for matched terms, provenance fields,
+grounded concepts, supported aspects, and ranking signals. This gives reviewers
+a fast scan of why a hit is useful before reading the full explanations.
 Ranked evidence cards also show a compact provenance summary with source
 version and key locator metadata before the expandable raw locator JSON, making
 the provenance quality gate inspectable during normal evidence review. URL/API

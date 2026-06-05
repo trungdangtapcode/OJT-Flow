@@ -155,6 +155,9 @@ matched terms, and reason.
 Result cards must also render `source_locator.concept_matches[]` as per-hit
 concept grounding, including standard system, optional code, display name,
 confidence, matched fields, aliases, and reason.
+Result cards must render a compact evidence support summary above the detailed
+sections, using data-derived counts for matched terms, provenance fields,
+grounded concepts, supported aspects, and ranking signals.
 Result cards must render a compact evidence provenance summary with source
 version and key locator fields such as standard, URL, path, PMID, DOI, API,
 resource, table, document, and chunk identifiers before the raw JSON details.
