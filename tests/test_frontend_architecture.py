@@ -333,7 +333,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Comparison diagnosis" in retrieval_page
     assert "RunComparisonRecommendedActions" in retrieval_page
     assert "Recommended actions" in retrieval_page
-    assert "actions={comparisonReportRecommendedActions(comparison, judgments)}" in retrieval_page
+    assert "const recommendedActions = React.useMemo" in retrieval_page
+    assert "actions={recommendedActions}" in retrieval_page
+    assert "comparisonReportFromComparison(comparison, judgments, recommendedActions)" in retrieval_page
     assert "RetrievalComparisonRecommendedAction" in retrieval_page
     assert "comparisonRecommendedActionSummary" in retrieval_page
     assert "recommended_action_summary: comparisonRecommendedActionSummary" in retrieval_page

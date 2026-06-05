@@ -1324,10 +1324,18 @@ function SearchRunComparison({
   const { copiedKey, markCopied } = useCopyFeedback();
   const reportCopyKey = "comparison-report";
   const reportCopied = copiedKey === reportCopyKey;
+  const recommendedActions = React.useMemo(
+    () => comparisonReportRecommendedActions(comparison, judgments),
+    [comparison, judgments],
+  );
 
   const copyReport = async () => {
     await copyTextToClipboard(
-      JSON.stringify(comparisonReportFromComparison(comparison, judgments), null, 2),
+      JSON.stringify(
+        comparisonReportFromComparison(comparison, judgments, recommendedActions),
+        null,
+        2,
+      ),
     );
     markCopied(reportCopyKey);
   };
@@ -1375,7 +1383,7 @@ function SearchRunComparison({
       </div>
       <RunComparisonDiagnosis diagnosis={comparison.diagnosis} />
       <RunComparisonRecommendedActions
-        actions={comparisonReportRecommendedActions(comparison, judgments)}
+        actions={recommendedActions}
       />
       <RunComparisonMetrics metrics={comparison.metrics} />
       <div className="grid gap-2 sm:grid-cols-2">
@@ -5960,8 +5968,11 @@ function comparisonDiagnosisFromComparison(
 function comparisonReportFromComparison(
   comparison: RetrievalRunComparison,
   judgments: RelevanceJudgment[],
+  recommendedActions: RetrievalComparisonRecommendedAction[] = comparisonReportRecommendedActions(
+    comparison,
+    judgments,
+  ),
 ) {
-  const recommendedActions = comparisonReportRecommendedActions(comparison, judgments);
   return {
     report_type: "retrieval_run_comparison",
     version: 1,
