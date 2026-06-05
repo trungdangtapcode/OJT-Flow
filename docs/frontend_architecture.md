@@ -160,7 +160,8 @@ The trace panel must render `quality_signals` as a compact retrieval-quality
 checklist with severity, message, suggested action, and evidence references so
 operators can review package readiness without opening raw JSON.
 It must also show `handoff_context.quality_policy` so the readiness score can
-be traced to the active data-driven gate policy.
+be traced to the active data-driven gate policy, including top-hit match
+thresholds and provenance requirement scope.
 The top retrieval summary strip should also surface `quality_summary` as a
 readiness score, so operators can tell whether the active package is ready,
 needs review, or is blocked before reading detailed traces.

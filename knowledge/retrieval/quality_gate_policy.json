@@ -15,5 +15,24 @@
   "ranking_thresholds": {
     "min_top_matched_terms": 1
   },
+  "provenance_requirements": {
+    "source_types": [
+      "healthcare_standard",
+      "terminology_system",
+      "data_dictionary"
+    ],
+    "require_source_version": true,
+    "locator_any_keys": [
+      "path",
+      "url",
+      "standard",
+      "pmid",
+      "doi",
+      "api",
+      "resource",
+      "table",
+      "document_id"
+    ]
+  },
   "default_top_action": "Run retrieval before assessing package readiness."
 }

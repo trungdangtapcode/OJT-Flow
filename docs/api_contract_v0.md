@@ -206,6 +206,11 @@ Retrieval quality gates are also policy-driven. The active
 `min_top_matched_terms`. If the top-ranked hit does not meet that exact-match
 threshold, `quality_signals[]` includes `weak_top_hit_match` with the top
 evidence ID, matched-term count, configured threshold, and ranking scores.
+The same policy includes `provenance_requirements` for medical source classes.
+When selected healthcare standards, terminology systems, or data dictionaries
+lack required source version or locator metadata, `quality_signals[]` includes
+`weak_evidence_provenance` with affected evidence IDs, missing fields, and the
+active provenance requirement metadata.
 
 Runtime retrieval tuning recommendations are data-driven. By default,
 `POST /api/v1/retrieval/judgments/evaluate` loads policy rules from

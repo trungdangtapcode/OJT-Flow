@@ -281,6 +281,15 @@ The same policy can also declare `ranking_thresholds`, currently including
 top-ranked hit. When the top hit fails that gate, retrieval emits
 `weak_top_hit_match` with the top evidence ID, matched-term count, threshold,
 and score components needed for operator review.
+The policy can also declare `provenance_requirements` for medical source
+classes. The default gate checks healthcare standards, terminology systems, and
+data dictionaries for a source version plus at least one auditable locator key
+such as `path`, `url`, `standard`, `pmid`, `doi`, `api`, `resource`, `table`,
+or `document_id`. Missing provenance emits `weak_evidence_provenance` with the
+affected evidence IDs, missing fields, and active requirement metadata. This
+keeps clinical search packages aligned with FHIR-style provenance expectations
+and PubMed/NLM-style citation metadata instead of treating anonymous text as
+equivalent to a traceable medical source.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

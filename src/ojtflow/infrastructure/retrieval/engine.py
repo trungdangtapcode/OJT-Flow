@@ -121,6 +121,7 @@ class RetrievalQualityPolicy:
     review_score_below: int
     default_top_action: str
     ranking_thresholds: dict[str, int | float] = field(default_factory=dict)
+    provenance_requirements: dict[str, Any] = field(default_factory=dict)
 
     def penalty_for(self, severity: str) -> int:
         return self.severity_penalties.get(severity, 0)
@@ -133,6 +134,7 @@ class RetrievalQualityPolicy:
             "review_severities": list(self.review_severities),
             "review_score_below": self.review_score_below,
             "ranking_thresholds": dict(self.ranking_thresholds),
+            "provenance_requirements": dict(self.provenance_requirements),
         }
 
 
@@ -503,6 +505,32 @@ def quality_signals_from_results(
                     },
                 )
             )
+        provenance_issues = _provenance_quality_issues(hits, active_policy)
+        if provenance_issues:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="weak_evidence_provenance",
+                    severity="warning",
+                    message=(
+                        "Selected evidence is missing provenance metadata required by "
+                        "the active quality policy."
+                    ),
+                    suggested_action=(
+                        "Reindex the source with version and locator metadata, or replace "
+                        "the evidence with an auditable source before downstream use."
+                    ),
+                    evidence_ids=[
+                        str(issue["evidence_id"])
+                        for issue in provenance_issues
+                        if issue.get("evidence_id")
+                    ],
+                    metadata={
+                        "issue_count": len(provenance_issues),
+                        "requirements": active_policy.provenance_requirements,
+                        "issues": provenance_issues,
+                    },
+                )
+            )
     else:
         signals.append(
             RetrievalQualitySignal(
@@ -729,6 +757,59 @@ def quality_summary_from_signals(
     )
 
 
+def _provenance_quality_issues(
+    hits: list[RetrievalHit],
+    policy: RetrievalQualityPolicy,
+) -> list[dict[str, Any]]:
+    requirements = policy.provenance_requirements
+    if not requirements:
+        return []
+    source_types = {
+        str(value)
+        for value in requirements.get("source_types", [])
+        if str(value).strip()
+    }
+    locator_any_keys = [
+        str(value)
+        for value in requirements.get("locator_any_keys", [])
+        if str(value).strip()
+    ]
+    require_source_version = bool(requirements.get("require_source_version"))
+    issues: list[dict[str, Any]] = []
+    for hit in hits:
+        source_type = hit.evidence.source_type.value
+        if source_types and source_type not in source_types:
+            continue
+        missing: list[str] = []
+        if require_source_version and not hit.evidence.source_version:
+            missing.append("source_version")
+        locator = hit.evidence.locator if isinstance(hit.evidence.locator, dict) else {}
+        if locator_any_keys and not any(_has_locator_value(locator, key) for key in locator_any_keys):
+            missing.append("locator_any_keys")
+        if missing:
+            issues.append(
+                {
+                    "evidence_id": hit.evidence.evidence_id,
+                    "source_id": hit.evidence.source_id,
+                    "source_type": source_type,
+                    "missing": missing,
+                    "locator_any_keys": locator_any_keys,
+                }
+            )
+    return issues
+
+
+def _has_locator_value(locator: dict[str, Any], key: str) -> bool:
+    value = locator.get(key)
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list | tuple | set | dict):
+        return bool(value)
+    return True
+
+
 def active_quality_policy() -> RetrievalQualityPolicy:
     """Load the active retrieval quality policy from trusted data."""
 
@@ -749,6 +830,7 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     review_severities = raw.get("review_severities")
     status_thresholds = raw.get("status_thresholds")
     ranking_thresholds = raw.get("ranking_thresholds", {})
+    provenance_requirements = raw.get("provenance_requirements", {})
     if not isinstance(severity_penalties, dict):
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: severity_penalties must be an object"
@@ -768,6 +850,10 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     if not isinstance(ranking_thresholds, dict):
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: ranking_thresholds must be an object"
+        )
+    if not isinstance(provenance_requirements, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: provenance_requirements must be an object"
         )
     return RetrievalQualityPolicy(
         version=_optional_quality_policy_text(raw.get("version")) or "retrieval_quality_policy.v1",
@@ -797,6 +883,10 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
             )
             for key, value in ranking_thresholds.items()
         },
+        provenance_requirements=_quality_policy_provenance_requirements(
+            provenance_requirements,
+            path=path,
+        ),
     )
 
 
@@ -815,6 +905,25 @@ def _default_quality_policy() -> RetrievalQualityPolicy:
         review_score_below=85,
         default_top_action="Run retrieval before assessing package readiness.",
         ranking_thresholds={"min_top_matched_terms": 1},
+        provenance_requirements={
+            "source_types": [
+                EvidenceSourceType.HEALTHCARE_STANDARD.value,
+                EvidenceSourceType.TERMINOLOGY_SYSTEM.value,
+                EvidenceSourceType.DATA_DICTIONARY.value,
+            ],
+            "require_source_version": True,
+            "locator_any_keys": [
+                "path",
+                "url",
+                "standard",
+                "pmid",
+                "doi",
+                "api",
+                "resource",
+                "table",
+                "document_id",
+            ],
+        },
     )
 
 
@@ -864,6 +973,48 @@ def _quality_policy_ranking_threshold(value: Any, *, path: Path) -> int | float:
     if value < 0:
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: ranking threshold must be non-negative"
+        )
+    return value
+
+
+def _quality_policy_provenance_requirements(
+    value: dict[str, Any],
+    *,
+    path: Path,
+) -> dict[str, Any]:
+    requirements: dict[str, Any] = {}
+    if "source_types" in value:
+        requirements["source_types"] = [
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value["source_types"],
+                field="source_types",
+                path=path,
+            )
+        ]
+    if "locator_any_keys" in value:
+        requirements["locator_any_keys"] = [
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value["locator_any_keys"],
+                field="locator_any_keys",
+                path=path,
+            )
+        ]
+    if "require_source_version" in value:
+        if not isinstance(value["require_source_version"], bool):
+            raise ValueError(
+                f"Invalid retrieval quality policy at {path}: "
+                "require_source_version must be a boolean"
+            )
+        requirements["require_source_version"] = value["require_source_version"]
+    return requirements
+
+
+def _quality_policy_text_list(value: Any, *, field: str, path: Path) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: {field} must be a list"
         )
     return value
 

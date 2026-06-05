@@ -1198,6 +1198,7 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
                 title="FHIR Observation",
                 content="FHIR Observation requires resourceType and valueQuantity structure.",
                 standard_system="FHIR",
+                locator={"standard": "HL7 FHIR R4 Observation"},
             )
         ],
         RetrievalQuery(query="FHIR valueQuantity UCUM unit", top_k=1),
@@ -1328,6 +1329,73 @@ def test_retrieval_quality_signals_flag_weak_top_hit_match(
     assert package.handoff_context["quality_policy"]["ranking_thresholds"] == {
         "min_top_matched_terms": 1
     }
+
+
+def test_retrieval_quality_signals_flag_weak_evidence_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path = tmp_path / "quality_gate_policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": "custom_quality_policy.v1",
+                "severity_penalties": {
+                    "success": 0,
+                    "info": 1,
+                    "warning": 15,
+                    "destructive": 50,
+                    "error": 50,
+                },
+                "blocking_severities": ["destructive", "error"],
+                "review_severities": ["warning"],
+                "status_thresholds": {"review_score_below": 80},
+                "ranking_thresholds": {"min_top_matched_terms": 1},
+                "provenance_requirements": {
+                    "source_types": ["healthcare_standard"],
+                    "require_source_version": True,
+                    "locator_any_keys": ["standard", "url", "path"],
+                },
+                "default_top_action": "Run retrieval before review.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_RETRIEVAL_QUALITY_POLICY_PATH", str(policy_path))
+
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="fhir_unlocated",
+                source_id="standard:fhir_unlocated",
+                source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+                title="FHIR Observation",
+                content="FHIR Observation resourceType valueQuantity unit.",
+                source_version="",
+                standard_system="FHIR",
+            )
+        ],
+        RetrievalQuery(query="FHIR Observation valueQuantity", top_k=1),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+    signals = {signal.code: signal for signal in package.quality_signals}
+    provenance = signals["weak_evidence_provenance"]
+
+    assert provenance.severity == "warning"
+    assert provenance.metadata["issue_count"] == 1
+    assert provenance.metadata["issues"][0]["missing"] == [
+        "source_version",
+        "locator_any_keys",
+    ]
+    assert provenance.metadata["requirements"]["locator_any_keys"] == [
+        "standard",
+        "url",
+        "path",
+    ]
+    assert package.quality_summary is not None
+    assert package.quality_summary.status == "review"
+    assert "weak_evidence_provenance" in package.quality_summary.warning_codes
 
 
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:
