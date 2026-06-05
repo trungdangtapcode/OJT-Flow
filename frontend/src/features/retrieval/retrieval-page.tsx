@@ -1381,6 +1381,10 @@ function SearchRunComparison({
       <div className="break-words text-xs leading-5 text-muted-foreground">
         Compared with: {comparison.baselineQuery}
       </div>
+      <RunComparisonAtAGlance
+        actionSummary={comparisonRecommendedActionSummary(recommendedActions)}
+        comparison={comparison}
+      />
       <RunComparisonDiagnosis diagnosis={comparison.diagnosis} />
       <RunComparisonRecommendedActions
         actions={recommendedActions}
@@ -1439,6 +1443,43 @@ function SearchRunComparison({
         Top source: {comparison.topSourceBefore ?? "none"} to{" "}
         {comparison.topSourceAfter ?? "none"}
       </div>
+    </div>
+  );
+}
+
+function RunComparisonAtAGlance({
+  actionSummary,
+  comparison,
+}: {
+  actionSummary: RetrievalComparisonRecommendedActionSummary;
+  comparison: RetrievalRunComparison;
+}) {
+  return (
+    <div aria-label="Comparison at a glance" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <RunComparisonMetricCard
+        label="Readiness"
+        tone={comparison.qualitySummaryChanged ? "warning" : "success"}
+        value={
+          comparison.qualityScoreDelta === null
+            ? "unchanged"
+            : formatSignedDelta(comparison.qualityScoreDelta)
+        }
+      />
+      <RunComparisonMetricCard
+        label="Action priority"
+        tone={actionSummary.badge_variant === "success" ? "success" : "warning"}
+        value={`P${actionSummary.highest_priority ?? "-"}`}
+      />
+      <RunComparisonMetricCard
+        label="Evidence overlap"
+        tone={comparison.metrics.overlapRatio >= 0.5 ? "success" : "warning"}
+        value={formatPercent(comparison.metrics.overlapRatio)}
+      />
+      <RunComparisonMetricCard
+        label="Result churn"
+        tone={comparison.metrics.churnRate > 0.5 ? "warning" : "success"}
+        value={formatPercent(comparison.metrics.churnRate)}
+      />
     </div>
   );
 }

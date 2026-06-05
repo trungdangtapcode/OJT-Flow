@@ -999,7 +999,9 @@ list is sorted by priority before it is rendered or copied. Reports and the UI
 also expose `recommended_action_summary` with action count, highest priority,
 highest severity, source count, and source list. The comparison panel renders
 the source list as compact chips with per-source action counts above detailed
-action rows. The
+action rows. It also renders an at-a-glance row for readiness delta, highest
+action priority, evidence overlap, and result churn before detailed comparison
+sections. The
 Retrieval UI renders the same recommended actions in the comparison panel so
 operators do not need to copy JSON before seeing the next review steps.
 The copied run-comparison report also includes a compact `diagnosis[]` list
