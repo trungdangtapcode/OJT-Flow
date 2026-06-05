@@ -453,6 +453,17 @@ def test_query_analysis_builds_data_driven_query_aspects() -> None:
     }
     assert "UCUM computable unit" in aspects["unit_and_value_quality"].suggested_terms
     assert aspects["phi_review_governance"].rule_id == "aspect_phi_review_governance"
+    aspect_variants = [
+        variant
+        for variant in analysis.query_variant_details
+        if variant.source == "query_aspect_rule"
+    ]
+    assert {variant.metadata["aspect_id"] for variant in aspect_variants} >= {
+        "lab_identity_standardization",
+        "unit_and_value_quality",
+        "phi_review_governance",
+    }
+    assert any("UCUM computable unit" in variant.variant for variant in aspect_variants)
 
 
 def test_query_analysis_uses_data_driven_query_aspect_rules(tmp_path, monkeypatch) -> None:
@@ -485,6 +496,12 @@ def test_query_analysis_uses_data_driven_query_aspect_rules(tmp_path, monkeypatc
     assert len(analysis.query_aspects) == 1
     assert analysis.query_aspects[0].aspect_id == "custom_registry_aspect"
     assert analysis.query_aspects[0].suggested_terms == ["custom term"]
+    assert any(
+        variant.source == "query_aspect_rule"
+        and variant.metadata["aspect_id"] == "custom_registry_aspect"
+        and "custom term" in variant.variant
+        for variant in analysis.query_variant_details
+    )
 
     registry_path.write_text(
         json.dumps(

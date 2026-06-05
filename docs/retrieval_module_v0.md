@@ -321,7 +321,10 @@ contributing rule ID, suggested terms, and suggested filters. Current rules
 cover laboratory identity/standardization, unit and value quality, sensitive
 data review, medication terminology/safety, literature/external evidence, and
 observational schema context. This is a search-planning and review aid; it does
-not silently execute subqueries or make clinical recommendations. The Retrieval
+not run hidden independent searches or make clinical recommendations. Each
+matched aspect contributes a transparent `query_variant_details[]` row with
+`source="query_aspect_rule"`, so first-stage retrieval can use the
+data-driven decomposition plan while preserving full provenance. The Retrieval
 console shows aspect-suggested filters with applied-state badges based on the
 submitted retrieval trace and lets operators explicitly apply supported
 metadata filters through the same typed search path used by other filter

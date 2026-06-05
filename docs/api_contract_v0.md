@@ -1256,7 +1256,10 @@ include `query_aspects`, deterministic query-decomposition rows with
 `aspect_id`, `label`, review `question`, `rationale`, `priority`, contributing
 `rule_id`, `suggested_terms`, and `suggested_filters`; these rows help users
 verify which medical evidence aspects the search should cover without silently
-running subqueries or producing clinical recommendations. It
+running hidden independent searches or producing clinical recommendations.
+Matched aspects also contribute auditable `trace.query_variant_details[]` rows
+with `source="query_aspect_rule"` so first-stage ranking uses the decomposition
+plan transparently. It
 also includes `search_hints`, deterministic external medical search syntax
 scaffolds with `target`, `query`, optional `url`, `rationale`, and `warnings`
 for workflows such as PubMed/MeSH literature search, FHIR resource search

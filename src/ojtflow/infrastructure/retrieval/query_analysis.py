@@ -201,6 +201,22 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
     rule_ids = _dedupe(rule.rule_id for rule in matched_rules)
     candidate_domains = _candidate_domains(concept_candidates)
     candidate_standards = _candidate_standards(concept_candidates)
+    query_profile = _query_profile(
+        concepts=concepts,
+        standards=standards,
+        rule_ids=rule_ids,
+        tokens=tokens,
+        candidate_domains=candidate_domains,
+        candidate_standards=candidate_standards,
+    )
+    query_aspects = _query_aspects(
+        concepts=concepts,
+        standards=standards,
+        rule_ids=rule_ids,
+        tokens=tokens,
+        candidate_domains=candidate_domains,
+        candidate_standards=candidate_standards,
+    )
     variant_details = _dedupe_query_variant_details(
         [
             *base_variants,
@@ -220,6 +236,7 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
             *_concept_candidate_variant_details(concept_candidates),
             *_standards_variant_details(standards),
             *_expanded_terms_variant_details(expanded_terms),
+            *_query_aspect_variant_details(query_aspects),
         ]
     )
     variants = [detail.variant for detail in variant_details]
@@ -250,22 +267,8 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
             standards=standards,
             concept_candidates=concept_candidates,
         ),
-        query_profile=_query_profile(
-            concepts=concepts,
-            standards=standards,
-            rule_ids=rule_ids,
-            tokens=tokens,
-            candidate_domains=candidate_domains,
-            candidate_standards=candidate_standards,
-        ),
-        query_aspects=_query_aspects(
-            concepts=concepts,
-            standards=standards,
-            rule_ids=rule_ids,
-            tokens=tokens,
-            candidate_domains=candidate_domains,
-            candidate_standards=candidate_standards,
-        ),
+        query_profile=query_profile,
+        query_aspects=query_aspects,
     )
 
 
@@ -1232,6 +1235,35 @@ def _expanded_terms_variant_details(
             reason="Expanded terms from rules and controlled-vocabulary matches.",
             metadata={"term_count": len(expanded_terms)},
         )
+    ]
+
+
+def _query_aspect_variant_details(
+    aspects: list[RetrievalQueryAspect],
+) -> list[RetrievalQueryVariant]:
+    return [
+        RetrievalQueryVariant(
+            variant=" ".join(
+                value
+                for value in [
+                    aspect.question,
+                    " ".join(aspect.suggested_terms),
+                    " ".join(aspect.suggested_filters.values()),
+                ]
+                if value
+            ),
+            source="query_aspect_rule",
+            reason=f"Matched query aspect rule {aspect.rule_id}.",
+            metadata={
+                "aspect_id": aspect.aspect_id,
+                "priority": aspect.priority,
+                "rule_id": aspect.rule_id,
+                "suggested_filters": dict(aspect.suggested_filters),
+                "suggested_terms": list(aspect.suggested_terms),
+            },
+        )
+        for aspect in aspects
+        if aspect.question or aspect.suggested_terms or aspect.suggested_filters
     ]
 
 
