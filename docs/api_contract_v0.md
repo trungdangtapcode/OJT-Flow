@@ -200,6 +200,13 @@ LlamaIndex adapter behind the same retrieval port and requires
 `OJT_PYTHON_EXTRAS=parsing,rag-framework`. The response envelope and
 `RetrievalPackage` schema remain unchanged.
 
+Retrieval quality gates are also policy-driven. The active
+`knowledge/retrieval/quality_gate_policy.json` policy is copied into
+`handoff_context.quality_policy`, including `ranking_thresholds` such as
+`min_top_matched_terms`. If the top-ranked hit does not meet that exact-match
+threshold, `quality_signals[]` includes `weak_top_hit_match` with the top
+evidence ID, matched-term count, configured threshold, and ranking scores.
+
 Runtime retrieval tuning recommendations are data-driven. By default,
 `POST /api/v1/retrieval/judgments/evaluate` loads policy rules from
 `knowledge/retrieval/evaluation_policy.json`; set

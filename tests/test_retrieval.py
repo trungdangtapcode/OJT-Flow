@@ -1276,6 +1276,60 @@ def test_retrieval_quality_summary_uses_data_driven_policy(
     assert package.handoff_context["quality_policy"]["severity_penalties"]["warning"] == 5
 
 
+def test_retrieval_quality_signals_flag_weak_top_hit_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_path = tmp_path / "quality_gate_policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": "custom_quality_policy.v1",
+                "severity_penalties": {
+                    "success": 0,
+                    "info": 1,
+                    "warning": 15,
+                    "destructive": 50,
+                    "error": 50,
+                },
+                "blocking_severities": ["destructive", "error"],
+                "review_severities": ["warning"],
+                "status_thresholds": {"review_score_below": 80},
+                "ranking_thresholds": {"min_top_matched_terms": 1},
+                "default_top_action": "Run retrieval before review.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_RETRIEVAL_QUALITY_POLICY_PATH", str(policy_path))
+
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="unrelated",
+                source_id="schema:unrelated",
+                source_type=EvidenceSourceType.SCHEMA,
+                title="Unrelated schema note",
+                content="Alpha beta gamma delta.",
+            )
+        ],
+        RetrievalQuery(query="zzzxxy unmatched", top_k=1),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+    signals = {signal.code: signal for signal in package.quality_signals}
+
+    assert signals["weak_top_hit_match"].severity == "warning"
+    assert signals["weak_top_hit_match"].metadata["matched_term_count"] == 0
+    assert signals["weak_top_hit_match"].metadata["min_top_matched_terms"] == 1
+    assert package.quality_summary is not None
+    assert package.quality_summary.status == "review"
+    assert "weak_top_hit_match" in package.quality_summary.warning_codes
+    assert package.handoff_context["quality_policy"]["ranking_thresholds"] == {
+        "min_top_matched_terms": 1
+    }
+
+
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:
     chunk = KnowledgeChunk(
         chunk_id="snippet_test",

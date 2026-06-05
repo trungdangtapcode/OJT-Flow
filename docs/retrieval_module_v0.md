@@ -276,6 +276,11 @@ the top review action now use the active policy instead of embedded severity
 penalties. The active policy metadata is copied into
 `handoff_context.quality_policy` so workflow explanations, assistant tools, and
 operators can see which scoring policy produced the readiness state.
+The same policy can also declare `ranking_thresholds`, currently including
+`min_top_matched_terms`, to require a minimum exact query-term overlap on the
+top-ranked hit. When the top hit fails that gate, retrieval emits
+`weak_top_hit_match` with the top evidence ID, matched-term count, threshold,
+and score components needed for operator review.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

@@ -120,6 +120,7 @@ class RetrievalQualityPolicy:
     review_severities: tuple[str, ...]
     review_score_below: int
     default_top_action: str
+    ranking_thresholds: dict[str, int | float] = field(default_factory=dict)
 
     def penalty_for(self, severity: str) -> int:
         return self.severity_penalties.get(severity, 0)
@@ -131,6 +132,7 @@ class RetrievalQualityPolicy:
             "blocking_severities": list(self.blocking_severities),
             "review_severities": list(self.review_severities),
             "review_score_below": self.review_score_below,
+            "ranking_thresholds": dict(self.ranking_thresholds),
         }
 
 
@@ -374,14 +376,15 @@ def rank_chunks(
         safety_flags=safety_flags,
         warnings=trace_warnings,
     )
+    quality_policy = active_quality_policy()
     quality_signals = quality_signals_from_results(
         hits=top_hits,
         coverage=coverage,
         safety_flags=safety_flags,
         candidates_seen=len(chunks),
         diversity_metadata=diversity_metadata,
+        policy=quality_policy,
     )
-    quality_policy = active_quality_policy()
     quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
     return RetrievalPackage(
         hits=top_hits,
@@ -443,12 +446,19 @@ def quality_signals_from_results(
     safety_flags: list[str],
     candidates_seen: int,
     diversity_metadata: dict[str, Any] | None = None,
+    policy: RetrievalQualityPolicy | None = None,
 ) -> list[RetrievalQualitySignal]:
     """Build deterministic package-level retrieval quality signals."""
 
+    active_policy = policy or active_quality_policy()
     evidence_ids = [hit.evidence.evidence_id for hit in hits]
     signals: list[RetrievalQualitySignal] = []
     if hits:
+        top_hit = hits[0]
+        min_top_matched_terms = active_policy.ranking_thresholds.get(
+            "min_top_matched_terms",
+        )
+        matched_term_count = len(top_hit.matched_terms)
         signals.append(
             RetrievalQualitySignal(
                 code="hits_available",
@@ -465,6 +475,34 @@ def quality_signals_from_results(
                 metadata={"hit_count": len(hits), "candidate_count": candidates_seen},
             )
         )
+        if (
+            isinstance(min_top_matched_terms, int)
+            and min_top_matched_terms > 0
+            and matched_term_count < min_top_matched_terms
+        ):
+            signals.append(
+                RetrievalQualitySignal(
+                    code="weak_top_hit_match",
+                    severity="warning",
+                    message=(
+                        "Top-ranked evidence matched fewer exact query terms than the "
+                        "active quality policy requires."
+                    ),
+                    suggested_action=(
+                        "Rewrite or broaden the query, inspect score components, and "
+                        "confirm the top evidence before downstream use."
+                    ),
+                    evidence_ids=[top_hit.evidence.evidence_id],
+                    metadata={
+                        "top_evidence_id": top_hit.evidence.evidence_id,
+                        "matched_term_count": matched_term_count,
+                        "min_top_matched_terms": min_top_matched_terms,
+                        "score": top_hit.score,
+                        "lexical_score": top_hit.lexical_score,
+                        "vector_score": top_hit.vector_score,
+                    },
+                )
+            )
     else:
         signals.append(
             RetrievalQualitySignal(
@@ -710,6 +748,7 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     blocking_severities = raw.get("blocking_severities")
     review_severities = raw.get("review_severities")
     status_thresholds = raw.get("status_thresholds")
+    ranking_thresholds = raw.get("ranking_thresholds", {})
     if not isinstance(severity_penalties, dict):
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: severity_penalties must be an object"
@@ -725,6 +764,10 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     if not isinstance(status_thresholds, dict):
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: status_thresholds must be an object"
+        )
+    if not isinstance(ranking_thresholds, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: ranking_thresholds must be an object"
         )
     return RetrievalQualityPolicy(
         version=_optional_quality_policy_text(raw.get("version")) or "retrieval_quality_policy.v1",
@@ -747,6 +790,13 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
         ),
         default_top_action=_optional_quality_policy_text(raw.get("default_top_action"))
         or _default_quality_policy().default_top_action,
+        ranking_thresholds={
+            _required_quality_policy_text(key, path=path): _quality_policy_ranking_threshold(
+                value,
+                path=path,
+            )
+            for key, value in ranking_thresholds.items()
+        },
     )
 
 
@@ -764,6 +814,7 @@ def _default_quality_policy() -> RetrievalQualityPolicy:
         review_severities=("warning",),
         review_score_below=85,
         default_top_action="Run retrieval before assessing package readiness.",
+        ranking_thresholds={"min_top_matched_terms": 1},
     )
 
 
@@ -801,6 +852,18 @@ def _quality_policy_score_threshold(value: Any, *, path: Path) -> int:
     if value < 0 or value > 100:
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: review_score_below must be 0-100"
+        )
+    return value
+
+
+def _quality_policy_ranking_threshold(value: Any, *, path: Path) -> int | float:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: ranking threshold must be numeric"
+        )
+    if value < 0:
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: ranking threshold must be non-negative"
         )
     return value
 

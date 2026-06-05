@@ -12,5 +12,8 @@
   "status_thresholds": {
     "review_score_below": 85
   },
+  "ranking_thresholds": {
+    "min_top_matched_terms": 1
+  },
   "default_top_action": "Run retrieval before assessing package readiness."
 }
