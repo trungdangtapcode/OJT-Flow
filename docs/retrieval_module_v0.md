@@ -975,6 +975,10 @@ IDs for offline relevance-tuning notes.
 The copied evaluation report also includes the active `query_profile`, and the
 copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
+Recent-run rows also show a compact run scope generated from the submitted
+payload and returned package: quality status/score, coverage-gap count,
+grounded concept count, search-aspect count, and active schema, format,
+resource, domain, standard, source, trust, and field filters.
 Copied run-comparison reports include active/baseline `run_id` and server
 `search_signature` values so offline relevance notes can be tied back to the
 exact normalized retrieval request.

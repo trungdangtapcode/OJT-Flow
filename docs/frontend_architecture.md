@@ -227,6 +227,10 @@ should be able to select a baseline run for pairwise comparison instead of only
 using the previous run. The active run comparison should show deltas,
 overlap and churn metrics, evidence IDs that were added, removed, or retained,
 and rank movement for retained evidence so relevance tuning remains inspectable.
+Each recent-run row should also render a compact data-derived run scope from the
+submitted payload and returned package, including quality status/score,
+coverage-gap count, grounded concept count, search-aspect count, and active
+schema/format/resource/domain/standard/source/trust/field filters.
 Comparison output should include a copyable JSON report with the active payload,
 baseline payload, summaries, deltas, metrics, evidence changes, and rank
 movement so tuning notes can be reproduced outside the browser. Search-run

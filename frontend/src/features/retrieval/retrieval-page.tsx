@@ -1224,6 +1224,7 @@ function SearchRunHistory({
                     {humanize(run.summary.queryProfile.retrievalMode)}
                   </span>
                 ) : null}
+                <SearchRunEvidenceSummary run={run} />
               </button>
               <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
                 <Button
@@ -1253,6 +1254,39 @@ function SearchRunHistory({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function SearchRunEvidenceSummary({ run }: { run: RetrievalSearchRun }) {
+  const scopeLabels = searchRunScopeLabels(run.payload);
+  const qualitySummary = run.packageData.quality_summary;
+  return (
+    <span className="grid min-w-0 gap-1 rounded-md border border-border/70 bg-background/55 p-2">
+      <span className="text-xs font-bold uppercase text-muted-foreground">
+        Run scope
+      </span>
+      <span className="flex min-w-0 flex-wrap gap-1.5">
+        {qualitySummary ? (
+          <Badge variant={searchRunQualityBadgeVariant(qualitySummary)}>
+            quality {humanize(qualitySummary.status)} {qualitySummary.score}
+          </Badge>
+        ) : null}
+        <Badge variant={run.summary.coverage.length ? "warning" : "muted"}>
+          {formatCount(run.summary.coverage.length, "coverage gap")}
+        </Badge>
+        <Badge variant={run.summary.conceptGrounding.length ? "success" : "warning"}>
+          {formatCount(run.summary.conceptGrounding.length, "grounded concept")}
+        </Badge>
+        <Badge variant={run.summary.queryAspects.length ? "success" : "muted"}>
+          {formatCount(run.summary.queryAspects.length, "search aspect")}
+        </Badge>
+        {scopeLabels.map((label) => (
+          <Badge key={label} variant="muted">
+            {label}
+          </Badge>
+        ))}
+      </span>
+    </span>
   );
 }
 
@@ -6458,6 +6492,28 @@ function qualitySignalSummariesFromRun(
 
 function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {
   return run.packageData.hits.map((hit) => hit.evidence.evidence_id);
+}
+
+function searchRunScopeLabels(payload: RetrievalSearchPayload): string[] {
+  return [
+    payload.schema_id ? `schema ${payload.schema_id}` : null,
+    payload.detected_format ? `format ${humanize(payload.detected_format)}` : null,
+    payload.resource_type ? `resource ${payload.resource_type}` : null,
+    payload.clinical_domain ? `domain ${humanize(payload.clinical_domain)}` : null,
+    payload.standard_system ? `standard ${payload.standard_system}` : null,
+    payload.source_type ? `source ${humanize(payload.source_type)}` : null,
+    payload.trust_level ? `trust ${humanize(payload.trust_level)}` : null,
+    payload.fields.length ? formatCount(payload.fields.length, "field") : null,
+  ].filter((label): label is string => Boolean(label));
+}
+
+function searchRunQualityBadgeVariant(
+  summary: RetrievalQualitySummary,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (summary.status === "ready") return "success";
+  if (summary.status === "blocked") return "destructive";
+  if (summary.status === "review") return "warning";
+  return "muted";
 }
 
 function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary {

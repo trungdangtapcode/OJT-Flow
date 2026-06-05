@@ -256,6 +256,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "queryProfileSummaryFromPackage" in retrieval_page
     assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_page
     assert "Profile: {run.summary.queryProfile.label}" in retrieval_page
+    assert "SearchRunEvidenceSummary" in retrieval_page
+    assert "searchRunScopeLabels" in retrieval_page
+    assert "Run scope" in retrieval_page
+    assert "searchRunQualityBadgeVariant" in retrieval_page
     assert "RunComparisonQueryProfile" in retrieval_page
     assert "QueryProfileSummaryCard" in retrieval_page
     assert "RunComparisonQualitySignals" in retrieval_page
