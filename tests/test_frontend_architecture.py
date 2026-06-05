@@ -207,6 +207,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "query_profile" in retrieval_page
     assert "retrievalMode" in retrieval_page
     assert "suggestedFilters" in retrieval_page
+    assert "queryProfileFilterEntries" in retrieval_page
+    assert "Suggested by query profile" in retrieval_page
+    assert "Apply {entry.label}" in retrieval_page
     assert "RerankBadge" in retrieval_page
     assert "DiversityBadge" in retrieval_page
     assert "DiversitySelectionExplanation" in retrieval_page

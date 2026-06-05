@@ -2731,7 +2731,11 @@ function QueryAnalysisBlock({
         <QueryAnalysisCounter label="Rules" value={analysis.ruleIds.length} />
         <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
       </div>
-      <QueryProfileCard profile={analysis.queryProfile} />
+      <QueryProfileCard
+        isSearchPending={isSearchPending}
+        onApplyFilter={onApplyFilterSuggestion}
+        profile={analysis.queryProfile}
+      />
       <QueryDiagnosticList diagnostics={analysis.diagnostics} />
       <ConceptCandidateList candidates={analysis.conceptCandidates} />
       <SearchHintList hints={analysis.searchHints} />
@@ -2796,11 +2800,19 @@ function ConceptCandidateList({
   );
 }
 
-function QueryProfileCard({ profile }: { profile: QueryProfileStack | null }) {
+function QueryProfileCard({
+  isSearchPending,
+  onApplyFilter,
+  profile,
+}: {
+  isSearchPending: boolean;
+  onApplyFilter: (suggestion: FilterSuggestionStack) => void;
+  profile: QueryProfileStack | null;
+}) {
   if (!profile) {
     return <TokenList items={[]} title="Query profile" />;
   }
-  const filterEntries = Object.entries(profile.suggestedFilters);
+  const filterEntries = queryProfileFilterEntries(profile);
   return (
     <div className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -2813,12 +2825,48 @@ function QueryProfileCard({ profile }: { profile: QueryProfileStack | null }) {
       <div className="break-words text-muted-foreground">{profile.description}</div>
       <div className="flex min-w-0 flex-wrap gap-1.5">
         <Badge variant="muted">{humanize(profile.retrievalMode)}</Badge>
-        {filterEntries.map(([field, value]) => (
-          <Badge key={`${field}-${value}`} variant="muted">
-            {humanize(field)}={value}
+        {filterEntries.map((entry) => (
+          <Badge key={`${entry.field}-${entry.value}`} variant="muted">
+            {entry.label}={entry.displayValue}
           </Badge>
         ))}
       </div>
+      {filterEntries.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          {filterEntries.map((entry) =>
+            entry.supported ? (
+              <Button
+                disabled={isSearchPending}
+                key={`${entry.field}-${entry.value}-apply`}
+                onClick={() =>
+                  onApplyFilter({
+                    applied: false,
+                    confidence: 1,
+                    field: entry.field,
+                    reason: `Suggested by query profile ${profile.profileId}.`,
+                    value: entry.value,
+                  })
+                }
+                size="sm"
+                title={`Apply ${entry.label}=${entry.displayValue}`}
+                type="button"
+                variant="outline"
+              >
+                {isSearchPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ListFilter className="h-4 w-4" />
+                )}
+                Apply {entry.label}
+              </Button>
+            ) : (
+              <Badge key={`${entry.field}-${entry.value}-unsupported`} variant="warning">
+                unsupported {humanize(entry.field)}
+              </Badge>
+            ),
+          )}
+        </div>
+      ) : null}
       {profile.ruleIds.length ? (
         <div className="flex min-w-0 flex-wrap gap-1">
           {profile.ruleIds.map((ruleId) => (
@@ -3591,6 +3639,14 @@ type QueryProfileStack = {
   suggestedFilters: Record<string, string>;
 };
 
+type QueryProfileFilterEntry = {
+  displayValue: string;
+  field: string;
+  label: string;
+  supported: boolean;
+  value: string;
+};
+
 type ConceptCandidateStack = {
   clinicalDomain: string | null;
   code: string | null;
@@ -3809,6 +3865,19 @@ function queryProfileValue(value: unknown): QueryProfileStack | null {
     ruleIds: stringArrayValue(profile.rule_ids),
     suggestedFilters: stringRecordValue(profile.suggested_filters),
   };
+}
+
+function queryProfileFilterEntries(profile: QueryProfileStack): QueryProfileFilterEntry[] {
+  return Object.entries(profile.suggestedFilters).map(([field, value]) => {
+    const supported = isSupportedFilterField(field);
+    return {
+      displayValue: supported ? formatFilterValue(field, value) : value,
+      field,
+      label: supported ? filterFieldLabel(field) : humanize(field),
+      supported,
+      value,
+    };
+  });
 }
 
 function scoreComponentsFromHit(hit: RetrievalHit): RetrievalScoreComponent[] {

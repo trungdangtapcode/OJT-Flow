@@ -263,6 +263,9 @@ support through `OJT_QUERY_PROFILE_RULES_PATH`. It is a deterministic routing
 hint for adaptive retrieval and operator review, not an automatic hidden
 retriever switch. Current profile rules cover laboratory standardization,
 medication safety, biomedical literature evidence, and observational analytics.
+The Retrieval console renders profile-suggested filters as explicit operator
+actions when they map to supported metadata filters, and displays unsupported
+profile fields without applying them.
 
 Filter suggestions are a deterministic self-query feature: they recommend
 metadata filters such as `clinical_domain=laboratory` or
