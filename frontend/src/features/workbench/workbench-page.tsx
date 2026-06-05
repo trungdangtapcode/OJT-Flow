@@ -12,6 +12,8 @@ import {
   CardTitle,
 } from "../../components/ui/card";
 import { Input, Label, Select, Textarea } from "../../components/ui/form";
+import { GuideGrid, GuideItem, GuidePanel } from "../../components/ui/guide-panel";
+import { HelpTooltip } from "../../components/ui/help-tooltip";
 import { Notice } from "../../components/ui/notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
@@ -163,6 +165,19 @@ export function WorkbenchPage() {
         title="Workbench"
         description="Create governed workflows from pasted data or uploaded healthcare files."
       />
+      <GuidePanel title="How to create a workflow">
+        <GuideGrid>
+          <GuideItem title="1. Choose intake">
+            Paste structured data for quick validation, or upload a file when extraction is needed first.
+          </GuideItem>
+          <GuideItem title="2. Pick the contract">
+            Set input format, target format, schema, and review gate before starting the run.
+          </GuideItem>
+          <GuideItem title="3. Inspect the result">
+            After start, open Workflow detail to read validation issues, evidence, output, and audit events.
+          </GuideItem>
+        </GuideGrid>
+      </GuidePanel>
       <WorkbenchSummaryStrip
         intakeMode={intakeMode}
         requireReview={requireReview}
@@ -222,7 +237,12 @@ export function WorkbenchPage() {
                     onSelect={applyInputExample}
                   />
                   <Label>
-                    Instruction
+                    <span className="inline-flex items-center gap-1.5">
+                      Instruction
+                      <HelpTooltip label="Workflow instruction help">
+                        Describe the operational task, not a clinical decision. Example: validate this lab CSV, convert it to JSON, and explain missing units with trusted evidence.
+                      </HelpTooltip>
+                    </span>
                     <Textarea
                       className="min-h-20 resize-y"
                       value={instruction}
@@ -245,6 +265,9 @@ export function WorkbenchPage() {
                   <div className="grid gap-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-sm font-extrabold">Source data</div>
+                      <HelpTooltip label="Source data help">
+                        Paste CSV, JSON, or YAML here. Keep patient identifiers only when required for the workflow and keep the review gate on for sensitive data.
+                      </HelpTooltip>
                       <div className="flex flex-wrap gap-2 text-[11px] font-bold uppercase text-muted-foreground">
                         <span className="rounded-full bg-muted px-2 py-0.5">{dataStats.lines} lines</span>
                         <span className="rounded-full bg-muted px-2 py-0.5">{formatBytes(dataStats.bytes)}</span>
@@ -299,7 +322,12 @@ export function WorkbenchPage() {
                     </Notice>
                   ) : null}
                   <Label>
-                    Instruction
+                    <span className="inline-flex items-center gap-1.5">
+                      Instruction
+                      <HelpTooltip label="Upload instruction help">
+                        Tell the backend what to extract and how to validate it. Extraction warnings mean the file text may be incomplete.
+                      </HelpTooltip>
+                    </span>
                     <Textarea
                       className="min-h-20 resize-y"
                       value={uploadInstruction}
@@ -311,7 +339,12 @@ export function WorkbenchPage() {
                   </Label>
                   <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                     <Label>
-                      File
+                      <span className="inline-flex items-center gap-1.5">
+                        File
+                        <HelpTooltip label="Upload file help">
+                          Supported extensions come from runtime config. Scanned PDFs and images may need OCR fallback and human review before trusting extracted text.
+                        </HelpTooltip>
+                      </span>
                       <Input
                         accept={acceptedUploadExtensions}
                         onChange={(event) => {
@@ -327,7 +360,12 @@ export function WorkbenchPage() {
                       />
                     </Label>
                     <Label>
-                      Extractor
+                      <span className="inline-flex items-center gap-1.5">
+                        Extractor
+                        <HelpTooltip label="Extractor help">
+                          Auto lets the backend choose the best available extractor. Pick a specific extractor only when comparing document parsing behavior.
+                        </HelpTooltip>
+                      </span>
                       <Select value={extractor} onChange={(event) => setExtractor(event.target.value)}>
                         <option value="auto">Auto</option>
                         <option disabled={!availableExtractors.includes("markitdown")} value="markitdown">

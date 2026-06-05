@@ -11,6 +11,8 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/form";
+import { GuideGrid, GuideItem, GuidePanel } from "../../components/ui/guide-panel";
+import { HelpTooltip } from "../../components/ui/help-tooltip";
 import { Notice } from "../../components/ui/notice";
 import { PageHeader } from "../../components/layout/page-header";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -54,6 +56,19 @@ export function SchemasPage() {
         title="Schema registry"
         description="Approved healthcare data profiles used for validation, retrieval grounding, and review policy."
       />
+      <GuidePanel title="How to use schema profiles">
+        <GuideGrid>
+          <GuideItem title="Pick the expected record shape">
+            A schema tells the backend which fields matter for a healthcare data type, such as lab results or FHIR-like resources.
+          </GuideItem>
+          <GuideItem title="Read required fields">
+            Missing required fields usually create validation issues and may require human review.
+          </GuideItem>
+          <GuideItem title="Use source references">
+            Source references explain why a schema is trusted and help audit validation decisions later.
+          </GuideItem>
+        </GuideGrid>
+      </GuidePanel>
 
       <SummaryStrip columns={3}>
         <SummaryStripItem
@@ -102,6 +117,9 @@ export function SchemasPage() {
                   <CardTitle className="flex items-center gap-2">
                     <Search className="h-5 w-5 text-primary" />
                     Registry search
+                    <HelpTooltip label="Schema registry search help">
+                      Search by profile ID, title, field name, or source reference when deciding which contract to use for validation.
+                    </HelpTooltip>
                   </CardTitle>
                   <CardDescription>Find profiles by ID, title, field name, or source reference.</CardDescription>
                 </div>
@@ -202,6 +220,11 @@ function SchemaDetail({ schema }: { schema: SchemaEntry | null }) {
               <CardTitle className="text-sm">Required fields</CardTitle>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Records missing these fields are review-sensitive and should block automatic completion.
+                <span className="ml-1 inline-flex align-middle">
+                  <HelpTooltip label="Required fields help">
+                    Required fields are the minimum data needed for this profile. If they are missing, the workflow should explain the issue instead of silently accepting the record.
+                  </HelpTooltip>
+                </span>
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {schema.required.map((field) => (

@@ -1,0 +1,78 @@
+{
+  "version": "retrieval_evidence_bucket_rules.v1",
+  "buckets": [
+    {
+      "bucket_id": "schema",
+      "label": "Schema",
+      "description": "Schemas, field dictionaries, and data contracts supporting parsing or validation.",
+      "required": true,
+      "suggested_filter": {"source_type": "schema"},
+      "match": {
+        "source_types": ["schema", "data_dictionary", "validation_report"]
+      }
+    },
+    {
+      "bucket_id": "policy",
+      "label": "Policy",
+      "description": "Governance, PHI, review, and safety rules retrieved for the workflow.",
+      "required": true,
+      "suggested_filter": {"standard_system": "ojtflow_policy"},
+      "match": {
+        "source_types": ["audit_event", "tool_output"],
+        "source_id_contains": ["policy", "review", "governance"]
+      }
+    },
+    {
+      "bucket_id": "terminology",
+      "label": "Terminology",
+      "description": "Controlled terminology and unit evidence such as LOINC, UCUM, RxNorm, or SNOMED CT.",
+      "required": false,
+      "suggested_filter": {"source_type": "terminology_system"},
+      "match": {
+        "source_types": ["terminology_system"],
+        "standard_systems": ["LOINC", "UCUM", "RxNorm", "SNOMED_CT", "SNOMED", "MeSH"]
+      }
+    },
+    {
+      "bucket_id": "fhir_mapping",
+      "label": "FHIR mapping",
+      "description": "FHIR resource, search parameter, and mapping evidence for clinical package output.",
+      "required": false,
+      "suggested_filter": {"standard_system": "FHIR"},
+      "match": {
+        "standard_systems": ["FHIR"],
+        "source_id_contains": ["fhir"]
+      }
+    },
+    {
+      "bucket_id": "source_locator",
+      "label": "Source locators",
+      "description": "Input rows, OCR boxes, document chunks, or other source-local evidence locators.",
+      "required": false,
+      "suggested_filter": {},
+      "match": {
+        "source_types": ["input_data", "ocr_box", "dicom_metadata", "image_mask", "video_track"],
+        "locator_any_keys": ["row", "column", "page", "bbox", "chunk_id"]
+      }
+    },
+    {
+      "bucket_id": "prior_decision",
+      "label": "Prior decisions",
+      "description": "Human decisions, audit events, or accepted transformations that can guide repeat work.",
+      "required": false,
+      "suggested_filter": {"source_type": "human_decision"},
+      "match": {
+        "source_types": ["human_decision", "audit_event"],
+        "source_id_contains": ["prior"]
+      }
+    },
+    {
+      "bucket_id": "other",
+      "label": "Other evidence",
+      "description": "Retrieved evidence that does not fit a higher-priority clinical workflow bucket.",
+      "required": false,
+      "suggested_filter": {},
+      "match": {}
+    }
+  ]
+}

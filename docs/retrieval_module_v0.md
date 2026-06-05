@@ -38,8 +38,8 @@ trusted chunk generation and invalidates it on `reindex()`. Retrieval still
 applies OJTFlow metadata filters before returning evidence. For framework
 retrieval, those filters are also passed into LlamaIndex vector/BM25 retrievers
 before ranking so healthcare metadata constraints such as `standard_system`,
-`clinical_domain`, `source_type`, and `trust_level` shape the candidate pool
-instead of being only a post-hoc UI filter. The trace reports
+`clinical_domain`, `source_type`, exact `source_id`, and `trust_level` shape
+the candidate pool instead of being only a post-hoc UI filter. The trace reports
 `handoff_context.framework_components` with full node count, filtered node
 count, metadata filter count, candidate pool size, BM25 availability, and index
 generation.
@@ -56,7 +56,8 @@ The retrieval pipeline is auditable in v0:
 
 1. Analyze the query and build variants from instruction, fields, schema,
    format, resource type, and deterministic clinical-standard expansion rules.
-2. Candidate chunks are filtered by trust level, clinical domain, standard system, or source type.
+2. Candidate chunks are filtered by trust level, clinical domain, standard system,
+   source type, or exact source ID.
 3. Postgres mode retrieves separate lexical and vector candidate pools before
    fusion so exact-term evidence and semantic-neighbor evidence cannot starve
    each other inside a single bounded SQL result set.
@@ -147,7 +148,8 @@ not a bulk data dump. It now contains:
   `standard_system`.
 - `knowledge/retrieval/query_diagnostic_rules.json`: deterministic
   query-quality diagnostic rules for low-specificity queries, missing
-  healthcare concept matches, and conflicting standard filters.
+  healthcare concept matches, conflicting standard filters, and
+  over-constrained metadata filters with too little clinical query context.
 - `knowledge/retrieval/query_profile_rules.json`: deterministic query-profile
   rules that map concepts, standards, tokens, and candidate metadata to
   operator-visible adaptive retrieval route guidance.
@@ -157,6 +159,13 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/ranking_boost_rules.json`: deterministic ranking boost
   rules for schema, field, trust-level, source-type, concept, and healthcare
   standard matches.
+- `knowledge/retrieval/evidence_bucket_rules.json`: deterministic evidence
+  bucket registry that maps selected hits into schema, policy, terminology,
+  FHIR, source-locator, prior-decision, and fallback evidence-pack groups.
+- `knowledge/retrieval/corrective_action_rules.json`: deterministic corrective
+  action registry that maps retrieval quality signals to prioritized operator
+  actions such as applying filters, broadening queries, requiring review, or
+  reindexing sources.
 - `knowledge/retrieval/evaluation_policy.json`: runtime retrieval evaluation
   policy that converts durable judgment metrics into operator-facing tuning
   recommendations.
@@ -268,6 +277,16 @@ The public retrieval package exposes this under
 }
 ```
 
+`diagnostics[]` can include `overconstrained_metadata_filters` when the request
+combines several metadata filters such as `clinical_domain`, `standard_system`,
+`source_type`, `source_id`, or `trust_level` with a sparse query and no schema,
+field, resource, or format context. This warns operators not to treat a narrow
+source-scoped result as proof that the broader corpus lacks evidence.
+Diagnostics include structured `metadata` for audit and UI rendering, including
+`query_token_count`, `active_metadata_filters`,
+`active_metadata_filter_count`, `applied_standard`, `suggested_standards`,
+`detected_concepts`, and `detected_standards` when those values are available.
+
 ## Readiness Policy
 
 Retrieval readiness is data-driven through
@@ -302,6 +321,15 @@ represented by selected evidence, retrieval emits `missing_concept_grounding`.
 This keeps the package aligned with coded medical search practice such as FHIR
 `Coding`/`CodeableConcept`, LOINC code/display search, and RxNorm concept
 grounding.
+The policy also declares `evidence_bucket_requirements`. The default requires
+`schema` and `policy` evidence buckets in selected results because downstream
+validation/explanation needs both data-contract evidence and governance/safety
+evidence. Missing required buckets emit
+`missing_required_evidence_buckets`, reduce `quality_summary.score`, and keep
+the package in review until the operator broadens the search, changes filters,
+or adds the missing trusted source class. Deployments can override this with
+`{"required_bucket_ids": []}` only when a retrieval surface does not need
+governed workflow readiness.
 The Retrieval console carries the same concept grounding into run comparison:
 active-vs-baseline comparisons list added, removed, and retained grounded
 concepts, and copied `retrieval_run_comparison` reports include a
@@ -322,10 +350,42 @@ normalized.
 Each ranked evidence card can copy a `retrieval_evidence_hit` report containing
 evidence identity, support-summary counts, score components, ranking boosts,
 concept/aspect grounding, provenance summary, raw locators, and snippet context
-for audit notes or assistant handoff. Copyable evidence, comparison,
-evaluation, and search-hint actions show transient success feedback in the UI so
-operators know the
+for audit notes or assistant handoff. The copied evidence report also includes
+`corrective_actions.related_to_evidence` and
+`corrective_actions.package_top_actions` so offline notes preserve both
+evidence-specific and package-level remediation context. Copyable evidence,
+comparison, evaluation, and search-hint actions show transient success feedback
+in the UI so operators know the
 clipboard action completed.
+
+Retrieval packages also expose `evidence_buckets[]`, a clinical evidence pack
+summary derived from the selected hits. Bucket definitions are loaded from
+`knowledge/retrieval/evidence_bucket_rules.json`; deployments can point
+`OJT_EVIDENCE_BUCKET_RULES_PATH` to an approved replacement registry. The
+default buckets group evidence into `schema`, `policy`, `terminology`,
+`fhir_mapping`, `source_locator`, `prior_decision`, and `other` so reviewers
+can see whether a search result is grounded by the right classes of healthcare
+evidence before using it in a workflow. `schema` and `policy` buckets are
+required by the default readiness policy for governed workflow use; when either
+bucket has no selected hits, the package marks it `missing` and emits
+deterministic bucket warnings such as `missing_schema_evidence`. Readiness
+turns those bucket gaps into the package-level
+`missing_required_evidence_buckets` quality signal. Bucket membership is
+data-driven from source type, source ID, standard system, and locator metadata.
+Each bucket can also expose a `suggested_filter` such as
+`{"source_type": "schema"}` or `{"standard_system": "ojtflow_policy"}` so the
+UI can offer explicit remediation searches for missing evidence classes without
+hardcoding bucket behavior in React. The original `hits[]` and `evidence[]`
+arrays remain unchanged; buckets are an operator and assistant audit view over
+the selected evidence, not a second ranking pass.
+
+The Retrieval console renders a package-level search cockpit above the detailed
+ranked evidence. The cockpit is a scan-first view over the same package fields:
+`handoff_context.query_analysis.query_profile`, query-aspect decomposition,
+expanded terms, ranking stack, reranker state, diversity/source spread,
+`quality_summary`, `evidence_buckets[]`, coverage gaps, concept grounding, and
+`recommended_actions[]`. It is intentionally presentation-only; remediation
+buttons are shown only when the backend provides a supported `suggested_filter`.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable
@@ -345,14 +405,14 @@ so draft query-builder edits do not change the apparent provenance of the
 current results.
 
 Filter suggestions are a deterministic self-query feature: they recommend
-metadata filters such as `clinical_domain=laboratory` or
-`standard_system=UCUM`, but do not apply them silently. The analyzer loads those
+metadata filters such as `clinical_domain=laboratory`,
+`standard_system=UCUM`, or exact `source_id=terminology:ucum`, but do not apply them silently. The analyzer loads those
 rules from `knowledge/retrieval/filter_suggestion_rules.json`; each rule
 declares a `rule_id`, filter field, filter value, reason, confidence, and match
 criteria over detected concepts, standards, query-expansion rule IDs, and
 controlled-vocabulary candidate metadata. Code still allowlists supported
-filter fields (`clinical_domain`, `standard_system`, `source_type`, and
-`trust_level`) before accepting registry rules.
+filter fields (`clinical_domain`, `standard_system`, `source_type`,
+`trust_level`, and `source_id`) before accepting registry rules.
 `OJT_FILTER_SUGGESTION_RULES_PATH` can point the runtime to a
 deployment-specific rule pack.
 
@@ -414,8 +474,10 @@ licensed terminology service or final clinical code assignment.
 
 Diagnostics are deterministic query-quality checks. They flag low-specificity
 queries, missing healthcare concept matches, and standard filters that conflict
-with the standards inferred from query content. Diagnostic codes, severities,
-messages, and suggested actions are loaded from
+with the standards inferred from query content. They also flag sparse queries
+that combine several narrowing metadata filters, because such searches can make
+coverage look weaker than it is. Diagnostic codes, severities, messages, and
+suggested actions are loaded from
 `knowledge/retrieval/query_diagnostic_rules.json`; the code only owns the
 allowlisted condition mechanics. `OJT_QUERY_DIAGNOSTIC_RULES_PATH` can point
 the runtime to a deployment-specific rule pack for local evaluation or
@@ -443,6 +505,17 @@ the component key, operator label, numeric contribution, optional rank,
 description, and metadata such as raw score, RRF `k`, or ranking-rule IDs. This
 keeps the final score inspectable without requiring clients to reconstruct
 ranking math from separate fields.
+
+The trace also carries `fusion_diagnostics`, a package-level RRF observability
+summary. It reports lexical/vector top overlap, mean selected-hit rank delta,
+dominant signal balance across selected hits, and a compact interpretation such
+as `lexical_vector_agree`, `mixed_fusion_signals`, or
+`lexical_vector_diverge`. This helps reviewers tell whether keyword and vector
+signals support the same ordering before trusting rank position.
+When the LlamaIndex adapter owns fusion internally, the same field is still
+present but uses `diagnostic_scope=framework_managed_fusion`; overlap and rank
+delta are `null` because the framework does not expose separate lexical/vector
+rank lists through the public adapter boundary.
 
 Query analysis also emits `query_variant_details` alongside the legacy
 `query_variants` list. Each detail records the variant text, source, reason,
@@ -540,6 +613,34 @@ This is a conservative form of contextual compression: it reduces review noise
 and makes evidence easier to inspect without asking a model to rewrite clinical
 content. The full evidence `claim` remains available for audit and downstream
 handoff.
+
+Every `RetrievalHit` also includes a backend-owned `match_explanation` object.
+It is generated after evidence-bucket classification so UI cards, copied
+evidence reports, and copied cockpit reports all use the same source of truth:
+
+```json
+{
+  "version": 1,
+  "support_status": "strong",
+  "top_score_driver": "Lexical score +0.420",
+  "top_score_component": {
+    "component": "lexical_score",
+    "label": "Lexical score",
+    "rank": null,
+    "value": 0.42
+  },
+  "matched_terms": ["hba1c", "unit"],
+  "bucket_ids": ["schema", "source_locator"],
+  "concept_ids": ["hba1c_lab_test"],
+  "aspect_ids": ["unit_and_value_quality"],
+  "provenance_fields": ["Standard", "Chunk"],
+  "ranking_signal_rule_ids": ["boost_schema_match"]
+}
+```
+
+The object is deterministic and data-derived. It does not create new clinical
+claims; it exposes stable IDs and score drivers already present in the
+retrieval package.
 
 Research basis:
 
@@ -692,8 +793,58 @@ layers can use the same readiness signal without parsing UI state. The summary
 does not hide the underlying signals; it only provides a first-glance answer to
 whether the package is ready, needs review, or is blocked.
 
+`RetrievalPackage.recommended_actions` turns warning/destructive signals into a
+deterministic corrective retrieval checklist. The mapping is loaded from
+`knowledge/retrieval/corrective_action_rules.json`; deployments can point
+`OJT_CORRECTIVE_ACTION_RULES_PATH` to an approved replacement registry. This
+follows the corrective-RAG pattern: evaluate initial retrieval quality, then
+propose concrete recovery steps instead of leaving the operator to interpret raw
+diagnostics. Current actions include `apply_filter`, `broaden_query`,
+`rewrite_query`, `reindex_source`, `add_source`, `require_review`, and
+`diversify_sources`. Actions are sorted by backend priority and include source
+signal codes, evidence IDs, optional supported `suggested_filter`, and metadata
+such as the missing evidence bucket or concept. The package also exposes
+`recommended_action_summary` with action count, highest priority, highest
+severity, top action title, apply-filter count, broaden-query count, and
+per-action-type counts. The same action list and summary are copied into
+`handoff_context.recommended_actions` and
+`handoff_context.recommended_action_summary` so the Assistant can explain or
+execute governed remediation without re-deriving policy in the browser.
+`RetrievalPackage.remediation_summary` is the backend-owned plain-language next
+step derived from the same action/quality/warning state. It is copied into
+`handoff_context.remediation_summary`, and clients should prefer it over local
+fallback text so UI, assistant, and copied reports stay consistent.
+`RetrievalPackage.interpretation` is the backend-owned package-level evidence
+interpretation used by the browser, assistant, and future MCP tools. It exposes
+status, summary, top evidence/source IDs, top score driver, support status,
+matched terms, concept/aspect labels, required bucket coverage, warning count,
+and next action title/detail. It is also copied into
+`handoff_context.interpretation`. Clients may keep compatibility fallbacks for
+older payloads, but new UI should prefer this field so search meaning is
+consistent across surfaces.
+
+Corrective-action rules are source-scoped. Rules default to
+`source = "quality_signal"` for package readiness signals, and can opt into
+`source = "query_diagnostic"` for pre-retrieval query-health diagnostics. For
+example, the `overconstrained_metadata_filters` diagnostic produces a
+`broaden_query` action before an operator treats low coverage from a narrowly
+filtered request as evidence that the broader corpus lacks support.
+
+`RetrievalPackage.strategy_recommendations` explains the active retrieval route
+and practical RAG technique in operator language. Rules are loaded from
+`knowledge/retrieval/strategy_recommendation_rules.json`; deployments can point
+`OJT_STRATEGY_RECOMMENDATION_RULES_PATH` to an approved replacement registry.
+Current rule predicates can match query profile, retrieval mode, quality signal
+codes, safety flags, missing required evidence buckets, and reranker state. The
+same list is copied into `handoff_context.strategy_recommendations`, so the
+Assistant and future Graph/RAG layer see the same route explanation as the
+Retrieval UI.
+
 Research basis:
 
+- Corrective/self-improving RAG pattern: evaluate retrieved evidence and adapt
+  with correction or additional retrieval before generation.
+  `https://github.com/NirDiamant/RAG_Techniques`
 - LlamaIndex retrieval evaluation overview:
   `https://docs.llamaindex.ai/en/stable/module_guides/evaluating/index.html`
 - LlamaIndex observability overview:
@@ -812,6 +963,8 @@ Retrieval is a two-stage architecture with deterministic defaults:
    `source_locator.ranking_boost_rules` per hit so workflow explanations can
    show why evidence was selected instead of hiding relevance behind a single
    opaque score.
+5. The trace preserves `fusion_diagnostics` so API clients and the Retrieval UI
+   can explain lexical/vector agreement without recomputing ranking internals.
 
 Second-stage reranking is disabled by default because it downloads a model and
 adds inference latency. Enable it only in environments that intentionally
@@ -968,11 +1121,14 @@ limit for the active user/query.
 evidence IDs, and optional cutoff, then scores that ranked list against stored
 judgments. It returns Coverage@k, HitRate@k, Precision@k, judged precision,
 MAP@k, MRR@k, nDCG@k, per-value counts, contributing judgment IDs, unjudged
-evidence IDs, and policy-driven `recommendations[]`. The recommendation rules
+evidence IDs, `evaluation_readiness`, and policy-driven `recommendations[]`. The recommendation rules
 are loaded from `knowledge/retrieval/evaluation_policy.json` by default and can
 be overridden with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime
 counterpart to the offline evaluation harness: it makes current operator
 searches measurable and actionable without copying labels into fixture files.
+`evaluation_readiness` states whether the current labels are unlabeled, low
+confidence, usable with gaps, or ready for tuning so sparse label sets do not
+look like reliable ranking quality measurements.
 The Retrieval UI can copy a `retrieval_judgment_evaluation` JSON report with
 server metrics, local in-session metrics, stored-label summary,
 recommendations, ranked evidence IDs, unjudged IDs, and contributing judgment
@@ -1022,6 +1178,21 @@ removed, and retained aspects, so relevance tuning can separate query-planning
 coverage drift from ranking drift. The copied run-comparison report and UI
 also compare coverage diagnostics, including improved, regressed, added,
 removed, and retained standard/aspect coverage items.
+Recent-run summaries include `correctiveActionSummary`, derived from backend
+`recommended_action_summary` when present, with action count, highest priority,
+highest severity, top action title, apply-filter count, broaden-query count,
+and per-action-type counts. This summary is visible in recent-run rows and is
+included in active/baseline copied comparison summaries. Recent-run rows render
+the per-action-type counts as compact chips so operators can quickly see
+whether a search needs filtering, broadening, review, or another remediation
+class before opening detailed corrective-action rows. They also render a
+plain-language `Run remediation` summary derived from the same package data, so
+history scanability does not require opening trace JSON. Copied cockpit and
+run-comparison JSON reports include the same remediation summary, including
+active/baseline summaries for comparisons, so offline audit notes stay aligned
+with the operator-facing history row. New payloads should use backend
+`RetrievalPackage.remediation_summary`; browser fallback derivation exists only
+for older packages.
 It compares added, removed, and retained `quality_signals` so package
 readiness regressions are visible in the same comparison view.
 It also compares selected-hit facets for source type, clinical domain,

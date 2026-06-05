@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+from collections.abc import AsyncIterator
 from typing import Any
 
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
@@ -14,8 +16,10 @@ from ojtflow.core.contracts.assistant import (
     AssistantPlan,
     AssistantResponse,
     AssistantToolPlan,
+    AssistantToolResult,
     AssistantToolSpec,
 )
+from ojtflow.core.errors import OJTFlowError
 
 
 class AssistantService:
@@ -27,10 +31,12 @@ class AssistantService:
         *,
         planner: AssistantPlanner | None = None,
         max_tool_calls: int = 4,
+        planning_progress_interval_seconds: float = 2.0,
     ) -> None:
         self.tool_executor = tool_executor
         self.planner = planner
         self.max_tool_calls = max_tool_calls
+        self.planning_progress_interval_seconds = planning_progress_interval_seconds
 
     @property
     def tool_specs(self) -> list[AssistantToolSpec]:
@@ -49,7 +55,13 @@ class AssistantService:
         """Plan a small tool sequence and execute it through the backend allowlist."""
 
         clean_context = context or {}
-        plan = await self._plan(message=message, context=clean_context)
+        planning_mode = "llm" if self.planner else "deterministic"
+        try:
+            plan = await self._plan(message=message, context=clean_context)
+        except OJTFlowError as exc:
+            plan = _deterministic_plan(message, clean_context)
+            planning_mode = "deterministic"
+            plan.warnings.append(f"LLM planning failed: {exc}")
         tool_results = [
             self.tool_executor.execute(
                 tool_call,
@@ -66,9 +78,27 @@ class AssistantService:
             )
         findings = _findings(tool_results)
         evidence_summary = _evidence_summary(tool_results)
+        synthesis_mode = "deterministic"
+        message_text = _assistant_message(plan.message, tool_results, findings)
+        if self.planner and hasattr(self.planner, "synthesize"):
+            try:
+                message_text = await self.planner.synthesize(
+                    message=message,
+                    context=_context_for_llm(clean_context),
+                    plan=plan,
+                    tool_results=_tool_results_for_llm(tool_results),
+                    findings=[finding.model_dump(mode="json") for finding in findings],
+                    evidence_summary=[
+                        evidence.model_dump(mode="json") for evidence in evidence_summary
+                    ],
+                )
+                synthesis_mode = "llm"
+            except OJTFlowError as exc:
+                warnings.append(f"LLM answer synthesis failed: {exc}")
         return AssistantResponse(
-            message=_assistant_message(plan.message, tool_results, findings),
-            mode="llm" if self.planner else "deterministic",
+            message=message_text,
+            mode=planning_mode,
+            synthesis_mode=synthesis_mode,
             model=self.planner.model_name if self.planner else None,
             findings=findings,
             evidence_summary=evidence_summary,
@@ -76,6 +106,202 @@ class AssistantService:
             suggestions=_suggestions(tool_results),
             warnings=warnings,
         )
+
+    async def chat_stream(
+        self,
+        *,
+        message: str,
+        context: dict[str, Any] | None = None,
+        execute_write_actions: bool = False,
+        owner_user_id: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Stream planning, tool execution, synthesis deltas, and final response."""
+
+        clean_context = context or {}
+        planning_mode = "llm" if self.planner else "deterministic"
+        yield {
+            "type": "planning_started",
+            "mode": planning_mode,
+            "model": self.planner.model_name if self.planner else None,
+            "available_tool_count": len(self.tool_specs),
+            "max_tool_calls": self.max_tool_calls,
+            "message": "Planning the safest matching backend action.",
+        }
+        try:
+            if self.planner:
+                if hasattr(self.planner, "plan_stream"):
+                    plan = None
+                    async for event in self.planner.plan_stream(
+                        message=message,
+                        context=clean_context,
+                        tools=self.tool_executor.tool_specs,
+                        max_tool_calls=self.max_tool_calls,
+                    ):
+                        if event.get("type") == "plan":
+                            candidate = event.get("plan")
+                            if isinstance(candidate, AssistantPlan):
+                                plan = candidate
+                            continue
+                        if event.get("type") in {"planning_step", "planning_delta"}:
+                            yield {**event, "mode": planning_mode}
+                    if plan is None:
+                        raise OJTFlowError("LLM planner stream ended without a plan.")
+                else:
+                    plan_task = asyncio.create_task(
+                        self._plan(message=message, context=clean_context)
+                    )
+                    elapsed_seconds = 0.0
+                    yield {
+                        "type": "planning_step",
+                        "mode": planning_mode,
+                        "label": "Planner request sent",
+                        "message": (
+                            "Waiting for the configured LLM planner to return a "
+                            "validated tool plan."
+                        ),
+                    }
+                    try:
+                        while not plan_task.done():
+                            await asyncio.sleep(self.planning_progress_interval_seconds)
+                            if plan_task.done():
+                                break
+                            elapsed_seconds += self.planning_progress_interval_seconds
+                            yield {
+                                "type": "planning_progress",
+                                "mode": planning_mode,
+                                "elapsed_seconds": round(elapsed_seconds, 2),
+                                "message": (
+                                    "LLM planner is still running. No backend tools "
+                                    "have executed yet."
+                                ),
+                            }
+                        plan = await plan_task
+                    except BaseException:
+                        if not plan_task.done():
+                            plan_task.cancel()
+                        raise
+            else:
+                yield {
+                    "type": "planning_step",
+                    "mode": planning_mode,
+                    "label": "Deterministic planner",
+                    "message": "Selecting a tool from the local rule-based planner.",
+                }
+                plan = await self._plan(message=message, context=clean_context)
+        except OJTFlowError as exc:
+            plan = _deterministic_plan(message, clean_context)
+            planning_mode = "deterministic"
+            plan.warnings.append(f"LLM planning failed: {exc}")
+            yield {
+                "type": "warning",
+                "message": plan.warnings[-1],
+            }
+        yield {
+            "type": "plan_ready",
+            "mode": planning_mode,
+            "plan": plan.model_dump(mode="json"),
+        }
+
+        warnings = [*plan.warnings]
+        tool_results: list[AssistantToolResult] = []
+        planned_tool_calls = plan.tool_calls[: self.max_tool_calls]
+        for index, tool_call in enumerate(planned_tool_calls, start=1):
+            yield {
+                "type": "tool_started",
+                "index": index,
+                "tool_call": tool_call.model_dump(mode="json"),
+            }
+            result = self.tool_executor.execute(
+                tool_call,
+                execute_write_actions=execute_write_actions,
+                owner_user_id=owner_user_id,
+            )
+            tool_results.append(result)
+            yield {
+                "type": "tool_completed",
+                "index": index,
+                "tool_result": result.model_dump(mode="json"),
+            }
+
+        if len(plan.tool_calls) > self.max_tool_calls:
+            warning = (
+                f"Assistant plan had {len(plan.tool_calls)} tool call(s); "
+                f"only the first {self.max_tool_calls} were executed."
+            )
+            warnings.append(warning)
+            yield {"type": "warning", "message": warning}
+
+        findings = _findings(tool_results)
+        evidence_summary = _evidence_summary(tool_results)
+        synthesis_mode = "deterministic"
+        message_text = _assistant_message(plan.message, tool_results, findings)
+        if self.planner and hasattr(self.planner, "synthesize_stream"):
+            yield {
+                "type": "synthesis_started",
+                "mode": "llm",
+                "message": "Streaming the final answer from the LLM.",
+            }
+            chunks: list[str] = []
+            try:
+                async for chunk in self.planner.synthesize_stream(
+                    message=message,
+                    context=_context_for_llm(clean_context),
+                    plan=plan,
+                    tool_results=_tool_results_for_llm(tool_results),
+                    findings=[finding.model_dump(mode="json") for finding in findings],
+                    evidence_summary=[
+                        evidence.model_dump(mode="json") for evidence in evidence_summary
+                    ],
+                ):
+                    chunks.append(chunk)
+                    yield {"type": "answer_delta", "delta": chunk}
+                streamed_text = "".join(chunks).strip()
+                if streamed_text:
+                    message_text = streamed_text
+                    synthesis_mode = "llm"
+            except OJTFlowError as exc:
+                warning = f"LLM answer synthesis failed: {exc}"
+                warnings.append(warning)
+                yield {"type": "warning", "message": warning}
+        elif self.planner and hasattr(self.planner, "synthesize"):
+            yield {
+                "type": "synthesis_started",
+                "mode": "llm",
+                "message": "Generating the final answer from the LLM.",
+            }
+            try:
+                message_text = await self.planner.synthesize(
+                    message=message,
+                    context=_context_for_llm(clean_context),
+                    plan=plan,
+                    tool_results=_tool_results_for_llm(tool_results),
+                    findings=[finding.model_dump(mode="json") for finding in findings],
+                    evidence_summary=[
+                        evidence.model_dump(mode="json") for evidence in evidence_summary
+                    ],
+                )
+                synthesis_mode = "llm"
+                yield {"type": "answer_delta", "delta": message_text}
+            except OJTFlowError as exc:
+                warning = f"LLM answer synthesis failed: {exc}"
+                warnings.append(warning)
+                yield {"type": "warning", "message": warning}
+
+        response = AssistantResponse(
+            message=message_text,
+            mode=planning_mode,
+            synthesis_mode=synthesis_mode,
+            model=self.planner.model_name if self.planner else None,
+            findings=findings,
+            evidence_summary=evidence_summary,
+            tool_calls=tool_results,
+            suggestions=_suggestions(tool_results),
+            warnings=warnings,
+        )
+        yield {
+            "type": "final",
+            "response": response.model_dump(mode="json"),
+        }
 
     async def _plan(self, *, message: str, context: dict[str, Any]) -> AssistantPlan:
         if self.planner:
@@ -86,6 +312,7 @@ class AssistantService:
                 max_tool_calls=self.max_tool_calls,
             )
         return _deterministic_plan(message, context)
+
 
 
 def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
@@ -201,7 +428,7 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
                 rationale="The user asked to inspect workflows.",
             )
         )
-    else:
+    elif _has_retrieval_intent(normalized, context):
         tool_calls.append(
             AssistantToolPlan(
                 tool_name="retrieval_search",
@@ -216,6 +443,17 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
                 },
                 rationale="Default assistant action is trusted evidence retrieval.",
             )
+        )
+    else:
+        return AssistantPlan(
+            message=(
+                "I can help with governed OJTFlow operations: validate data, find "
+                "trusted healthcare evidence, inspect workflows, list reviews, convert "
+                "formats, or profile FHIR-like resources. Ask for one of those tasks "
+                "and include data or context when needed."
+            ),
+            tool_calls=[],
+            warnings=["No supported OJTFlow operation was detected."],
         )
 
     return AssistantPlan(
@@ -235,6 +473,19 @@ def _assistant_message(
     errors = [finding for finding in findings if finding.severity == "error"]
     if errors:
         return errors[0].detail
+    if findings and findings[0].title == "Trusted evidence retrieved":
+        interpretation = next(
+            (finding for finding in findings if finding.title == "Retrieval interpretation"),
+            None,
+        )
+        if interpretation:
+            return interpretation.detail
+        remediation = next(
+            (finding for finding in findings if finding.title == "Retrieval remediation"),
+            None,
+        )
+        if remediation:
+            return remediation.detail
     if findings:
         return findings[0].detail
     summaries = [result.summary for result in tool_results if result.summary]
@@ -265,6 +516,16 @@ def _findings(tool_results: list) -> list[AssistantFinding]:
                     title=f"{result.tool_name} failed",
                     detail=result.summary or result.error or "Tool execution failed.",
                     severity="error",
+                    source_tool=result.tool_name,
+                )
+            )
+            continue
+        if result.status == "skipped":
+            findings.append(
+                AssistantFinding(
+                    title=f"{result.tool_name} skipped",
+                    detail=result.summary or "Tool execution was skipped.",
+                    severity="warning",
                     source_tool=result.tool_name,
                 )
             )
@@ -308,6 +569,9 @@ def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
     evidence = _evidence_items(output)
     trace = output.get("trace") if isinstance(output.get("trace"), dict) else {}
     coverage = output.get("coverage") if isinstance(output.get("coverage"), dict) else {}
+    evidence_buckets = _evidence_buckets(output)
+    interpretation = _retrieval_interpretation(output)
+    remediation_summary = _remediation_summary(output)
     findings = [
         AssistantFinding(
             title="Trusted evidence retrieved",
@@ -323,6 +587,67 @@ def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
             ],
         )
     ]
+    if interpretation:
+        findings.append(
+            AssistantFinding(
+                title="Retrieval interpretation",
+                detail=str(interpretation.get("summary") or "Review retrieval interpretation."),
+                severity=_interpretation_severity(interpretation),
+                source_tool="retrieval_search",
+                source_ids=[
+                    str(interpretation.get("top_source_id"))
+                ]
+                if interpretation.get("top_source_id")
+                else [],
+            )
+        )
+    if remediation_summary:
+        findings.append(
+            AssistantFinding(
+                title="Retrieval remediation",
+                detail=remediation_summary,
+                severity="warning",
+                source_tool="retrieval_search",
+            )
+        )
+    missing_required = [
+        bucket
+        for bucket in evidence_buckets
+        if bucket.get("required") and int(bucket.get("hit_count") or 0) == 0
+    ]
+    if missing_required:
+        findings.append(
+            AssistantFinding(
+                title="Evidence pack needs attention",
+                detail=(
+                    "Missing required evidence bucket(s): "
+                    f"{', '.join(str(bucket.get('label') or bucket.get('bucket_id')) for bucket in missing_required)}."
+                ),
+                severity="warning",
+                source_tool="retrieval_search",
+            )
+        )
+    for action in _recommended_actions(output)[:3]:
+        findings.append(
+            AssistantFinding(
+                title="Recommended search action",
+                detail=(
+                    f"{action.get('title') or 'Review retrieval action'}: "
+                    f"{action.get('description') or 'Review the retrieval package.'}"
+                ),
+                severity="action_required"
+                if action.get("severity") == "destructive"
+                else "warning",
+                source_tool="retrieval_search",
+                source_ids=[
+                    str(evidence_id)
+                    for evidence_id in action.get("evidence_ids", [])
+                    if evidence_id
+                ][:5]
+                if isinstance(action.get("evidence_ids"), list)
+                else [],
+            )
+        )
     for warning in coverage.get("warnings") or trace.get("warnings") or []:
         if isinstance(warning, str) and warning.strip():
             findings.append(
@@ -482,6 +807,11 @@ def _evidence_summary(tool_results: list) -> list[AssistantEvidenceSummary]:
                         if isinstance(item.get("confidence"), (int, float))
                         else None
                     ),
+                    match_explanation=(
+                        item.get("match_explanation")
+                        if isinstance(item.get("match_explanation"), dict)
+                        else {}
+                    ),
                 )
             )
             if len(summaries) >= 5:
@@ -490,6 +820,22 @@ def _evidence_summary(tool_results: list) -> list[AssistantEvidenceSummary]:
 
 
 def _evidence_items(output: dict[str, Any]) -> list[dict[str, Any]]:
+    hits = output.get("hits")
+    if isinstance(hits, list):
+        items: list[dict[str, Any]] = []
+        for hit in hits:
+            if not isinstance(hit, dict):
+                continue
+            evidence = hit.get("evidence")
+            if not isinstance(evidence, dict):
+                continue
+            item = dict(evidence)
+            match_explanation = hit.get("match_explanation")
+            if isinstance(match_explanation, dict):
+                item["match_explanation"] = match_explanation
+            items.append(item)
+        if items:
+            return items
     evidence = output.get("evidence")
     if isinstance(evidence, list):
         return [item for item in evidence if isinstance(item, dict)]
@@ -507,6 +853,135 @@ def _evidence_items(output: dict[str, Any]) -> list[dict[str, Any]]:
         workflow_retrieval = workflow.get("retrieval")
         if isinstance(workflow_retrieval, dict):
             return _evidence_items(workflow_retrieval)
+    return []
+
+
+def _recommended_actions(output: dict[str, Any]) -> list[dict[str, Any]]:
+    actions = output.get("recommended_actions")
+    if isinstance(actions, list):
+        return [item for item in actions if isinstance(item, dict)]
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        return _recommended_actions(retrieval)
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _recommended_actions(workflow_retrieval)
+    return []
+
+
+def _remediation_summary(output: dict[str, Any]) -> str | None:
+    summary = output.get("remediation_summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+    handoff_context = output.get("handoff_context")
+    if isinstance(handoff_context, dict):
+        handoff_summary = handoff_context.get("remediation_summary")
+        if isinstance(handoff_summary, str) and handoff_summary.strip():
+            return handoff_summary.strip()
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        return _remediation_summary(retrieval)
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _remediation_summary(workflow_retrieval)
+    return None
+
+
+def _retrieval_interpretation(output: dict[str, Any]) -> dict[str, Any] | None:
+    interpretation = output.get("interpretation")
+    if isinstance(interpretation, dict):
+        return interpretation
+    handoff_context = output.get("handoff_context")
+    if isinstance(handoff_context, dict):
+        handoff_interpretation = handoff_context.get("interpretation")
+        if isinstance(handoff_interpretation, dict):
+            return handoff_interpretation
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        return _retrieval_interpretation(retrieval)
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _retrieval_interpretation(workflow_retrieval)
+    return None
+
+
+def _interpretation_severity(interpretation: dict[str, Any]) -> str:
+    status = str(interpretation.get("status") or "").lower()
+    if "no_ranked" in status or "support_gaps" in status or "warning" in status:
+        return "warning"
+    if "blocked" in status:
+        return "action_required"
+    return "info"
+
+
+def _context_for_llm(context: dict[str, Any]) -> dict[str, Any]:
+    redacted: dict[str, Any] = {}
+    for key, value in context.items():
+        if key == "data":
+            redacted["data"] = f"<redacted {len(str(value))} characters>"
+        else:
+            redacted[key] = value
+    return redacted
+
+
+def _tool_results_for_llm(tool_results: list[AssistantToolResult]) -> list[dict[str, Any]]:
+    return [
+        {
+            "tool_name": result.tool_name,
+            "status": result.status,
+            "summary": result.summary,
+            "arguments": result.arguments,
+            "error": result.error,
+            "evidence": _evidence_items(result.output)[:5],
+            "evidence_buckets": _evidence_buckets(result.output),
+            "interpretation": _retrieval_interpretation(result.output),
+            "remediation_summary": _remediation_summary(result.output),
+            "trace": _compact_mapping(result.output.get("trace")),
+            "coverage": _compact_mapping(result.output.get("coverage")),
+            "validation_report": _compact_mapping(result.output.get("validation_report")),
+        }
+        for result in tool_results
+    ]
+
+
+def _compact_mapping(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: nested_value
+        for key, nested_value in value.items()
+        if key
+        in {
+            "strategy",
+            "warnings",
+            "safety_flags",
+            "requires_review",
+            "severity_summary",
+            "issues",
+            "standard_system",
+            "query_aspects",
+        }
+    }
+
+
+def _evidence_buckets(output: dict[str, Any]) -> list[dict[str, Any]]:
+    buckets = output.get("evidence_buckets")
+    if isinstance(buckets, list):
+        return [item for item in buckets if isinstance(item, dict)]
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        return _evidence_buckets(retrieval)
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _evidence_buckets(workflow_retrieval)
     return []
 
 
@@ -530,6 +1005,21 @@ def _suggestions(tool_results: list) -> list[str]:
                 "Confirm write execution by resending with execute_write_actions=true."
             )
         if result.tool_name == "retrieval_search" and result.status == "completed":
+            interpretation = _retrieval_interpretation(result.output)
+            if interpretation and interpretation.get("next_action_title"):
+                detail = str(interpretation.get("next_action_detail") or "").strip()
+                title = str(interpretation.get("next_action_title") or "").strip()
+                suggestions.append(f"{title}: {detail}" if detail else title)
+            remediation_summary = _remediation_summary(result.output)
+            if remediation_summary:
+                suggestions.append(f"Next retrieval step: {remediation_summary}")
+            for action in _recommended_actions(result.output)[:3]:
+                title = str(action.get("title") or "").strip()
+                description = str(action.get("description") or "").strip()
+                if title:
+                    suggestions.append(
+                        f"{title}: {description}" if description else title
+                    )
             suggestions.append(
                 "Open the retrieval trace to inspect source coverage and safety flags."
             )
@@ -537,6 +1027,9 @@ def _suggestions(tool_results: list) -> list[str]:
             result.tool_name in {"validate_data", "validate_with_evidence"}
             and result.status == "completed"
         ):
+            remediation_summary = _remediation_summary(result.output)
+            if remediation_summary:
+                suggestions.append(f"Next retrieval step: {remediation_summary}")
             suggestions.append(
                 "Start a governed workflow if validation issues need review-gated repair."
             )
@@ -564,6 +1057,52 @@ def _context_optional_text(context: dict[str, Any], key: str) -> str | None:
 def _workflow_id_from_message(message: str) -> str | None:
     match = re.search(r"\bwf_[A-Za-z0-9_-]+\b", message)
     return match.group(0) if match else None
+
+
+def _has_retrieval_intent(normalized_message: str, context: dict[str, Any]) -> bool:
+    if any(
+        context.get(key)
+        for key in ("schema_id", "fields", "clinical_domain", "standard_system")
+    ):
+        return True
+    operation_terms = {
+        "evidence",
+        "standard",
+        "standards",
+        "search",
+        "find",
+        "retrieve",
+        "ground",
+        "explain",
+        "source",
+        "sources",
+        "citation",
+        "citations",
+    }
+    healthcare_terms = {
+        "clinical",
+        "healthcare",
+        "medical",
+        "fhir",
+        "observation",
+        "patient",
+        "lab",
+        "laboratory",
+        "hba1c",
+        "glucose",
+        "unit",
+        "ucum",
+        "loinc",
+        "snomed",
+        "rxnorm",
+        "pubmed",
+        "mesh",
+        "medication",
+        "drug",
+        "phi",
+    }
+    tokens = set(re.findall(r"[a-z0-9_]+", normalized_message))
+    return bool(tokens & operation_terms) and bool(tokens & healthcare_terms)
 
 
 def _dedupe(values: list[str]) -> list[str]:

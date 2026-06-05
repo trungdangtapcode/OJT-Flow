@@ -548,7 +548,7 @@ function AssistantSettingsForm({
               </Notice>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <Label>
                 Planner
                 <Select
@@ -706,7 +706,7 @@ function RetrievalSettingsForm({
               </Notice>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <Label>
                 Framework
                 <Select
@@ -835,7 +835,7 @@ function RetrievalRulePackInventory({ packs }: { packs: RuntimeRetrievalRulePack
       <div className="grid gap-2 sm:grid-cols-2">
         {packs.map((pack) => (
           <div
-            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card p-2 text-xs"
             key={`${pack.name}-${pack.env_var}`}
           >
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -846,7 +846,11 @@ function RetrievalRulePackInventory({ packs }: { packs: RuntimeRetrievalRulePack
             </div>
             <div className="flex min-w-0 flex-wrap gap-1.5">
               <Badge variant="muted">{pack.rule_count} rules</Badge>
-              {pack.version ? <Badge variant="muted">{pack.version}</Badge> : null}
+              {pack.version ? (
+                <Badge className="max-w-full whitespace-normal break-all leading-4" variant="muted">
+                  {pack.version}
+                </Badge>
+              ) : null}
               {pack.content_hash ? (
                 <Badge variant="muted">{shortRulePackHash(pack.content_hash)}</Badge>
               ) : null}
@@ -1298,7 +1302,7 @@ function ReadinessRulePackDetails({ check }: { check: ReadinessCheck }) {
       <div className="grid gap-1.5 sm:grid-cols-2">
         {packs.map((pack) => (
           <div
-            className="grid gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-[11px]"
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-[11px]"
             key={`${pack.name}-${pack.env_var}`}
           >
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -1307,7 +1311,11 @@ function ReadinessRulePackDetails({ check }: { check: ReadinessCheck }) {
             </div>
             <div className="flex min-w-0 flex-wrap gap-1">
               <Badge variant="muted">{pack.rule_count} rules</Badge>
-              {pack.version ? <Badge variant="muted">{pack.version}</Badge> : null}
+              {pack.version ? (
+                <Badge className="max-w-full whitespace-normal break-all leading-4" variant="muted">
+                  {pack.version}
+                </Badge>
+              ) : null}
               {pack.content_hash ? (
                 <Badge variant="muted">{shortRulePackHash(pack.content_hash)}</Badge>
               ) : null}

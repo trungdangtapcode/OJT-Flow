@@ -164,6 +164,7 @@ class RetrievalSearchFilters(ContractModel):
     clinical_domain: NonBlankStr | None = None
     standard_system: NonBlankStr | None = None
     source_type: EvidenceSourceType | None = None
+    source_id: NonBlankStr | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -173,6 +174,7 @@ class RetrievalSearchFilters(ContractModel):
                     "clinical_domain": "laboratory",
                     "standard_system": "UCUM",
                     "source_type": "terminology_system",
+                    "source_id": "terminology:ucum",
                 }
             ]
         }

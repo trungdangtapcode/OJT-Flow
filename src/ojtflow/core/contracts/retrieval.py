@@ -80,6 +80,16 @@ class RetrievalEvaluationRecommendation(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RetrievalEvaluationReadiness(ContractModel):
+    """Interpretation of whether judgment metrics are sufficiently labeled."""
+
+    status: NonBlankStr
+    label: NonBlankStr
+    message: NonBlankStr
+    min_judged_count: int = Field(ge=0)
+    min_coverage_at_k: float = Field(ge=0.0, le=1.0)
+
+
 class RetrievalJudgmentEvaluationResult(ContractModel):
     """Judgment-aware evaluation for one ranked retrieval result set."""
 
@@ -101,6 +111,7 @@ class RetrievalJudgmentEvaluationResult(ContractModel):
     average_rating: float | None = None
     unjudged_evidence_ids: list[NonBlankStr] = Field(default_factory=list)
     judgment_ids: list[NonBlankStr] = Field(default_factory=list)
+    evaluation_readiness: RetrievalEvaluationReadiness
     recommendations: list[RetrievalEvaluationRecommendation] = Field(default_factory=list)
 
 
@@ -195,7 +206,34 @@ class RetrievalHit(ContractModel):
     score_components: list[RetrievalScoreComponent] = Field(default_factory=list)
     matched_terms: list[str] = Field(default_factory=list)
     source_locator: dict[str, Any] = Field(default_factory=dict)
+    match_explanation: dict[str, Any] = Field(default_factory=dict)
     snippet: RetrievalSnippet | None = None
+
+
+RetrievalEvidenceBucketKind = Literal[
+    "schema",
+    "policy",
+    "terminology",
+    "fhir_mapping",
+    "source_locator",
+    "prior_decision",
+    "other",
+]
+
+
+class RetrievalEvidenceBucket(ContractModel):
+    """Operator-facing evidence bucket for clinical workflow audit panels."""
+
+    bucket_id: RetrievalEvidenceBucketKind
+    label: NonBlankStr
+    description: NonBlankStr
+    evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    source_ids: list[NonBlankStr] = Field(default_factory=list)
+    hit_count: int = Field(ge=0)
+    required: bool = False
+    status: NonBlankStr
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    suggested_filter: dict[str, NonBlankStr] = Field(default_factory=dict)
 
 
 class RetrievalTrace(ContractModel):
@@ -204,6 +242,7 @@ class RetrievalTrace(ContractModel):
     strategy: str
     query_variants: list[str] = Field(default_factory=list)
     query_variant_details: list[RetrievalQueryVariant] = Field(default_factory=list)
+    fusion_diagnostics: dict[str, Any] = Field(default_factory=dict)
     filters_applied: dict[str, Any] = Field(default_factory=dict)
     candidates_seen: int = 0
     final_hit_ids: list[str] = Field(default_factory=list)
@@ -236,6 +275,57 @@ class RetrievalQualitySummary(ContractModel):
     warning_codes: list[NonBlankStr] = Field(default_factory=list)
 
 
+RetrievalRecommendedActionType = Literal[
+    "apply_filter",
+    "broaden_query",
+    "rewrite_query",
+    "reindex_source",
+    "add_source",
+    "require_review",
+    "diversify_sources",
+]
+
+
+class RetrievalRecommendedAction(ContractModel):
+    """Concrete corrective retrieval action derived from package quality signals."""
+
+    action_id: NonBlankStr
+    priority: int = Field(ge=1)
+    severity: NonBlankStr
+    action_type: RetrievalRecommendedActionType
+    title: NonBlankStr
+    description: NonBlankStr
+    suggested_filter: dict[str, NonBlankStr] = Field(default_factory=dict)
+    source_signal_codes: list[NonBlankStr] = Field(default_factory=list)
+    evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalRecommendedActionSummary(ContractModel):
+    """Aggregate corrective-action urgency summary for retrieval triage."""
+
+    count: int = Field(ge=0)
+    highest_priority: int | None = Field(default=None, ge=1)
+    highest_severity: NonBlankStr | None = None
+    top_action_title: NonBlankStr | None = None
+    apply_filter_count: int = Field(ge=0)
+    broaden_query_count: int = Field(ge=0)
+    action_type_counts: dict[NonBlankStr, int] = Field(default_factory=dict)
+
+
+class RetrievalStrategyRecommendation(ContractModel):
+    """Backend-owned explanation of the selected retrieval strategy."""
+
+    recommendation_id: NonBlankStr
+    title: NonBlankStr
+    technique: NonBlankStr
+    status: NonBlankStr
+    rationale: NonBlankStr
+    source_signal_codes: list[NonBlankStr] = Field(default_factory=list)
+    suggested_filters: dict[str, NonBlankStr] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalFilterSuggestion(ContractModel):
     """Metadata filter suggested by deterministic self-query analysis."""
 
@@ -254,6 +344,7 @@ class RetrievalQueryDiagnostic(ContractModel):
     severity: NonBlankStr
     message: NonBlankStr
     suggested_action: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RetrievalSearchHint(ContractModel):
@@ -361,15 +452,42 @@ class RetrievalQueryAnalysis(ContractModel):
     query_aspects: list[RetrievalQueryAspect] = Field(default_factory=list)
 
 
+class RetrievalInterpretation(ContractModel):
+    """Package-level, operator-facing explanation of retrieval support quality."""
+
+    status: NonBlankStr
+    summary: NonBlankStr
+    top_evidence_id: NonBlankStr | None = None
+    top_source_id: NonBlankStr | None = None
+    top_score_driver: NonBlankStr | None = None
+    support_status: NonBlankStr | None = None
+    matched_terms: list[NonBlankStr] = Field(default_factory=list)
+    concept_labels: list[NonBlankStr] = Field(default_factory=list)
+    aspect_labels: list[NonBlankStr] = Field(default_factory=list)
+    required_bucket_count: int = Field(default=0, ge=0)
+    covered_required_bucket_count: int = Field(default=0, ge=0)
+    missing_required_buckets: list[NonBlankStr] = Field(default_factory=list)
+    warning_count: int = Field(default=0, ge=0)
+    next_action_title: NonBlankStr | None = None
+    next_action_detail: NonBlankStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalPackage(ContractModel):
     """Evidence package returned to workflow state and API callers."""
 
     hits: list[RetrievalHit] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
+    evidence_buckets: list[RetrievalEvidenceBucket] = Field(default_factory=list)
     coverage: RetrievalCoverage | None = None
     facets: RetrievalFacets | None = None
     quality_signals: list[RetrievalQualitySignal] = Field(default_factory=list)
     quality_summary: RetrievalQualitySummary | None = None
+    recommended_actions: list[RetrievalRecommendedAction] = Field(default_factory=list)
+    recommended_action_summary: RetrievalRecommendedActionSummary | None = None
+    remediation_summary: NonBlankStr | None = None
+    interpretation: RetrievalInterpretation | None = None
+    strategy_recommendations: list[RetrievalStrategyRecommendation] = Field(default_factory=list)
     trace: RetrievalTrace
     handoff_context: dict[str, Any] = Field(default_factory=dict)
 

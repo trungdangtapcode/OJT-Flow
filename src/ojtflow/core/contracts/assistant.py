@@ -60,6 +60,7 @@ class AssistantEvidenceSummary(ContractModel):
     claim: str
     trust_level: str
     confidence: float | None = None
+    match_explanation: dict[str, Any] = Field(default_factory=dict)
 
 
 class AssistantPlan(ContractModel):
@@ -70,11 +71,22 @@ class AssistantPlan(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class AssistantExample(ContractModel):
+    """Data-driven starter task for the Assistant UI."""
+
+    example_id: NonBlankStr
+    label: NonBlankStr
+    description: NonBlankStr
+    message: NonBlankStr
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
 class AssistantResponse(ContractModel):
     """Public assistant response."""
 
     message: str
     mode: Literal["deterministic", "llm"]
+    synthesis_mode: Literal["deterministic", "llm"] = "deterministic"
     model: str | None = None
     findings: list[AssistantFinding] = Field(default_factory=list)
     evidence_summary: list[AssistantEvidenceSummary] = Field(default_factory=list)

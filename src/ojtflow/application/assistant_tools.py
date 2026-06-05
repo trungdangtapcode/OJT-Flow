@@ -30,6 +30,8 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
                 "fields": {"type": "array", "items": {"type": "string"}},
                 "clinical_domain": {"type": ["string", "null"]},
                 "standard_system": {"type": ["string", "null"]},
+                "source_type": {"type": ["string", "null"]},
+                "source_id": {"type": ["string", "null"]},
                 "trust_level": {"type": ["string", "null"]},
             },
             "required": ["query"],
@@ -67,6 +69,8 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
                 "fields": {"type": "array", "items": {"type": "string"}},
                 "clinical_domain": {"type": ["string", "null"]},
                 "standard_system": {"type": ["string", "null"]},
+                "source_type": {"type": ["string", "null"]},
+                "source_id": {"type": ["string", "null"]},
                 "query": {"type": ["string", "null"]},
                 "top_k": {"type": "integer", "minimum": 1, "maximum": 20},
             },
@@ -216,6 +220,19 @@ class OJTFlowToolExecutor:
                 summary=f"Unknown tool was not executed: {plan.tool_name}",
                 error="unknown_tool",
             )
+        missing_required = _missing_required_arguments(spec, plan.arguments)
+        if missing_required:
+            return AssistantToolResult(
+                tool_name=plan.tool_name,
+                status="skipped",
+                arguments=plan.arguments,
+                summary=(
+                    f"{plan.tool_name} was skipped because required argument(s) "
+                    f"were missing: {', '.join(missing_required)}."
+                ),
+                error="missing_required_arguments",
+                requires_approval=spec.requires_approval,
+            )
         if spec.requires_approval and not execute_write_actions:
             return AssistantToolResult(
                 tool_name=plan.tool_name,
@@ -280,6 +297,8 @@ class OJTFlowToolExecutor:
             for key, value in {
                 "clinical_domain": _optional_str(args.get("clinical_domain")),
                 "standard_system": _optional_str(args.get("standard_system")),
+                "source_type": _optional_str(args.get("source_type")),
+                "source_id": _optional_str(args.get("source_id")),
                 "trust_level": _optional_str(args.get("trust_level")) or "approved",
             }.items()
             if value
@@ -328,6 +347,8 @@ class OJTFlowToolExecutor:
                 "fields": fields,
                 "clinical_domain": _optional_str(args.get("clinical_domain")) or "laboratory",
                 "standard_system": _optional_str(args.get("standard_system")),
+                "source_type": _optional_str(args.get("source_type")),
+                "source_id": _optional_str(args.get("source_id")),
                 "trust_level": "approved",
             },
             owner_user_id,
@@ -449,6 +470,23 @@ class OJTFlowToolExecutor:
             owner_user_id=owner_user_id,
         )
         return workflow.model_dump(mode="json")
+
+
+def _missing_required_arguments(
+    spec: AssistantToolSpec,
+    arguments: dict[str, Any],
+) -> list[str]:
+    required = spec.input_schema.get("required")
+    if not isinstance(required, list):
+        return []
+    missing: list[str] = []
+    for key in required:
+        if not isinstance(key, str):
+            continue
+        value = arguments.get(key)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            missing.append(key)
+    return missing
 
 
 def _tool_summary(tool_name: str, output: dict[str, Any]) -> str:

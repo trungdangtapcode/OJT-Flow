@@ -1,10 +1,13 @@
 import type {
   ApiEnvelope,
   AssistantChatPayload,
+  AssistantExample,
   AssistantResponse,
+  AssistantStreamEvent,
   AssistantToolSpec,
   AuthLoginResponse,
   AuthSessionResponse,
+  ExtractedDocument,
   ExtractorInventory,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentEvaluationResult,
@@ -257,6 +260,28 @@ function queryString(params: Record<string, string | number | null | undefined>)
   return value ? `?${value}` : "";
 }
 
+function parseAssistantStreamBuffer(buffer: string): {
+  events: AssistantStreamEvent[];
+  remainder: string;
+} {
+  const parts = buffer.split(/\r?\n\r?\n/);
+  const remainder = parts.pop() ?? "";
+  const events = parts
+    .map(parseAssistantStreamEvent)
+    .filter((event): event is AssistantStreamEvent => event !== null);
+  return { events, remainder };
+}
+
+function parseAssistantStreamEvent(block: string): AssistantStreamEvent | null {
+  const dataLine = block.split(/\r?\n/).find((line) => line.startsWith("data:"));
+  if (!dataLine) return null;
+  try {
+    return JSON.parse(dataLine.slice(5).trim()) as AssistantStreamEvent;
+  } catch {
+    return null;
+  }
+}
+
 function pathSegment(value: string): string {
   return encodeURIComponent(value);
 }
@@ -441,6 +466,86 @@ export function chatWithAssistant(
   });
 }
 
+export async function streamAssistantChat(
+  payload: AssistantChatPayload,
+  onEvent: (event: AssistantStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<AssistantResponse> {
+  const body = JSON.stringify(payload);
+  const response = await fetchApi(`${API_BASE_URL}/assistant/chat/stream`, {
+    method: "POST",
+    credentials: "include",
+    headers: requestHeaders({ body }),
+    signal,
+    body,
+  });
+  if (!response.ok) {
+    const envelope = await parseEnvelope<AssistantResponse>(response);
+    throwApiRequestError(
+      response,
+      envelope,
+      "assistant_stream_failed",
+      `Assistant stream failed with status ${response.status}`,
+    );
+  }
+  if (!response.body) {
+    throw new ApiRequestError({
+      status: response.status,
+      code: "assistant_stream_unavailable",
+      message: "Assistant stream response did not include a readable body.",
+    });
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResponse: AssistantResponse | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parsed = parseAssistantStreamBuffer(buffer);
+    buffer = parsed.remainder;
+    for (const event of parsed.events) {
+      onEvent(event);
+      if (event.type === "error") {
+        throw new ApiRequestError({
+          status: response.status,
+          code: event.code,
+          message: event.message,
+          details: event.details,
+        });
+      }
+      if (event.type === "final") finalResponse = event.response;
+    }
+  }
+  buffer += decoder.decode();
+  const parsed = parseAssistantStreamBuffer(buffer);
+  for (const event of parsed.events) {
+    onEvent(event);
+    if (event.type === "error") {
+      throw new ApiRequestError({
+        status: response.status,
+        code: event.code,
+        message: event.message,
+        details: event.details,
+      });
+    }
+    if (event.type === "final") finalResponse = event.response;
+  }
+  if (!finalResponse) {
+    throw new ApiRequestError({
+      status: response.status,
+      code: "assistant_stream_incomplete",
+      message: "Assistant stream ended before the final response was received.",
+    });
+  }
+  return finalResponse;
+}
+
+export function listAssistantExamples(): Promise<AssistantExample[]> {
+  return request<AssistantExample[]>("/assistant/examples");
+}
+
 export function listAssistantTools(): Promise<AssistantToolSpec[]> {
   return request<AssistantToolSpec[]>("/assistant/tools");
 }
@@ -472,6 +577,31 @@ export function reindexRetrieval(
 
 export function getExtractorInventory(): Promise<ExtractorInventory> {
   return request<ExtractorInventory>("/parse/extractors");
+}
+
+export async function extractFileText(
+  file: File,
+  options: { extractor: string },
+): Promise<ExtractedDocument> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("extractor", options.extractor);
+
+  const response = await fetchApi(`${API_BASE_URL}/parse/extract`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  const envelope = await parseEnvelope<ExtractedDocument>(response);
+  if (!response.ok || envelope.error) {
+    throwApiRequestError(
+      response,
+      envelope,
+      "extract_failed",
+      `Extraction failed with status ${response.status}`,
+    );
+  }
+  return envelope.data as ExtractedDocument;
 }
 
 export function getRuntimeConfig(): Promise<RuntimeConfig> {

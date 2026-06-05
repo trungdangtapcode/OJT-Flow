@@ -1,0 +1,113 @@
+{
+  "version": "retrieval_corrective_action_rules.v1",
+  "rules": [
+    {
+      "rule_id": "overconstrained_metadata_broaden_query",
+      "source": "query_diagnostic",
+      "signal_code": "overconstrained_metadata_filters",
+      "priority": 8,
+      "action_type": "broaden_query",
+      "title": "Broaden over-filtered search",
+      "description": "Clear narrow metadata filters or add schema, fields, resource type, format, or clinical terms before treating low evidence coverage as real."
+    },
+    {
+      "rule_id": "no_hits_broaden_query",
+      "signal_code": "no_hits",
+      "priority": 10,
+      "action_type": "broaden_query",
+      "title": "Broaden the search",
+      "description": "Remove restrictive filters, use fewer exact terms, or reindex trusted knowledge before relying on this package."
+    },
+    {
+      "rule_id": "query_context_safety_review",
+      "signal_code": "query_context_safety_flags",
+      "priority": 15,
+      "action_type": "require_review",
+      "title": "Require human review",
+      "description": "Treat the query text as untrusted data and require review before running write-capable or agent handoff steps."
+    },
+    {
+      "rule_id": "missing_required_bucket_recovery",
+      "signal_code": "missing_required_evidence_buckets",
+      "priority": 20,
+      "action_type": "apply_filter",
+      "fallback_action_type": "add_source",
+      "title_template": "Recover {label} evidence",
+      "description": "Run a targeted remediation search or add an approved source for this required evidence class.",
+      "metadata_list_path": "missing_buckets",
+      "suggested_filter_path": "suggested_filter",
+      "metadata_keys": ["bucket_id"]
+    },
+    {
+      "rule_id": "missing_standard_filter_recovery",
+      "signal_code": "missing_standard_coverage",
+      "priority": 30,
+      "action_type": "apply_filter",
+      "fallback_action_type": "broaden_query",
+      "title_prefix": "Recover standard coverage",
+      "fallback_title": "Broaden standard search",
+      "description_from_signal": "suggested_action",
+      "metadata_list_path": "suggested_filters"
+    },
+    {
+      "rule_id": "missing_concept_grounding_recovery",
+      "signal_code": "missing_concept_grounding",
+      "priority": 35,
+      "action_type": "apply_filter",
+      "fallback_action_type": "add_source",
+      "title_template": "Recover concept grounding: {display_name}",
+      "fallback_title": "Add terminology-backed evidence",
+      "description": "Run a terminology-focused search so selected evidence grounds this detected medical concept before downstream use.",
+      "fallback_description": "Add or reindex approved terminology sources that ground the detected medical concepts.",
+      "metadata_list_path": "missing_concepts",
+      "suggested_filter_from_metadata": {
+        "standard_system": "standard_system"
+      },
+      "metadata_keys": ["concept_id", "standard_system"]
+    },
+    {
+      "rule_id": "missing_query_aspect_filter_recovery",
+      "signal_code": "missing_query_aspect_coverage",
+      "priority": 38,
+      "action_type": "apply_filter",
+      "fallback_action_type": "broaden_query",
+      "title_prefix": "Recover aspect coverage",
+      "fallback_title": "Broaden aspect search",
+      "description_from_signal": "suggested_action",
+      "metadata_list_path": "suggested_filters"
+    },
+    {
+      "rule_id": "weak_top_hit_rewrite_query",
+      "signal_code": "weak_top_hit_match",
+      "priority": 40,
+      "action_type": "rewrite_query",
+      "title": "Rewrite the query",
+      "description": "Use more specific clinical terms, identifiers, standards, or schema fields so the top result has stronger exact-term support."
+    },
+    {
+      "rule_id": "source_diversity_recovery",
+      "signal_code": "source_diversity_limited",
+      "priority": 45,
+      "action_type": "diversify_sources",
+      "title": "Diversify selected sources",
+      "description": "Apply source, standard, or clinical-domain filters to reduce duplicate-source evidence before downstream use."
+    },
+    {
+      "rule_id": "weak_provenance_reindex",
+      "signal_code": "weak_evidence_provenance",
+      "priority": 50,
+      "action_type": "reindex_source",
+      "title": "Repair source provenance",
+      "description": "Reindex the source with version and locator metadata, or replace the evidence with an auditable source."
+    },
+    {
+      "rule_id": "default_warning_review",
+      "signal_code": "*",
+      "match_severities": ["warning", "destructive"],
+      "priority": 90,
+      "action_type": "require_review",
+      "title_from_signal": "suggested_action",
+      "description_from_signal": "message"
+    }
+  ]
+}

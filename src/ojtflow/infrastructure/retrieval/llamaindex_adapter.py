@@ -30,16 +30,23 @@ from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
     active_quality_policy,
+    attach_hit_match_explanations,
     coverage_from_chunks,
     default_healthcare_chunks,
+    evidence_buckets_from_hits,
     evidence_from_chunk,
     facets_from_chunks,
     hit_source_locator_from_chunk,
+    interpretation_from_package_parts,
+    recommended_action_summary_from_actions,
     quality_signals_from_results,
     quality_summary_from_signals,
+    recommended_actions_from_context,
+    remediation_summary_from_package_parts,
     retrieval_safety_flags,
     snippet_from_chunk,
     sources_from_chunks,
+    strategy_recommendations_from_context,
     tokenize,
 )
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
@@ -118,6 +125,14 @@ class LlamaIndexRetrievalRepository:
             query_analysis=query_analysis,
             query_text=query_text,
         )
+        fusion_diagnostics = _framework_fusion_diagnostics(
+            bm25_available=cache.bm25_available,
+            bm25_weight=self.bm25_weight,
+            candidate_top_k=candidate_top_k,
+            filtered_node_count=filtered_node_count,
+            hits=hits,
+            vector_weight=self.vector_weight,
+        )
         coverage = coverage_from_chunks(selected_chunks, query_analysis)
         warnings.extend(coverage.warnings)
         safety_flags = retrieval_safety_flags(query)
@@ -130,15 +145,19 @@ class LlamaIndexRetrievalRepository:
             strategy="llamaindex_hybrid_rrf",
             query_variants=query_analysis.query_variants,
             query_variant_details=query_analysis.query_variant_details,
+            fusion_diagnostics=fusion_diagnostics,
             filters_applied=query.filters,
             candidates_seen=filtered_node_count,
             final_hit_ids=[hit.evidence.evidence_id for hit in hits],
             safety_flags=safety_flags,
             warnings=warnings,
         )
+        evidence_buckets = evidence_buckets_from_hits(hits)
+        attach_hit_match_explanations(hits, evidence_buckets)
         quality_policy = active_quality_policy()
         quality_signals = quality_signals_from_results(
             hits=hits,
+            evidence_buckets=evidence_buckets,
             coverage=coverage,
             safety_flags=safety_flags,
             candidates_seen=filtered_node_count,
@@ -149,13 +168,47 @@ class LlamaIndexRetrievalRepository:
             quality_signals,
             policy=quality_policy,
         )
+        recommended_actions = recommended_actions_from_context(
+            quality_signals=quality_signals,
+            query_analysis=query_analysis,
+        )
+        recommended_action_summary = recommended_action_summary_from_actions(
+            recommended_actions
+        )
+        remediation_summary = remediation_summary_from_package_parts(
+            hit_count=len(hits),
+            quality_summary=quality_summary,
+            recommended_action_summary=recommended_action_summary,
+            trace_warning_count=len(warnings),
+        )
+        interpretation = interpretation_from_package_parts(
+            hits=hits,
+            evidence_buckets=evidence_buckets,
+            quality_summary=quality_summary,
+            recommended_actions=recommended_actions,
+            trace_warning_count=len(warnings),
+            remediation_summary=remediation_summary,
+        )
+        strategy_recommendations = strategy_recommendations_from_context(
+            query_analysis=query_analysis,
+            quality_signals=quality_signals,
+            evidence_buckets=evidence_buckets,
+            safety_flags=safety_flags,
+            reranker_enabled=False,
+        )
         return RetrievalPackage(
             hits=hits,
             evidence=[hit.evidence for hit in hits],
+            evidence_buckets=evidence_buckets,
             coverage=coverage,
             facets=facets_from_chunks(selected_chunks),
             quality_signals=quality_signals,
             quality_summary=quality_summary,
+            recommended_actions=recommended_actions,
+            recommended_action_summary=recommended_action_summary,
+            remediation_summary=remediation_summary,
+            interpretation=interpretation,
+            strategy_recommendations=strategy_recommendations,
             trace=trace,
             handoff_context={
                 "retrieval_contract": "retrieval_package.v0",
@@ -178,8 +231,19 @@ class LlamaIndexRetrievalRepository:
                 "query_fields": query.fields,
                 "schema_id": query.schema_id,
                 "embedding": self.embedding_provider.metadata(),
+                "fusion_diagnostics": fusion_diagnostics,
                 "quality_policy": quality_policy.metadata(),
                 "quality_summary": quality_summary.model_dump(),
+                "recommended_actions": [
+                    action.model_dump(mode="json") for action in recommended_actions
+                ],
+                "recommended_action_summary": recommended_action_summary.model_dump(mode="json"),
+                "remediation_summary": remediation_summary,
+                "interpretation": interpretation.model_dump(mode="json"),
+                "strategy_recommendations": [
+                    recommendation.model_dump(mode="json")
+                    for recommendation in strategy_recommendations
+                ],
                 "query_analysis": query_analysis.model_dump(),
             },
         )
@@ -362,6 +426,7 @@ class LlamaIndexRetrievalRepository:
         clinical_domain = query.filters.get("clinical_domain")
         standard_system = query.filters.get("standard_system")
         source_type = query.filters.get("source_type")
+        source_id = query.filters.get("source_id")
         filtered = chunks
         if trust_level:
             filtered = [chunk for chunk in filtered if chunk.trust_level == TrustLevel(trust_level)]
@@ -375,6 +440,8 @@ class LlamaIndexRetrievalRepository:
                 for chunk in filtered
                 if chunk.source_type == EvidenceSourceType(source_type)
             ]
+        if source_id:
+            filtered = [chunk for chunk in filtered if chunk.source_id == source_id]
         return filtered
 
 
@@ -517,7 +584,13 @@ def _metadata_matches_query(metadata: dict[str, Any], query: RetrievalQuery) -> 
 
 def _metadata_filter_values(query: RetrievalQuery) -> dict[str, str]:
     values: dict[str, str] = {}
-    for key in ("trust_level", "clinical_domain", "standard_system", "source_type"):
+    for key in (
+        "trust_level",
+        "clinical_domain",
+        "standard_system",
+        "source_type",
+        "source_id",
+    ):
         value = _normalized_metadata_filter_value(query.filters.get(key))
         if value:
             values[key] = value
@@ -585,6 +658,48 @@ def _hits_from_nodes(
     return hits, chunks
 
 
+def _framework_fusion_diagnostics(
+    *,
+    bm25_available: bool,
+    bm25_weight: float,
+    candidate_top_k: int,
+    filtered_node_count: int,
+    hits: list[RetrievalHit],
+    vector_weight: float,
+) -> dict[str, Any]:
+    """Report framework-managed hybrid retrieval diagnostics without inventing ranks."""
+
+    method = "llamaindex_hybrid_rrf" if bm25_available else "llamaindex_vector_only"
+    selected_hits = [
+        {
+            "evidence_id": hit.evidence.evidence_id,
+            "rank": index,
+            "framework_score": hit.score,
+            "dominant_signal": "framework_score",
+        }
+        for index, hit in enumerate(hits, start=1)
+    ]
+    return {
+        "method": method,
+        "diagnostic_scope": "framework_managed_fusion",
+        "candidate_top_k": candidate_top_k,
+        "filtered_node_count": filtered_node_count,
+        "bm25_available": bm25_available,
+        "weights": {
+            "vector": vector_weight,
+            "bm25": bm25_weight if bm25_available else 0.0,
+        },
+        "top_overlap_count": None,
+        "top_overlap_ratio": None,
+        "mean_selected_rank_delta": None,
+        "selected_signal_balance": {
+            "framework_score": len(hits),
+        },
+        "interpretation": "framework_managed_hybrid" if bm25_available else "framework_vector_only",
+        "selected_hits": selected_hits,
+    }
+
+
 def _chunk_from_node(node: Any) -> KnowledgeChunk:
     metadata = dict(getattr(node, "metadata", {}) or {})
     content = node.get_content() if hasattr(node, "get_content") else str(getattr(node, "text", ""))
@@ -640,17 +755,59 @@ def _empty_package(
         query_analysis=query_analysis,
     )
     quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
+    recommended_actions = recommended_actions_from_context(
+        quality_signals=quality_signals,
+        query_analysis=query_analysis,
+    )
+    recommended_action_summary = recommended_action_summary_from_actions(recommended_actions)
+    remediation_summary = remediation_summary_from_package_parts(
+        hit_count=0,
+        quality_summary=quality_summary,
+        recommended_action_summary=recommended_action_summary,
+        trace_warning_count=len(warnings),
+    )
+    evidence_buckets = evidence_buckets_from_hits([])
+    interpretation = interpretation_from_package_parts(
+        hits=[],
+        evidence_buckets=evidence_buckets,
+        quality_summary=quality_summary,
+        recommended_actions=recommended_actions,
+        trace_warning_count=len(warnings),
+        remediation_summary=remediation_summary,
+    )
+    strategy_recommendations = strategy_recommendations_from_context(
+        query_analysis=query_analysis,
+        quality_signals=quality_signals,
+        evidence_buckets=evidence_buckets,
+        safety_flags=safety_flags,
+        reranker_enabled=False,
+    )
+    fusion_diagnostics = _framework_fusion_diagnostics(
+        bm25_available=False,
+        bm25_weight=0.0,
+        candidate_top_k=0,
+        filtered_node_count=0,
+        hits=[],
+        vector_weight=1.0,
+    )
     return RetrievalPackage(
         hits=[],
         evidence=[],
+        evidence_buckets=evidence_buckets,
         coverage=coverage,
         facets=RetrievalFacets(),
         quality_signals=quality_signals,
         quality_summary=quality_summary,
+        recommended_actions=recommended_actions,
+        recommended_action_summary=recommended_action_summary,
+        remediation_summary=remediation_summary,
+        interpretation=interpretation,
+        strategy_recommendations=strategy_recommendations,
         trace=RetrievalTrace(
             strategy=strategy,
             query_variants=query_analysis.query_variants,
             query_variant_details=query_analysis.query_variant_details,
+            fusion_diagnostics=fusion_diagnostics,
             filters_applied=query.filters,
             candidates_seen=0,
             final_hit_ids=[],
@@ -660,8 +817,19 @@ def _empty_package(
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
             "framework": "llamaindex",
+            "fusion_diagnostics": fusion_diagnostics,
             "quality_policy": quality_policy.metadata(),
             "quality_summary": quality_summary.model_dump(),
+            "recommended_actions": [
+                action.model_dump(mode="json") for action in recommended_actions
+            ],
+            "recommended_action_summary": recommended_action_summary.model_dump(mode="json"),
+            "remediation_summary": remediation_summary,
+            "interpretation": interpretation.model_dump(mode="json"),
+            "strategy_recommendations": [
+                recommendation.model_dump(mode="json")
+                for recommendation in strategy_recommendations
+            ],
             "query_analysis": query_analysis.model_dump(),
         },
     )

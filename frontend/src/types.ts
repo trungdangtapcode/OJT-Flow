@@ -106,6 +106,7 @@ export type RetrievalTrace = {
   strategy: string;
   query_variants: string[];
   query_variant_details?: RetrievalQueryVariant[];
+  fusion_diagnostics?: Record<string, unknown>;
   filters_applied: Record<string, unknown>;
   candidates_seen: number;
   final_hit_ids: string[];
@@ -129,7 +130,28 @@ export type RetrievalHit = {
   score_components: RetrievalScoreComponent[];
   matched_terms: string[];
   source_locator: Record<string, unknown>;
+  match_explanation?: Record<string, unknown>;
   snippet?: RetrievalSnippet | null;
+};
+
+export type RetrievalEvidenceBucket = {
+  bucket_id:
+    | "schema"
+    | "policy"
+    | "terminology"
+    | "fhir_mapping"
+    | "source_locator"
+    | "prior_decision"
+    | "other";
+  label: string;
+  description: string;
+  evidence_ids: string[];
+  source_ids: string[];
+  hit_count: number;
+  required: boolean;
+  status: string;
+  warnings: string[];
+  suggested_filter: Record<string, string>;
 };
 
 export type RetrievalScoreComponent = {
@@ -197,6 +219,66 @@ export type RetrievalQualitySummary = {
   top_action: string;
   blocker_codes: string[];
   warning_codes: string[];
+};
+
+export type RetrievalRecommendedAction = {
+  action_id: string;
+  priority: number;
+  severity: string;
+  action_type:
+    | "apply_filter"
+    | "broaden_query"
+    | "rewrite_query"
+    | "reindex_source"
+    | "add_source"
+    | "require_review"
+    | "diversify_sources";
+  title: string;
+  description: string;
+  suggested_filter: Record<string, string>;
+  source_signal_codes: string[];
+  evidence_ids: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalRecommendedActionSummary = {
+  count: number;
+  highest_priority?: number | null;
+  highest_severity?: string | null;
+  top_action_title?: string | null;
+  apply_filter_count: number;
+  broaden_query_count: number;
+  action_type_counts: Record<string, number>;
+};
+
+export type RetrievalStrategyRecommendation = {
+  recommendation_id: string;
+  title: string;
+  technique: string;
+  status: string;
+  rationale: string;
+  source_signal_codes: string[];
+  suggested_filters: Record<string, string>;
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalInterpretation = {
+  status: string;
+  summary: string;
+  top_evidence_id?: string | null;
+  top_source_id?: string | null;
+  top_score_driver?: string | null;
+  support_status?: string | null;
+  matched_terms: string[];
+  concept_labels: string[];
+  aspect_labels: string[];
+  required_bucket_count: number;
+  covered_required_bucket_count: number;
+  missing_required_buckets: string[];
+  warning_count: number;
+  next_action_title?: string | null;
+  next_action_detail?: string | null;
+  metadata: Record<string, unknown>;
 };
 
 export type RetrievalGraphNode = {
@@ -268,6 +350,7 @@ export type RetrievalQueryDiagnostic = {
   severity: string;
   message: string;
   suggested_action: string;
+  metadata: Record<string, unknown>;
 };
 
 export type RetrievalSearchHint = {
@@ -303,10 +386,16 @@ export type RetrievalQueryAspect = {
 export type RetrievalPackage = {
   hits: RetrievalHit[];
   evidence: Evidence[];
+  evidence_buckets?: RetrievalEvidenceBucket[];
   coverage?: RetrievalCoverage | null;
   facets?: RetrievalFacets | null;
   quality_signals?: RetrievalQualitySignal[];
   quality_summary?: RetrievalQualitySummary | null;
+  recommended_actions?: RetrievalRecommendedAction[];
+  recommended_action_summary?: RetrievalRecommendedActionSummary | null;
+  remediation_summary?: string | null;
+  interpretation?: RetrievalInterpretation | null;
+  strategy_recommendations?: RetrievalStrategyRecommendation[];
   trace: RetrievalTrace;
   handoff_context: {
     graph_context?: RetrievalGraphContext;
@@ -431,6 +520,13 @@ export type RetrievalJudgmentEvaluationResult = {
   average_rating?: number | null;
   unjudged_evidence_ids: string[];
   judgment_ids: string[];
+  evaluation_readiness: {
+    status: string;
+    label: string;
+    message: string;
+    min_judged_count: number;
+    min_coverage_at_k: number;
+  };
   recommendations: RetrievalEvaluationRecommendation[];
 };
 
@@ -452,6 +548,7 @@ export type RetrievalSearchFilters = {
   clinical_domain?: string | null;
   standard_system?: string | null;
   source_type?: string | null;
+  source_id?: string | null;
 };
 
 export type RetrievalSource = {
@@ -522,6 +619,14 @@ export type AssistantToolSpec = {
   input_schema: Record<string, unknown>;
 };
 
+export type AssistantExample = {
+  example_id: string;
+  label: string;
+  description: string;
+  message: string;
+  context: Record<string, unknown>;
+};
+
 export type AssistantToolResult = {
   tool_name: string;
   status: "completed" | "failed" | "requires_approval" | "skipped";
@@ -530,6 +635,18 @@ export type AssistantToolResult = {
   summary: string;
   error?: string | null;
   requires_approval: boolean;
+};
+
+export type AssistantToolPlan = {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  rationale: string;
+};
+
+export type AssistantPlan = {
+  message: string;
+  tool_calls: AssistantToolPlan[];
+  warnings: string[];
 };
 
 export type AssistantFinding = {
@@ -545,11 +662,13 @@ export type AssistantEvidenceSummary = {
   claim: string;
   trust_level: string;
   confidence?: number | null;
+  match_explanation?: Record<string, unknown>;
 };
 
 export type AssistantResponse = {
   message: string;
   mode: "deterministic" | "llm";
+  synthesis_mode: "deterministic" | "llm";
   model?: string | null;
   findings: AssistantFinding[];
   evidence_summary: AssistantEvidenceSummary[];
@@ -558,11 +677,82 @@ export type AssistantResponse = {
   warnings: string[];
 };
 
+export type AssistantStreamEvent =
+  | {
+      type: "stream_opened";
+      message: string;
+    }
+  | {
+      type: "planning_started";
+      mode: "deterministic" | "llm";
+      model?: string | null;
+      available_tool_count?: number;
+      max_tool_calls?: number;
+      message: string;
+    }
+  | {
+      type: "planning_progress";
+      mode: "deterministic" | "llm";
+      elapsed_seconds: number;
+      message: string;
+    }
+  | {
+      type: "planning_step";
+      mode: "deterministic" | "llm";
+      label: string;
+      message: string;
+    }
+  | {
+      type: "planning_delta";
+      mode: "deterministic" | "llm";
+      delta: string;
+    }
+  | {
+      type: "plan_ready";
+      mode: "deterministic" | "llm";
+      plan: AssistantPlan;
+    }
+  | {
+      type: "tool_started";
+      index: number;
+      tool_call: AssistantToolPlan;
+    }
+  | {
+      type: "tool_completed";
+      index: number;
+      tool_result: AssistantToolResult;
+    }
+  | {
+      type: "synthesis_started";
+      mode: "deterministic" | "llm";
+      message: string;
+    }
+  | {
+      type: "answer_delta";
+      delta: string;
+    }
+  | {
+      type: "warning";
+      message: string;
+    }
+  | {
+      type: "error";
+      code: string;
+      message: string;
+      details?: Record<string, unknown>;
+    }
+  | {
+      type: "final";
+      response: AssistantResponse;
+    };
+
 export type AssistantTranscriptItem = {
   id: string;
   message: string;
   context: Record<string, unknown>;
   response?: AssistantResponse;
+  stream_events?: AssistantStreamEvent[];
+  streamed_answer?: string;
   error?: string;
 };
 
@@ -744,6 +934,17 @@ export type WorkflowStats = {
 export type ExtractorInventory = {
   available: string[];
   supported_extensions: string[];
+};
+
+export type ExtractedDocument = {
+  filename: string;
+  source_format: string;
+  extractor_used: string;
+  page_count?: number | null;
+  char_count: number;
+  word_count: number;
+  text: string;
+  warnings: string[];
 };
 
 export type RuntimeHealth = {

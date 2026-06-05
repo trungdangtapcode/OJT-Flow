@@ -24,6 +24,14 @@
       "severity": "warning",
       "message": "Applied standard_system={applied_standard} does not match detected query standards: {suggested_standards}.",
       "suggested_action": "Remove the standard filter or choose one of the detected standard filters."
+    },
+    {
+      "rule_id": "overconstrained_metadata_filters",
+      "condition": "overconstrained_metadata_filters",
+      "code": "overconstrained_metadata_filters",
+      "severity": "warning",
+      "message": "Retrieval has {filter_count} active metadata filters ({active_filters}) but limited query context.",
+      "suggested_action": "Add schema, fields, resource type, format, or clinical terms; otherwise remove narrow filters before judging evidence coverage."
     }
   ]
 }

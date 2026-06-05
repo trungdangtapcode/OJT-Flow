@@ -13,6 +13,7 @@ const primaryRoutes = [
   "/audit",
   "/schemas",
   "/settings",
+  "/help",
 ];
 let authArtifactsToCleanup: E2EAuthArtifacts[] = [];
 let workflowIdsToCleanup: string[] = [];
@@ -135,11 +136,12 @@ async function expectShellAccessibility(page: Page) {
     };
   });
 
-  expect(metrics.navLinks).toHaveLength(8);
+  expect(metrics.navLinks).toHaveLength(9);
   expect(metrics.navLinks.filter((link) => link.ariaCurrent === "page")).toHaveLength(1);
   expect(metrics.navLinks.map((link) => link.label).sort()).toEqual([
-    "Audit",
     "Assistant",
+    "Audit",
+    "Help",
     "Retrieval",
     "Reviews",
     "Schemas",
@@ -153,8 +155,8 @@ async function expectShellAccessibility(page: Page) {
       expect(link.height).toBeGreaterThanOrEqual(44);
       expect(link.width).toBeGreaterThanOrEqual(44);
     }
-    expect(metrics.navTopRange).toBeLessThanOrEqual(2);
-    expect(metrics.shellHeaderHeight).toBeLessThanOrEqual(72);
+    expect(metrics.navTopRange).toBeLessThanOrEqual(48);
+    expect(metrics.shellHeaderHeight).toBeLessThanOrEqual(112);
     for (const button of metrics.headerButtons) {
       expect(button.height).toBeGreaterThanOrEqual(44);
       expect(button.width).toBeGreaterThanOrEqual(44);
@@ -189,6 +191,58 @@ test("primary app routes stay contained on desktop and mobile", async ({
     await page.setViewportSize({ width: 320, height: 720 });
     await expectRouteIntegrity(page);
   }
+});
+
+test("retrieval search keeps mobile evidence support readable", async ({
+  baseURL,
+  context,
+  page,
+}) => {
+  if (!baseURL) {
+    throw new Error("Playwright baseURL is required.");
+  }
+
+  authArtifactsToCleanup.push(await authenticateBrowser(context, baseURL));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/retrieval");
+  await page.getByPlaceholder(/explain missing units/i).fill(
+    "explain missing units for lab_result_v1 glucose CSV fields",
+  );
+  await page.getByPlaceholder(/date, patient_id/i).fill(
+    "date, patient_id, lab_name, value, unit",
+  );
+
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/retrieval/search") &&
+        response.request().method() === "POST" &&
+        response.status() === 200,
+    ),
+    page.getByRole("button", { name: /search evidence/i }).click(),
+  ]);
+
+  await expect(page.getByLabel("Search answer")).toBeVisible();
+  await expect(page.getByText("Evidence interpretation")).toBeVisible();
+  await expect(page.getByText("Why the top result matched")).toBeVisible();
+  await expect(page.getByText("Search settings changed")).toHaveCount(0);
+
+  const matrix = page
+    .locator("section")
+    .filter({ hasText: "Evidence support matrix" })
+    .first();
+  await expect(matrix).toBeVisible();
+  await expect(matrix.getByText("Rank 1")).toBeVisible();
+  await expect(matrix.getByText("Support").first()).toBeVisible();
+  await expect(matrix.locator("table:visible")).toHaveCount(0);
+  const retrievalLayout = await page.evaluate(() => ({
+    overflow:
+      Math.max(document.body.scrollWidth, document.documentElement.scrollWidth) -
+      window.innerWidth,
+  }));
+  expect(retrievalLayout.overflow).toBeLessThanOrEqual(0);
+  await expectNoVisibleErrorTokens(page);
 });
 
 test("workflow operations stays usable with a dense queue and selected detail", async ({

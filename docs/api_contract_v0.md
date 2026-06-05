@@ -155,6 +155,15 @@ allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest`; set it to a pinned
 snapshot when release reproducibility is more important than tracking the
 current model alias. `OJT_LLM_BASE_URL` must be an HTTP(S) OpenAI-compatible API
 base URL. `OJT_LLM_MAX_TOOL_CALLS` bounds assistant tool execution per request.
+`OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS` controls how often the streaming
+assistant emits planning heartbeat events while an LLM planner call is still
+pending.
+
+`OJT_MARKITDOWN_OCR_ENABLED` controls whether MarkItDown runs with OCR plugins
+for OCR-sensitive uploads such as scanned PDFs, images, and image-heavy Office
+files when an OpenAI-compatible API key is configured. `OJT_OPENAI_VISION_MODEL`
+can override the image/OCR model; otherwise the extractor uses `OJT_LLM_MODEL`
+and maps `chat-latest` to a vision-capable OpenAI model.
 
 `OJT_PYTHON_EXTRAS` is a Docker build-time setting, not a runtime secret. Keep
 the default `parsing` for the standard API image, or build with
@@ -187,7 +196,35 @@ Retrieval packages also expose `quality_summary`, a deterministic aggregate of
 `quality_signals[]` with status, 0-100 score, severity counts, blocker/warning
 codes, and the top recommended action. This gives operators and assistant tools
 a quick readiness signal without hiding the underlying quality signals. The
-Retrieval UI renders known `quality_signals[].metadata` structures, including
+package also exposes `recommended_actions[]`, a backend-derived corrective
+retrieval checklist sorted by priority. Each action includes `action_id`,
+`priority`, `severity`, `action_type`, `title`, `description`, optional
+`suggested_filter`, `source_signal_codes`, `evidence_ids`, and metadata. The
+package also exposes `recommended_action_summary` with action count, highest
+priority, highest severity, top action title, and apply-filter count for
+triage surfaces. It also includes `broaden_query_count` and
+`action_type_counts` so UI and assistant surfaces can distinguish filter
+application, broadening, rewrite, review, source repair, and source-diversity
+work without scanning every action row.
+The mapping is loaded from `knowledge/retrieval/corrective_action_rules.json`
+and can be overridden with `OJT_CORRECTIVE_ACTION_RULES_PATH`. Rules default to
+package `quality_signal` inputs, and may declare `source = "query_diagnostic"`
+to turn query-health warnings into the same ordered action contract. The same
+action list and summary are copied into `handoff_context.recommended_actions`
+and `handoff_context.recommended_action_summary` for assistant or future
+Graph/RAG handoff.
+The package also exposes `remediation_summary`, a backend-derived
+plain-language next step built from corrective actions, quality summary,
+warnings, or zero-hit state. The same value is copied into
+`handoff_context.remediation_summary` so browser reports and assistant tools do
+not need to rederive it.
+The package also exposes `strategy_recommendations[]`, a backend-derived
+explanation of the active retrieval technique, route, and caution/action
+signals. Rules are loaded from
+`knowledge/retrieval/strategy_recommendation_rules.json` and can be overridden
+with `OJT_STRATEGY_RECOMMENDATION_RULES_PATH`; the same list is copied into
+`handoff_context.strategy_recommendations`.
+The Retrieval UI renders known `quality_signals[].metadata` structures, including
 missing concepts, provenance issues, missing standards/aspects, and suggested
 filters, as explicit signal details for operator review. The
 readiness score/status policy is loaded from
@@ -708,7 +745,48 @@ Example response data:
 ]
 ```
 
+`GET /api/v1/assistant/examples`
+
+Returns data-driven Assistant starter tasks from
+`knowledge/assistant/examples.json`. These are visible starter tasks, not hidden
+demo inputs. Selecting one fills the Assistant form; it does not execute until
+the user submits.
+
+Example response data:
+
+```json
+[
+  {
+    "example_id": "find_medical_standards",
+    "label": "Find medical standards",
+    "description": "Retrieve FHIR, LOINC, UCUM, policy, and schema evidence.",
+    "message": "Find trusted evidence for HbA1c CSV rows with missing units.",
+    "context": {
+      "schema_id": "lab_result_v1",
+      "fields": ["lab_name", "value", "unit"],
+      "clinical_domain": "laboratory"
+    }
+  }
+]
+```
+
 `POST /api/v1/assistant/chat`
+
+`POST /api/v1/assistant/chat/stream`
+
+Streams the same assistant operation over server-sent events for the browser
+chat UI. The stream emits `planning_started`, `planning_step`, optional
+`planning_delta`, optional fallback `planning_progress`, `plan_ready`,
+`tool_started`, `tool_completed`, optional `warning`, `synthesis_started`,
+zero or more `answer_delta`, optional `error`, and `final` events. When OpenAI
+is configured, planning and answer synthesis use the OpenAI Responses streaming
+API. Planner text/tool-plan deltas are forwarded as `planning_delta` before any
+backend tool executes, so users can see the model is building a plan instead of
+watching a black-box spinner. If a configured planner cannot stream, the backend
+still emits `planning_progress` heartbeat events between `planning_started` and
+`plan_ready`, including `elapsed_seconds`. If execution fails after response
+headers have been sent, the backend emits a structured `error` event because
+the HTTP status can no longer be changed.
 
 ```json
 {
@@ -736,10 +814,19 @@ review. Response data includes:
 - `findings[].severity`
 - `findings[].source_tool`
 - `findings[].source_ids`
+- retrieval corrective actions appear as `findings[]` titled
+  `Recommended search action` and as `suggestions[]` when a retrieval tool
+  returns `recommended_actions[]`
+- retrieval remediation appears as a `Retrieval remediation` finding and
+  `Next retrieval step` suggestion when a retrieval package returns
+  `remediation_summary`; direct retrieval-only deterministic answers also use
+  that remediation as the top-level `message`, while validation-first answers
+  continue to lead with validation findings
 - `evidence_summary[].source_id`
 - `evidence_summary[].claim`
 - `evidence_summary[].trust_level`
 - `evidence_summary[].confidence`
+- `evidence_summary[].match_explanation`
 - `tool_calls[].tool_name`
 - `tool_calls[].status`
 - `tool_calls[].arguments`
@@ -764,8 +851,10 @@ The assistant can call:
 
 `validate_with_evidence` is the preferred assistant path for healthcare data
 quality questions because it validates the payload and retrieves standards
-evidence in one response. `workflow_summary` is the preferred assistant path
-for chat-based workflow inspection.
+evidence in one response. `retrieval_search` and `validate_with_evidence`
+support governed source scope through `clinical_domain`, `standard_system`,
+`source_type`, exact `source_id`, and `trust_level`. `workflow_summary` is the
+preferred assistant path for chat-based workflow inspection.
 
 `start_workflow` is a write action. It returns `status="requires_approval"`
 unless the request explicitly sets `execute_write_actions=true`. The assistant
@@ -885,7 +974,9 @@ Retrieval rule-pack entries may reference controlling environment variables
 such as `OJT_QUERY_EXPANSION_RULES_PATH`, `OJT_FILTER_SUGGESTION_RULES_PATH`,
 `OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_QUERY_PROFILE_RULES_PATH`,
 `OJT_RANKING_BOOST_RULES_PATH`,
-`OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, and `OJT_SEARCH_HINT_TARGETS_PATH`.
+`OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, `OJT_CORRECTIVE_ACTION_RULES_PATH`,
+`OJT_STRATEGY_RECOMMENDATION_RULES_PATH`, `OJT_EVIDENCE_BUCKET_RULES_PATH`,
+and `OJT_SEARCH_HINT_TARGETS_PATH`.
 The response exposes the env var name, loaded status, rule-pack version, and
 SHA-256 content hash, but not local paths.
 
@@ -1087,10 +1178,10 @@ configured knowledge directory yields zero schemas, readiness returns
 `status = "not_ready"` because default schema-backed workflows cannot run.
 For retrieval rule packs, `retrieval_rule_packs` verifies that data-driven
 query expansion, filter suggestion, query diagnostic, ranking boost, evaluation
-policy, and search-hint target files are loadable. If any pack is missing or
-malformed, readiness returns `status = "not_ready"` and exposes only sanitized
-pack metadata such as name, status, source, env var, rule count, version, and
-content hash.
+policy, corrective-action, evidence-bucket, and search-hint target files are
+loadable. If any pack is missing or malformed, readiness returns
+`status = "not_ready"` and exposes only sanitized pack metadata such as name,
+status, source, env var, rule count, version, and content hash.
 For retrieval, `retrieval_inventory` runs a small approved-source query through
 the same workflow retrieval service path and reports only operational metadata:
 `source_count`, `probe_hit_count`, `probe_strategy`, `probe_candidates_seen`, and
@@ -1225,7 +1316,8 @@ Structured unauthorized response:
   "trust_level": "approved",
   "filters": {
     "standard_system": "UCUM",
-    "source_type": "terminology_system"
+    "source_type": "terminology_system",
+    "source_id": "terminology:ucum"
   }
 }
 ```
@@ -1246,10 +1338,22 @@ Response data is a `RetrievalPackage`:
 - `facets`
 - `quality_signals[]` with `code`, `severity`, `message`,
   `suggested_action`, `evidence_ids`, and `metadata`
+- `recommended_actions[]` with ordered corrective retrieval actions and
+  optional `suggested_filter`
+- `recommended_action_summary` with corrective-action triage counts
+- `remediation_summary` with the backend-derived operator next step
+- `interpretation` with backend-derived package status, plain-language summary,
+  top evidence/source IDs, score driver, support status, matched terms,
+  concept/aspect labels, required bucket coverage, warnings, and next action
+- `strategy_recommendations[]` with backend-owned retrieval technique and route
+  explanations
 - `trace.strategy`
 - `trace.query_variants`
 - `trace.query_variant_details[]` with `variant`, `source`, `reason`, and
   `metadata`
+- `trace.fusion_diagnostics` with hybrid/fusion observability such as method,
+  diagnostic scope, lexical/vector overlap when available, selected-hit rank
+  delta when available, dominant signal balance, and interpretation
 - `trace.filters_applied`
 - `trace.candidates_seen`
 - `trace.final_hit_ids`
@@ -1276,7 +1380,13 @@ controlled-vocabulary candidates with `concept_id`, `display_name`,
 deterministic metadata filter recommendations with `field`, `value`, `reason`,
 `rule_id`, `confidence`, and `applied`. It also includes `diagnostics`, a list
 of deterministic query-quality checks with `code`, `severity`, `message`, and
-`suggested_action`; warning diagnostics are copied into `trace.warnings`. It
+`suggested_action`; each diagnostic also includes structured `metadata` such as
+query token count, active metadata filters, applied standard, suggested
+standards, detected concepts, and schema/format/resource context when relevant.
+Warning diagnostics are copied into `trace.warnings`.
+Diagnostics can flag low-specificity searches, missing healthcare concepts,
+conflicting standard filters, and over-constrained metadata filters when the
+query scope is narrow but clinical/schema context is weak. It
 can include `query_profile`, a data-driven route hint with `profile_id`,
 `label`, `route`, `complexity`, `retrieval_mode`, `description`,
 `suggested_filters`, and contributing `rule_ids`; this is operator-visible
@@ -1335,7 +1445,10 @@ Copyable `retrieval_run_comparison` reports include active/baseline
 lets relevance tuning notes distinguish decomposition coverage changes from
 rank, quality-signal, facet, rule-pack, and evidence changes. The same report
 includes `coverage` deltas with improved, regressed, added, removed, and
-retained standard/aspect coverage diagnostics.
+retained standard/aspect coverage diagnostics. Copyable `retrieval_cockpit`
+and `retrieval_run_comparison` reports also include `remediation_summary`
+fields derived from the same quality/action summaries shown in recent-run
+history, so copied audit notes retain the operator-visible next step.
 
 Retrieval endpoints require an authenticated session. Searches without
 `workflow_id` run over the approved knowledge inventory. Searches with
@@ -1344,8 +1457,8 @@ another user's workflow by guessing an ID.
 The `query` field and optional context fields are trimmed and must be non-blank
 when supplied.
 `filters` is a typed metadata filter object, not an arbitrary JSON bag. Current
-supported keys are `trust_level`, `clinical_domain`, `standard_system`, and
-`source_type`. Unsupported filter keys or invalid enum values return
+supported keys are `trust_level`, `clinical_domain`, `standard_system`,
+`source_type`, and exact `source_id`. Unsupported filter keys or invalid enum values return
 `request_validation_error` before the retrieval repository runs, so the API does
 not silently accept filters that the ranking layer cannot enforce.
 
@@ -1392,7 +1505,7 @@ query:
 Response data includes `coverage_at_k`, `hit_rate_at_k`, `precision_at_k`,
 `judged_precision`, `average_precision_at_k`, `mrr_at_k`, `ndcg_at_k`,
 per-value counts, unjudged evidence IDs, the judgment IDs that contributed to
-the score, and policy-driven
+the score, `evaluation_readiness` with label confidence thresholds, and policy-driven
 `recommendations[]` with severity, metric, message, suggested action, evidence
 IDs, and rule metadata. This endpoint is intended for operator-facing
 evaluation of the current ranked result list; it does not mutate judgments or
@@ -1499,6 +1612,9 @@ detected file type.
 Extracts text from an uploaded file without creating a workflow, dataset row,
 review gate, output artifact, or audit event. This is intended for upload
 preview and extractor diagnostics before a user commits to a governed workflow.
+When OCR is configured, `auto` uses MarkItDown OCR plugins for OCR-sensitive
+documents and direct OpenAI vision fallback for raw image files that still
+produce empty text.
 
 Form fields:
 
@@ -1522,4 +1638,6 @@ rules used by `/parse/upload/workflow` apply here. Over-limit uploads return
 return `unsupported_upload`.
 
 `GET /api/v1/parse/extractors` returns installed extractor inventory and the
-server-recognized upload extensions.
+server-recognized upload extensions. `openai_vision` appears when an
+OpenAI-compatible OCR key is available; MarkItDown OCR plugin support is part
+of the `markitdown` extractor path.

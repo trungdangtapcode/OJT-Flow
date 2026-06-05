@@ -393,7 +393,7 @@ class PostgresRetrievalRepository:
 def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
-    for key in ("trust_level", "clinical_domain", "standard_system", "source_type"):
+    for key in ("trust_level", "clinical_domain", "standard_system", "source_type", "source_id"):
         value = filters.get(key)
         if value:
             clauses.append(f"{key} = %s")

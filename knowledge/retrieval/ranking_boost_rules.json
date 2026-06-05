@@ -45,7 +45,7 @@
     },
     {
       "rule_id": "boost_ucum_unit_concept",
-      "weight": 0.05,
+      "weight": 0.08,
       "reason": "Prefer UCUM evidence when unit-normalization concepts are detected.",
       "match": {
         "chunk_standard_systems": ["UCUM"],
@@ -59,6 +59,15 @@
       "match": {
         "chunk_standard_systems": ["FHIR"],
         "any_concepts": ["fhir_observation_profile"]
+      }
+    },
+    {
+      "rule_id": "boost_governance_for_sensitive_identifiers",
+      "weight": 0.09,
+      "reason": "Prefer governance policy evidence when sensitive identifier review is detected.",
+      "match": {
+        "chunk_standard_systems": ["ojtflow_policy"],
+        "any_concepts": ["sensitive_identifier_review"]
       }
     },
     {

@@ -20,18 +20,23 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalCoverage,
     RetrievalCoverageItem,
     RetrievalDiversitySelection,
+    RetrievalEvidenceBucket,
     RetrievalFacetBucket,
     RetrievalFacets,
     RetrievalHit,
+    RetrievalInterpretation,
     RetrievalPackage,
     RetrievalQualitySignal,
     RetrievalQualitySummary,
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalQueryAspect,
+    RetrievalRecommendedAction,
+    RetrievalRecommendedActionSummary,
     RetrievalScoreComponent,
     RetrievalSource,
     RetrievalSnippet,
+    RetrievalStrategyRecommendation,
     RetrievalTrace,
 )
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
@@ -47,6 +52,21 @@ DEFAULT_RANKING_BOOST_RULE_REGISTRY = (
 )
 DEFAULT_QUALITY_GATE_POLICY_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "quality_gate_policy.json"
+)
+DEFAULT_EVIDENCE_BUCKET_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "evidence_bucket_rules.json"
+)
+DEFAULT_CORRECTIVE_ACTION_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "corrective_action_rules.json"
+)
+DEFAULT_STRATEGY_RECOMMENDATION_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "strategy_recommendation_rules.json"
 )
 
 
@@ -111,6 +131,79 @@ class AppliedRankingBoost:
 
 
 @dataclass(frozen=True)
+class EvidenceBucketMatchRule:
+    """Data-driven matcher for one evidence bucket."""
+
+    source_types: tuple[str, ...] = ()
+    source_id_contains: tuple[str, ...] = ()
+    standard_systems: tuple[str, ...] = ()
+    locator_any_keys: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class EvidenceBucketRule:
+    """One data-driven evidence pack bucket definition."""
+
+    bucket_id: str
+    label: str
+    description: str
+    required: bool
+    suggested_filter: dict[str, str]
+    match: EvidenceBucketMatchRule
+
+
+@dataclass(frozen=True)
+class CorrectiveActionRule:
+    """One data-driven corrective retrieval action rule."""
+
+    rule_id: str
+    signal_code: str
+    source: str
+    priority: int
+    action_type: str
+    title: str | None = None
+    description: str | None = None
+    title_template: str | None = None
+    title_prefix: str | None = None
+    fallback_title: str | None = None
+    title_from_signal: str | None = None
+    description_from_signal: str | None = None
+    fallback_action_type: str | None = None
+    fallback_description: str | None = None
+    metadata_list_path: str | None = None
+    suggested_filter_path: str | None = None
+    suggested_filter_from_metadata: dict[str, str] = field(default_factory=dict)
+    metadata_keys: tuple[str, ...] = ()
+    match_severities: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class StrategyRecommendationMatch:
+    """Data-driven matcher for route/quality-aware retrieval strategy notes."""
+
+    any_profile_ids: tuple[str, ...] = ()
+    any_retrieval_modes: tuple[str, ...] = ()
+    any_quality_signal_codes: tuple[str, ...] = ()
+    any_safety_flags: tuple[str, ...] = ()
+    missing_required_bucket: bool | None = None
+    reranker_enabled: bool | None = None
+
+
+@dataclass(frozen=True)
+class StrategyRecommendationRule:
+    """One operator-facing retrieval strategy recommendation rule."""
+
+    rule_id: str
+    title: str
+    technique: str
+    status: str
+    rationale: str
+    priority: int
+    suggested_filters: dict[str, str]
+    match: StrategyRecommendationMatch
+
+
+@dataclass(frozen=True)
 class RetrievalQualityPolicy:
     """Data-driven policy for package-level retrieval readiness scoring."""
 
@@ -123,6 +216,7 @@ class RetrievalQualityPolicy:
     ranking_thresholds: dict[str, int | float] = field(default_factory=dict)
     provenance_requirements: dict[str, Any] = field(default_factory=dict)
     concept_grounding_requirements: dict[str, Any] = field(default_factory=dict)
+    evidence_bucket_requirements: dict[str, Any] = field(default_factory=dict)
 
     def penalty_for(self, severity: str) -> int:
         return self.severity_penalties.get(severity, 0)
@@ -137,6 +231,7 @@ class RetrievalQualityPolicy:
             "ranking_thresholds": dict(self.ranking_thresholds),
             "provenance_requirements": dict(self.provenance_requirements),
             "concept_grounding_requirements": dict(self.concept_grounding_requirements),
+            "evidence_bucket_requirements": dict(self.evidence_bucket_requirements),
         }
 
 
@@ -363,6 +458,12 @@ def rank_chunks(
     )
     top_hits = [hit for _, hit in selected_ranked_hits]
     selected_chunks = [chunk for chunk, _ in selected_ranked_hits]
+    fusion_diagnostics = fusion_diagnostics_from_rankings(
+        lexical_positions=lexical_positions,
+        vector_positions=vector_positions,
+        top_hits=top_hits,
+        top_k=query.top_k,
+    )
     facets = facets_from_chunks(selected_chunks)
     coverage = coverage_from_chunks(selected_chunks, query_analysis)
     trace_warnings.extend(coverage.warnings)
@@ -374,6 +475,7 @@ def rank_chunks(
         strategy=strategy,
         query_variants=variants,
         query_variant_details=query_analysis.query_variant_details,
+        fusion_diagnostics=fusion_diagnostics,
         filters_applied=query.filters,
         candidates_seen=len(chunks),
         final_hit_ids=[hit.evidence.evidence_id for hit in top_hits],
@@ -381,8 +483,11 @@ def rank_chunks(
         warnings=trace_warnings,
     )
     quality_policy = active_quality_policy()
+    evidence_buckets = evidence_buckets_from_hits(top_hits)
+    attach_hit_match_explanations(top_hits, evidence_buckets)
     quality_signals = quality_signals_from_results(
         hits=top_hits,
+        evidence_buckets=evidence_buckets,
         coverage=coverage,
         safety_flags=safety_flags,
         candidates_seen=len(chunks),
@@ -391,13 +496,45 @@ def rank_chunks(
         query_analysis=query_analysis,
     )
     quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
+    recommended_actions = recommended_actions_from_context(
+        quality_signals=quality_signals,
+        query_analysis=query_analysis,
+    )
+    recommended_action_summary = recommended_action_summary_from_actions(recommended_actions)
+    remediation_summary = remediation_summary_from_package_parts(
+        hit_count=len(top_hits),
+        quality_summary=quality_summary,
+        recommended_action_summary=recommended_action_summary,
+        trace_warning_count=len(trace_warnings),
+    )
+    interpretation = interpretation_from_package_parts(
+        hits=top_hits,
+        evidence_buckets=evidence_buckets,
+        quality_summary=quality_summary,
+        recommended_actions=recommended_actions,
+        trace_warning_count=len(trace_warnings),
+        remediation_summary=remediation_summary,
+    )
+    strategy_recommendations = strategy_recommendations_from_context(
+        query_analysis=query_analysis,
+        quality_signals=quality_signals,
+        evidence_buckets=evidence_buckets,
+        safety_flags=safety_flags,
+        reranker_enabled=_reranker_enabled(reranker),
+    )
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
+        evidence_buckets=evidence_buckets,
         coverage=coverage,
         facets=facets,
         quality_signals=quality_signals,
         quality_summary=quality_summary,
+        recommended_actions=recommended_actions,
+        recommended_action_summary=recommended_action_summary,
+        remediation_summary=remediation_summary,
+        interpretation=interpretation,
+        strategy_recommendations=strategy_recommendations,
         trace=trace,
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
@@ -407,12 +544,284 @@ def rank_chunks(
             "safety_flags": safety_flags,
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,
+            "fusion_diagnostics": fusion_diagnostics,
             "diversity": diversity_metadata,
             "quality_policy": quality_policy.metadata(),
             "quality_summary": quality_summary.model_dump(),
+            "recommended_actions": [
+                action.model_dump(mode="json") for action in recommended_actions
+            ],
+            "recommended_action_summary": recommended_action_summary.model_dump(mode="json"),
+            "remediation_summary": remediation_summary,
+            "interpretation": interpretation.model_dump(mode="json"),
+            "strategy_recommendations": [
+                recommendation.model_dump(mode="json")
+                for recommendation in strategy_recommendations
+            ],
             "query_analysis": query_analysis.model_dump(),
         },
     )
+
+
+def evidence_buckets_from_hits(hits: list[RetrievalHit]) -> list[RetrievalEvidenceBucket]:
+    """Group selected evidence into clinical workflow audit buckets."""
+
+    bucket_rules = active_evidence_bucket_rules()
+    bucket_hits: dict[str, list[RetrievalHit]] = {
+        rule.bucket_id: [] for rule in bucket_rules
+    }
+    for hit in hits:
+        for bucket_id in _bucket_ids_for_hit(hit, bucket_rules):
+            bucket_hits[bucket_id].append(hit)
+
+    buckets: list[RetrievalEvidenceBucket] = []
+    for rule in bucket_rules:
+        selected_hits = _unique_hits(bucket_hits.get(rule.bucket_id, []))
+        warnings = []
+        if rule.required and not selected_hits:
+            warnings.append(f"missing_{rule.bucket_id}_evidence")
+        buckets.append(
+            RetrievalEvidenceBucket(
+                bucket_id=rule.bucket_id,
+                label=rule.label,
+                description=rule.description,
+                evidence_ids=[hit.evidence.evidence_id for hit in selected_hits],
+                source_ids=_unique_strings(hit.evidence.source_id for hit in selected_hits),
+                hit_count=len(selected_hits),
+                required=rule.required,
+                status="available" if selected_hits else "missing",
+                warnings=warnings,
+                suggested_filter=rule.suggested_filter,
+            )
+        )
+    return buckets
+
+
+def attach_hit_match_explanations(
+    hits: list[RetrievalHit],
+    evidence_buckets: list[RetrievalEvidenceBucket],
+) -> None:
+    """Attach stable per-hit match explanations for UI and audit exports."""
+
+    buckets_by_evidence_id: dict[str, list[RetrievalEvidenceBucket]] = {}
+    for bucket in evidence_buckets:
+        for evidence_id in bucket.evidence_ids:
+            buckets_by_evidence_id.setdefault(evidence_id, []).append(bucket)
+    for hit in hits:
+        matched_buckets = buckets_by_evidence_id.get(hit.evidence.evidence_id, [])
+        hit.match_explanation = hit_match_explanation(hit, matched_buckets)
+
+
+def hit_match_explanation(
+    hit: RetrievalHit,
+    evidence_buckets: list[RetrievalEvidenceBucket],
+) -> dict[str, Any]:
+    """Build a deterministic explanation for why one hit was selected."""
+
+    concept_matches = _locator_concept_matches(hit.source_locator)
+    aspect_matches = _locator_query_aspect_matches(hit.source_locator)
+    ranking_rule_ids = _ranking_signal_rule_ids(hit.source_locator)
+    top_component = _top_score_component(hit.score_components)
+    provenance_fields = _provenance_field_labels(hit.evidence)
+    return {
+        "version": 1,
+        "support_status": _hit_support_status(
+            matched_terms=hit.matched_terms,
+            provenance_fields=provenance_fields,
+            concept_matches=concept_matches,
+            aspect_matches=aspect_matches,
+        ),
+        "top_score_driver": (
+            f"{top_component.label} {_signed_score(top_component.value)}"
+            if top_component
+            else None
+        ),
+        "top_score_component": (
+            {
+                "component": top_component.component,
+                "label": top_component.label,
+                "rank": top_component.rank,
+                "value": top_component.value,
+            }
+            if top_component
+            else None
+        ),
+        "matched_terms": _unique_strings(hit.matched_terms)[:6],
+        "bucket_ids": _unique_strings([bucket.bucket_id for bucket in evidence_buckets])[:8],
+        "bucket_labels": _unique_strings([bucket.label for bucket in evidence_buckets])[:4],
+        "concept_ids": _unique_strings(
+            [
+                str(match.get("concept_id"))
+                for match in concept_matches
+                if match.get("concept_id")
+            ]
+        )[:8],
+        "concept_labels": _unique_strings(
+            [_concept_match_label(match) for match in concept_matches]
+        )[:4],
+        "aspect_ids": _unique_strings(
+            [
+                str(match.get("aspect_id"))
+                for match in aspect_matches
+                if match.get("aspect_id")
+            ]
+        )[:8],
+        "aspect_labels": _unique_strings(
+            [str(match.get("label")) for match in aspect_matches if match.get("label")]
+        )[:4],
+        "provenance_count": len(provenance_fields),
+        "provenance_fields": provenance_fields[:12],
+        "ranking_signal_count": len(ranking_rule_ids),
+        "ranking_signal_rule_ids": ranking_rule_ids[:12],
+    }
+
+
+def _locator_query_aspect_matches(locator: dict[str, Any]) -> list[dict[str, Any]]:
+    matches = locator.get("query_aspect_matches")
+    return [match for match in matches if isinstance(match, dict)] if isinstance(matches, list) else []
+
+
+def _ranking_signal_rule_ids(locator: dict[str, Any]) -> list[str]:
+    detailed = locator.get("ranking_boosts")
+    if isinstance(detailed, list):
+        detailed_ids = [
+            str(item.get("rule_id"))
+            for item in detailed
+            if isinstance(item, dict) and item.get("rule_id")
+        ]
+        if detailed_ids:
+            return _unique_strings(detailed_ids)
+    raw_ids = locator.get("ranking_boost_rules")
+    return _unique_strings([str(item) for item in raw_ids]) if isinstance(raw_ids, list) else []
+
+
+def _top_score_component(
+    components: list[RetrievalScoreComponent],
+) -> RetrievalScoreComponent | None:
+    if not components:
+        return None
+    return sorted(components, key=lambda component: abs(component.value), reverse=True)[0]
+
+
+def _provenance_field_labels(evidence: Evidence) -> list[str]:
+    labels: list[str] = []
+    if evidence.source_version:
+        labels.append("Version")
+    locator_fields: tuple[tuple[str, str], ...] = (
+        ("Standard", "standard"),
+        ("System", "standard_system"),
+        ("URL", "url"),
+        ("Path", "path"),
+        ("API", "api"),
+        ("PMID", "pmid"),
+        ("DOI", "doi"),
+        ("Resource", "resource"),
+        ("Table", "table"),
+        ("Document", "document_id"),
+        ("Chunk", "chunk_id"),
+    )
+    for label, key in locator_fields:
+        value = evidence.locator.get(key)
+        if value not in (None, "", [], {}):
+            labels.append(label)
+    return _unique_strings(labels)
+
+
+def _hit_support_status(
+    *,
+    matched_terms: list[str],
+    provenance_fields: list[str],
+    concept_matches: list[dict[str, Any]],
+    aspect_matches: list[dict[str, Any]],
+) -> str:
+    if matched_terms and provenance_fields and (concept_matches or aspect_matches):
+        return "strong"
+    if matched_terms or provenance_fields:
+        return "partial"
+    return "weak"
+
+
+def _concept_match_label(match: dict[str, Any]) -> str:
+    standard_system = match.get("standard_system")
+    code = match.get("code")
+    display_name = match.get("display_name")
+    if standard_system and code:
+        return f"{standard_system} {code}"
+    if display_name:
+        return str(display_name)
+    return str(match.get("concept_id") or "concept")
+
+
+def _signed_score(value: float) -> str:
+    if value > 0:
+        return f"+{value:.3f}"
+    return f"{value:.3f}"
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _bucket_ids_for_hit(
+    hit: RetrievalHit,
+    bucket_rules: list[EvidenceBucketRule],
+) -> list[str]:
+    matched = [
+        rule.bucket_id
+        for rule in bucket_rules
+        if rule.bucket_id != "other" and _evidence_bucket_rule_matches(hit, rule)
+    ]
+    return matched or ["other"]
+
+
+def _evidence_bucket_rule_matches(hit: RetrievalHit, rule: EvidenceBucketRule) -> bool:
+    evidence = hit.evidence
+    locator = evidence.locator
+    source_type = (
+        evidence.source_type.value
+        if hasattr(evidence.source_type, "value")
+        else str(evidence.source_type)
+    )
+    source_id = evidence.source_id.lower()
+    standard_system = str(locator.get("standard_system") or "").lower()
+    match = rule.match
+
+    if source_type in match.source_types:
+        return True
+    if any(fragment in source_id for fragment in match.source_id_contains):
+        return True
+    if standard_system in {value.lower() for value in match.standard_systems}:
+        return True
+    return any(key in locator for key in match.locator_any_keys)
+
+
+def _unique_hits(hits: list[RetrievalHit]) -> list[RetrievalHit]:
+    seen: set[str] = set()
+    unique: list[RetrievalHit] = []
+    for hit in hits:
+        if hit.evidence.evidence_id in seen:
+            continue
+        seen.add(hit.evidence.evidence_id)
+        unique.append(hit)
+    return unique
+
+
+def _unique_strings(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
 
 
 def coverage_from_chunks(
@@ -447,6 +856,7 @@ def coverage_from_chunks(
 def quality_signals_from_results(
     *,
     hits: list[RetrievalHit],
+    evidence_buckets: list[RetrievalEvidenceBucket] | None = None,
     coverage: RetrievalCoverage | None,
     safety_flags: list[str],
     candidates_seen: int,
@@ -459,6 +869,10 @@ def quality_signals_from_results(
     active_policy = policy or active_quality_policy()
     evidence_ids = [hit.evidence.evidence_id for hit in hits]
     signals: list[RetrievalQualitySignal] = []
+    bucket_gaps = _required_evidence_bucket_gaps(
+        evidence_buckets or evidence_buckets_from_hits(hits),
+        active_policy,
+    )
     if hits:
         top_hit = hits[0]
         min_top_matched_terms = active_policy.ranking_thresholds.get(
@@ -480,7 +894,28 @@ def quality_signals_from_results(
                 evidence_ids=evidence_ids,
                 metadata={"hit_count": len(hits), "candidate_count": candidates_seen},
             )
-        )
+            )
+        if bucket_gaps:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="missing_required_evidence_buckets",
+                    severity="warning",
+                    message=(
+                        "Selected evidence is missing required clinical audit "
+                        "bucket(s): "
+                        f"{', '.join(str(gap['bucket_id']) for gap in bucket_gaps)}."
+                    ),
+                    suggested_action=(
+                        "Retrieve or add the missing required evidence classes before "
+                        "using the package for validation, explanations, or agent handoff."
+                    ),
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "missing_buckets": bucket_gaps,
+                        "requirements": active_policy.evidence_bucket_requirements,
+                    },
+                )
+            )
         if (
             isinstance(min_top_matched_terms, int)
             and min_top_matched_terms > 0
@@ -727,6 +1162,40 @@ def quality_signals_from_results(
     return signals
 
 
+def _required_evidence_bucket_gaps(
+    evidence_buckets: list[RetrievalEvidenceBucket],
+    policy: RetrievalQualityPolicy,
+) -> list[dict[str, Any]]:
+    requirements = policy.evidence_bucket_requirements
+    configured_ids = [
+        str(value)
+        for value in requirements.get("required_bucket_ids", [])
+        if str(value).strip()
+    ]
+    bucket_ids = (
+        configured_ids
+        if "required_bucket_ids" in requirements
+        else [bucket.bucket_id for bucket in evidence_buckets if bucket.required]
+    )
+    buckets_by_id = {bucket.bucket_id: bucket for bucket in evidence_buckets}
+    gaps: list[dict[str, Any]] = []
+    for bucket_id in bucket_ids:
+        bucket = buckets_by_id.get(bucket_id)
+        if bucket and bucket.hit_count > 0:
+            continue
+        gaps.append(
+            {
+                "bucket_id": bucket_id,
+                "label": bucket.label if bucket else bucket_id,
+                "required": True,
+                "status": bucket.status if bucket else "missing",
+                "warnings": list(bucket.warnings) if bucket else [],
+                "suggested_filter": dict(bucket.suggested_filter) if bucket else {},
+            }
+        )
+    return gaps
+
+
 def quality_summary_from_signals(
     signals: list[RetrievalQualitySignal],
     *,
@@ -785,6 +1254,625 @@ def quality_summary_from_signals(
         blocker_codes=[signal.code for signal in destructive_signals],
         warning_codes=[signal.code for signal in warning_signals],
     )
+
+
+def recommended_actions_from_signals(
+    signals: list[RetrievalQualitySignal],
+) -> list[RetrievalRecommendedAction]:
+    """Derive concrete corrective retrieval actions from quality signals."""
+
+    return _recommended_actions_from_signals(
+        signals,
+        source="quality_signal",
+    )
+
+
+def recommended_actions_from_context(
+    *,
+    quality_signals: list[RetrievalQualitySignal],
+    query_analysis: RetrievalQueryAnalysis,
+) -> list[RetrievalRecommendedAction]:
+    """Derive corrective actions from retrieval quality and query diagnostics."""
+
+    actions = recommended_actions_from_signals(quality_signals)
+    diagnostic_signals = [
+        RetrievalQualitySignal(
+            code=diagnostic.code,
+            severity=diagnostic.severity,
+            message=diagnostic.message,
+            suggested_action=diagnostic.suggested_action,
+            metadata={
+                **diagnostic.metadata,
+                "source": "query_diagnostic",
+            },
+        )
+        for diagnostic in query_analysis.diagnostics
+        if diagnostic.severity != "info"
+    ]
+    actions.extend(
+        _recommended_actions_from_signals(
+            diagnostic_signals,
+            source="query_diagnostic",
+        )
+    )
+    return _unique_recommended_actions(actions)
+
+
+def _recommended_actions_from_signals(
+    signals: list[RetrievalQualitySignal],
+    *,
+    source: str,
+) -> list[RetrievalRecommendedAction]:
+    rules = active_corrective_action_rules()
+    actions: list[RetrievalRecommendedAction] = []
+    for signal in signals:
+        if signal.severity == "success":
+            continue
+        for rule in rules:
+            if rule.source != source:
+                continue
+            if not _corrective_action_rule_matches(signal, rule):
+                continue
+            actions.extend(_actions_from_corrective_rule(signal, rule))
+    return _unique_recommended_actions(actions)
+
+
+def recommended_action_summary_from_actions(
+    actions: list[RetrievalRecommendedAction],
+) -> RetrievalRecommendedActionSummary:
+    """Summarize corrective retrieval actions for API and UI triage."""
+
+    top_action = actions[0] if actions else None
+    action_type_counts = Counter(action.action_type for action in actions)
+    return RetrievalRecommendedActionSummary(
+        count=len(actions),
+        highest_priority=top_action.priority if top_action else None,
+        highest_severity=top_action.severity if top_action else None,
+        top_action_title=top_action.title if top_action else None,
+        apply_filter_count=action_type_counts.get("apply_filter", 0),
+        broaden_query_count=action_type_counts.get("broaden_query", 0),
+        action_type_counts=dict(sorted(action_type_counts.items())),
+    )
+
+
+def remediation_summary_from_package_parts(
+    *,
+    hit_count: int,
+    quality_summary: RetrievalQualitySummary | None,
+    recommended_action_summary: RetrievalRecommendedActionSummary | None,
+    trace_warning_count: int,
+) -> str | None:
+    """Build the operator-facing next step for package triage and audit exports."""
+
+    if recommended_action_summary and recommended_action_summary.count > 0:
+        action_types = ", ".join(
+            f"{_humanize(action_type)} {count}"
+            for action_type, count in sorted(
+                recommended_action_summary.action_type_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:3]
+            if count > 0
+        )
+        priority = (
+            f"P{recommended_action_summary.highest_priority}"
+            if recommended_action_summary.highest_priority
+            else "priority unreported"
+        )
+        top_action = (
+            recommended_action_summary.top_action_title
+            or "Inspect backend corrective actions"
+        )
+        return (
+            f"{top_action} ({priority}; {action_types})"
+            if action_types
+            else f"{top_action} ({priority})"
+        )
+    if quality_summary and quality_summary.top_action:
+        return quality_summary.top_action
+    warning_count = (quality_summary.warning_count if quality_summary else 0) + trace_warning_count
+    if warning_count > 0:
+        return f"Inspect {_format_count(warning_count, 'warning')} before using this evidence"
+    if hit_count == 0:
+        return "Broaden search scope or inspect source inventory"
+    return None
+
+
+def interpretation_from_package_parts(
+    *,
+    hits: list[RetrievalHit],
+    evidence_buckets: list[RetrievalEvidenceBucket],
+    quality_summary: RetrievalQualitySummary | None,
+    recommended_actions: list[RetrievalRecommendedAction],
+    trace_warning_count: int,
+    remediation_summary: str | None,
+) -> RetrievalInterpretation:
+    """Build a reusable package-level interpretation for UI, assistant, and MCP clients."""
+
+    top_hit = hits[0] if hits else None
+    required_buckets = [bucket for bucket in evidence_buckets if bucket.required]
+    missing_required_buckets = [bucket for bucket in required_buckets if bucket.hit_count <= 0]
+    primary_action = min(recommended_actions, key=lambda action: action.priority, default=None)
+    quality_warning_count = quality_summary.warning_count if quality_summary else 0
+    warning_count = quality_warning_count + trace_warning_count
+    next_action_title = primary_action.title if primary_action else None
+    next_action_detail = primary_action.description if primary_action else remediation_summary
+
+    if top_hit is None:
+        status = "no_ranked_evidence"
+        summary = (
+            "No ranked evidence was returned. Review filters, source inventory, and "
+            "backend warnings before treating this as evidence absence."
+        )
+    elif missing_required_buckets:
+        status = "support_gaps"
+        summary = (
+            f"The top result is {top_hit.evidence.source_id}, but required evidence "
+            f"support is missing for {_join_labels(bucket.label for bucket in missing_required_buckets)}."
+        )
+    elif warning_count > 0:
+        status = "review_warnings"
+        summary = (
+            f"The package returned {_format_count(len(hits), 'ranked hit')}; "
+            "warnings indicate the search should be reviewed before trusting result order."
+        )
+    else:
+        status = "ready_to_review"
+        summary = (
+            f"The top result is {top_hit.evidence.source_id}. It has "
+            f"{_support_status_from_hit(top_hit)} operational support from retrieval trace signals."
+        )
+
+    match_explanation = _match_explanation(top_hit)
+    return RetrievalInterpretation(
+        status=status,
+        summary=summary,
+        top_evidence_id=top_hit.evidence.evidence_id if top_hit else None,
+        top_source_id=top_hit.evidence.source_id if top_hit else None,
+        top_score_driver=_top_score_driver(match_explanation),
+        support_status=_support_status_from_hit(top_hit) if top_hit else None,
+        matched_terms=_nonblank_strings(match_explanation.get("matched_terms"), limit=6)
+        if match_explanation
+        else [],
+        concept_labels=_nonblank_strings(match_explanation.get("concept_labels"), limit=4)
+        if match_explanation
+        else [],
+        aspect_labels=_nonblank_strings(match_explanation.get("aspect_labels"), limit=4)
+        if match_explanation
+        else [],
+        required_bucket_count=len(required_buckets),
+        covered_required_bucket_count=len(required_buckets) - len(missing_required_buckets),
+        missing_required_buckets=[bucket.label for bucket in missing_required_buckets],
+        warning_count=warning_count,
+        next_action_title=next_action_title,
+        next_action_detail=next_action_detail,
+        metadata={
+            "quality_status": quality_summary.status if quality_summary else None,
+            "quality_score": quality_summary.score if quality_summary else None,
+            "recommended_action_count": len(recommended_actions),
+            "trace_warning_count": trace_warning_count,
+        },
+    )
+
+
+def _match_explanation(hit: RetrievalHit | None) -> dict[str, Any]:
+    if hit is None or not isinstance(hit.match_explanation, dict):
+        return {}
+    return hit.match_explanation
+
+
+def _top_score_driver(match_explanation: dict[str, Any]) -> str | None:
+    value = match_explanation.get("top_score_driver")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _support_status_from_hit(hit: RetrievalHit | None) -> str | None:
+    explanation = _match_explanation(hit)
+    value = explanation.get("support_status")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if hit is None:
+        return None
+    if hit.matched_terms and hit.evidence.confidence >= 0.75:
+        return "strong"
+    if hit.matched_terms:
+        return "partial"
+    return "weak"
+
+
+def _nonblank_strings(value: Any, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    strings = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    return strings[:limit]
+
+
+def _join_labels(labels: Iterable[str]) -> str:
+    values = [label for label in labels if label]
+    return ", ".join(values) if values else "required buckets"
+
+
+def _humanize(value: str) -> str:
+    return value.replace("_", " ")
+
+
+def _format_count(count: int, noun: str) -> str:
+    return f"{count} {noun if count == 1 else noun + 's'}"
+
+
+def strategy_recommendations_from_context(
+    *,
+    query_analysis: RetrievalQueryAnalysis,
+    quality_signals: list[RetrievalQualitySignal],
+    evidence_buckets: list[RetrievalEvidenceBucket],
+    safety_flags: list[str],
+    reranker_enabled: bool,
+) -> list[RetrievalStrategyRecommendation]:
+    """Explain the retrieval strategy through data-driven recommendation rules."""
+
+    rules = active_strategy_recommendation_rules()
+    signal_codes = {signal.code for signal in quality_signals}
+    signal_codes_by_rule = {
+        rule.rule_id: [
+            signal.code
+            for signal in quality_signals
+            if _strategy_rule_signal_matches(signal.code, rule.match)
+        ]
+        for rule in rules
+    }
+    missing_required_bucket = any(
+        bucket.required and bucket.hit_count == 0 for bucket in evidence_buckets
+    )
+    matches = [
+        rule
+        for rule in rules
+        if _strategy_recommendation_rule_matches(
+            rule,
+            query_analysis=query_analysis,
+            signal_codes=signal_codes,
+            safety_flags=set(safety_flags),
+            missing_required_bucket=missing_required_bucket,
+            reranker_enabled=reranker_enabled,
+        )
+    ]
+    matches.sort(key=lambda rule: rule.priority)
+    return [
+        RetrievalStrategyRecommendation(
+            recommendation_id=f"strategy:{rule.rule_id}",
+            title=rule.title,
+            technique=rule.technique,
+            status=rule.status,
+            rationale=rule.rationale,
+            source_signal_codes=signal_codes_by_rule.get(rule.rule_id, []),
+            suggested_filters=rule.suggested_filters,
+            metadata={
+                "rule_id": rule.rule_id,
+                "priority": rule.priority,
+                "query_profile_id": (
+                    query_analysis.query_profile.profile_id
+                    if query_analysis.query_profile
+                    else None
+                ),
+                "retrieval_mode": (
+                    query_analysis.query_profile.retrieval_mode
+                    if query_analysis.query_profile
+                    else None
+                ),
+            },
+        )
+        for rule in matches
+    ]
+
+
+def _corrective_action_rule_matches(
+    signal: RetrievalQualitySignal,
+    rule: CorrectiveActionRule,
+) -> bool:
+    if rule.signal_code != "*" and rule.signal_code != signal.code:
+        return False
+    if rule.match_severities and signal.severity not in rule.match_severities:
+        return False
+    return True
+
+
+def _strategy_recommendation_rule_matches(
+    rule: StrategyRecommendationRule,
+    *,
+    query_analysis: RetrievalQueryAnalysis,
+    signal_codes: set[str],
+    safety_flags: set[str],
+    missing_required_bucket: bool,
+    reranker_enabled: bool,
+) -> bool:
+    match = rule.match
+    profile = query_analysis.query_profile
+    if match.any_profile_ids and (
+        not profile or profile.profile_id not in match.any_profile_ids
+    ):
+        return False
+    if match.any_retrieval_modes and (
+        not profile or profile.retrieval_mode not in match.any_retrieval_modes
+    ):
+        return False
+    if match.any_quality_signal_codes and not signal_codes.intersection(
+        match.any_quality_signal_codes
+    ):
+        return False
+    if match.any_safety_flags and not safety_flags.intersection(match.any_safety_flags):
+        return False
+    if (
+        match.missing_required_bucket is not None
+        and match.missing_required_bucket != missing_required_bucket
+    ):
+        return False
+    if match.reranker_enabled is not None and match.reranker_enabled != reranker_enabled:
+        return False
+    return True
+
+
+def _strategy_rule_signal_matches(
+    signal_code: str,
+    match: StrategyRecommendationMatch,
+) -> bool:
+    return bool(
+        match.any_quality_signal_codes
+        and signal_code in match.any_quality_signal_codes
+    )
+
+
+def _actions_from_corrective_rule(
+    signal: RetrievalQualitySignal,
+    rule: CorrectiveActionRule,
+) -> list[RetrievalRecommendedAction]:
+    if rule.metadata_list_path:
+        items = _metadata_list(signal.metadata.get(rule.metadata_list_path))
+        return _actions_from_metadata_items(signal, rule, items)
+    return [
+        _recommended_action(
+            signal=signal,
+            rule=rule,
+            action_type=rule.action_type,
+            priority=rule.priority,
+            title=_rule_title(signal, rule, {}),
+            description=_rule_description(signal, rule, {}),
+            metadata=signal.metadata if rule.source == "query_diagnostic" else None,
+        )
+    ]
+
+
+def _actions_from_metadata_items(
+    signal: RetrievalQualitySignal,
+    rule: CorrectiveActionRule,
+    items: list[dict[str, Any]],
+) -> list[RetrievalRecommendedAction]:
+    actions: list[RetrievalRecommendedAction] = []
+    for item in items:
+        suggested_filter = _rule_suggested_filter(rule, item)
+        if rule.suggested_filter_path and not suggested_filter:
+            continue
+        metadata = {
+            key: _metadata_text(item.get(key), "")
+            for key in rule.metadata_keys
+            if _metadata_text(item.get(key), "")
+        }
+        actions.append(
+            _recommended_action(
+                signal=signal,
+                rule=rule,
+                action_type=rule.action_type
+                if suggested_filter or not rule.fallback_action_type
+                else rule.fallback_action_type,
+                priority=rule.priority,
+                title=_rule_title(signal, rule, item, suggested_filter=suggested_filter),
+                description=_rule_description(signal, rule, item),
+                suggested_filter=suggested_filter,
+                metadata=metadata,
+            )
+        )
+    if actions or not rule.fallback_action_type:
+        return actions
+    return [
+        _recommended_action(
+            signal=signal,
+            rule=rule,
+            action_type=rule.fallback_action_type,
+            priority=rule.priority,
+            title=rule.fallback_title or _rule_title(signal, rule, {}),
+            description=rule.fallback_description or _rule_description(signal, rule, {}),
+        )
+    ]
+
+
+def _rule_title(
+    signal: RetrievalQualitySignal,
+    rule: CorrectiveActionRule,
+    metadata: dict[str, Any],
+    *,
+    suggested_filter: dict[str, str] | None = None,
+) -> str:
+    if rule.title_from_signal:
+        return _signal_text(signal, rule.title_from_signal)
+    if rule.title_template:
+        return _format_template(rule.title_template, metadata)
+    if rule.title_prefix and suggested_filter:
+        return f"{rule.title_prefix}: {_filter_label(suggested_filter)}"
+    if rule.title_prefix:
+        return rule.title_prefix
+    return rule.title or signal.suggested_action
+
+
+def _rule_description(
+    signal: RetrievalQualitySignal,
+    rule: CorrectiveActionRule,
+    metadata: dict[str, Any],
+) -> str:
+    del metadata
+    if rule.description_from_signal:
+        return _signal_text(signal, rule.description_from_signal)
+    return rule.description or signal.message
+
+
+def _rule_suggested_filter(
+    rule: CorrectiveActionRule,
+    metadata: dict[str, Any],
+) -> dict[str, str]:
+    if rule.suggested_filter_path:
+        return _metadata_string_map(metadata.get(rule.suggested_filter_path))
+    if not rule.suggested_filter_from_metadata:
+        return _metadata_string_map(metadata)
+    return {
+        target_key: _metadata_text(metadata.get(source_key), "")
+        for target_key, source_key in rule.suggested_filter_from_metadata.items()
+        if _metadata_text(metadata.get(source_key), "")
+    }
+
+
+def _template_values(metadata: dict[str, Any]) -> dict[str, str]:
+    return {
+        key: _metadata_text(value, key)
+        for key, value in metadata.items()
+    }
+
+
+def _format_template(template: str, metadata: dict[str, Any]) -> str:
+    values = _template_values(metadata)
+    return re.sub(
+        r"\{([a-zA-Z0-9_]+)\}",
+        lambda match: values.get(match.group(1), match.group(1)),
+        template,
+    )
+
+
+def _signal_text(signal: RetrievalQualitySignal, field_name: str) -> str:
+    if field_name == "message":
+        return signal.message
+    if field_name == "suggested_action":
+        return signal.suggested_action
+    return signal.suggested_action
+
+
+def _recommended_action(
+    *,
+    signal: RetrievalQualitySignal,
+    rule: CorrectiveActionRule,
+    action_type: str,
+    priority: int,
+    title: str,
+    description: str,
+    suggested_filter: dict[str, str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> RetrievalRecommendedAction:
+    action_metadata = dict(metadata or {})
+    action_metadata["corrective_rule_id"] = rule.rule_id
+    action_metadata["corrective_rule_source"] = rule.source
+    action_metadata["source_signal_severity"] = signal.severity
+    action_id = _stable_action_id(
+        signal.code,
+        action_type,
+        title,
+        suggested_filter or {},
+        action_metadata,
+    )
+    return RetrievalRecommendedAction(
+        action_id=action_id,
+        priority=priority,
+        severity=signal.severity,
+        action_type=action_type,
+        title=title,
+        description=description,
+        suggested_filter=suggested_filter or {},
+        source_signal_codes=[signal.code],
+        evidence_ids=signal.evidence_ids,
+        metadata=action_metadata,
+    )
+
+
+def _unique_recommended_actions(
+    actions: list[RetrievalRecommendedAction],
+) -> list[RetrievalRecommendedAction]:
+    severity_rank = {"destructive": 0, "warning": 1, "info": 2, "success": 3}
+    unique: dict[str, RetrievalRecommendedAction] = {}
+    for action in actions:
+        existing = unique.get(action.action_id)
+        if not existing:
+            unique[action.action_id] = action
+            continue
+        source_codes = sorted(
+            set(existing.source_signal_codes).union(action.source_signal_codes)
+        )
+        evidence_ids = sorted(set(existing.evidence_ids).union(action.evidence_ids))
+        unique[action.action_id] = existing.model_copy(
+            update={
+                "priority": min(existing.priority, action.priority),
+                "source_signal_codes": source_codes,
+                "evidence_ids": evidence_ids,
+            }
+        )
+    return sorted(
+        unique.values(),
+        key=lambda action: (
+            action.priority,
+            severity_rank.get(action.severity, 9),
+        ),
+    )
+
+
+def _stable_action_id(
+    signal_code: str,
+    action_type: str,
+    title: str,
+    suggested_filter: dict[str, str],
+    metadata: dict[str, Any],
+) -> str:
+    payload = json.dumps(
+        {
+            "signal_code": signal_code,
+            "action_type": action_type,
+            "title": title,
+            "suggested_filter": suggested_filter,
+            "corrective_rule_id": metadata.get("corrective_rule_id"),
+            "corrective_rule_source": metadata.get("corrective_rule_source"),
+            "bucket_id": metadata.get("bucket_id"),
+            "concept_id": metadata.get("concept_id"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return f"retrieval_action:{sha256(payload.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _metadata_list(value: Any) -> list[dict[str, Any]]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _metadata_string_map(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): str(item)
+        for key, item in value.items()
+        if str(key).strip() and str(item).strip()
+    }
+
+
+def _metadata_text(value: Any, fallback: str) -> str:
+    text = str(value).strip() if value is not None else ""
+    return text or fallback
+
+
+def _filter_label(suggested_filter: dict[str, str]) -> str:
+    return ", ".join(f"{key}={value}" for key, value in suggested_filter.items())
+
+
+def _allowed_recommended_action_types() -> set[str]:
+    return {
+        "apply_filter",
+        "broaden_query",
+        "rewrite_query",
+        "reindex_source",
+        "add_source",
+        "require_review",
+        "diversify_sources",
+    }
 
 
 def _provenance_quality_issues(
@@ -897,6 +1985,580 @@ def active_quality_policy() -> RetrievalQualityPolicy:
     return _load_quality_policy(path or str(DEFAULT_QUALITY_GATE_POLICY_REGISTRY))
 
 
+def active_evidence_bucket_rules() -> list[EvidenceBucketRule]:
+    """Load active evidence bucket rules from trusted data."""
+
+    path = os.environ.get("OJT_EVIDENCE_BUCKET_RULES_PATH")
+    return _load_evidence_bucket_rules(path or str(DEFAULT_EVIDENCE_BUCKET_RULE_REGISTRY))
+
+
+def active_corrective_action_rules() -> list[CorrectiveActionRule]:
+    """Load active corrective retrieval action rules from trusted data."""
+
+    path = os.environ.get("OJT_CORRECTIVE_ACTION_RULES_PATH")
+    return _load_corrective_action_rules(path or str(DEFAULT_CORRECTIVE_ACTION_RULE_REGISTRY))
+
+
+def active_strategy_recommendation_rules() -> list[StrategyRecommendationRule]:
+    """Load active retrieval strategy recommendation rules from trusted data."""
+
+    path = os.environ.get("OJT_STRATEGY_RECOMMENDATION_RULES_PATH")
+    return _load_strategy_recommendation_rules(
+        path or str(DEFAULT_STRATEGY_RECOMMENDATION_RULE_REGISTRY)
+    )
+
+
+@lru_cache(maxsize=4)
+def _load_strategy_recommendation_rules(path_text: str) -> list[StrategyRecommendationRule]:
+    path = Path(path_text)
+    if not path.exists():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"Invalid strategy recommendation registry at {path}: expected object"
+        )
+    records = raw.get("rules")
+    if not isinstance(records, list):
+        raise ValueError(
+            f"Invalid strategy recommendation registry at {path}: rules must be a list"
+        )
+    rules = [_strategy_recommendation_rule(record, path=path) for record in records]
+    rule_ids = [rule.rule_id for rule in rules]
+    if len(set(rule_ids)) != len(rule_ids):
+        raise ValueError(
+            f"Invalid strategy recommendation registry at {path}: duplicate rule_id"
+        )
+    return sorted(rules, key=lambda rule: rule.priority)
+
+
+def _strategy_recommendation_rule(
+    value: Any,
+    *,
+    path: Path,
+) -> StrategyRecommendationRule:
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Invalid strategy recommendation registry at {path}: rule must be an object"
+        )
+    priority = value.get("priority", 100)
+    if not isinstance(priority, int) or isinstance(priority, bool) or priority < 1:
+        raise ValueError(
+            f"Invalid strategy recommendation registry at {path}: "
+            "priority must be a positive integer"
+        )
+    match = value.get("match", {})
+    if not isinstance(match, dict):
+        raise ValueError(
+            f"Invalid strategy recommendation registry at {path}: match must be an object"
+        )
+    suggested_filters = value.get("suggested_filters", {})
+    if not isinstance(suggested_filters, dict):
+        raise ValueError(
+            f"Invalid strategy recommendation registry at {path}: "
+            "suggested_filters must be an object"
+        )
+    return StrategyRecommendationRule(
+        rule_id=_required_quality_policy_text(value.get("rule_id"), path=path),
+        title=_required_quality_policy_text(value.get("title"), path=path),
+        technique=_required_quality_policy_text(value.get("technique"), path=path),
+        status=_required_quality_policy_text(value.get("status"), path=path),
+        rationale=_required_quality_policy_text(value.get("rationale"), path=path),
+        priority=priority,
+        suggested_filters={
+            _required_quality_policy_text(key, path=path): _required_quality_policy_text(
+                item,
+                path=path,
+            )
+            for key, item in suggested_filters.items()
+        },
+        match=StrategyRecommendationMatch(
+            any_profile_ids=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_profile_ids", []),
+                    field="any_profile_ids",
+                    path=path,
+                )
+            ),
+            any_retrieval_modes=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_retrieval_modes", []),
+                    field="any_retrieval_modes",
+                    path=path,
+                )
+            ),
+            any_quality_signal_codes=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_quality_signal_codes", []),
+                    field="any_quality_signal_codes",
+                    path=path,
+                )
+            ),
+            any_safety_flags=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_safety_flags", []),
+                    field="any_safety_flags",
+                    path=path,
+                )
+            ),
+            missing_required_bucket=_optional_bool_match(
+                match.get("missing_required_bucket"),
+                field="missing_required_bucket",
+                path=path,
+            ),
+            reranker_enabled=_optional_bool_match(
+                match.get("reranker_enabled"),
+                field="reranker_enabled",
+                path=path,
+            ),
+        ),
+    )
+
+
+def _optional_bool_match(value: Any, *, field: str, path: Path) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    raise ValueError(
+        f"Invalid strategy recommendation registry at {path}: {field} must be a boolean"
+    )
+
+
+@lru_cache(maxsize=4)
+def _load_corrective_action_rules(path_text: str) -> list[CorrectiveActionRule]:
+    path = Path(path_text)
+    if not path.exists():
+        return _default_corrective_action_rules()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid corrective action registry at {path}: expected object")
+    rules = raw.get("rules")
+    if not isinstance(rules, list):
+        raise ValueError(f"Invalid corrective action registry at {path}: rules must be a list")
+    parsed = [_corrective_action_rule(item, path=path) for item in rules]
+    rule_ids = [rule.rule_id for rule in parsed]
+    if len(set(rule_ids)) != len(rule_ids):
+        raise ValueError(f"Invalid corrective action registry at {path}: duplicate rule_id")
+    return parsed
+
+
+def _corrective_action_rule(value: Any, *, path: Path) -> CorrectiveActionRule:
+    if not isinstance(value, dict):
+        raise ValueError(f"Invalid corrective action registry at {path}: rule must be an object")
+    action_type = _required_quality_policy_text(value.get("action_type"), path=path)
+    fallback_action_type = _optional_quality_policy_text(value.get("fallback_action_type"))
+    for field_name, candidate in {
+        "action_type": action_type,
+        "fallback_action_type": fallback_action_type,
+    }.items():
+        if candidate and candidate not in _allowed_recommended_action_types():
+            raise ValueError(
+                f"Invalid corrective action registry at {path}: "
+                f"{field_name} {candidate!r} is unsupported"
+            )
+    priority = value.get("priority")
+    if not isinstance(priority, int) or isinstance(priority, bool) or priority < 1:
+        raise ValueError(
+            f"Invalid corrective action registry at {path}: priority must be a positive integer"
+        )
+    suggested_filter_from_metadata = value.get("suggested_filter_from_metadata", {})
+    if not isinstance(suggested_filter_from_metadata, dict):
+        raise ValueError(
+            f"Invalid corrective action registry at {path}: "
+            "suggested_filter_from_metadata must be an object"
+        )
+    return CorrectiveActionRule(
+        rule_id=_required_quality_policy_text(value.get("rule_id"), path=path),
+        signal_code=_required_quality_policy_text(value.get("signal_code"), path=path),
+        source=_corrective_action_rule_source(value.get("source"), path=path),
+        priority=priority,
+        action_type=action_type,
+        title=_optional_quality_policy_text(value.get("title")),
+        description=_optional_quality_policy_text(value.get("description")),
+        title_template=_optional_quality_policy_text(value.get("title_template")),
+        title_prefix=_optional_quality_policy_text(value.get("title_prefix")),
+        fallback_title=_optional_quality_policy_text(value.get("fallback_title")),
+        title_from_signal=_optional_quality_policy_text(value.get("title_from_signal")),
+        description_from_signal=_optional_quality_policy_text(
+            value.get("description_from_signal")
+        ),
+        fallback_action_type=fallback_action_type,
+        fallback_description=_optional_quality_policy_text(value.get("fallback_description")),
+        metadata_list_path=_optional_quality_policy_text(value.get("metadata_list_path")),
+        suggested_filter_path=_optional_quality_policy_text(value.get("suggested_filter_path")),
+        suggested_filter_from_metadata={
+            _required_quality_policy_text(key, path=path): _required_quality_policy_text(
+                item,
+                path=path,
+            )
+            for key, item in suggested_filter_from_metadata.items()
+        },
+        metadata_keys=tuple(
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value.get("metadata_keys", []),
+                field="metadata_keys",
+                path=path,
+            )
+        ),
+        match_severities=tuple(
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value.get("match_severities", []),
+                field="match_severities",
+                path=path,
+            )
+        ),
+    )
+
+
+def _corrective_action_rule_source(value: Any, *, path: Path) -> str:
+    source = _optional_quality_policy_text(value) or "quality_signal"
+    if source not in {"quality_signal", "query_diagnostic"}:
+        raise ValueError(
+            f"Invalid corrective action registry at {path}: "
+            "source must be quality_signal or query_diagnostic"
+        )
+    return source
+
+
+def _default_corrective_action_rules() -> list[CorrectiveActionRule]:
+    path = Path("default_corrective_action_rules")
+    raw_rules: list[dict[str, Any]] = [
+        {
+            "rule_id": "overconstrained_metadata_broaden_query",
+            "source": "query_diagnostic",
+            "signal_code": "overconstrained_metadata_filters",
+            "priority": 8,
+            "action_type": "broaden_query",
+            "title": "Broaden over-filtered search",
+            "description": (
+                "Clear narrow metadata filters or add schema, fields, resource type, "
+                "format, or clinical terms before treating low evidence coverage as real."
+            ),
+        },
+        {
+            "rule_id": "no_hits_broaden_query",
+            "signal_code": "no_hits",
+            "priority": 10,
+            "action_type": "broaden_query",
+            "title": "Broaden the search",
+            "description": (
+                "Remove restrictive filters, use fewer exact terms, or reindex trusted "
+                "knowledge before relying on this package."
+            ),
+        },
+        {
+            "rule_id": "query_context_safety_review",
+            "signal_code": "query_context_safety_flags",
+            "priority": 15,
+            "action_type": "require_review",
+            "title": "Require human review",
+            "description": (
+                "Treat the query text as untrusted data and require review before running "
+                "write-capable or agent handoff steps."
+            ),
+        },
+        {
+            "rule_id": "missing_required_bucket_recovery",
+            "signal_code": "missing_required_evidence_buckets",
+            "priority": 20,
+            "action_type": "apply_filter",
+            "fallback_action_type": "add_source",
+            "title_template": "Recover {label} evidence",
+            "description": (
+                "Run a targeted remediation search or add an approved source for this "
+                "required evidence class."
+            ),
+            "metadata_list_path": "missing_buckets",
+            "suggested_filter_path": "suggested_filter",
+            "metadata_keys": ["bucket_id"],
+        },
+        {
+            "rule_id": "missing_standard_filter_recovery",
+            "signal_code": "missing_standard_coverage",
+            "priority": 30,
+            "action_type": "apply_filter",
+            "fallback_action_type": "broaden_query",
+            "title_prefix": "Recover standard coverage",
+            "fallback_title": "Broaden standard search",
+            "description_from_signal": "suggested_action",
+            "metadata_list_path": "suggested_filters",
+        },
+        {
+            "rule_id": "missing_concept_grounding_recovery",
+            "signal_code": "missing_concept_grounding",
+            "priority": 35,
+            "action_type": "apply_filter",
+            "fallback_action_type": "add_source",
+            "title_template": "Recover concept grounding: {display_name}",
+            "fallback_title": "Add terminology-backed evidence",
+            "description": (
+                "Run a terminology-focused search so selected evidence grounds this "
+                "detected medical concept before downstream use."
+            ),
+            "fallback_description": (
+                "Add or reindex approved terminology sources that ground the detected "
+                "medical concepts."
+            ),
+            "metadata_list_path": "missing_concepts",
+            "suggested_filter_from_metadata": {"standard_system": "standard_system"},
+            "metadata_keys": ["concept_id", "standard_system"],
+        },
+        {
+            "rule_id": "missing_query_aspect_filter_recovery",
+            "signal_code": "missing_query_aspect_coverage",
+            "priority": 38,
+            "action_type": "apply_filter",
+            "fallback_action_type": "broaden_query",
+            "title_prefix": "Recover aspect coverage",
+            "fallback_title": "Broaden aspect search",
+            "description_from_signal": "suggested_action",
+            "metadata_list_path": "suggested_filters",
+        },
+        {
+            "rule_id": "weak_top_hit_rewrite_query",
+            "signal_code": "weak_top_hit_match",
+            "priority": 40,
+            "action_type": "rewrite_query",
+            "title": "Rewrite the query",
+            "description": (
+                "Use more specific clinical terms, identifiers, standards, or schema "
+                "fields so the top result has stronger exact-term support."
+            ),
+        },
+        {
+            "rule_id": "source_diversity_recovery",
+            "signal_code": "source_diversity_limited",
+            "priority": 45,
+            "action_type": "diversify_sources",
+            "title": "Diversify selected sources",
+            "description": (
+                "Apply source, standard, or clinical-domain filters to reduce "
+                "duplicate-source evidence before downstream use."
+            ),
+        },
+        {
+            "rule_id": "weak_provenance_reindex",
+            "signal_code": "weak_evidence_provenance",
+            "priority": 50,
+            "action_type": "reindex_source",
+            "title": "Repair source provenance",
+            "description": (
+                "Reindex the source with version and locator metadata, or replace the "
+                "evidence with an auditable source."
+            ),
+        },
+        {
+            "rule_id": "default_warning_review",
+            "signal_code": "*",
+            "match_severities": ["warning", "destructive"],
+            "priority": 90,
+            "action_type": "require_review",
+            "title_from_signal": "suggested_action",
+            "description_from_signal": "message",
+        },
+    ]
+    return [_corrective_action_rule(item, path=path) for item in raw_rules]
+
+
+@lru_cache(maxsize=4)
+def _load_evidence_bucket_rules(path_text: str) -> list[EvidenceBucketRule]:
+    path = Path(path_text)
+    if not path.exists():
+        return _default_evidence_bucket_rules()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid evidence bucket registry at {path}: expected object")
+    buckets = raw.get("buckets")
+    if not isinstance(buckets, list):
+        raise ValueError(f"Invalid evidence bucket registry at {path}: buckets must be a list")
+    rules = [_evidence_bucket_rule(item, path=path) for item in buckets]
+    bucket_ids = [rule.bucket_id for rule in rules]
+    if len(set(bucket_ids)) != len(bucket_ids):
+        raise ValueError(f"Invalid evidence bucket registry at {path}: duplicate bucket_id")
+    if "other" not in set(bucket_ids):
+        rules.append(_default_other_bucket_rule())
+    return rules
+
+
+def _evidence_bucket_rule(value: Any, *, path: Path) -> EvidenceBucketRule:
+    if not isinstance(value, dict):
+        raise ValueError(f"Invalid evidence bucket registry at {path}: bucket must be an object")
+    bucket_id = _required_quality_policy_text(value.get("bucket_id"), path=path)
+    allowed_bucket_ids = {
+        "schema",
+        "policy",
+        "terminology",
+        "fhir_mapping",
+        "source_locator",
+        "prior_decision",
+        "other",
+    }
+    if bucket_id not in allowed_bucket_ids:
+        raise ValueError(
+            f"Invalid evidence bucket registry at {path}: unsupported bucket_id {bucket_id!r}"
+        )
+    suggested_filter = value.get("suggested_filter", {})
+    match = value.get("match", {})
+    if not isinstance(suggested_filter, dict):
+        raise ValueError(
+            f"Invalid evidence bucket registry at {path}: suggested_filter must be an object"
+        )
+    if not isinstance(match, dict):
+        raise ValueError(f"Invalid evidence bucket registry at {path}: match must be an object")
+    return EvidenceBucketRule(
+        bucket_id=bucket_id,
+        label=_required_quality_policy_text(value.get("label"), path=path),
+        description=_required_quality_policy_text(value.get("description"), path=path),
+        required=bool(value.get("required", False)),
+        suggested_filter={
+            _required_quality_policy_text(key, path=path): _required_quality_policy_text(
+                item,
+                path=path,
+            )
+            for key, item in suggested_filter.items()
+        },
+        match=EvidenceBucketMatchRule(
+            source_types=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("source_types", []),
+                    field="source_types",
+                    path=path,
+                )
+            ),
+            source_id_contains=tuple(
+                _required_quality_policy_text(item, path=path).lower()
+                for item in _quality_policy_text_list(
+                    match.get("source_id_contains", []),
+                    field="source_id_contains",
+                    path=path,
+                )
+            ),
+            standard_systems=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("standard_systems", []),
+                    field="standard_systems",
+                    path=path,
+                )
+            ),
+            locator_any_keys=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("locator_any_keys", []),
+                    field="locator_any_keys",
+                    path=path,
+                )
+            ),
+        ),
+    )
+
+
+def _default_evidence_bucket_rules() -> list[EvidenceBucketRule]:
+    return [
+        EvidenceBucketRule(
+            bucket_id="schema",
+            label="Schema",
+            description="Schemas, field dictionaries, and data contracts supporting parsing or validation.",
+            required=True,
+            suggested_filter={"source_type": EvidenceSourceType.SCHEMA.value},
+            match=EvidenceBucketMatchRule(
+                source_types=(
+                    EvidenceSourceType.SCHEMA.value,
+                    EvidenceSourceType.DATA_DICTIONARY.value,
+                    EvidenceSourceType.VALIDATION_REPORT.value,
+                )
+            ),
+        ),
+        EvidenceBucketRule(
+            bucket_id="policy",
+            label="Policy",
+            description="Governance, PHI, review, and safety rules retrieved for the workflow.",
+            required=True,
+            suggested_filter={"standard_system": "ojtflow_policy"},
+            match=EvidenceBucketMatchRule(
+                source_types=(
+                    EvidenceSourceType.AUDIT_EVENT.value,
+                    EvidenceSourceType.TOOL_OUTPUT.value,
+                ),
+                source_id_contains=("policy", "review", "governance"),
+            ),
+        ),
+        EvidenceBucketRule(
+            bucket_id="terminology",
+            label="Terminology",
+            description="Controlled terminology and unit evidence such as LOINC, UCUM, RxNorm, or SNOMED CT.",
+            required=False,
+            suggested_filter={"source_type": EvidenceSourceType.TERMINOLOGY_SYSTEM.value},
+            match=EvidenceBucketMatchRule(
+                source_types=(EvidenceSourceType.TERMINOLOGY_SYSTEM.value,),
+                standard_systems=("LOINC", "UCUM", "RxNorm", "SNOMED_CT", "SNOMED", "MeSH"),
+            ),
+        ),
+        EvidenceBucketRule(
+            bucket_id="fhir_mapping",
+            label="FHIR mapping",
+            description="FHIR resource, search parameter, and mapping evidence for clinical package output.",
+            required=False,
+            suggested_filter={"standard_system": "FHIR"},
+            match=EvidenceBucketMatchRule(
+                standard_systems=("FHIR",),
+                source_id_contains=("fhir",),
+            ),
+        ),
+        EvidenceBucketRule(
+            bucket_id="source_locator",
+            label="Source locators",
+            description="Input rows, OCR boxes, document chunks, or other source-local evidence locators.",
+            required=False,
+            suggested_filter={},
+            match=EvidenceBucketMatchRule(
+                source_types=(
+                    EvidenceSourceType.INPUT_DATA.value,
+                    EvidenceSourceType.OCR_BOX.value,
+                    EvidenceSourceType.DICOM_METADATA.value,
+                    EvidenceSourceType.IMAGE_MASK.value,
+                    EvidenceSourceType.VIDEO_TRACK.value,
+                ),
+                locator_any_keys=("row", "column", "page", "bbox", "chunk_id"),
+            ),
+        ),
+        EvidenceBucketRule(
+            bucket_id="prior_decision",
+            label="Prior decisions",
+            description="Human decisions, audit events, or accepted transformations that can guide repeat work.",
+            required=False,
+            suggested_filter={"source_type": EvidenceSourceType.HUMAN_DECISION.value},
+            match=EvidenceBucketMatchRule(
+                source_types=(
+                    EvidenceSourceType.HUMAN_DECISION.value,
+                    EvidenceSourceType.AUDIT_EVENT.value,
+                ),
+                source_id_contains=("prior",),
+            ),
+        ),
+        _default_other_bucket_rule(),
+    ]
+
+
+def _default_other_bucket_rule() -> EvidenceBucketRule:
+    return EvidenceBucketRule(
+        bucket_id="other",
+        label="Other evidence",
+        description="Retrieved evidence that does not fit a higher-priority clinical workflow bucket.",
+        required=False,
+        suggested_filter={},
+        match=EvidenceBucketMatchRule(),
+    )
+
+
 @lru_cache(maxsize=4)
 def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     path = Path(path_text)
@@ -912,6 +2574,7 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
     ranking_thresholds = raw.get("ranking_thresholds", {})
     provenance_requirements = raw.get("provenance_requirements", {})
     concept_grounding_requirements = raw.get("concept_grounding_requirements", {})
+    evidence_bucket_requirements = raw.get("evidence_bucket_requirements", {})
     if not isinstance(severity_penalties, dict):
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: severity_penalties must be an object"
@@ -940,6 +2603,11 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
         raise ValueError(
             f"Invalid retrieval quality policy at {path}: "
             "concept_grounding_requirements must be an object"
+        )
+    if not isinstance(evidence_bucket_requirements, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: "
+            "evidence_bucket_requirements must be an object"
         )
     return RetrievalQualityPolicy(
         version=_optional_quality_policy_text(raw.get("version")) or "retrieval_quality_policy.v1",
@@ -975,6 +2643,10 @@ def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
         ),
         concept_grounding_requirements=_quality_policy_concept_grounding_requirements(
             concept_grounding_requirements,
+            path=path,
+        ),
+        evidence_bucket_requirements=_quality_policy_evidence_bucket_requirements(
+            evidence_bucket_requirements,
             path=path,
         ),
     )
@@ -1017,6 +2689,9 @@ def _default_quality_policy() -> RetrievalQualityPolicy:
         concept_grounding_requirements={
             "require_detected_concepts": True,
             "min_confidence": 0.7,
+        },
+        evidence_bucket_requirements={
+            "required_bucket_ids": ["schema", "policy"],
         },
     )
 
@@ -1125,6 +2800,24 @@ def _quality_policy_concept_grounding_requirements(
                 f"Invalid retrieval quality policy at {path}: min_confidence must be 0-1"
             )
         requirements["min_confidence"] = min_confidence
+    return requirements
+
+
+def _quality_policy_evidence_bucket_requirements(
+    value: dict[str, Any],
+    *,
+    path: Path,
+) -> dict[str, Any]:
+    requirements: dict[str, Any] = {}
+    if "required_bucket_ids" in value:
+        requirements["required_bucket_ids"] = [
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value["required_bucket_ids"],
+                field="required_bucket_ids",
+                path=path,
+            )
+        ]
     return requirements
 
 
@@ -1688,7 +3381,7 @@ def _query_aspect_coverage_item(
     supported_filters = {
         field: value
         for field, value in aspect.suggested_filters.items()
-        if field in {"clinical_domain", "standard_system", "source_type", "trust_level"}
+        if field in {"clinical_domain", "standard_system", "source_type", "trust_level", "source_id"}
     }
     if not supported_filters:
         return None
@@ -1746,6 +3439,8 @@ def _normalized_chunk_filter_value(chunk: KnowledgeChunk, field: str) -> str | N
         return chunk.source_type.value.lower()
     if field == "trust_level":
         return chunk.trust_level.value.lower()
+    if field == "source_id":
+        return chunk.source_id.lower()
     return None
 
 
@@ -1913,6 +3608,103 @@ def _score_components(
             )
         )
     return components
+
+
+def fusion_diagnostics_from_rankings(
+    *,
+    lexical_positions: dict[str, int],
+    vector_positions: dict[str, int],
+    top_hits: list[RetrievalHit],
+    top_k: int,
+) -> dict[str, Any]:
+    """Summarize lexical/vector fusion agreement for operator diagnostics."""
+
+    cutoff = max(1, min(top_k, len(lexical_positions), len(vector_positions)))
+    lexical_top = {
+        chunk_id
+        for chunk_id, _rank in sorted(
+            lexical_positions.items(),
+            key=lambda item: item[1],
+        )[:cutoff]
+    }
+    vector_top = {
+        chunk_id
+        for chunk_id, _rank in sorted(
+            vector_positions.items(),
+            key=lambda item: item[1],
+        )[:cutoff]
+    }
+    overlap_count = len(lexical_top.intersection(vector_top))
+    selected_rank_deltas: list[int] = []
+    lexical_dominant = 0
+    vector_dominant = 0
+    balanced = 0
+    selected_items: list[dict[str, Any]] = []
+    for hit in top_hits:
+        chunk_id = str(hit.evidence.locator.get("chunk_id", hit.evidence.evidence_id))
+        lexical_rank = lexical_positions.get(chunk_id)
+        vector_rank = vector_positions.get(chunk_id)
+        lexical_component = next(
+            (component for component in hit.score_components if component.component == "lexical_rrf"),
+            None,
+        )
+        vector_component = next(
+            (component for component in hit.score_components if component.component == "vector_rrf"),
+            None,
+        )
+        lexical_value = lexical_component.value if lexical_component else 0.0
+        vector_value = vector_component.value if vector_component else 0.0
+        if lexical_rank is not None and vector_rank is not None:
+            selected_rank_deltas.append(abs(lexical_rank - vector_rank))
+        if abs(lexical_value - vector_value) < 0.000001:
+            balanced += 1
+            dominant_signal = "balanced"
+        elif lexical_value > vector_value:
+            lexical_dominant += 1
+            dominant_signal = "lexical"
+        else:
+            vector_dominant += 1
+            dominant_signal = "vector"
+        selected_items.append(
+            {
+                "evidence_id": hit.evidence.evidence_id,
+                "chunk_id": chunk_id,
+                "lexical_rank": lexical_rank,
+                "vector_rank": vector_rank,
+                "rank_delta": None
+                if lexical_rank is None or vector_rank is None
+                else abs(lexical_rank - vector_rank),
+                "dominant_signal": dominant_signal,
+            }
+        )
+
+    mean_selected_rank_delta = (
+        sum(selected_rank_deltas) / len(selected_rank_deltas)
+        if selected_rank_deltas
+        else 0.0
+    )
+    agreement_ratio = overlap_count / cutoff if cutoff else 0.0
+    if agreement_ratio >= 0.75 and mean_selected_rank_delta <= 2:
+        interpretation = "lexical_vector_agree"
+    elif agreement_ratio <= 0.25:
+        interpretation = "lexical_vector_diverge"
+    else:
+        interpretation = "mixed_fusion_signals"
+    return {
+        "method": "reciprocal_rank_fusion",
+        "rrf_k": RRF_K,
+        "cutoff": cutoff,
+        "top_overlap_count": overlap_count,
+        "top_overlap_ratio": round(agreement_ratio, 4),
+        "mean_selected_rank_delta": round(mean_selected_rank_delta, 4),
+        "selected_signal_balance": {
+            "lexical_dominant": lexical_dominant,
+            "vector_dominant": vector_dominant,
+            "balanced": balanced,
+        },
+        "interpretation": interpretation,
+        "selected_hits": selected_items,
+    }
 
 
 def _external_rerank_score_component(
@@ -2342,7 +4134,7 @@ def _query_aspect_match_for_chunk(
     supported_filters = {
         field: value
         for field, value in aspect.suggested_filters.items()
-        if field in {"clinical_domain", "standard_system", "source_type", "trust_level"}
+        if field in {"clinical_domain", "standard_system", "source_type", "trust_level", "source_id"}
     }
     matched_filters = (
         dict(supported_filters)

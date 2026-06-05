@@ -22,6 +22,9 @@ Use `assistant_chat` for normal natural-language operation. Use
 `validate_with_evidence` when the client already has a payload and wants issues
 plus standards evidence. Use `workflow_summary` when the client already has a
 workflow ID and wants a compact operator view.
+`retrieval_search` returns the same retrieval package contract as the API,
+including `quality_summary`, `recommended_actions[]`, and
+`recommended_action_summary` for corrective retrieval triage.
 
 `start_workflow` is write-capable and returns `requires_approval` unless the
 caller explicitly passes `execute_write_actions=true`. The server does not

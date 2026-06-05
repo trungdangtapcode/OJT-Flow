@@ -49,6 +49,7 @@ DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
 
 SUPPORTED_FILTER_SUGGESTION_FIELDS = {
     "clinical_domain",
+    "source_id",
     "source_type",
     "standard_system",
     "trust_level",
@@ -607,6 +608,7 @@ def _query_diagnostic_rule(record: Any, *, path: Path) -> QueryDiagnosticRule:
     allowed_conditions = {
         "low_specificity_query",
         "no_healthcare_concept_detected",
+        "overconstrained_metadata_filters",
         "standard_filter_conflicts_with_query",
     }
     if condition not in allowed_conditions:
@@ -685,6 +687,20 @@ def _default_query_diagnostic_rules() -> tuple[QueryDiagnosticRule, ...]:
             ),
             suggested_action=(
                 "Remove the standard filter or choose one of the detected standard filters."
+            ),
+        ),
+        QueryDiagnosticRule(
+            rule_id="overconstrained_metadata_filters",
+            condition="overconstrained_metadata_filters",
+            code="overconstrained_metadata_filters",
+            severity="warning",
+            message=(
+                "Retrieval has {filter_count} active metadata filters "
+                "({active_filters}) but limited query context."
+            ),
+            suggested_action=(
+                "Add schema, fields, resource type, format, or clinical terms; otherwise "
+                "remove narrow filters before judging evidence coverage."
             ),
         ),
     )
@@ -1345,6 +1361,7 @@ def _query_diagnostics(
 ) -> list[RetrievalQueryDiagnostic]:
     diagnostics: list[RetrievalQueryDiagnostic] = []
     applied_standard = str(query.filters.get("standard_system") or "")
+    active_metadata_filters = _active_metadata_filter_names(query)
     suggested_standards = {
         standard_value
         for standard in standards
@@ -1358,6 +1375,7 @@ def _query_diagnostics(
             concepts=concepts,
             tokens=tokens,
             applied_standard=applied_standard,
+            active_metadata_filters=active_metadata_filters,
             suggested_standards=suggested_standards,
         ):
             continue
@@ -1368,16 +1386,66 @@ def _query_diagnostics(
                 message=_format_query_diagnostic_template(
                     rule.message,
                     applied_standard=applied_standard,
+                    active_metadata_filters=active_metadata_filters,
                     suggested_standards=suggested_standards,
                 ),
                 suggested_action=_format_query_diagnostic_template(
                     rule.suggested_action,
                     applied_standard=applied_standard,
+                    active_metadata_filters=active_metadata_filters,
                     suggested_standards=suggested_standards,
+                ),
+                metadata=_query_diagnostic_metadata(
+                    rule.code,
+                    query=query,
+                    applied_standard=applied_standard,
+                    active_metadata_filters=active_metadata_filters,
+                    suggested_standards=suggested_standards,
+                    concepts=concepts,
+                    standards=standards,
+                    token_count=len(_tokens(query.query)),
                 ),
             )
         )
     return diagnostics
+
+
+def _query_diagnostic_metadata(
+    code: str,
+    *,
+    query: RetrievalQuery,
+    applied_standard: str,
+    active_metadata_filters: list[str],
+    suggested_standards: set[str],
+    concepts: list[str],
+    standards: list[str],
+    token_count: int,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "rule_code": code,
+        "query_token_count": token_count,
+    }
+    if active_metadata_filters:
+        metadata["active_metadata_filters"] = list(active_metadata_filters)
+        metadata["active_metadata_filter_count"] = len(active_metadata_filters)
+    if applied_standard:
+        metadata["applied_standard"] = applied_standard
+    if suggested_standards:
+        metadata["suggested_standards"] = sorted(suggested_standards)
+    if concepts:
+        metadata["detected_concepts"] = list(concepts)
+    if standards:
+        metadata["detected_standards"] = list(standards)
+    if query.fields:
+        metadata["fields"] = list(query.fields)
+    for field_name, value in {
+        "schema_id": query.schema_id,
+        "detected_format": query.detected_format,
+        "resource_type": query.resource_type,
+    }.items():
+        if value:
+            metadata[field_name] = value
+    return metadata
 
 
 def _query_profile(
@@ -1759,9 +1827,63 @@ def _optional_string(value: object) -> str | None:
 def _is_low_specificity_query(query: RetrievalQuery, *, tokens: set[str]) -> bool:
     if query.fields or query.schema_id or query.resource_type or query.detected_format:
         return False
-    if any(query.filters.get(key) for key in ("clinical_domain", "standard_system", "source_type")):
+    if any(
+        query.filters.get(key)
+        for key in ("clinical_domain", "standard_system", "source_type", "source_id")
+    ):
         return False
     return len(tokens) < 3
+
+
+def _active_metadata_filter_names(query: RetrievalQuery) -> list[str]:
+    filter_names = [
+        key
+        for key in (
+            "clinical_domain",
+            "standard_system",
+            "source_type",
+            "source_id",
+            "trust_level",
+        )
+        if query.filters.get(key)
+    ]
+    contextual_scope = [
+        ("schema_id", query.schema_id),
+        ("detected_format", query.detected_format),
+        ("resource_type", query.resource_type),
+    ]
+    filter_names.extend(name for name, value in contextual_scope if value)
+    return sorted(filter_names)
+
+
+def _is_overconstrained_metadata_query(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+    tokens: set[str],
+) -> bool:
+    del concepts, tokens
+    active_metadata_filters = _active_metadata_filter_names(query)
+    if len(active_metadata_filters) < 3:
+        return False
+    if query.fields or query.schema_id or query.resource_type or query.detected_format:
+        return False
+    if _has_query_text_clinical_context(query):
+        return False
+    return len(_tokens(query.query)) < 4
+
+
+def _has_query_text_clinical_context(query: RetrievalQuery) -> bool:
+    haystack = query.query.lower()
+    tokens = set(_tokens(haystack))
+    if not tokens:
+        return False
+    if _concept_candidates(haystack=haystack, tokens=tokens):
+        return True
+    return any(
+        _rule_matches(rule, haystack=haystack, tokens=tokens)
+        for rule in _query_expansion_rules()
+    )
 
 
 def _query_diagnostic_rule_matches(
@@ -1771,12 +1893,15 @@ def _query_diagnostic_rule_matches(
     concepts: list[str],
     tokens: set[str],
     applied_standard: str,
+    active_metadata_filters: list[str],
     suggested_standards: set[str],
 ) -> bool:
     if rule.condition == "low_specificity_query":
         return _is_low_specificity_query(query, tokens=tokens)
     if rule.condition == "no_healthcare_concept_detected":
         return not concepts
+    if rule.condition == "overconstrained_metadata_filters":
+        return _is_overconstrained_metadata_query(query, concepts=concepts, tokens=tokens)
     if rule.condition == "standard_filter_conflicts_with_query":
         return bool(
             applied_standard
@@ -1790,11 +1915,15 @@ def _format_query_diagnostic_template(
     template: str,
     *,
     applied_standard: str,
+    active_metadata_filters: list[str],
     suggested_standards: set[str],
 ) -> str:
     suggested = ", ".join(sorted(suggested_standards)) or "none"
+    active_filters = ", ".join(active_metadata_filters) or "none"
     return template.format(
+        active_filters=active_filters,
         applied_standard=applied_standard or "none",
+        filter_count=len(active_metadata_filters),
         suggested_standards=suggested,
     )
 

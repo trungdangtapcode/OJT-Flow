@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -179,25 +180,9 @@ export function cleanupWorkflowArtifacts(workflowIds: string[]): void {
   const uniqueWorkflowIds = [...new Set(workflowIds.filter(Boolean))];
   if (uniqueWorkflowIds.length === 0) return;
 
-  execFileSync(
-    "docker",
-    [
-      "compose",
-      "exec",
-      "-T",
-      "-e",
-      `OJT_E2E_WORKFLOW_IDS=${JSON.stringify(uniqueWorkflowIds)}`,
-      "api",
-      "python",
-      "-",
-    ],
-    {
-      cwd: repoRoot,
-      input: cleanupWorkflowsScript,
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
+  runCleanupScript(cleanupWorkflowsScript, {
+    OJT_E2E_WORKFLOW_IDS: JSON.stringify(uniqueWorkflowIds),
+  });
 }
 
 export function cleanupAuthArtifacts(artifacts: E2EAuthArtifacts[]): void {
@@ -206,31 +191,57 @@ export function cleanupAuthArtifacts(artifacts: E2EAuthArtifacts[]): void {
   const sessionIds = uniqueStrings(managedArtifacts.map((artifact) => artifact.sessionId));
   if (userIds.length === 0 && sessionIds.length === 0) return;
 
-  execFileSync(
-    "docker",
-    [
-      "compose",
-      "exec",
-      "-T",
-      "-e",
-      `OJT_E2E_AUTH_USER_IDS=${JSON.stringify(userIds)}`,
-      "-e",
-      `OJT_E2E_AUTH_SESSION_IDS=${JSON.stringify(sessionIds)}`,
-      "api",
-      "python",
-      "-",
-    ],
-    {
-      cwd: repoRoot,
-      input: cleanupAuthScript,
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
+  runCleanupScript(cleanupAuthScript, {
+    OJT_E2E_AUTH_SESSION_IDS: JSON.stringify(sessionIds),
+    OJT_E2E_AUTH_USER_IDS: JSON.stringify(userIds),
+  });
 }
 
 function uniqueStrings(values: Array<string | null>): string[] {
   return [
     ...new Set(values.filter((value): value is string => Boolean(value))),
   ];
+}
+
+function runCleanupScript(script: string, env: Record<string, string>): void {
+  if (process.env.OJT_E2E_SESSION_TOKEN?.trim()) {
+    const python = localPythonExecutable();
+    execFileSync(python, ["-"], {
+      cwd: repoRoot,
+      env: { ...process.env, ...env },
+      input: script,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return;
+  }
+
+  execFileSync(
+    "docker",
+    [
+      "compose",
+      "exec",
+      "-T",
+      ...Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
+      "api",
+      "python",
+      "-",
+    ],
+    {
+      cwd: repoRoot,
+      input: script,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+}
+
+function localPythonExecutable(): string {
+  const configuredPython = process.env.OJT_E2E_PYTHON?.trim();
+  if (configuredPython) return configuredPython;
+
+  const workspaceVenvPython = path.resolve(repoRoot, "../.ostwin/.venv/bin/python");
+  if (fs.existsSync(workspaceVenvPython)) return workspaceVenvPython;
+
+  return "python";
 }

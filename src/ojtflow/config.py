@@ -95,6 +95,7 @@ RUNTIME_ASSISTANT_SETTING_ALIASES = {
     "llm_model": "OJT_LLM_MODEL",
     "llm_timeout_seconds": "OJT_LLM_TIMEOUT_SECONDS",
     "llm_max_tool_calls": "OJT_LLM_MAX_TOOL_CALLS",
+    "llm_planning_progress_interval_seconds": "OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS",
 }
 RUNTIME_SETTING_ALIASES = {
     **RUNTIME_RETRIEVAL_SETTING_ALIASES,
@@ -217,6 +218,11 @@ class Settings(BaseModel):
         alias="OJT_LLM_MAX_TOOL_CALLS",
         gt=0,
         le=12,
+    )
+    llm_planning_progress_interval_seconds: float = Field(
+        default=2.0,
+        alias="OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS",
+        gt=0,
     )
     hf_embedding_device: str = Field(default="auto", alias="OJT_HF_EMBEDDING_DEVICE")
     hf_embedding_batch_size: int = Field(
@@ -465,6 +471,9 @@ def get_settings() -> Settings:
         ),
         OJT_LLM_TIMEOUT_SECONDS=float(os.getenv("OJT_LLM_TIMEOUT_SECONDS", "30.0")),
         OJT_LLM_MAX_TOOL_CALLS=int(os.getenv("OJT_LLM_MAX_TOOL_CALLS", "4")),
+        OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS=float(
+            os.getenv("OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS", "2.0")
+        ),
         OJT_HF_EMBEDDING_DEVICE=_parse_hf_embedding_device(
             os.getenv("OJT_HF_EMBEDDING_DEVICE")
         ),

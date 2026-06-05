@@ -7,6 +7,8 @@ import { StatusBadge } from "../../components/domain/workflow-badges";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input, Label, Select } from "../../components/ui/form";
+import { GuideChecklist, GuideGrid, GuideItem, GuidePanel } from "../../components/ui/guide-panel";
+import { HelpTooltip } from "../../components/ui/help-tooltip";
 import { Notice } from "../../components/ui/notice";
 import { PaginationFooter } from "../../components/ui/pagination";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -46,6 +48,25 @@ export function ReviewsPage() {
   return (
     <div className="grid gap-5">
       <PageHeader title="Review queue" description="Human decisions for risky transformations and healthcare-sensitive changes." />
+      <GuidePanel title="How to handle a review gate">
+        <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
+          <GuideGrid columns="md:grid-cols-1">
+            <GuideItem title="Why it appears">
+              The workflow paused because validation, evidence, PHI, low confidence, or meaning-changing transformations require a human decision.
+            </GuideItem>
+            <GuideItem title="What to inspect">
+              Open the workflow, read issues first, then evidence, output preview, and audit events before approving.
+            </GuideItem>
+          </GuideGrid>
+          <GuideChecklist
+            items={[
+              { label: "Approve", text: "Use when output is acceptable as generated." },
+              { label: "Edit", text: "Use when the output is close but needs a controlled correction." },
+              { label: "Reject or clarify", text: "Use when evidence is weak, data is unsafe, or the request is ambiguous." },
+            ]}
+          />
+        </div>
+      </GuidePanel>
       <ReviewSummaryStrip
         loading={reviewsQuery.isLoading}
         maxIssueCount={maxIssueCount}
@@ -61,6 +82,9 @@ export function ReviewsPage() {
               <CardTitle className="flex items-center gap-2">
                 <ClipboardCheck className="h-5 w-5 text-primary" />
                 Pending decisions
+                <HelpTooltip label="Pending decisions help">
+                  These rows are workflows waiting for a human decision. Open the workflow to review issues and evidence before choosing an action.
+                </HelpTooltip>
               </CardTitle>
               <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground">
                 {reviewsQuery.isLoading ? "loading reviews" : formatReviewCount(total)}
@@ -98,7 +122,12 @@ export function ReviewsPage() {
                 <option value="cancelled">Cancelled</option>
               </Select>
               <Label className="gap-1 text-xs text-muted-foreground">
-                Sort
+                <span className="inline-flex items-center gap-1.5">
+                  Sort
+                  <HelpTooltip label="Review sort help">
+                    Sort by issues when triaging risk, evidence when checking grounding coverage, or updated time for recent work.
+                  </HelpTooltip>
+                </span>
                 <Select
                   className="w-full"
                   onChange={(event) => {
@@ -116,7 +145,12 @@ export function ReviewsPage() {
                 </Select>
               </Label>
               <Label className="gap-1 text-xs text-muted-foreground">
-                Direction
+                <span className="inline-flex items-center gap-1.5">
+                  Direction
+                  <HelpTooltip label="Review direction help">
+                    Desc shows newest or highest values first. Asc shows oldest or lowest values first.
+                  </HelpTooltip>
+                </span>
                 <Select
                   className="w-full"
                   onChange={(event) => {

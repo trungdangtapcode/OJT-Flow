@@ -58,7 +58,24 @@ and MCP wrappers. UI clients should use it to show available tools, permission
 scope, approval requirements, and input schemas instead of hardcoding a tool
 catalog.
 
+`GET /api/v1/assistant/examples` returns starter tasks loaded from
+`knowledge/assistant/examples.json`. These are visible examples, not hidden
+runtime defaults: the Assistant form starts empty, and selecting an example
+only fills the message/context fields for the user to edit before execution.
+Do not bury demo payloads in React state or backend control flow.
+
 `POST /api/v1/assistant/chat`
+
+`POST /api/v1/assistant/chat/stream`
+
+The browser Assistant uses the streaming route. It sends the same request
+payload as `/assistant/chat`, then receives server-sent events for planning,
+tool start/completion, warnings, answer synthesis, answer text deltas, and the
+final `AssistantResponse`. Mid-stream failures are emitted as structured
+`error` events because the HTTP status may already be committed. In OpenAI
+mode, synthesis calls the OpenAI Responses API with `stream: true` and forwards
+`response.output_text.delta` chunks to the UI so users see the answer as it is
+generated.
 
 ```json
 {
@@ -78,6 +95,51 @@ The response includes mode (`deterministic` or `llm`), model, synthesized
 operator findings, compact evidence summaries, raw tool calls, suggestions, and
 warnings. Feature clients should render `findings` and `evidence_summary`
 first, then expose raw tool output only as supporting detail.
+When evidence comes from retrieval hits, `evidence_summary[].match_explanation`
+preserves the backend per-hit audit object so chat and MCP clients can show why
+the evidence matched without parsing the full retrieval package.
+When a retrieval tool returns backend `interpretation`, the Assistant surfaces
+it as a `Retrieval interpretation` finding and includes it in model context for
+OpenAI synthesis. This keeps chat explanations aligned with the Retrieval page:
+status, top evidence/source IDs, score driver, support status, bucket coverage,
+warnings, and next action come from the backend retrieval package rather than
+browser-only wording.
+When a retrieval tool returns backend `recommended_actions[]`, the Assistant
+surfaces the top actions as `findings` with title `Recommended search action`
+and as concise `suggestions`. This lets chat users see corrective retrieval
+steps such as applying a policy/schema filter or broadening the query without
+opening raw retrieval JSON.
+When a retrieval tool returns backend `remediation_summary`, the Assistant also
+surfaces it as a `Retrieval remediation` finding and a `Next retrieval step`
+suggestion. When backend `interpretation.next_action_*` is present, that
+interpretation action is shown before the remediation fallback. This keeps chat,
+MCP, and Retrieval UI behavior aligned around the same backend-owned next step.
+For direct retrieval-only deterministic
+answers, the top-level assistant message also prefers that remediation summary,
+so the first visible sentence tells the user what to do next instead of only
+reporting that evidence was retrieved. Validation-first answers continue to lead
+with validation findings.
+
+When `OJT_LLM_PROVIDER=openai`, the Assistant performs two model-backed steps:
+first it asks OpenAI for a structured tool plan, then it executes backend-owned
+tools, then it asks OpenAI to synthesize the final user-facing answer from a
+compact tool-result digest. The synthesis prompt forbids invented evidence,
+workflow IDs, clinical codes, diagnoses, treatment advice, or write execution
+claims. Source-backed claims should cite returned source IDs such as
+`[terminology:ucum]`. The backend redacts raw `context.data` before synthesis;
+tool outputs and evidence summaries are still sent so the model can explain the
+actual operation result. `AssistantResponse.mode` reports planning mode and
+`AssistantResponse.synthesis_mode` reports whether the final answer was LLM or
+deterministic fallback.
+
+The Assistant UI is intended for end users who know the data task but not the
+backend route names. It should present outcome-oriented starters loaded from the
+assistant example registry, such as checking uploaded data, finding medical
+standards, and reviewing pending work.
+Unsupported small talk or non-operational text must not silently run retrieval;
+the deterministic planner returns no tool calls and a warning telling the user
+which governed OJTFlow operations are supported. This prevents random text from
+appearing as a completed clinical evidence operation.
 
 ## MCP Entry Point
 
@@ -97,6 +159,10 @@ Exposed MCP tools:
 
 - `assistant_chat`
 - `retrieval_search`
+  - returns the full retrieval package, including `recommended_actions[]` and
+    `recommended_action_summary`, plus `remediation_summary`
+  - accepts governed source scope: `clinical_domain`, `standard_system`,
+    `source_type`, `source_id`, and `trust_level`
 - `validate_data`
 - `validate_with_evidence`
 - `convert_data`
@@ -111,7 +177,10 @@ Use `assistant_chat` for the normal operator path. Use the lower-level tools
 when an automation client already knows the exact backend operation it needs.
 `validate_with_evidence` is the primary healthcare data quality tool: it runs
 validation and retrieval together so the response includes both issues and
-standards evidence. `workflow_summary` is the primary workflow inspection tool
+standards evidence. It accepts the same governed source scope as
+`retrieval_search`; use `source_id` when the user asks for evidence from one
+exact approved source such as a specific FHIR profile, schema, guideline, or
+terminology entry. `workflow_summary` is the primary workflow inspection tool
 for chat clients.
 
 The MCP server is for trusted local/operator use in v0. For remote enterprise
