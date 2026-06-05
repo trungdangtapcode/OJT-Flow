@@ -249,8 +249,9 @@ diagnostics, profile/rule-pack changes, quality-signal changes, evidence churn,
 and missing judgments so copied reports lead directly to review decisions. The
 comparison panel should render a compact
 comparison diagnosis that names the likely change drivers before the detailed
-sections, and the copyable JSON report should include the same diagnosis for
-offline tuning notes. The comparison panel should render the
+sections, then render the same recommended actions as a visible review checklist
+before metrics and detailed deltas. The copyable JSON report should include the
+same diagnosis and actions for offline tuning notes. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
 query-aspect plans across active and baseline runs, including added, removed,

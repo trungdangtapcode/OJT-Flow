@@ -1358,6 +1358,9 @@ function SearchRunComparison({
         Compared with: {comparison.baselineQuery}
       </div>
       <RunComparisonDiagnosis diagnosis={comparison.diagnosis} />
+      <RunComparisonRecommendedActions
+        actions={comparisonReportRecommendedActions(comparison, judgments)}
+      />
       <RunComparisonMetrics metrics={comparison.metrics} />
       <div className="grid gap-2 sm:grid-cols-2">
         <RunComparisonMetric
@@ -1447,6 +1450,40 @@ function RunComparisonDiagnosis({
             <Badge variant={item.severity}>{humanize(item.code)}</Badge>
             <span className="min-w-0 flex-1 break-words text-muted-foreground">
               {item.message}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RunComparisonRecommendedActions({
+  actions,
+}: {
+  actions: Array<{ action: string; reason: string; source: string }>;
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">
+          Recommended actions
+        </span>
+        <Badge variant={actions.length ? "warning" : "success"}>
+          {actions.length ? formatCount(actions.length, "action") : "none"}
+        </Badge>
+      </div>
+      <div className="grid gap-1.5">
+        {actions.map((item) => (
+          <div className="grid gap-1" key={`${item.source}-${item.action}`}>
+            <div className="flex min-w-0 flex-wrap items-start gap-2">
+              <Badge variant="muted">{humanize(item.source)}</Badge>
+              <span className="min-w-0 flex-1 break-words font-semibold">
+                {item.action}
+              </span>
+            </div>
+            <span className="break-words pl-0 text-muted-foreground sm:pl-20">
+              {item.reason}
             </span>
           </div>
         ))}
