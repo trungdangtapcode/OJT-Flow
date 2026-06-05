@@ -5,8 +5,10 @@ import { cleanupAuthArtifacts, cleanupWorkflowArtifacts } from "./support/cleanu
 import { createDenseWorkflowQueue, createReviewWorkflow } from "./support/workflows";
 
 const primaryRoutes = [
+  "/assistant",
   "/workflows",
   "/reviews",
+  "/retrieval",
   "/workbench",
   "/audit",
   "/schemas",
@@ -133,10 +135,12 @@ async function expectShellAccessibility(page: Page) {
     };
   });
 
-  expect(metrics.navLinks).toHaveLength(6);
+  expect(metrics.navLinks).toHaveLength(8);
   expect(metrics.navLinks.filter((link) => link.ariaCurrent === "page")).toHaveLength(1);
   expect(metrics.navLinks.map((link) => link.label).sort()).toEqual([
     "Audit",
+    "Assistant",
+    "Retrieval",
     "Reviews",
     "Schemas",
     "Settings",

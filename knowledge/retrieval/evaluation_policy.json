@@ -1,0 +1,70 @@
+{
+  "version": "retrieval_evaluation_policy.v1",
+  "rules": [
+    {
+      "rule_id": "label_unjudged_top_results",
+      "metric": "coverage_at_k",
+      "operator": "lt",
+      "threshold": 0.8,
+      "severity": "warning",
+      "message": "Only {judged_count}/{cutoff} ranked hits have durable judgments.",
+      "suggested_action": "Label the unjudged top-ranked evidence before changing retrieval weights or filters.",
+      "include_unjudged_evidence_ids": true,
+      "metadata": {
+        "tuning_stage": "judgment_collection"
+      }
+    },
+    {
+      "rule_id": "tighten_low_precision_results",
+      "metric": "precision_at_k",
+      "operator": "lt",
+      "threshold": 0.5,
+      "severity": "warning",
+      "min_judged_count": 2,
+      "message": "Precision@k is {precision_at_k} across {cutoff} ranked hits.",
+      "suggested_action": "Review query terms, applied metadata filters, and ranking boost rules before promoting this search profile.",
+      "metadata": {
+        "tuning_stage": "precision_tuning"
+      }
+    },
+    {
+      "rule_id": "inspect_low_rank_ordering",
+      "metric": "ndcg_at_k",
+      "operator": "lt",
+      "threshold": 0.7,
+      "severity": "warning",
+      "min_positive_count": 2,
+      "message": "nDCG@k is {ndcg_at_k}, which means relevant evidence is not ordered near the top.",
+      "suggested_action": "Inspect score components, reranker configuration, and source-diversity selections for the judged query.",
+      "metadata": {
+        "tuning_stage": "ranking_order"
+      }
+    },
+    {
+      "rule_id": "promote_first_relevant_hit",
+      "metric": "mrr_at_k",
+      "operator": "lt",
+      "threshold": 0.5,
+      "severity": "warning",
+      "min_positive_count": 1,
+      "message": "MRR@k is {mrr_at_k}, so the first relevant hit is not near the top.",
+      "suggested_action": "Inspect top negative hits and adjust query expansion, reranking, or ranking boost rules before relying on this profile.",
+      "metadata": {
+        "tuning_stage": "first_relevant_rank"
+      }
+    },
+    {
+      "rule_id": "review_noise_before_corpus_expansion",
+      "metric": "not_relevant_count",
+      "operator": "gt",
+      "threshold": 0,
+      "severity": "info",
+      "min_judged_count": 2,
+      "message": "{not_relevant_count} judged hit(s) are marked not relevant.",
+      "suggested_action": "Check whether noisy evidence came from broad query expansion, weak lexical matches, or overly broad trusted corpus chunks.",
+      "metadata": {
+        "tuning_stage": "noise_analysis"
+      }
+    }
+  ]
+}

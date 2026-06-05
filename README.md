@@ -5,7 +5,10 @@ OJTFlow is a governed healthcare data workflow scaffold. The current implementat
 The product UI is a React/TypeScript operations console for both daily end users and B2B evaluators:
 
 - Workbench for messy healthcare data intake.
+- Assistant for natural-language access to retrieval, validation, conversion,
+  FHIR profiling, review/workflow inspection, and gated workflow creation.
 - Workflow detail for status, steps, validation issues, review, output, explanation, evidence, and audit events.
+- Retrieval console for trusted healthcare search, reindexing, ranking trace, and graph handoff inspection.
 - Review queue for pending human decisions.
 - Schema registry read view.
 - Audit and settings surfaces for B2B governance, integrations, and deployment posture.
@@ -23,7 +26,7 @@ src/ojtflow/
   infrastructure/   Postgres, SQLite, in-memory, and static knowledge adapters
   interfaces/api/   FastAPI routes and request schemas
   medical/          OCR/DICOM/visual evidence extension contracts
-  mcp_servers/      planned MCP wrapper boundary
+  mcp_servers/      local MCP wrappers for allowlisted OJTFlow tools
 frontend/
   src/              React product UI and API client
 ```
@@ -45,16 +48,20 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 - Deterministic CSV-to-JSON conversion after approval.
 - Evidence-grounded explanation report with medical intended-use limitation.
 - Healthcare-aware retrieval module with Postgres full-text search, pgvector-ready
-  storage, deterministic local embeddings, and static fallback.
-- FastAPI routes for workflows, review, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
+  storage, OpenAI semantic embeddings, deterministic test embeddings, and static fallback.
+- FastAPI routes for workflows, review, assistant chat, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
+- Optional OpenAI Responses planner for assistant tool selection, with deterministic fallback.
+- Local MCP server wrappers for retrieval, validation, conversion, FHIR profiling, workflow reads, review reads, and gated workflow creation.
 - Authenticated runtime diagnostics for sanitized configuration and readiness
   checks.
-- React product console for workflow intake, review, schema, audit, and settings surfaces.
+- React product console for assistant commands, workflow intake, review, schema, audit, and settings surfaces.
+- React retrieval console for direct evidence search, source inventory, and corpus reindexing.
 
 ## Run Tests
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m pytest
+python scripts/evaluate-retrieval.py
 ```
 
 Run the real-browser Playwright suite against the Docker stack:
@@ -70,6 +77,8 @@ Release evidence is tracked in `RELEASE_CANDIDATE.md` and
 `docs/release_verification_matrix.md`. Keep those documents aligned with the
 release script whenever backend contracts, storage, auth, retrieval, OCR/FHIR
 handoffs, frontend behavior, or deployment checks change.
+The release script also runs the deterministic retrieval quality eval so search
+changes are checked against known healthcare evidence cases before demo freeze.
 
 Run the full local release check against the Docker stack:
 
@@ -119,8 +128,14 @@ separate required step for `docker compose up`.
 
 The API image installs Python dependencies with `constraints.txt` so Docker
 rebuilds of the same commit resolve to the same runtime dependency versions.
-Keep `pyproject.toml` ranges compatible for local development, and refresh
-`constraints.txt` only after the full release check passes.
+The image includes the `ojtflow[parsing]` extra by default, which enables
+MarkItDown-backed PDF, DOCX, XLSX/XLS, and PPTX extraction in the local Compose
+runtime. Set `OJT_PYTHON_EXTRAS=parsing,embeddings-local` before building the
+API image when Docker should include local SentenceTransformers embeddings and
+CrossEncoder reranking. Add `rag-framework` when Docker should include the
+optional LlamaIndex retrieval adapter. Keep `pyproject.toml` ranges compatible
+for local development, and refresh `constraints.txt` only after the full release
+check passes.
 
 The default backend storage is Postgres plus local file artifacts:
 
@@ -150,6 +165,23 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_EMBEDDING_PROVIDER=deterministic`
 - `OJT_EMBEDDING_MODEL=deterministic-hash-v0`
 - `OJT_EMBEDDING_DIMENSIONS=64`
+- `OJT_PYTHON_EXTRAS=parsing`
+- `OJT_OPENAI_API_KEY=` or `OPENAI_API_KEY=`
+- `OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1`
+- `OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0`
+- `OJT_LLM_PROVIDER=disabled`
+- `OJT_LLM_MODEL=chat-latest`
+- `OJT_LLM_BASE_URL=https://api.openai.com/v1`
+- `OJT_LLM_TIMEOUT_SECONDS=30.0`
+- `OJT_LLM_MAX_TOOL_CALLS=4`
+- `OJT_RERANK_PROVIDER=none`
+- `OJT_RERANK_MODEL=BAAI/bge-reranker-base`
+- `OJT_RERANK_DEVICE=auto`
+- `OJT_RERANK_BATCH_SIZE=16`
+- `OJT_RERANK_CANDIDATE_LIMIT=20`
+- `OJT_RERANK_SCORE_WEIGHT=0.08`
+- `OJT_RETRIEVAL_DIVERSITY_ENABLED=true`
+- `OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72`
 
 `OJT_STORAGE_BACKEND` must be one of `postgres`, `sqlite`, or `memory`.
 Postgres is the production-like default. SQLite is a local single-file fallback.
@@ -183,12 +215,101 @@ lowercase, and must be simple supported suffixes such as `.csv` or `.pdf`.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, paths, wildcards, or
 extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER=deterministic` and
-`OJT_EMBEDDING_MODEL=deterministic-hash-v0` are the only implemented embedding
-provider/model pair in v0. They are validated at settings load so runtime
-diagnostics cannot claim an external embedding provider that the retrieval
-adapter is not actually using. `OJT_EMBEDDING_DIMENSIONS=64` is also fixed in
-v0 because the Postgres retrieval schema uses `embedding vector(64)`.
+`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
+Deterministic mode is for offline tests and demos. OpenAI mode uses the
+Embeddings API with `OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY` when
+the project-specific variable is not set. Recommended CPU-safe semantic
+retrieval settings are:
+
+```text
+OJT_EMBEDDING_PROVIDER=openai
+OJT_EMBEDDING_MODEL=text-embedding-3-small
+OJT_EMBEDDING_DIMENSIONS=384
+```
+
+For local GPU retrieval, install the optional dependency group and use:
+
+```bash
+uv pip install -e '.[embeddings-local]'
+```
+
+For Docker GPU/local-model runs, build the API image with the same optional
+dependency group included:
+
+```bash
+OJT_PYTHON_EXTRAS=parsing,embeddings-local docker compose build api
+```
+
+```text
+OJT_EMBEDDING_PROVIDER=huggingface
+OJT_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+OJT_EMBEDDING_DIMENSIONS=384
+OJT_HF_EMBEDDING_DEVICE=cuda
+```
+
+The Postgres semantic vector schema uses `embedding vector(384)`. Retrieval
+still stores JSON embeddings and performs Python reranking if pgvector is not
+available or if the configured provider dimension does not match the vector
+column. Operator-provided trusted corpus files are indexed from
+`OJT_RETRIEVAL_CORPUS_DIRS` and can be refreshed through
+`POST /api/v1/retrieval/reindex`.
+
+The native retrieval adapter remains the production default:
+
+```text
+OJT_RETRIEVAL_FRAMEWORK=custom
+```
+
+For framework-backed RAG experiments, install or build the LlamaIndex extra:
+
+```bash
+uv pip install -e '.[rag-framework]'
+OJT_PYTHON_EXTRAS=parsing,rag-framework docker compose build api
+```
+
+Then opt in:
+
+```text
+OJT_RETRIEVAL_FRAMEWORK=llamaindex
+OJT_RETRIEVAL_CANDIDATE_MULTIPLIER=4
+OJT_RETRIEVAL_MIN_CANDIDATES=12
+OJT_RETRIEVAL_VECTOR_WEIGHT=0.62
+OJT_RETRIEVAL_BM25_WEIGHT=0.38
+```
+
+That adapter uses LlamaIndex Documents/Nodes, `SentenceSplitter`,
+`VectorStoreIndex`, and `QueryFusionRetriever`. When
+`llama-index-retrievers-bm25` is installed, it adds BM25 to vector retrieval
+with reciprocal-rank fusion. The API response shape stays the same because the
+framework is isolated behind the existing retrieval repository port.
+
+Retrieval runtime controls can also be changed from the Settings page or
+`PUT /api/v1/runtime/retrieval-settings`. The backend validates the requested
+values, writes them to `OJT_RUNTIME_SETTINGS_PATH`, clears cached settings and
+service instances, then reloads the retrieval repository with the new
+framework/candidate/fusion/diversity settings.
+
+Second-stage reranking is opt-in. The first stage retrieves a broader candidate
+set with lexical, vector, and reciprocal-rank-fusion signals. When
+`OJT_RERANK_PROVIDER=huggingface`, the backend applies a SentenceTransformers
+CrossEncoder over the top `OJT_RERANK_CANDIDATE_LIMIT` candidates and adds a
+bounded `OJT_RERANK_SCORE_WEIGHT` contribution to the transparent
+`rerank_score`. Use this when local GPU is available and relevance quality is
+more important than the extra model latency:
+
+```text
+OJT_RERANK_PROVIDER=huggingface
+OJT_RERANK_MODEL=BAAI/bge-reranker-base
+OJT_RERANK_DEVICE=cuda
+OJT_RERANK_BATCH_SIZE=16
+OJT_RERANK_CANDIDATE_LIMIT=20
+OJT_RERANK_SCORE_WEIGHT=0.08
+```
+
+Final selection uses source-aware MMR by default to avoid returning only
+near-duplicate chunks from one source. `OJT_RETRIEVAL_DIVERSITY_LAMBDA` controls
+the relevance/novelty balance from `0` to `1`; the default `0.72` keeps
+relevance dominant while improving selected source coverage.
 
 The frontend container proxies `/api/*` and `/health` requests to the API
 container in Docker. No API keys or ADC credential files are committed; pass
@@ -206,6 +327,7 @@ Upload parsing routes:
 - `GET /api/v1/auth/me`
 - `GET /api/v1/runtime/config`
 - `GET /api/v1/runtime/readiness`
+- `PUT /api/v1/runtime/retrieval-settings`
 - `POST /api/v1/auth/logout`
 
 ## Google OAuth Login
@@ -331,6 +453,7 @@ Useful routes:
 - `POST /api/v1/fhir/profile`
 - `POST /api/v1/ocr/evidence`
 - `POST /api/v1/retrieval/search`
+- `POST /api/v1/retrieval/reindex`
 - `GET /api/v1/retrieval/sources`
 - `POST /api/v1/parse/extract`
 - `POST /api/v1/parse/upload/workflow`

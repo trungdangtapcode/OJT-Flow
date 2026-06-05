@@ -1,20 +1,27 @@
 import {
+  Bot,
   CheckCircle2,
   Clock3,
   Database,
   HardDrive,
   KeyRound,
+  Loader2,
+  Save,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   UploadCloud,
   UserRound,
   Users,
 } from "lucide-react";
-import type * as React from "react";
+import * as React from "react";
 
 import { useAuth } from "../../app/auth";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input, Label, Select } from "../../components/ui/form";
+import { Notice } from "../../components/ui/notice";
 import { PageHeader } from "../../components/layout/page-header";
 import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-strip";
 import {
@@ -23,9 +30,21 @@ import {
   useRuntimeConfigQuery,
   useRuntimeHealthQuery,
   useRuntimeReadinessQuery,
+  useRuntimeAssistantSettingsMutation,
+  useRuntimeRetrievalSettingsMutation,
   useSchemasQuery,
+  workflowErrorMessage,
 } from "../../lib/server-state";
-import type { ReadinessCheck, RuntimeConfig, RuntimeReadiness } from "../../types";
+import type {
+  ReadinessCheck,
+  RuntimeAssistantSettings,
+  RuntimeAssistantSettingsPayload,
+  RuntimeConfig,
+  RuntimeReadiness,
+  RuntimeRetrievalRulePack,
+  RuntimeRetrievalSettings,
+  RuntimeRetrievalSettingsPayload,
+} from "../../types";
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -180,7 +199,7 @@ export function SettingsPage() {
                 />
               </RuntimeFactGroup>
 
-              <RuntimeFactGroup icon={UserRound} title="Identity and embeddings">
+              <RuntimeFactGroup icon={UserRound} title="Identity and retrieval AI">
                 <SettingRow
                   label="User"
                   value={user?.email ?? "No active session"}
@@ -195,6 +214,75 @@ export function SettingsPage() {
                   value={
                     runtime
                       ? `${runtime.embedding.model} / ${runtime.embedding.dimensions}d`
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                />
+                <SettingRow
+                  label="Reranker"
+                  value={
+                    runtime
+                      ? runtime.rerank?.enabled
+                        ? `${runtime.rerank.provider} / ${runtime.rerank.device}`
+                        : "disabled"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                  badge={
+                    runtime?.rerank?.enabled
+                      ? "configured"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "offline"
+                  }
+                />
+                <SettingRow
+                  label="Rerank model"
+                  value={
+                    runtime
+                      ? runtime.rerank?.enabled
+                        ? `${runtime.rerank.model} / top ${runtime.rerank.candidate_limit}`
+                        : "First-stage hybrid only"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                />
+                <SettingRow
+                  label="Retrieval framework"
+                  value={
+                    runtime
+                      ? runtime.retrieval?.framework ?? "custom"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                  badge={
+                    runtime?.retrieval?.framework === "llamaindex"
+                      ? "configured"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "native"
+                  }
+                />
+                <SettingRow
+                  label="Diversity"
+                  value={
+                    runtime
+                      ? runtime.retrieval?.diversity_enabled
+                        ? `MMR / lambda ${runtime.retrieval.diversity_lambda?.toFixed(2) ?? "n/a"}`
+                        : "Score order"
+                      : runtimeConfigLabel(runtimeConfigQuery)
+                  }
+                  badge={
+                    runtime?.retrieval?.diversity_enabled
+                      ? "configured"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "disabled"
+                  }
+                />
+                <SettingRow
+                  label="HNSW search"
+                  value={
+                    runtime
+                      ? runtime.retrieval?.hnsw_ef_search
+                        ? `ef_search ${runtime.retrieval.hnsw_ef_search}`
+                        : "Postgres vector tuning unavailable"
                       : runtimeConfigLabel(runtimeConfigQuery)
                   }
                 />
@@ -316,6 +404,16 @@ export function SettingsPage() {
               </InventoryGroup>
             </CardContent>
           </Card>
+
+          <AssistantSettingsForm
+            isLoading={runtimeConfigQuery.isLoading}
+            runtime={runtime}
+          />
+
+          <RetrievalSettingsForm
+            isLoading={runtimeConfigQuery.isLoading}
+            runtime={runtime}
+          />
         </div>
 
         <Card className="min-w-0 overflow-hidden xl:col-span-2">
@@ -341,6 +439,595 @@ export function SettingsPage() {
       </div>
     </div>
   );
+}
+
+type RetrievalSettingsFormState = {
+  framework: "custom" | "llamaindex";
+  candidateMultiplier: string;
+  minCandidates: string;
+  vectorWeight: string;
+  bm25Weight: string;
+  diversityEnabled: boolean;
+  diversityLambda: string;
+  hnswEfSearch: string;
+};
+
+type AssistantSettingsFormState = {
+  provider: "disabled" | "openai";
+  model: string;
+  timeoutSeconds: string;
+  maxToolCalls: string;
+};
+
+function AssistantSettingsForm({
+  isLoading,
+  runtime,
+}: {
+  isLoading: boolean;
+  runtime: RuntimeConfig | undefined;
+}) {
+  const mutation = useRuntimeAssistantSettingsMutation();
+  const [form, setForm] = React.useState<AssistantSettingsFormState | null>(null);
+  const [localError, setLocalError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const settings = runtimeAssistantSettingsFromRuntime(runtime);
+    if (!settings) return;
+    setForm({
+      provider: settings.llm_provider,
+      model: settings.llm_model,
+      timeoutSeconds: String(settings.llm_timeout_seconds),
+      maxToolCalls: String(settings.llm_max_tool_calls),
+    });
+  }, [runtime]);
+
+  const updateField = <Key extends keyof AssistantSettingsFormState>(
+    key: Key,
+    value: AssistantSettingsFormState[Key],
+  ) => {
+    setForm((current) => (current ? { ...current, [key]: value } : current));
+    if (localError) setLocalError(null);
+  };
+
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form) return;
+    try {
+      mutation.mutate(runtimeAssistantPayloadFromForm(form));
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openAiMissing =
+    form?.provider === "openai" && runtime && runtime.llm?.openai_configured === false;
+
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-primary" />
+              Assistant runtime
+            </CardTitle>
+            <CardDescription>Operator-tuned planner mode and governed tool-call limits.</CardDescription>
+          </div>
+          {runtime?.llm?.runtime_settings_configured ? (
+            <Badge variant="success">reloadable</Badge>
+          ) : (
+            <Badge variant="muted">config-backed</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4 sm:pt-5">
+        {!form ? (
+          <Notice title={isLoading ? "Runtime loading" : "Runtime settings unavailable"}>
+            Backend runtime config has not returned editable Assistant settings.
+          </Notice>
+        ) : (
+          <form className="grid gap-4" onSubmit={save}>
+            {openAiMissing ? (
+              <Notice title="OpenAI key missing">
+                OpenAI planner mode requires OJT_OPENAI_API_KEY or OPENAI_API_KEY in the backend environment.
+              </Notice>
+            ) : null}
+            {localError ? (
+              <Notice title="Settings blocked" tone="danger">
+                {localError}
+              </Notice>
+            ) : null}
+            {mutation.isError ? (
+              <Notice title="Settings update failed" tone="danger">
+                {workflowErrorMessage(mutation.error)}
+              </Notice>
+            ) : null}
+            {mutation.data?.reloaded ? (
+              <Notice title="Settings reloaded">
+                Assistant planner is {mutation.data.settings.llm_provider}.
+              </Notice>
+            ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Label>
+                Planner
+                <Select
+                  onChange={(event) =>
+                    updateField(
+                      "provider",
+                      event.target.value === "openai" ? "openai" : "disabled",
+                    )
+                  }
+                  value={form.provider}
+                >
+                  <option value="disabled">Deterministic</option>
+                  <option value="openai">OpenAI</option>
+                </Select>
+              </Label>
+              <Label>
+                Model
+                <Input
+                  onChange={(event) => updateField("model", event.target.value)}
+                  placeholder="gpt-4.1-mini"
+                  type="text"
+                  value={form.model}
+                />
+              </Label>
+              <Label>
+                Timeout seconds
+                <Input
+                  min={1}
+                  max={300}
+                  onChange={(event) => updateField("timeoutSeconds", event.target.value)}
+                  step={0.5}
+                  type="number"
+                  value={form.timeoutSeconds}
+                />
+              </Label>
+              <Label>
+                Max tool calls
+                <Input
+                  min={1}
+                  max={12}
+                  onChange={(event) => updateField("maxToolCalls", event.target.value)}
+                  type="number"
+                  value={form.maxToolCalls}
+                />
+              </Label>
+            </div>
+
+            <div className="flex min-w-0 flex-wrap gap-2">
+              <Badge variant={runtime?.llm?.openai_configured ? "success" : "warning"}>
+                {runtime?.llm?.openai_configured ? "OpenAI key configured" : "OpenAI key missing"}
+              </Badge>
+              <Badge variant="muted">
+                {runtime?.llm?.base_url_configured ? "base URL configured" : "base URL missing"}
+              </Badge>
+              <Badge variant="success">write tools gated</Badge>
+            </div>
+
+            <Button disabled={mutation.isPending} type="submit">
+              {mutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save and reload
+            </Button>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RetrievalSettingsForm({
+  isLoading,
+  runtime,
+}: {
+  isLoading: boolean;
+  runtime: RuntimeConfig | undefined;
+}) {
+  const mutation = useRuntimeRetrievalSettingsMutation();
+  const [form, setForm] = React.useState<RetrievalSettingsFormState | null>(null);
+  const [localError, setLocalError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const settings = runtimeRetrievalSettingsFromRuntime(runtime);
+    if (!settings) return;
+    setForm({
+      framework: settings.retrieval_framework,
+      candidateMultiplier: String(settings.retrieval_candidate_multiplier),
+      minCandidates: String(settings.retrieval_min_candidates),
+      vectorWeight: String(settings.retrieval_vector_weight),
+      bm25Weight: String(settings.retrieval_bm25_weight),
+      diversityEnabled: settings.retrieval_diversity_enabled,
+      diversityLambda: String(settings.retrieval_diversity_lambda),
+      hnswEfSearch: String(settings.retrieval_hnsw_ef_search),
+    });
+  }, [runtime]);
+
+  const updateField = <Key extends keyof RetrievalSettingsFormState>(
+    key: Key,
+    value: RetrievalSettingsFormState[Key],
+  ) => {
+    setForm((current) => (current ? { ...current, [key]: value } : current));
+    if (localError) setLocalError(null);
+  };
+
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form) return;
+    try {
+      mutation.mutate(runtimeRetrievalPayloadFromForm(form));
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <SlidersHorizontal className="h-5 w-5 text-primary" />
+              Retrieval runtime
+            </CardTitle>
+            <CardDescription>Operator-tuned search framework and ranking controls.</CardDescription>
+          </div>
+          {runtime?.retrieval?.runtime_settings_configured ? (
+            <Badge variant="success">reloadable</Badge>
+          ) : (
+            <Badge variant="muted">config-backed</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4 sm:pt-5">
+        {!form ? (
+          <Notice title={isLoading ? "Runtime loading" : "Runtime settings unavailable"}>
+            Backend runtime config has not returned editable retrieval settings.
+          </Notice>
+        ) : (
+          <form className="grid gap-4" onSubmit={save}>
+            {localError ? (
+              <Notice title="Settings blocked" tone="danger">
+                {localError}
+              </Notice>
+            ) : null}
+            {mutation.isError ? (
+              <Notice title="Settings update failed" tone="danger">
+                {workflowErrorMessage(mutation.error)}
+              </Notice>
+            ) : null}
+            {mutation.data?.reloaded ? (
+              <Notice title="Settings reloaded">
+                Active framework is {mutation.data.settings.retrieval_framework}.
+              </Notice>
+            ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Label>
+                Framework
+                <Select
+                  onChange={(event) =>
+                    updateField(
+                      "framework",
+                      event.target.value === "llamaindex" ? "llamaindex" : "custom",
+                    )
+                  }
+                  value={form.framework}
+                >
+                  <option value="custom">Custom</option>
+                  <option value="llamaindex">LlamaIndex</option>
+                </Select>
+              </Label>
+              <Label>
+                Candidate multiplier
+                <Input
+                  min={1}
+                  max={20}
+                  onChange={(event) => updateField("candidateMultiplier", event.target.value)}
+                  type="number"
+                  value={form.candidateMultiplier}
+                />
+              </Label>
+              <Label>
+                Minimum candidates
+                <Input
+                  min={1}
+                  max={200}
+                  onChange={(event) => updateField("minCandidates", event.target.value)}
+                  type="number"
+                  value={form.minCandidates}
+                />
+              </Label>
+              <Label>
+                HNSW ef_search
+                <Input
+                  min={1}
+                  max={1000}
+                  onChange={(event) => updateField("hnswEfSearch", event.target.value)}
+                  type="number"
+                  value={form.hnswEfSearch}
+                />
+              </Label>
+              <Label>
+                Vector weight
+                <Input
+                  min={0}
+                  max={1}
+                  onChange={(event) => updateField("vectorWeight", event.target.value)}
+                  step={0.01}
+                  type="number"
+                  value={form.vectorWeight}
+                />
+              </Label>
+              <Label>
+                BM25 weight
+                <Input
+                  min={0}
+                  max={1}
+                  onChange={(event) => updateField("bm25Weight", event.target.value)}
+                  step={0.01}
+                  type="number"
+                  value={form.bm25Weight}
+                />
+              </Label>
+              <Label>
+                Diversity lambda
+                <Input
+                  min={0}
+                  max={1}
+                  onChange={(event) => updateField("diversityLambda", event.target.value)}
+                  step={0.01}
+                  type="number"
+                  value={form.diversityLambda}
+                />
+              </Label>
+              <label className="flex min-h-9 items-center gap-2 rounded-md border border-border bg-muted/20 px-3 text-sm font-semibold">
+                <input
+                  checked={form.diversityEnabled}
+                  className="h-4 w-4 accent-primary"
+                  onChange={(event) => updateField("diversityEnabled", event.target.checked)}
+                  type="checkbox"
+                />
+                Source diversity
+              </label>
+            </div>
+
+            <RetrievalRulePackInventory packs={runtime?.retrieval?.rule_packs ?? []} />
+
+            <Button disabled={mutation.isPending} type="submit">
+              {mutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save and reload
+            </Button>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RetrievalRulePackInventory({ packs }: { packs: RuntimeRetrievalRulePack[] }) {
+  if (!packs.length) {
+    return (
+      <Notice title="Retrieval rule packs unavailable">
+        Runtime config has not returned retrieval rule-pack inventory.
+      </Notice>
+    );
+  }
+  const issueCount = packs.filter((pack) => pack.status !== "ok").length;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-bold uppercase text-muted-foreground">
+          Retrieval rule packs
+        </div>
+        <Badge variant={issueCount ? "warning" : "success"}>
+          {issueCount ? `${issueCount} issue` : "loaded"}
+        </Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {packs.map((pack) => (
+          <div
+            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
+            key={`${pack.name}-${pack.env_var}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{humanizeSettingLabel(pack.name)}</span>
+              <Badge variant={runtimeRulePackVariant(pack.status)}>
+                {pack.status}
+              </Badge>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              <Badge variant="muted">{pack.rule_count} rules</Badge>
+              {pack.version ? <Badge variant="muted">{pack.version}</Badge> : null}
+              {pack.content_hash ? (
+                <Badge variant="muted">{shortRulePackHash(pack.content_hash)}</Badge>
+              ) : null}
+              <Badge variant={pack.configured ? "success" : "muted"}>
+                {pack.source}
+              </Badge>
+            </div>
+            <code className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px] text-muted-foreground">
+              {pack.env_var}
+            </code>
+            {pack.error ? (
+              <div className="break-words font-semibold text-red-700">{pack.error}</div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function runtimeRetrievalSettingsFromRuntime(
+  runtime: RuntimeConfig | undefined,
+): RuntimeRetrievalSettings | null {
+  const retrieval = runtime?.retrieval;
+  const settings = retrieval?.runtime_settings;
+  if (settings) return settings;
+  if (!retrieval) return null;
+  const framework = retrieval.framework === "llamaindex" ? "llamaindex" : "custom";
+  if (
+    !isFiniteNumber(retrieval.candidate_multiplier) ||
+    !isFiniteNumber(retrieval.min_candidates) ||
+    !isFiniteNumber(retrieval.vector_weight) ||
+    !isFiniteNumber(retrieval.bm25_weight) ||
+    typeof retrieval.diversity_enabled !== "boolean" ||
+    !isFiniteNumber(retrieval.diversity_lambda) ||
+    !isFiniteNumber(retrieval.hnsw_ef_search)
+  ) {
+    return null;
+  }
+  return {
+    retrieval_framework: framework,
+    retrieval_candidate_multiplier: retrieval.candidate_multiplier,
+    retrieval_min_candidates: retrieval.min_candidates,
+    retrieval_vector_weight: retrieval.vector_weight,
+    retrieval_bm25_weight: retrieval.bm25_weight,
+    retrieval_diversity_enabled: retrieval.diversity_enabled,
+    retrieval_diversity_lambda: retrieval.diversity_lambda,
+    retrieval_hnsw_ef_search: retrieval.hnsw_ef_search,
+  };
+}
+
+function runtimeAssistantSettingsFromRuntime(
+  runtime: RuntimeConfig | undefined,
+): RuntimeAssistantSettings | null {
+  const llm = runtime?.llm;
+  const settings = llm?.runtime_settings;
+  if (settings) return settings;
+  if (!llm) return null;
+  const provider = llm.provider === "openai" ? "openai" : "disabled";
+  if (
+    typeof llm.model !== "string" ||
+    !llm.model.trim() ||
+    !isFiniteNumber(llm.timeout_seconds) ||
+    !isFiniteNumber(llm.max_tool_calls)
+  ) {
+    return null;
+  }
+  return {
+    llm_provider: provider,
+    llm_model: llm.model,
+    llm_timeout_seconds: llm.timeout_seconds,
+    llm_max_tool_calls: llm.max_tool_calls,
+  };
+}
+
+function runtimeAssistantPayloadFromForm(
+  form: AssistantSettingsFormState,
+): RuntimeAssistantSettingsPayload {
+  const llm_model = form.model.trim();
+  if (!llm_model) {
+    throw new Error("Model must not be blank.");
+  }
+  return {
+    llm_provider: form.provider,
+    llm_model,
+    llm_timeout_seconds: numberField(form.timeoutSeconds, "Timeout seconds", 1, 300),
+    llm_max_tool_calls: integerField(form.maxToolCalls, "Max tool calls", 1, 12),
+  };
+}
+
+function runtimeRetrievalPayloadFromForm(
+  form: RetrievalSettingsFormState,
+): RuntimeRetrievalSettingsPayload {
+  const retrieval_vector_weight = numberField(form.vectorWeight, "Vector weight", 0, 1);
+  const retrieval_bm25_weight = numberField(form.bm25Weight, "BM25 weight", 0, 1);
+  if (retrieval_vector_weight + retrieval_bm25_weight <= 0) {
+    throw new Error("Vector and BM25 weights cannot both be zero.");
+  }
+  return {
+    retrieval_framework: form.framework,
+    retrieval_candidate_multiplier: integerField(
+      form.candidateMultiplier,
+      "Candidate multiplier",
+      1,
+      20,
+    ),
+    retrieval_min_candidates: integerField(form.minCandidates, "Minimum candidates", 1, 200),
+    retrieval_vector_weight,
+    retrieval_bm25_weight,
+    retrieval_diversity_enabled: form.diversityEnabled,
+    retrieval_diversity_lambda: numberField(form.diversityLambda, "Diversity lambda", 0, 1),
+    retrieval_hnsw_ef_search: integerField(form.hnswEfSearch, "HNSW ef_search", 1, 1000),
+  };
+}
+
+function integerField(raw: string, label: string, min: number, max: number) {
+  const value = numberField(raw, label, min, max);
+  if (!Number.isInteger(value)) {
+    throw new Error(`${label} must be an integer.`);
+  }
+  return value;
+}
+
+function numberField(raw: string, label: string, min: number, max: number) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`${label} must be between ${min} and ${max}.`);
+  }
+  return value;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function runtimeRulePackVariant(
+  status: RuntimeRetrievalRulePack["status"],
+): React.ComponentProps<typeof Badge>["variant"] {
+  if (status === "ok") return "success";
+  if (status === "error") return "destructive";
+  return "warning";
+}
+
+function retrievalRulePacksFromDetails(
+  details: Record<string, unknown>,
+): RuntimeRetrievalRulePack[] {
+  const rawPacks = details.packs;
+  if (!Array.isArray(rawPacks)) return [];
+  return rawPacks.reduce<RuntimeRetrievalRulePack[]>((packs, rawPack) => {
+    if (!rawPack || typeof rawPack !== "object" || Array.isArray(rawPack)) {
+      return packs;
+    }
+    const pack = rawPack as Record<string, unknown>;
+    const name = typeof pack.name === "string" ? pack.name : "";
+    const envVar = typeof pack.env_var === "string" ? pack.env_var : "";
+    if (!name || !envVar) return packs;
+    packs.push({
+      name,
+      status: runtimeRulePackStatus(pack.status),
+      source: typeof pack.source === "string" ? pack.source : "unknown",
+      env_var: envVar,
+      configured: pack.configured === true,
+      rule_count:
+        typeof pack.rule_count === "number" && Number.isFinite(pack.rule_count)
+          ? pack.rule_count
+          : 0,
+      version: typeof pack.version === "string" ? pack.version : null,
+      content_hash: typeof pack.content_hash === "string" ? pack.content_hash : null,
+      error: typeof pack.error === "string" ? pack.error : undefined,
+    });
+    return packs;
+  }, []);
+}
+
+function runtimeRulePackStatus(value: unknown): RuntimeRetrievalRulePack["status"] {
+  if (value === "ok" || value === "missing" || value === "error") return value;
+  return "error";
+}
+
+function shortRulePackHash(hash: string) {
+  return hash.length > 12 ? hash.slice(0, 12) : hash;
 }
 
 function readinessLabel(readiness: RuntimeReadiness | undefined) {
@@ -528,16 +1215,18 @@ function InventoryGroup({
 }
 
 function SettingRow({ badge, label, value }: { badge?: string; label: string; value: string }) {
+  const badgeVariant: React.ComponentProps<typeof Badge>["variant"] =
+    badge === "attention" || badge === "missing"
+      ? "warning"
+      : badge === "offline" || badge === "disabled"
+        ? "muted"
+        : "success";
   return (
     <div className="grid gap-1 border-b border-border py-2 last:border-b-0">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
         <span className="break-words font-semibold">{value}</span>
-        {badge ? (
-          <Badge variant={badge === "attention" || badge === "missing" ? "warning" : "success"}>
-            {badge}
-          </Badge>
-        ) : null}
+        {badge ? <Badge variant={badgeVariant}>{badge}</Badge> : null}
       </div>
     </div>
   );
@@ -583,9 +1272,55 @@ function ReadinessChecks({
             </Badge>
           </div>
           <p className="text-sm leading-5 text-muted-foreground">{check.summary}</p>
+          <ReadinessRulePackDetails check={check} />
           <ReadinessDetailChips details={check.details} />
         </div>
       ))}
+    </div>
+  );
+}
+
+function ReadinessRulePackDetails({ check }: { check: ReadinessCheck }) {
+  if (check.name !== "retrieval_rule_packs") return null;
+  const packs = retrievalRulePacksFromDetails(check.details);
+  if (!packs.length) return null;
+  const issueCount = packs.filter((pack) => pack.status !== "ok").length;
+  return (
+    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-bold uppercase text-muted-foreground">
+          Rule pack readiness
+        </span>
+        <Badge variant={issueCount ? "warning" : "success"}>
+          {issueCount ? `${issueCount} issue` : "all loadable"}
+        </Badge>
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {packs.map((pack) => (
+          <div
+            className="grid gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-[11px]"
+            key={`${pack.name}-${pack.env_var}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{humanizeSettingLabel(pack.name)}</span>
+              <Badge variant={runtimeRulePackVariant(pack.status)}>{pack.status}</Badge>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1">
+              <Badge variant="muted">{pack.rule_count} rules</Badge>
+              {pack.version ? <Badge variant="muted">{pack.version}</Badge> : null}
+              {pack.content_hash ? (
+                <Badge variant="muted">{shortRulePackHash(pack.content_hash)}</Badge>
+              ) : null}
+              <Badge variant={pack.configured ? "success" : "muted"}>
+                {pack.source}
+              </Badge>
+            </div>
+            <code className="break-words rounded bg-muted px-1.5 py-1 font-mono text-[10px] text-muted-foreground">
+              {pack.env_var}
+            </code>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -629,6 +1364,10 @@ function formatDetailLabel(value: string) {
 }
 
 function humanizeCheckName(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function humanizeSettingLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 

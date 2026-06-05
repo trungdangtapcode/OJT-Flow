@@ -9,15 +9,25 @@ from fastapi import Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ojtflow.application.auth_service import AuthService
+from ojtflow.application.assistant_service import AssistantService
+from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
+from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings, get_settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
-from ojtflow.infrastructure.retrieval.engine import DeterministicEmbeddingProvider
+from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
+from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
+from ojtflow.infrastructure.retrieval.evaluation_policy import (
+    load_retrieval_evaluation_policy,
+)
+from ojtflow.infrastructure.retrieval.llamaindex_adapter import LlamaIndexRetrievalRepository
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
+from ojtflow.infrastructure.retrieval.reranking import build_reranker
+from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
@@ -26,18 +36,21 @@ from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
     InMemoryEventRepository,
+    InMemoryRetrievalJudgmentRepository,
     InMemoryWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.postgres import (
     PostgresBackboneStore,
     PostgresDatasetStore,
     PostgresEventRepository,
+    PostgresRetrievalJudgmentRepository,
     PostgresWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.sqlite import (
     SQLiteBackboneStore,
     SQLiteDatasetStore,
     SQLiteEventRepository,
+    SQLiteRetrievalJudgmentRepository,
     SQLiteWorkflowRepository,
 )
 
@@ -90,12 +103,18 @@ def _build_workflow_service() -> WorkflowService:
 
     settings = get_settings()
     knowledge_root = settings.resolved_knowledge_dir
-    embedding_provider = DeterministicEmbeddingProvider(settings.embedding_dimensions)
+    embedding_provider = build_embedding_provider(settings)
+    reranker = build_reranker(settings)
     if settings.storage_backend == "memory":
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()
         events = InMemoryEventRepository()
-        retrieval = StaticRetrievalRepository(knowledge_root, embedding_provider)
+        retrieval = _build_retrieval_repository(
+            settings,
+            knowledge_root,
+            embedding_provider,
+            reranker,
+        )
     elif settings.storage_backend == "sqlite":
         backbone = SQLiteBackboneStore(
             settings.resolved_database_path,
@@ -104,7 +123,12 @@ def _build_workflow_service() -> WorkflowService:
         datasets = SQLiteDatasetStore(backbone)
         workflows = SQLiteWorkflowRepository(backbone)
         events = SQLiteEventRepository(backbone)
-        retrieval = StaticRetrievalRepository(knowledge_root, embedding_provider)
+        retrieval = _build_retrieval_repository(
+            settings,
+            knowledge_root,
+            embedding_provider,
+            reranker,
+        )
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -113,7 +137,13 @@ def _build_workflow_service() -> WorkflowService:
         datasets = PostgresDatasetStore(backbone)
         workflows = PostgresWorkflowRepository(backbone)
         events = PostgresEventRepository(backbone)
-        retrieval = PostgresRetrievalRepository(backbone, knowledge_root, embedding_provider)
+        retrieval = _build_retrieval_repository(
+            settings,
+            knowledge_root,
+            embedding_provider,
+            reranker,
+            postgres_backbone=backbone,
+        )
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
 
@@ -123,12 +153,110 @@ def _build_workflow_service() -> WorkflowService:
         events=events,
         knowledge=StaticKnowledgeRepository(knowledge_root),
         retrieval=retrieval,
+        retrieval_rule_packs=retrieval_rule_packs(knowledge_root),
+    )
+
+
+@lru_cache(maxsize=1)
+def _build_retrieval_judgment_service() -> RetrievalJudgmentService:
+    """Build durable retrieval relevance judgment services."""
+
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryRetrievalJudgmentRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteRetrievalJudgmentRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresRetrievalJudgmentRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return RetrievalJudgmentService(
+        repository,
+        evaluation_policy_rules=load_retrieval_evaluation_policy(settings.resolved_knowledge_dir),
+    )
+
+
+def _build_retrieval_repository(
+    settings: Settings,
+    knowledge_root,
+    embedding_provider,
+    reranker,
+    *,
+    postgres_backbone=None,
+):
+    if settings.retrieval_framework == "llamaindex":
+        return LlamaIndexRetrievalRepository(
+            knowledge_root,
+            embedding_provider=embedding_provider,
+            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+            chunk_max_chars=settings.retrieval_chunk_max_chars,
+            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            candidate_multiplier=settings.retrieval_candidate_multiplier,
+            min_candidates=settings.retrieval_min_candidates,
+            vector_weight=settings.retrieval_vector_weight,
+            bm25_weight=settings.retrieval_bm25_weight,
+        )
+    if postgres_backbone is not None:
+        return PostgresRetrievalRepository(
+            postgres_backbone,
+            knowledge_root,
+            embedding_provider,
+            reranker=reranker,
+            rerank_candidate_limit=settings.rerank_candidate_limit,
+            rerank_score_weight=settings.rerank_score_weight,
+            diversity_enabled=settings.retrieval_diversity_enabled,
+            diversity_lambda=settings.retrieval_diversity_lambda,
+            corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+            chunk_max_chars=settings.retrieval_chunk_max_chars,
+            chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
+            hnsw_ef_search=settings.retrieval_hnsw_ef_search,
+        )
+    return StaticRetrievalRepository(
+        knowledge_root,
+        embedding_provider,
+        reranker=reranker,
+        rerank_candidate_limit=settings.rerank_candidate_limit,
+        rerank_score_weight=settings.rerank_score_weight,
+        diversity_enabled=settings.retrieval_diversity_enabled,
+        diversity_lambda=settings.retrieval_diversity_lambda,
+        corpus_dirs=settings.resolved_retrieval_corpus_dirs,
+        chunk_max_chars=settings.retrieval_chunk_max_chars,
+        chunk_overlap_chars=settings.retrieval_chunk_overlap_chars,
     )
 
 
 @lru_cache(maxsize=1)
 def _build_medical_evidence_service() -> MedicalEvidenceService:
     return MedicalEvidenceService()
+
+
+@lru_cache(maxsize=1)
+def _build_assistant_service() -> AssistantService:
+    settings = get_settings()
+    planner = None
+    if settings.llm_provider == "openai":
+        planner = OpenAIResponsesPlanner(
+            api_key=settings.openai_api_key,
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
+    return AssistantService(
+        OJTFlowToolExecutor(
+            workflow_service=_build_workflow_service(),
+            medical_evidence_service=_build_medical_evidence_service(),
+        ),
+        planner=planner,
+        max_tool_calls=settings.llm_max_tool_calls,
+    )
 
 
 async def get_workflow_service() -> WorkflowService:
@@ -141,6 +269,18 @@ async def get_medical_evidence_service() -> MedicalEvidenceService:
     """Return healthcare evidence service."""
 
     return _build_medical_evidence_service()
+
+
+async def get_retrieval_judgment_service() -> RetrievalJudgmentService:
+    """Return durable retrieval relevance judgment service."""
+
+    return _build_retrieval_judgment_service()
+
+
+async def get_assistant_service() -> AssistantService:
+    """Return natural-language assistant service."""
+
+    return _build_assistant_service()
 
 
 async def get_auth_service() -> AuthService:
@@ -261,3 +401,5 @@ def clear_workflow_service_cache() -> None:
     _build_workflow_service.cache_clear()
     _build_auth_service.cache_clear()
     _build_medical_evidence_service.cache_clear()
+    _build_retrieval_judgment_service.cache_clear()
+    _build_assistant_service.cache_clear()

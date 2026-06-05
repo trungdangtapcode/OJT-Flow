@@ -1,0 +1,170 @@
+{
+  "version": "retrieval_query_aspect_rules.v1",
+  "rules": [
+    {
+      "rule_id": "aspect_lab_identity_standardization",
+      "aspect_id": "lab_identity_standardization",
+      "label": "Lab identity and standards",
+      "question": "Which lab test, code system, and resource shape should ground the result?",
+      "rationale": "Laboratory workflows often need exact LOINC/FHIR identity evidence before value or unit validation.",
+      "priority": 10,
+      "suggested_terms": [
+        "LOINC observation code",
+        "FHIR Observation",
+        "lab_name normalization"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "laboratory"
+      },
+      "match": {
+        "any_concepts": [
+          "laboratory_observation_identity",
+          "hba1c_laboratory_test",
+          "fhir_observation_profile"
+        ],
+        "any_standards": [
+          "LOINC",
+          "FHIR"
+        ],
+        "any_candidate_domains": [
+          "laboratory"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_unit_and_value_quality",
+      "aspect_id": "unit_and_value_quality",
+      "label": "Unit and value quality",
+      "question": "Are values, units, and date fields complete enough for deterministic validation?",
+      "rationale": "Healthcare data cleaning requires separate evidence for UCUM units, missing values, malformed rows, and date quality.",
+      "priority": 20,
+      "suggested_terms": [
+        "UCUM computable unit",
+        "missing unit",
+        "malformed row",
+        "date format"
+      ],
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "unit_normalization",
+          "csv_tabular_quality"
+        ],
+        "any_standards": [
+          "UCUM",
+          "OJTFlow schema"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_phi_review_governance",
+      "aspect_id": "phi_review_governance",
+      "label": "Sensitive data review",
+      "question": "Which PHI or patient identifier signals require human review before transformation?",
+      "rationale": "Potential patient identifiers should remain explicit in retrieval planning so safety review is not hidden behind ranking.",
+      "priority": 30,
+      "suggested_terms": [
+        "patient identifier",
+        "PHI review",
+        "human review trigger"
+      ],
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "sensitive_identifier_review"
+        ],
+        "any_tokens": [
+          "patient_id",
+          "mrn",
+          "identifier"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_medication_terminology_safety",
+      "aspect_id": "medication_terminology_safety",
+      "label": "Medication terminology and safety",
+      "question": "Which RxNorm, labeling, or adverse-event evidence should ground medication claims?",
+      "rationale": "Medication search needs terminology and safety evidence separated from generic clinical text.",
+      "priority": 40,
+      "suggested_terms": [
+        "RxNorm normalized medication concept",
+        "drug label",
+        "adverse event"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "medication"
+      },
+      "match": {
+        "any_concepts": [
+          "medication_normalization",
+          "regulatory_drug_safety_search"
+        ],
+        "any_standards": [
+          "RxNorm",
+          "openFDA"
+        ],
+        "any_candidate_domains": [
+          "medication"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_literature_external_evidence",
+      "aspect_id": "literature_external_evidence",
+      "label": "Literature and external evidence",
+      "question": "Which literature, trial, or MeSH-grounded search should complement local evidence?",
+      "rationale": "Biomedical literature queries benefit from explicit external search syntax and source-specific caveats.",
+      "priority": 50,
+      "suggested_terms": [
+        "PubMed MeSH",
+        "clinical trial",
+        "guideline"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "literature"
+      },
+      "match": {
+        "any_concepts": [
+          "biomedical_literature_search",
+          "clinical_trial_search"
+        ],
+        "any_standards": [
+          "MeSH",
+          "ClinicalTrials.gov"
+        ],
+        "any_candidate_domains": [
+          "literature"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_observational_schema_context",
+      "aspect_id": "observational_schema_context",
+      "label": "Observational schema context",
+      "question": "Which warehouse schema or OMOP evidence should ground analytics exports?",
+      "rationale": "Observational analytics queries need schema-grounding evidence distinct from clinical terminology evidence.",
+      "priority": 60,
+      "suggested_terms": [
+        "OMOP Common Data Model",
+        "cohort export",
+        "observational health data"
+      ],
+      "suggested_filters": {
+        "standard_system": "OMOP"
+      },
+      "match": {
+        "any_concepts": [
+          "observational_analytics_export"
+        ],
+        "any_standards": [
+          "OMOP"
+        ]
+      }
+    }
+  ]
+}

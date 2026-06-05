@@ -54,6 +54,31 @@ OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,
 OJT_EMBEDDING_PROVIDER=deterministic
 OJT_EMBEDDING_MODEL=deterministic-hash-v0
 OJT_EMBEDDING_DIMENSIONS=64
+OJT_OPENAI_API_KEY=
+OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1
+OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0
+OJT_LLM_PROVIDER=disabled
+OJT_LLM_MODEL=chat-latest
+OJT_LLM_BASE_URL=https://api.openai.com/v1
+OJT_LLM_TIMEOUT_SECONDS=30.0
+OJT_LLM_MAX_TOOL_CALLS=4
+OJT_HF_EMBEDDING_DEVICE=auto
+OJT_HF_EMBEDDING_BATCH_SIZE=32
+OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface
+OJT_PYTHON_EXTRAS=parsing
+OJT_RERANK_PROVIDER=none
+OJT_RERANK_MODEL=BAAI/bge-reranker-base
+OJT_RERANK_DEVICE=auto
+OJT_RERANK_BATCH_SIZE=16
+OJT_RERANK_CANDIDATE_LIMIT=20
+OJT_RERANK_SCORE_WEIGHT=0.08
+OJT_RETRIEVAL_CORPUS_DIRS=knowledge/corpus
+OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200
+OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160
+OJT_RETRIEVAL_DIVERSITY_ENABLED=true
+OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72
+OJT_RETRIEVAL_FRAMEWORK=custom
+OJT_RETRIEVAL_EVALUATION_POLICY_PATH=
 ```
 
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
@@ -100,7 +125,8 @@ domain allowlists do not accept leading dots; cookie domains may use either
 Inline JSON/text payloads are capped by `OJT_MAX_INLINE_DATA_BYTES` for
 `POST /api/v1/workflows`, `POST /api/v1/convert`,
 `POST /api/v1/validate`, `POST /api/v1/fhir/profile`,
-`POST /api/v1/ocr/evidence`, and `POST /api/v1/retrieval/search`.
+`POST /api/v1/ocr/evidence`, `POST /api/v1/retrieval/search`, and
+`POST /api/v1/assistant/chat`.
 Multipart uploads are capped by
 `OJT_MAX_UPLOAD_BYTES`, read in `OJT_UPLOAD_READ_CHUNK_BYTES` chunks, and
 filtered by `OJT_ALLOWED_UPLOAD_EXTENSIONS`. Larger inline inputs should use the
@@ -113,12 +139,99 @@ Values may include or omit the leading dot and are normalized to lowercase.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, path-like values,
 wildcards, or extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER=deterministic` and
-`OJT_EMBEDDING_MODEL=deterministic-hash-v0` are the only implemented embedding
-provider/model pair in v0. Other provider names or model IDs are rejected during
-settings load until a real adapter is added. `OJT_EMBEDDING_DIMENSIONS=64` is
-fixed in v0 because the Postgres retrieval schema uses `embedding vector(64)`;
-other dimensions are rejected during settings load.
+`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
+Deterministic mode is for offline tests and demos. OpenAI mode uses
+`OJT_OPENAI_API_KEY` or, when that is blank, `OPENAI_API_KEY`. Hugging Face mode
+uses SentenceTransformers and can run on GPU with `OJT_HF_EMBEDDING_DEVICE=cuda`.
+The recommended semantic retrieval dimension is `384`, matching the Postgres
+`embedding vector(384)` schema. Other provider names, incompatible deterministic
+model IDs, invalid device values, and invalid dimension values are rejected
+during settings load.
+
+`OJT_LLM_PROVIDER` supports `disabled` and `openai`. Disabled mode keeps the
+assistant deterministic and token-free. OpenAI mode uses the Responses API to
+produce a structured tool plan, but the backend still executes only known
+allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest`; set it to a pinned
+snapshot when release reproducibility is more important than tracking the
+current model alias. `OJT_LLM_BASE_URL` must be an HTTP(S) OpenAI-compatible API
+base URL. `OJT_LLM_MAX_TOOL_CALLS` bounds assistant tool execution per request.
+
+`OJT_PYTHON_EXTRAS` is a Docker build-time setting, not a runtime secret. Keep
+the default `parsing` for the standard API image, or build with
+`parsing,embeddings-local` when the container should include local
+SentenceTransformers embeddings and CrossEncoder reranking dependencies.
+
+`OJT_RERANK_PROVIDER` supports `none` and `huggingface`. When enabled, retrieval
+uses a SentenceTransformers CrossEncoder over the top
+`OJT_RERANK_CANDIDATE_LIMIT` first-stage candidates and adds a bounded
+`OJT_RERANK_SCORE_WEIGHT` contribution to each hit's `rerank_score`. Invalid
+provider names, blank model identifiers, unsupported devices, non-positive
+batch/candidate limits, or score weights outside `(0, 1]` are rejected during
+settings load.
+
+`OJT_RETRIEVAL_DIVERSITY_ENABLED` controls source-aware final selection after
+first-stage fusion and optional reranking. When enabled, final `top_k` selection
+uses an MMR-style relevance/novelty balance so repeated chunks from the same
+source do not crowd out other relevant evidence. `OJT_RETRIEVAL_DIVERSITY_LAMBDA`
+must be between `0` and `1`; higher values favor relevance and lower values
+favor diversity. Retrieval packages expose the policy and source coverage under
+`handoff_context.diversity`. Diversity metadata includes aggregate source
+counts plus `selected_hits[]` rows with evidence ID, source ID, selected rank,
+original rank, relevance score, redundancy score, selection score, and reason.
+
+Retrieval hits expose `score_components` as the score explanation contract.
+Custom/static/Postgres retrieval emits lexical RRF, vector RRF, policy boost,
+and optional external reranker contribution rows. Framework adapters emit their
+own framework score row while preserving the same field shape.
+Retrieval packages also expose `quality_summary`, a deterministic aggregate of
+`quality_signals[]` with status, 0-100 score, severity counts, blocker/warning
+codes, and the top recommended action. This gives operators and assistant tools
+a quick readiness signal without hiding the underlying quality signals. The
+Retrieval UI renders known `quality_signals[].metadata` structures, including
+missing concepts, provenance issues, missing standards/aspects, and suggested
+filters, as explicit signal details for operator review. The
+readiness score/status policy is loaded from
+`knowledge/retrieval/quality_gate_policy.json`; set
+`OJT_RETRIEVAL_QUALITY_POLICY_PATH` to use deployment-specific severity
+penalties, blocking severities, review severities, and score thresholds without
+changing application code.
+
+`OJT_RETRIEVAL_FRAMEWORK` supports `custom` and `llamaindex`. `custom` keeps the
+native Postgres/static retrieval adapters. `llamaindex` uses the optional
+LlamaIndex adapter behind the same retrieval port and requires
+`pip install -e '.[rag-framework]'` or a Docker build with
+`OJT_PYTHON_EXTRAS=parsing,rag-framework`. The response envelope and
+`RetrievalPackage` schema remain unchanged. Framework-backed packages also
+populate `quality_summary`, `handoff_context.quality_policy`, and per-hit
+aspect/concept locator metadata when query analysis can ground those signals.
+
+Retrieval quality gates are also policy-driven. The active
+`knowledge/retrieval/quality_gate_policy.json` policy is copied into
+`handoff_context.quality_policy`, including `ranking_thresholds` such as
+`min_top_matched_terms`. If the top-ranked hit does not meet that exact-match
+threshold, `quality_signals[]` includes `weak_top_hit_match` with the top
+evidence ID, matched-term count, configured threshold, and ranking scores.
+The same policy includes `provenance_requirements` for medical source classes.
+When selected healthcare standards, terminology systems, or data dictionaries
+lack required source version or locator metadata, `quality_signals[]` includes
+`weak_evidence_provenance` with affected evidence IDs, missing fields, and the
+active provenance requirement metadata.
+The active policy also includes `concept_grounding_requirements`. Hits may
+include `source_locator.concept_matches[]` when selected evidence supports
+detected query concepts by standard system, code, display name, alias, or exact
+matched term. If a detected controlled concept above the configured confidence
+threshold is not represented in selected evidence, `quality_signals[]` includes
+`missing_concept_grounding`.
+Copied `retrieval_run_comparison` reports include `concept_grounding.added`,
+`concept_grounding.removed`, and `concept_grounding.retained` so relevance
+tuning can distinguish text-rank movement from loss or gain of coded medical
+concept support.
+
+Runtime retrieval tuning recommendations are data-driven. By default,
+`POST /api/v1/retrieval/judgments/evaluate` loads policy rules from
+`knowledge/retrieval/evaluation_policy.json`; set
+`OJT_RETRIEVAL_EVALUATION_POLICY_PATH` to use a deployment-specific policy file
+without changing application code.
 
 Boundary string fields that drive tool behavior must remain non-blank after
 trimming. Whitespace-only workflow instructions, workflow data, direct
@@ -280,7 +393,10 @@ The corresponding `WorkflowState.failure` stores `code`, `message`,
 
 `handoff_context.retrieval_trace` records retrieval strategy, query variants,
 filters, candidate count, selected evidence IDs, safety flags, and retrieval
-warnings.
+warnings. Retrieval packages also expose
+`handoff_context.query_analysis`, which records deterministic clinical query
+expansion metadata: strategy, detected concepts, expanded terms, healthcare
+standard cues, rule IDs, and final query variants.
 
 `GET /api/v1/workflows`
 
@@ -342,6 +458,8 @@ FHIR-like workflow behavior:
 - `handoff_context.fhir_profile` records resource type counts, minimal shape
   issues, and evidence IDs.
 - `handoff_context.fhir_handoff` records Graph-NER/RAG handoff terms.
+- `handoff_context.retrieval_handoff.graph_context` records extracted evidence
+  graph nodes, edges, and triples for retrieval-grounded explanation.
 - The retrieval query receives `resource_type`, so standard evidence such as
   FHIR Observation guidance can be ranked with the workflow context.
 
@@ -564,6 +682,96 @@ If `schema_id` names a profile that is not available in the configured
 knowledge directory, direct validation returns `not_found`; `schema_id: null`
 is the explicit mode for validation without a schema profile.
 
+## Assistant Chat
+
+`GET /api/v1/assistant/tools`
+
+Returns the server-owned assistant/MCP tool catalog. This is a read-only
+operator discovery endpoint; it exposes tool names, descriptions, permission
+scope, approval requirement, and JSON input schema, but no secrets or executable
+client code.
+
+Example response data:
+
+```json
+[
+  {
+    "name": "validate_with_evidence",
+    "description": "Validate submitted healthcare data and retrieve trusted evidence that explains schema, unit, date, PHI, and interoperability issues.",
+    "permission_scope": "data:validate",
+    "requires_approval": false,
+    "input_schema": {
+      "type": "object",
+      "required": ["data"]
+    }
+  }
+]
+```
+
+`POST /api/v1/assistant/chat`
+
+```json
+{
+  "message": "Validate this lab CSV and explain the issues with trusted evidence.",
+  "context": {
+    "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+    "input_format": "csv",
+    "schema_id": "lab_result_v1",
+    "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+    "clinical_domain": "laboratory"
+  },
+  "execute_write_actions": false
+}
+```
+
+The assistant is an operator convenience layer over existing backend tools. It
+does not replace workflow state, retrieval trace, validation reports, or human
+review. Response data includes:
+
+- `message`
+- `mode`
+- `model`
+- `findings[].title`
+- `findings[].detail`
+- `findings[].severity`
+- `findings[].source_tool`
+- `findings[].source_ids`
+- `evidence_summary[].source_id`
+- `evidence_summary[].claim`
+- `evidence_summary[].trust_level`
+- `evidence_summary[].confidence`
+- `tool_calls[].tool_name`
+- `tool_calls[].status`
+- `tool_calls[].arguments`
+- `tool_calls[].output`
+- `tool_calls[].summary`
+- `tool_calls[].requires_approval`
+- `suggestions`
+- `warnings`
+
+The assistant can call:
+
+- `retrieval_search`
+- `validate_data`
+- `validate_with_evidence`
+- `convert_data`
+- `fhir_profile`
+- `list_workflows`
+- `list_reviews`
+- `get_workflow`
+- `workflow_summary`
+- `start_workflow`
+
+`validate_with_evidence` is the preferred assistant path for healthcare data
+quality questions because it validates the payload and retrieves standards
+evidence in one response. `workflow_summary` is the preferred assistant path
+for chat-based workflow inspection.
+
+`start_workflow` is a write action. It returns `status="requires_approval"`
+unless the request explicitly sets `execute_write_actions=true`. The assistant
+does not expose review approval, rejection, cancellation, or destructive
+artifact actions in v0.
+
 ## FHIR-Like Profile
 
 `POST /api/v1/fhir/profile`
@@ -642,16 +850,50 @@ Response data includes:
 - `embedding.provider`
 - `embedding.model`
 - `embedding.dimensions`
+- `embedding.openai_configured`
+- `embedding.openai_base_url_configured`
+- `embedding.hf_device`
+- `embedding.hf_batch_size`
+- `embedding.hf_cache_dir_configured`
+- `llm.provider`
+- `llm.model`
+- `llm.openai_configured`
+- `llm.timeout_seconds`
+- `llm.max_tool_calls`
+- `llm.runtime_settings_configured`
+- `llm.runtime_settings`
+- `retrieval.framework`
+- `retrieval.corpus_dir_count`
+- `retrieval.chunk_max_chars`
+- `retrieval.chunk_overlap_chars`
+- `retrieval.candidate_multiplier`
+- `retrieval.min_candidates`
+- `retrieval.vector_weight`
+- `retrieval.bm25_weight`
+- `retrieval.diversity_enabled`
+- `retrieval.diversity_lambda`
+- `retrieval.hnsw_ef_search`
+- `retrieval.runtime_settings_configured`
+- `retrieval.runtime_settings`
+- `retrieval.rule_packs[]` with sanitized `name`, `status`, `source`,
+  `env_var`, `configured`, `rule_count`, `version`, and `content_hash`
 - `upload.max_upload_bytes`
 - `upload.max_inline_data_bytes`
 - `upload.allowed_extensions`
+
+Retrieval rule-pack entries may reference controlling environment variables
+such as `OJT_QUERY_EXPANSION_RULES_PATH`, `OJT_FILTER_SUGGESTION_RULES_PATH`,
+`OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_QUERY_PROFILE_RULES_PATH`,
+`OJT_RANKING_BOOST_RULES_PATH`,
+`OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, and `OJT_SEARCH_HINT_TARGETS_PATH`.
+The response exposes the env var name, loaded status, rule-pack version, and
+SHA-256 content hash, but not local paths.
 
 Example:
 
 ```json
 {
   "data": {
-    "status": "ok",
     "storage_backend": "postgres",
     "persistent_storage": true,
     "postgres_configured": true,
@@ -667,9 +909,53 @@ Example:
       "state_ttl_seconds": 600
     },
     "embedding": {
-      "provider": "deterministic",
-      "model": "deterministic-hash-v0",
-      "dimensions": 64
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimensions": 384,
+      "openai_configured": true,
+      "openai_base_url_configured": true,
+      "hf_device": "auto",
+      "hf_batch_size": 32,
+      "hf_cache_dir_configured": true
+    },
+    "llm": {
+      "provider": "openai",
+      "model": "chat-latest",
+      "openai_configured": true,
+      "base_url_configured": true,
+      "timeout_seconds": 30.0,
+      "max_tool_calls": 4,
+      "runtime_settings_configured": true,
+      "runtime_settings": {
+        "llm_provider": "openai",
+        "llm_model": "chat-latest",
+        "llm_timeout_seconds": 30.0,
+        "llm_max_tool_calls": 4
+      }
+    },
+    "retrieval": {
+      "framework": "llamaindex",
+      "corpus_dir_count": 1,
+      "chunk_max_chars": 1200,
+      "chunk_overlap_chars": 160,
+      "candidate_multiplier": 4,
+      "min_candidates": 12,
+      "vector_weight": 0.62,
+      "bm25_weight": 0.38,
+      "diversity_enabled": true,
+      "diversity_lambda": 0.72,
+      "hnsw_ef_search": 100,
+      "runtime_settings_configured": true,
+      "runtime_settings": {
+        "retrieval_framework": "llamaindex",
+        "retrieval_candidate_multiplier": 4,
+        "retrieval_min_candidates": 12,
+        "retrieval_vector_weight": 0.62,
+        "retrieval_bm25_weight": 0.38,
+        "retrieval_diversity_enabled": true,
+        "retrieval_diversity_lambda": 0.72,
+        "retrieval_hnsw_ef_search": 100
+      }
     },
     "upload": {
       "max_upload_bytes": 26214400,
@@ -677,6 +963,89 @@ Example:
       "read_chunk_bytes": 1048576,
       "allowed_extensions": [".csv", ".json", ".yaml"]
     }
+  },
+  "error": null
+}
+```
+
+`retrieval.hnsw_ef_search` is the Postgres pgvector HNSW query-depth setting
+applied transaction-locally for vector candidate retrieval. Higher values
+increase recall and latency; lower values reduce latency and can miss more
+approximate-nearest-neighbor candidates.
+
+`PUT /api/v1/runtime/assistant-settings`
+
+Persists editable Assistant/LLM runtime settings and reloads cached backend
+service instances after validation. It accepts only planner/runtime control
+fields; API keys, OAuth secrets, database URLs, file paths, and approval
+decisions are not editable through this endpoint.
+
+Request:
+
+```json
+{
+  "llm_provider": "openai",
+  "llm_model": "gpt-4.1-mini",
+  "llm_timeout_seconds": 30.0,
+  "llm_max_tool_calls": 4
+}
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "settings": {
+      "llm_provider": "openai",
+      "llm_model": "gpt-4.1-mini",
+      "llm_timeout_seconds": 30.0,
+      "llm_max_tool_calls": 4
+    },
+    "reloaded": true
+  },
+  "error": null
+}
+```
+
+`PUT /api/v1/runtime/retrieval-settings`
+
+Persists editable retrieval runtime settings and reloads cached backend service
+instances after validation. It accepts only retrieval-scoped keys; secrets,
+database URLs, OAuth settings, file paths, and model API keys are not editable
+through this endpoint.
+
+Request:
+
+```json
+{
+  "retrieval_framework": "llamaindex",
+  "retrieval_candidate_multiplier": 4,
+  "retrieval_min_candidates": 12,
+  "retrieval_vector_weight": 0.62,
+  "retrieval_bm25_weight": 0.38,
+  "retrieval_diversity_enabled": true,
+  "retrieval_diversity_lambda": 0.72,
+  "retrieval_hnsw_ef_search": 100
+}
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "settings": {
+      "retrieval_framework": "llamaindex",
+      "retrieval_candidate_multiplier": 4,
+      "retrieval_min_candidates": 12,
+      "retrieval_vector_weight": 0.62,
+      "retrieval_bm25_weight": 0.38,
+      "retrieval_diversity_enabled": true,
+      "retrieval_diversity_lambda": 0.72,
+      "retrieval_hnsw_ef_search": 100
+    },
+    "reloaded": true
   },
   "error": null
 }
@@ -701,6 +1070,7 @@ Current checks:
 - `settings`
 - `artifact_directory`
 - `session_cache`
+- `retrieval_rule_packs`: data-driven retrieval policy/rule-pack availability.
 - `workflow_repository`
 - `schema_inventory`
 - `retrieval_inventory`: source inventory plus a bounded retrieval search probe.
@@ -715,6 +1085,12 @@ types, never local filesystem paths.
 For schemas, `schema_inventory` must load at least one trusted profile. If the
 configured knowledge directory yields zero schemas, readiness returns
 `status = "not_ready"` because default schema-backed workflows cannot run.
+For retrieval rule packs, `retrieval_rule_packs` verifies that data-driven
+query expansion, filter suggestion, query diagnostic, ranking boost, evaluation
+policy, and search-hint target files are loadable. If any pack is missing or
+malformed, readiness returns `status = "not_ready"` and exposes only sanitized
+pack metadata such as name, status, source, env var, rule count, version, and
+content hash.
 For retrieval, `retrieval_inventory` runs a small approved-source query through
 the same workflow retrieval service path and reports only operational metadata:
 `source_count`, `probe_hit_count`, `probe_strategy`, `probe_candidates_seen`, and
@@ -846,7 +1222,11 @@ Structured unauthorized response:
   "schema_id": "lab_result_v1",
   "fields": ["date", "patient_id", "lab_name", "value", "unit"],
   "clinical_domain": "laboratory",
-  "trust_level": "approved"
+  "trust_level": "approved",
+  "filters": {
+    "standard_system": "UCUM",
+    "source_type": "terminology_system"
+  }
 }
 ```
 
@@ -857,20 +1237,105 @@ Response data is a `RetrievalPackage`:
 - `hits[].lexical_score`
 - `hits[].vector_score`
 - `hits[].rerank_score`
+- `hits[].score_components[]` with `component`, `label`, `value`, optional
+  `rank`, `description`, and `metadata`
 - `hits[].matched_terms`
+- `hits[].snippet`
 - `evidence`
+- `coverage`
+- `facets`
+- `quality_signals[]` with `code`, `severity`, `message`,
+  `suggested_action`, `evidence_ids`, and `metadata`
 - `trace.strategy`
 - `trace.query_variants`
+- `trace.query_variant_details[]` with `variant`, `source`, `reason`, and
+  `metadata`
 - `trace.filters_applied`
 - `trace.candidates_seen`
 - `trace.final_hit_ids`
 - `trace.safety_flags`
 - `trace.warnings`
 - `handoff_context`
+- `handoff_context.graph_context`
+- `handoff_context.query_analysis`
+- `handoff_context.quality_policy`
+- `handoff_context.retrieval_rule_packs`
+- `handoff_context.search_request`
+- `handoff_context.search_signature`
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
 `prompt_injection_pattern_in_query` and `sensitive_field_context`.
+`handoff_context.query_analysis` is auditable query-understanding metadata.
+It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
+such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
+produced expanded query variants. It includes `concept_candidates`, a list of
+controlled-vocabulary candidates with `concept_id`, `display_name`,
+`standard_system`, `code`, `clinical_domain`, `matched_aliases`, `confidence`,
+`source`, and `metadata`. It also includes `filter_suggestions`, a list of
+deterministic metadata filter recommendations with `field`, `value`, `reason`,
+`rule_id`, `confidence`, and `applied`. It also includes `diagnostics`, a list
+of deterministic query-quality checks with `code`, `severity`, `message`, and
+`suggested_action`; warning diagnostics are copied into `trace.warnings`. It
+can include `query_profile`, a data-driven route hint with `profile_id`,
+`label`, `route`, `complexity`, `retrieval_mode`, `description`,
+`suggested_filters`, and contributing `rule_ids`; this is operator-visible
+guidance for adaptive retrieval, not a hidden automatic route change. It can
+include `query_aspects`, deterministic query-decomposition rows with
+`aspect_id`, `label`, review `question`, `rationale`, `priority`, contributing
+`rule_id`, `suggested_terms`, and `suggested_filters`; these rows help users
+verify which medical evidence aspects the search should cover without silently
+running hidden independent searches or producing clinical recommendations.
+Matched aspects also contribute auditable `trace.query_variant_details[]` rows
+with `source="query_aspect_rule"` so first-stage ranking uses the decomposition
+plan transparently. Ranked hits may include
+`source_locator.query_aspect_matches[]` with aspect ID, label, rule ID,
+priority, matched filters, matched terms, and reason, allowing clients to show
+which evidence supports which decomposed search aspect. It
+also includes `search_hints`, deterministic external medical search syntax
+scaffolds with `target`, `query`, optional `url`, `rationale`, and `warnings`
+for workflows such as PubMed/MeSH literature search, FHIR resource search
+templates, ClinicalTrials.gov API v2 study search, and openFDA drug
+label/adverse-event search. Current targets include `pubmed`, `fhir`,
+`clinicaltrials_gov`, `openfda_drug_label`, and `openfda_drug_event`.
+`handoff_context.retrieval_rule_packs` records sanitized active retrieval
+rule-pack fingerprints with pack name, status, source, env var, rule count,
+version, and content hash. This lets copied evaluation reports and downstream
+audit records identify the exact query-expansion, diagnostic, ranking,
+query-profile, query-aspect, quality-gate, evaluation, and search-hint rule
+data used for the search. `handoff_context.quality_policy` records the active
+retrieval readiness policy version and severity scoring rules used to produce
+`quality_summary`. `handoff_context.search_request` records the normalized
+server-side retrieval request, and `handoff_context.search_signature` is a
+stable `sha256:<digest>` fingerprint of that request for judgment, report, and
+audit correlation.
+`hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
+`matched_terms`, and `extraction_strategy`. The full source claim remains in
+`hits[].evidence.claim`.
+`coverage` reports whether standards inferred from query analysis, such as
+`FHIR`, `LOINC`, and `UCUM`, are represented in the final selected evidence.
+Each `coverage.standard_system[]` item includes `suggested_action` and
+`suggested_filter` so clients can present explicit remediation controls for
+missing expected standards. Missing expected standards are returned as
+`coverage.warnings` and copied into `trace.warnings`. `coverage.query_aspects[]`
+uses the same coverage item shape for query-aspect plans that include supported
+suggested filters. These items report whether selected evidence covers each
+aspect's metadata criteria and expose the same explicit remediation filter
+contract when coverage is missing.
+`facets` summarizes the final selected hits into buckets for `source_type`,
+`clinical_domain`, `standard_system`, and `trust_level`.
+`quality_signals` is a deterministic retrieval-quality checklist for operator
+review. It summarizes whether the package has hits, whether expected standard
+coverage is complete, whether query-context safety flags were detected, and
+whether selected evidence is source-diverse. These signals are observability and
+review guidance, not clinical decision support.
+
+Copyable `retrieval_run_comparison` reports include active/baseline
+`query_aspects` deltas with added, removed, and retained aspect summaries. This
+lets relevance tuning notes distinguish decomposition coverage changes from
+rank, quality-signal, facet, rule-pack, and evidence changes. The same report
+includes `coverage` deltas with improved, regressed, added, removed, and
+retained standard/aspect coverage diagnostics.
 
 Retrieval endpoints require an authenticated session. Searches without
 `workflow_id` run over the approved knowledge inventory. Searches with
@@ -878,10 +1343,131 @@ Retrieval endpoints require an authenticated session. Searches without
 another user's workflow by guessing an ID.
 The `query` field and optional context fields are trimmed and must be non-blank
 when supplied.
+`filters` is a typed metadata filter object, not an arbitrary JSON bag. Current
+supported keys are `trust_level`, `clinical_domain`, `standard_system`, and
+`source_type`. Unsupported filter keys or invalid enum values return
+`request_validation_error` before the retrieval repository runs, so the API does
+not silently accept filters that the ranking layer cannot enforce.
+
+`GET /api/v1/retrieval/presets` returns data-driven operator query presets
+loaded from `knowledge/retrieval/search_presets.json`. Each preset includes
+`preset_id`, `label`, `description`, optional `category`, `query`, `top_k`,
+`fields`, optional schema, format, resource, clinical-domain, standard, trust,
+source-type constraints, target source labels, and launch-hint target names. The
+frontend uses these presets to seed the query builder instead of hardcoding
+healthcare search examples in React.
+
+`GET /api/v1/retrieval/search-options` returns data-driven query-builder
+controls loaded from `knowledge/retrieval/search_options.json`. The response
+includes `version`, `detected_formats[]` with `value`, `label`, and optional
+`description`, plus `top_k_values[]`. The Retrieval UI uses this endpoint for
+format and top-K controls so Markdown, FHIR-like, and future intake/search
+profiles can be added through trusted data.
+
+`GET /api/v1/retrieval/judgments` returns durable relevance judgments for the
+authenticated user. Optional query parameters:
+
+- `query`: exact query text; the backend hashes it for lookup.
+- `run_id`: browser/search run identifier.
+- `evidence_id`: evidence item identifier.
+- `limit`: default `500`, maximum `1000`.
+
+`GET /api/v1/retrieval/judgments/summary` returns aggregate label inventory for
+the authenticated user, optionally filtered by `query`. Response data includes
+`total_count`, `query_count`, `evidence_count`, `source_count`, per-value counts,
+`average_rating`, `latest_updated_at`, and `sample_limit`.
+
+`POST /api/v1/retrieval/judgments/evaluate` evaluates one ranked retrieval
+result list against the authenticated user's stored judgments for the submitted
+query:
+
+```json
+{
+  "query": "FHIR Observation HbA1c unit",
+  "ranked_evidence_ids": ["ev_schema_lab_result_v1", "ev_ucum_unit_policy"],
+  "cutoff": 2
+}
+```
+
+Response data includes `coverage_at_k`, `hit_rate_at_k`, `precision_at_k`,
+`judged_precision`, `average_precision_at_k`, `mrr_at_k`, `ndcg_at_k`,
+per-value counts, unjudged evidence IDs, the judgment IDs that contributed to
+the score, and policy-driven
+`recommendations[]` with severity, metric, message, suggested action, evidence
+IDs, and rule metadata. This endpoint is intended for operator-facing
+evaluation of the current ranked result list; it does not mutate judgments or
+workflow state.
+
+`PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
+judgment:
+
+```json
+{
+  "query": "FHIR Observation HbA1c unit",
+  "evidence_id": "ev_schema_lab_result_v1",
+  "source_id": "schema:lab_result_v1",
+  "source_type": "schema",
+  "value": "relevant",
+  "rating": 3,
+  "run_id": "browser-run-1",
+  "search_signature": "{\"query\":\"FHIR Observation HbA1c unit\"}",
+  "metadata": {
+    "review_surface": "retrieval_console"
+  }
+}
+```
+
+The durable key is `(owner_user_id, query_hash, evidence_id)`. `run_id` and
+`search_signature` are stored as trace metadata but are not the durable identity,
+so rerunning the same query can reload prior labels for matching evidence.
+`value` is one of `relevant`, `partial`, or `not_relevant`; `rating` is a graded
+0-3 relevance score used by retrieval evaluation. If the UI omits `rating`, the
+backend derives it from `value`.
+
+`DELETE /api/v1/retrieval/judgments/{judgment_id}` removes one judgment owned by
+the authenticated user.
 
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,
-and chunk count.
+and chunk count. The seeded source inventory includes local schema/governance
+knowledge plus curated healthcare-standard assets under `knowledge/`, including
+the official source catalog, medical concept seed registry, FHIR R4 search
+parameter seed, clinical data standards map, medical search playbook, and public
+dataset ingestion plan.
+
+`GET /api/v1/retrieval/integrity` returns a `RetrievalIntegrityReport` for the
+current retrieval index. Query parameters:
+
+- `include_seeded`: default `true`.
+- `include_corpus`: default `false`.
+
+Response data includes `repository`, `status`, `checked_scope`,
+`expected_source_count`, `indexed_source_count`, `ok_count`, `stale_count`,
+`missing_count`, `extra_count`, per-source `checks`, and `warnings`. Each check
+contains `source_id`, `status`, expected/indexed chunk counts, expected/indexed
+hashes, and a message. This endpoint is intended for operational consistency
+checks after deployment, reindexing, or source file changes.
+
+`POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from
+seeded knowledge and configured local corpus directories:
+
+```json
+{
+  "include_seeded": true,
+  "include_corpus": true
+}
+```
+
+Response data includes repository type, indexed chunk count, embedding provider
+metadata, and local corpus indexing stats. The endpoint requires an
+authenticated session and does not accept arbitrary document text; corpus
+files must be placed in configured trusted knowledge directories first.
+Large official datasets such as MeSH RDF/XML, RxNorm/RxNav cache exports,
+LOINC downloads, MedlinePlus XML, openFDA downloads, and ClinicalTrials.gov API
+snapshots should be ingested into ignored runtime/object storage and then
+distilled into reviewed knowledge chunks. They should not be committed directly
+to source control. Corpus content comes from trusted runtime directories
+configured by operators.
 
 ## Upload Workflow
 

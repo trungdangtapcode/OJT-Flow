@@ -6,10 +6,16 @@ from copy import deepcopy
 
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.retrieval import (
+    RetrievalRelevanceJudgment,
+    RetrievalRelevanceJudgmentWrite,
+)
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
+from ojtflow.core.ids import new_id
+from ojtflow.core.time import utc_now
 from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
 from ojtflow.infrastructure.storage.summary import filter_sort_page_summaries, workflow_stats
 
@@ -161,3 +167,65 @@ class InMemoryEventRepository:
 
     def list_for_workflow(self, workflow_id: str) -> list[WorkflowEvent]:
         return [deepcopy(event) for event in self._events if event.workflow_id == workflow_id]
+
+
+class InMemoryRetrievalJudgmentRepository:
+    """User-scoped in-memory retrieval relevance judgments."""
+
+    def __init__(self) -> None:
+        self._judgments: dict[str, RetrievalRelevanceJudgment] = {}
+
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        write: RetrievalRelevanceJudgmentWrite,
+    ) -> RetrievalRelevanceJudgment:
+        existing = next(
+            (
+                judgment
+                for judgment in self._judgments.values()
+                if judgment.owner_user_id == owner_user_id
+                and judgment.query_hash == query_hash
+                and judgment.evidence_id == write.evidence_id
+            ),
+            None,
+        )
+        now = utc_now().isoformat()
+        judgment = RetrievalRelevanceJudgment(
+            **write.model_dump(),
+            judgment_id=existing.judgment_id if existing else new_id("rj"),
+            owner_user_id=owner_user_id,
+            query_hash=query_hash,
+            created_at=existing.created_at if existing else now,
+            updated_at=now,
+        )
+        self._judgments[judgment.judgment_id] = deepcopy(judgment)
+        return deepcopy(judgment)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str | None = None,
+        run_id: str | None = None,
+        evidence_id: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalRelevanceJudgment]:
+        judgments = [
+            judgment
+            for judgment in self._judgments.values()
+            if judgment.owner_user_id == owner_user_id
+            and (query_hash is None or judgment.query_hash == query_hash)
+            and (run_id is None or judgment.run_id == run_id)
+            and (evidence_id is None or judgment.evidence_id == evidence_id)
+        ]
+        judgments.sort(key=lambda judgment: judgment.updated_at, reverse=True)
+        return [deepcopy(judgment) for judgment in judgments[: max(1, min(limit, 1000))]]
+
+    def delete(self, *, owner_user_id: str, judgment_id: str) -> None:
+        judgment = self._judgments.get(judgment_id)
+        if not judgment or judgment.owner_user_id != owner_user_id:
+            raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
+        del self._judgments[judgment_id]

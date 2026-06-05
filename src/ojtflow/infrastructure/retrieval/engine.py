@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -13,17 +17,37 @@ from typing import Any
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
+    RetrievalCoverage,
+    RetrievalCoverageItem,
+    RetrievalDiversitySelection,
+    RetrievalFacetBucket,
+    RetrievalFacets,
     RetrievalHit,
     RetrievalPackage,
+    RetrievalQualitySignal,
+    RetrievalQualitySummary,
     RetrievalQuery,
+    RetrievalQueryAnalysis,
+    RetrievalQueryAspect,
+    RetrievalScoreComponent,
     RetrievalSource,
+    RetrievalSnippet,
     RetrievalTrace,
 )
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
+from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
+SNIPPET_SEGMENT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n{2,}|\r\n{2,}")
 DEFAULT_EMBEDDING_DIMENSIONS = 64
 RRF_K = 60
+SNIPPET_MAX_CHARS = 280
+DEFAULT_RANKING_BOOST_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "ranking_boost_rules.json"
+)
+DEFAULT_QUALITY_GATE_POLICY_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "quality_gate_policy.json"
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +67,79 @@ class KnowledgeChunk:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class RankingBoostCondition:
+    """One allowlisted ranking-rule condition."""
+
+    query_schema_id_in_source_id: bool = False
+    any_query_fields_in_matched_terms: bool = False
+    query_detected_format_present: bool = False
+    filter_clinical_domain_matches_chunk: bool = False
+    chunk_trust_levels: tuple[str, ...] = ()
+    chunk_source_types: tuple[str, ...] = ()
+    chunk_standard_systems: tuple[str, ...] = ()
+    any_matched_terms: tuple[str, ...] = ()
+    any_concepts: tuple[str, ...] = ()
+    any_rule_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RankingBoostRule:
+    """One auditable deterministic ranking boost rule."""
+
+    rule_id: str
+    weight: float
+    reason: str
+    match: RankingBoostCondition
+    any_of: tuple[RankingBoostCondition, ...] = ()
+
+
+@dataclass(frozen=True)
+class AppliedRankingBoost:
+    """One ranking boost applied to a specific hit."""
+
+    rule_id: str
+    weight: float
+    reason: str
+
+    def as_locator_payload(self) -> dict[str, Any]:
+        return {
+            "rule_id": self.rule_id,
+            "weight": self.weight,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class RetrievalQualityPolicy:
+    """Data-driven policy for package-level retrieval readiness scoring."""
+
+    version: str
+    severity_penalties: dict[str, int]
+    blocking_severities: tuple[str, ...]
+    review_severities: tuple[str, ...]
+    review_score_below: int
+    default_top_action: str
+    ranking_thresholds: dict[str, int | float] = field(default_factory=dict)
+    provenance_requirements: dict[str, Any] = field(default_factory=dict)
+    concept_grounding_requirements: dict[str, Any] = field(default_factory=dict)
+
+    def penalty_for(self, severity: str) -> int:
+        return self.severity_penalties.get(severity, 0)
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "version": self.version,
+            "severity_penalties": dict(self.severity_penalties),
+            "blocking_severities": list(self.blocking_severities),
+            "review_severities": list(self.review_severities),
+            "review_score_below": self.review_score_below,
+            "ranking_thresholds": dict(self.ranking_thresholds),
+            "provenance_requirements": dict(self.provenance_requirements),
+            "concept_grounding_requirements": dict(self.concept_grounding_requirements),
+        }
+
+
 class DeterministicEmbeddingProvider:
     """Stable local embedding provider for tests, demos, and lexical fallback.
 
@@ -53,6 +150,8 @@ class DeterministicEmbeddingProvider:
 
     def __init__(self, dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS) -> None:
         self.dimensions = dimensions
+        self.provider_name = "deterministic"
+        self.model = "deterministic-hash-v0"
 
     def embed(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
@@ -66,14 +165,50 @@ class DeterministicEmbeddingProvider:
             return vector
         return [value / magnitude for value in vector]
 
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_document(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_document(text) for text in texts]
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider_name,
+            "model": self.model,
+            "dimensions": self.dimensions,
+            "normalized": True,
+        }
+
 
 class NullEmbeddingProvider:
     """Embedding provider used when vector retrieval is disabled."""
 
     dimensions = DEFAULT_EMBEDDING_DIMENSIONS
+    provider_name = "none"
+    model = "none"
 
     def embed(self, text: str) -> list[float]:
         return [0.0] * self.dimensions
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_document(self, text: str) -> list[float]:
+        return self.embed(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_document(text) for text in texts]
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider_name,
+            "model": self.model,
+            "dimensions": self.dimensions,
+            "normalized": False,
+        }
 
 
 def tokenize(text: str) -> list[str]:
@@ -85,58 +220,54 @@ def tokenize(text: str) -> list[str]:
 def build_query_variants(query: RetrievalQuery) -> list[str]:
     """Create deterministic query variants inspired by practical RAG routing."""
 
-    variants = [query.query]
-    if query.fields:
-        variants.append(" ".join(query.fields))
-        variants.append(f"healthcare fields {' '.join(query.fields)} validation units terminology")
-    if query.schema_id:
-        variants.append(f"{query.schema_id} schema required fields validation")
-    if query.resource_type:
-        variants.append(f"FHIR {query.resource_type} resource profile required shape")
-    if query.detected_format:
-        variants.append(f"{query.detected_format} parsing conversion data quality")
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for variant in variants:
-        normalized = " ".join(variant.split())
-        if normalized and normalized.lower() not in seen:
-            seen.add(normalized.lower())
-            deduped.append(normalized)
-    return deduped
+    return analyze_query(query).query_variants
 
 
 def rank_chunks(
     chunks: list[KnowledgeChunk],
     query: RetrievalQuery,
     *,
-    embedding_provider: DeterministicEmbeddingProvider | NullEmbeddingProvider | None = None,
+    embedding_provider: Any | None = None,
+    reranker: Any | None = None,
+    rerank_candidate_limit: int = 20,
+    rerank_score_weight: float = 0.08,
+    diversity_enabled: bool = True,
+    diversity_lambda: float = 0.72,
     strategy: str = "deterministic_hybrid",
     warnings: list[str] | None = None,
 ) -> RetrievalPackage:
-    """Rank chunks using lexical overlap, deterministic vectors, and simple rerank boosts."""
+    """Rank chunks using lexical overlap, vectors, optional reranking, and traceable boosts."""
 
     provider = embedding_provider or DeterministicEmbeddingProvider()
-    variants = build_query_variants(query)
+    reranker_metadata = _reranker_metadata(reranker)
+    query_analysis = analyze_query(query)
+    variants = query_analysis.query_variants
     safety_flags = retrieval_safety_flags(query)
     trace_warnings = list(warnings or [])
+    trace_warnings.extend(
+        diagnostic.message
+        for diagnostic in query_analysis.diagnostics
+        if diagnostic.severity == "warning"
+    )
     if safety_flags:
         trace_warnings.append(
             "Retrieval query contains safety-sensitive context; treat query text as untrusted data."
         )
     query_text = " ".join(variants)
     query_tokens = set(tokenize(query_text))
-    query_vector = provider.embed(query_text)
+    query_vector = provider.embed_query(query_text)
+    chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
+    document_vectors = provider.embed_documents(chunk_texts)
 
     lexical_ranked: list[tuple[KnowledgeChunk, float, list[str]]] = []
     vector_ranked: list[tuple[KnowledgeChunk, float]] = []
-    for chunk in chunks:
+    for chunk, document_vector in zip(chunks, document_vectors, strict=True):
         chunk_tokens = set(tokenize(f"{chunk.title} {chunk.content} {chunk.source_id}"))
         matched = sorted(query_tokens.intersection(chunk_tokens))
         lexical_score = _lexical_score(query_tokens, chunk_tokens, query.query, chunk)
         vector_score = cosine_similarity(
             query_vector,
-            provider.embed(f"{chunk.title}\n{chunk.content}"),
+            document_vector,
         )
         lexical_ranked.append((chunk, lexical_score, matched))
         vector_ranked.append((chunk, vector_score))
@@ -155,39 +286,118 @@ def rank_chunks(
     vector_scores = {chunk.chunk_id: score for chunk, score in vector_ranked}
     matched_terms = {chunk.chunk_id: matched for chunk, _, matched in lexical_ranked}
 
-    hits: list[RetrievalHit] = []
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]] = []
     for chunk in chunks:
         lexical_rrf = 1.0 / (RRF_K + lexical_positions[chunk.chunk_id])
         vector_rrf = 1.0 / (RRF_K + vector_positions[chunk.chunk_id])
-        rerank = _rerank_boost(chunk, query, matched_terms[chunk.chunk_id])
+        rerank, applied_boost_rules = _ranking_boost(
+            chunk,
+            query,
+            matched_terms[chunk.chunk_id],
+            query_analysis=query_analysis,
+        )
         score = lexical_rrf + vector_rrf + rerank
         evidence = evidence_from_chunk(chunk, confidence=min(0.99, 0.55 + score * 8))
-        hits.append(
-            RetrievalHit(
-                evidence=evidence,
-                score=round(score, 6),
-                lexical_score=round(lexical_scores[chunk.chunk_id], 6),
-                vector_score=round(vector_scores[chunk.chunk_id], 6),
-                rerank_score=round(rerank, 6),
-                matched_terms=matched_terms[chunk.chunk_id][:12],
-                source_locator=chunk.locator,
+        score_components = _score_components(
+            lexical_rrf=lexical_rrf,
+            vector_rrf=vector_rrf,
+            policy_boost=rerank,
+            lexical_rank=lexical_positions[chunk.chunk_id],
+            vector_rank=vector_positions[chunk.chunk_id],
+            lexical_score=lexical_scores[chunk.chunk_id],
+            vector_score=vector_scores[chunk.chunk_id],
+            applied_boost_rules=applied_boost_rules,
+        )
+        ranked_hits.append(
+            (
+                chunk,
+                RetrievalHit(
+                    evidence=evidence,
+                    score=round(score, 6),
+                    lexical_score=round(lexical_scores[chunk.chunk_id], 6),
+                    vector_score=round(vector_scores[chunk.chunk_id], 6),
+                    rerank_score=round(rerank, 6),
+                    score_components=score_components,
+                    matched_terms=matched_terms[chunk.chunk_id][:12],
+                    source_locator=hit_source_locator_from_chunk(
+                        chunk,
+                        applied_boost_rules=applied_boost_rules,
+                        matched_terms=matched_terms[chunk.chunk_id],
+                        query_analysis=query_analysis,
+                    ),
+                    snippet=snippet_from_chunk(
+                        chunk,
+                        query_tokens=query_tokens,
+                        matched_terms=matched_terms[chunk.chunk_id],
+                    ),
+                ),
             )
         )
 
-    hits.sort(key=lambda hit: hit.score, reverse=True)
-    top_hits = hits[: query.top_k]
+    ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
+    if _reranker_enabled(reranker) and ranked_hits:
+        candidates = ranked_hits[: max(1, rerank_candidate_limit)]
+        external_scores = reranker.score(query_text, [chunk for chunk, _ in candidates])
+        if external_scores:
+            for chunk, hit in candidates:
+                external_score = external_scores.get(chunk.chunk_id, 0.0)
+                contribution = external_score * rerank_score_weight
+                hit.score = round(hit.score + contribution, 6)
+                hit.rerank_score = round(hit.rerank_score + contribution, 6)
+                hit.score_components = [
+                    *hit.score_components,
+                    _external_rerank_score_component(
+                        external_score=external_score,
+                        contribution=contribution,
+                        score_weight=rerank_score_weight,
+                    ),
+                ]
+                hit.evidence.confidence = round(min(0.99, 0.55 + hit.score * 8), 4)
+            ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
+
+    selected_ranked_hits, diversity_metadata = _select_diverse_hits(
+        ranked_hits,
+        top_k=query.top_k,
+        enabled=diversity_enabled,
+        lambda_mult=diversity_lambda,
+    )
+    top_hits = [hit for _, hit in selected_ranked_hits]
+    selected_chunks = [chunk for chunk, _ in selected_ranked_hits]
+    facets = facets_from_chunks(selected_chunks)
+    coverage = coverage_from_chunks(selected_chunks, query_analysis)
+    trace_warnings.extend(coverage.warnings)
+    if diversity_metadata["duplicate_selected_source_count"]:
+        trace_warnings.append(
+            "Retrieval results include repeated source IDs after diversity selection."
+        )
     trace = RetrievalTrace(
         strategy=strategy,
         query_variants=variants,
+        query_variant_details=query_analysis.query_variant_details,
         filters_applied=query.filters,
         candidates_seen=len(chunks),
         final_hit_ids=[hit.evidence.evidence_id for hit in top_hits],
         safety_flags=safety_flags,
         warnings=trace_warnings,
     )
+    quality_policy = active_quality_policy()
+    quality_signals = quality_signals_from_results(
+        hits=top_hits,
+        coverage=coverage,
+        safety_flags=safety_flags,
+        candidates_seen=len(chunks),
+        diversity_metadata=diversity_metadata,
+        policy=quality_policy,
+        query_analysis=query_analysis,
+    )
+    quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
+        coverage=coverage,
+        facets=facets,
+        quality_signals=quality_signals,
+        quality_summary=quality_summary,
         trace=trace,
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
@@ -195,7 +405,745 @@ def rank_chunks(
             "schema_id": query.schema_id,
             "strategy": strategy,
             "safety_flags": safety_flags,
+            "embedding": provider.metadata(),
+            "reranker": reranker_metadata,
+            "diversity": diversity_metadata,
+            "quality_policy": quality_policy.metadata(),
+            "quality_summary": quality_summary.model_dump(),
+            "query_analysis": query_analysis.model_dump(),
         },
+    )
+
+
+def coverage_from_chunks(
+    chunks: list[KnowledgeChunk],
+    query_analysis: RetrievalQueryAnalysis,
+) -> RetrievalCoverage:
+    """Report whether final hits cover standards inferred from the query."""
+
+    standard_counts = Counter(chunk.standard_system for chunk in chunks if chunk.standard_system)
+    standard_items = [
+        _standard_coverage_item(standard, standard_counts)
+        for standard in _expected_standard_values(query_analysis.standards)
+    ]
+    aspect_items = [
+        item
+        for aspect in query_analysis.query_aspects
+        for item in [_query_aspect_coverage_item(aspect, chunks)]
+        if item is not None
+    ]
+    warnings = [
+        item.reason
+        for item in [*standard_items, *aspect_items]
+        if item.status == "missing" and item.severity == "warning"
+    ]
+    return RetrievalCoverage(
+        standard_system=standard_items,
+        query_aspects=aspect_items,
+        warnings=warnings,
+    )
+
+
+def quality_signals_from_results(
+    *,
+    hits: list[RetrievalHit],
+    coverage: RetrievalCoverage | None,
+    safety_flags: list[str],
+    candidates_seen: int,
+    diversity_metadata: dict[str, Any] | None = None,
+    policy: RetrievalQualityPolicy | None = None,
+    query_analysis: RetrievalQueryAnalysis | None = None,
+) -> list[RetrievalQualitySignal]:
+    """Build deterministic package-level retrieval quality signals."""
+
+    active_policy = policy or active_quality_policy()
+    evidence_ids = [hit.evidence.evidence_id for hit in hits]
+    signals: list[RetrievalQualitySignal] = []
+    if hits:
+        top_hit = hits[0]
+        min_top_matched_terms = active_policy.ranking_thresholds.get(
+            "min_top_matched_terms",
+        )
+        matched_term_count = len(top_hit.matched_terms)
+        signals.append(
+            RetrievalQualitySignal(
+                code="hits_available",
+                severity="success",
+                message=(
+                    f"Retrieved {len(hits)} evidence item(s) from "
+                    f"{candidates_seen} candidate(s)."
+                ),
+                suggested_action=(
+                    "Review the ranked evidence and score explanations before using it "
+                    "downstream."
+                ),
+                evidence_ids=evidence_ids,
+                metadata={"hit_count": len(hits), "candidate_count": candidates_seen},
+            )
+        )
+        if (
+            isinstance(min_top_matched_terms, int)
+            and min_top_matched_terms > 0
+            and matched_term_count < min_top_matched_terms
+        ):
+            signals.append(
+                RetrievalQualitySignal(
+                    code="weak_top_hit_match",
+                    severity="warning",
+                    message=(
+                        "Top-ranked evidence matched fewer exact query terms than the "
+                        "active quality policy requires."
+                    ),
+                    suggested_action=(
+                        "Rewrite or broaden the query, inspect score components, and "
+                        "confirm the top evidence before downstream use."
+                    ),
+                    evidence_ids=[top_hit.evidence.evidence_id],
+                    metadata={
+                        "top_evidence_id": top_hit.evidence.evidence_id,
+                        "matched_term_count": matched_term_count,
+                        "min_top_matched_terms": min_top_matched_terms,
+                        "score": top_hit.score,
+                        "lexical_score": top_hit.lexical_score,
+                        "vector_score": top_hit.vector_score,
+                    },
+                )
+            )
+        provenance_issues = _provenance_quality_issues(hits, active_policy)
+        if provenance_issues:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="weak_evidence_provenance",
+                    severity="warning",
+                    message=(
+                        "Selected evidence is missing provenance metadata required by "
+                        "the active quality policy."
+                    ),
+                    suggested_action=(
+                        "Reindex the source with version and locator metadata, or replace "
+                        "the evidence with an auditable source before downstream use."
+                    ),
+                    evidence_ids=[
+                        str(issue["evidence_id"])
+                        for issue in provenance_issues
+                        if issue.get("evidence_id")
+                    ],
+                    metadata={
+                        "issue_count": len(provenance_issues),
+                        "requirements": active_policy.provenance_requirements,
+                        "issues": provenance_issues,
+                    },
+                )
+            )
+        concept_issues = _concept_grounding_issues(
+            hits,
+            active_policy,
+            query_analysis=query_analysis,
+        )
+        if concept_issues:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="missing_concept_grounding",
+                    severity="warning",
+                    message=(
+                        "Selected evidence does not ground every controlled medical "
+                        "concept detected in the query."
+                    ),
+                    suggested_action=(
+                        "Apply terminology or clinical-domain filters, broaden the query, "
+                        "or add terminology-backed sources before downstream use."
+                    ),
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "issue_count": len(concept_issues),
+                        "requirements": active_policy.concept_grounding_requirements,
+                        "missing_concepts": concept_issues,
+                    },
+                )
+            )
+    else:
+        signals.append(
+            RetrievalQualitySignal(
+                code="no_hits",
+                severity="destructive",
+                message="No retrieval evidence matched the current query and filters.",
+                suggested_action=(
+                    "Broaden the query, remove restrictive filters, or reindex trusted "
+                    "knowledge."
+                ),
+                metadata={"candidate_count": candidates_seen},
+            )
+        )
+
+    if coverage and coverage.standard_system:
+        missing = [
+            item
+            for item in coverage.standard_system
+            if item.status == "missing" and item.severity == "warning"
+        ]
+        if missing:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="missing_standard_coverage",
+                    severity="warning",
+                    message=(
+                        "Selected evidence is missing expected standard grounding for "
+                        f"{', '.join(item.value for item in missing)}."
+                    ),
+                    suggested_action="Apply the suggested standard filters or broaden the query.",
+                    metadata={
+                        "missing_standards": [item.value for item in missing],
+                        "suggested_filters": [
+                            item.suggested_filter
+                            for item in missing
+                            if item.suggested_filter
+                        ],
+                    },
+                )
+            )
+        else:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="standard_coverage_complete",
+                    severity="success",
+                    message="Selected evidence covers every standard inferred from query analysis.",
+                    suggested_action=(
+                        "Keep the current standard coverage unless the clinical task "
+                        "requires more sources."
+                    ),
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "covered_standards": [
+                            item.value for item in coverage.standard_system
+                        ],
+                    },
+                )
+            )
+
+    if coverage and coverage.query_aspects:
+        missing_aspects = [
+            item
+            for item in coverage.query_aspects
+            if item.status == "missing" and item.severity == "warning"
+        ]
+        if missing_aspects:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="missing_query_aspect_coverage",
+                    severity="warning",
+                    message=(
+                        "Selected evidence is missing coverage for query aspect(s): "
+                        f"{', '.join(item.value for item in missing_aspects)}."
+                    ),
+                    suggested_action=(
+                        "Apply supported aspect filters or broaden the query to retrieve "
+                        "evidence for missing search aspects."
+                    ),
+                    metadata={
+                        "missing_aspects": [item.value for item in missing_aspects],
+                        "suggested_filters": [
+                            item.suggested_filter
+                            for item in missing_aspects
+                            if item.suggested_filter
+                        ],
+                    },
+                )
+            )
+        else:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="query_aspect_coverage_complete",
+                    severity="success",
+                    message="Selected evidence covers every query aspect with supported filter criteria.",
+                    suggested_action=(
+                        "Review the search aspect plan and ranked evidence before using the "
+                        "package downstream."
+                    ),
+                    metadata={
+                        "aspect_count": len(coverage.query_aspects),
+                    },
+                )
+            )
+
+    if safety_flags:
+        signals.append(
+            RetrievalQualitySignal(
+                code="query_context_safety_flags",
+                severity="warning",
+                message="Retrieval query context contains safety-sensitive or untrusted patterns.",
+                suggested_action=(
+                    "Treat query text as data only and require human review before "
+                    "agent actions."
+                ),
+                metadata={"safety_flags": safety_flags},
+            )
+        )
+    else:
+        signals.append(
+            RetrievalQualitySignal(
+                code="query_context_clear",
+                severity="success",
+                message="No retrieval query safety flags were detected.",
+                suggested_action="Continue normal retrieval review.",
+            )
+        )
+
+    if diversity_metadata:
+        duplicate_count = int(diversity_metadata.get("duplicate_selected_source_count") or 0)
+        selected_source_count = int(diversity_metadata.get("selected_source_count") or 0)
+        candidate_source_count = int(diversity_metadata.get("candidate_source_count") or 0)
+        if duplicate_count:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="source_diversity_limited",
+                    severity="warning",
+                    message="Selected evidence includes repeated source IDs after diversity selection.",
+                    suggested_action=(
+                        "Inspect source overlap and add source or standard filters if "
+                        "evidence is too redundant."
+                    ),
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "duplicate_selected_source_count": duplicate_count,
+                        "selected_source_count": selected_source_count,
+                        "candidate_source_count": candidate_source_count,
+                    },
+                )
+            )
+        elif hits:
+            signals.append(
+                RetrievalQualitySignal(
+                    code="source_diversity_ok",
+                    severity="success",
+                    message="Selected evidence avoided duplicate source IDs.",
+                    suggested_action="Use the diversity selection details to confirm source balance.",
+                    evidence_ids=evidence_ids,
+                    metadata={
+                        "selected_source_count": selected_source_count,
+                        "candidate_source_count": candidate_source_count,
+                    },
+                )
+            )
+    return signals
+
+
+def quality_summary_from_signals(
+    signals: list[RetrievalQualitySignal],
+    *,
+    policy: RetrievalQualityPolicy | None = None,
+) -> RetrievalQualitySummary:
+    """Summarize package quality signals into an operator-readiness score."""
+
+    active_policy = policy or active_quality_policy()
+    success_count = sum(
+        1
+        for signal in signals
+        if active_policy.penalty_for(signal.severity) == 0 and signal.severity == "success"
+    )
+    warning_signals = [
+        signal for signal in signals if signal.severity in active_policy.review_severities
+    ]
+    destructive_signals = [
+        signal
+        for signal in signals
+        if signal.severity in active_policy.blocking_severities
+    ]
+    info_count = sum(1 for signal in signals if signal.severity == "info")
+    score = max(
+        0,
+        min(
+            100,
+            100 - sum(active_policy.penalty_for(signal.severity) for signal in signals),
+        ),
+    )
+    status = "ready"
+    if destructive_signals:
+        status = "blocked"
+    elif warning_signals or score < active_policy.review_score_below:
+        status = "review"
+    top_signal = (
+        destructive_signals[0]
+        if destructive_signals
+        else warning_signals[0]
+        if warning_signals
+        else signals[0]
+        if signals
+        else None
+    )
+    return RetrievalQualitySummary(
+        status=status,
+        score=score,
+        success_count=success_count,
+        warning_count=len(warning_signals),
+        destructive_count=len(destructive_signals),
+        info_count=info_count,
+        top_action=(
+            top_signal.suggested_action
+            if top_signal
+            else active_policy.default_top_action
+        ),
+        blocker_codes=[signal.code for signal in destructive_signals],
+        warning_codes=[signal.code for signal in warning_signals],
+    )
+
+
+def _provenance_quality_issues(
+    hits: list[RetrievalHit],
+    policy: RetrievalQualityPolicy,
+) -> list[dict[str, Any]]:
+    requirements = policy.provenance_requirements
+    if not requirements:
+        return []
+    source_types = {
+        str(value)
+        for value in requirements.get("source_types", [])
+        if str(value).strip()
+    }
+    locator_any_keys = [
+        str(value)
+        for value in requirements.get("locator_any_keys", [])
+        if str(value).strip()
+    ]
+    require_source_version = bool(requirements.get("require_source_version"))
+    issues: list[dict[str, Any]] = []
+    for hit in hits:
+        source_type = hit.evidence.source_type.value
+        if source_types and source_type not in source_types:
+            continue
+        missing: list[str] = []
+        if require_source_version and not hit.evidence.source_version:
+            missing.append("source_version")
+        locator = hit.evidence.locator if isinstance(hit.evidence.locator, dict) else {}
+        if locator_any_keys and not any(_has_locator_value(locator, key) for key in locator_any_keys):
+            missing.append("locator_any_keys")
+        if missing:
+            issues.append(
+                {
+                    "evidence_id": hit.evidence.evidence_id,
+                    "source_id": hit.evidence.source_id,
+                    "source_type": source_type,
+                    "missing": missing,
+                    "locator_any_keys": locator_any_keys,
+                }
+            )
+    return issues
+
+
+def _concept_grounding_issues(
+    hits: list[RetrievalHit],
+    policy: RetrievalQualityPolicy,
+    *,
+    query_analysis: RetrievalQueryAnalysis | None,
+) -> list[dict[str, Any]]:
+    requirements = policy.concept_grounding_requirements
+    if (
+        not requirements
+        or not requirements.get("require_detected_concepts")
+        or query_analysis is None
+    ):
+        return []
+    min_confidence = requirements.get("min_confidence", 0)
+    if not isinstance(min_confidence, int | float):
+        min_confidence = 0
+    candidates = [
+        candidate
+        for candidate in query_analysis.concept_candidates
+        if candidate.confidence >= float(min_confidence)
+    ]
+    if not candidates:
+        return []
+    matched_concept_ids = {
+        str(match.get("concept_id"))
+        for hit in hits
+        for match in _locator_concept_matches(hit.source_locator)
+        if match.get("concept_id")
+    }
+    issues: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if candidate.concept_id in matched_concept_ids:
+            continue
+        issues.append(
+            {
+                "concept_id": candidate.concept_id,
+                "display_name": candidate.display_name,
+                "standard_system": candidate.standard_system,
+                "code": candidate.code,
+                "confidence": candidate.confidence,
+            }
+        )
+    return issues
+
+
+def _locator_concept_matches(locator: dict[str, Any]) -> list[dict[str, Any]]:
+    matches = locator.get("concept_matches")
+    return matches if isinstance(matches, list) else []
+
+
+def _has_locator_value(locator: dict[str, Any], key: str) -> bool:
+    value = locator.get(key)
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list | tuple | set | dict):
+        return bool(value)
+    return True
+
+
+def active_quality_policy() -> RetrievalQualityPolicy:
+    """Load the active retrieval quality policy from trusted data."""
+
+    path = os.environ.get("OJT_RETRIEVAL_QUALITY_POLICY_PATH")
+    return _load_quality_policy(path or str(DEFAULT_QUALITY_GATE_POLICY_REGISTRY))
+
+
+@lru_cache(maxsize=4)
+def _load_quality_policy(path_text: str) -> RetrievalQualityPolicy:
+    path = Path(path_text)
+    if not path.exists():
+        return _default_quality_policy()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid retrieval quality policy at {path}: expected object")
+    severity_penalties = raw.get("severity_penalties")
+    blocking_severities = raw.get("blocking_severities")
+    review_severities = raw.get("review_severities")
+    status_thresholds = raw.get("status_thresholds")
+    ranking_thresholds = raw.get("ranking_thresholds", {})
+    provenance_requirements = raw.get("provenance_requirements", {})
+    concept_grounding_requirements = raw.get("concept_grounding_requirements", {})
+    if not isinstance(severity_penalties, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: severity_penalties must be an object"
+        )
+    if not isinstance(blocking_severities, list):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: blocking_severities must be a list"
+        )
+    if not isinstance(review_severities, list):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: review_severities must be a list"
+        )
+    if not isinstance(status_thresholds, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: status_thresholds must be an object"
+        )
+    if not isinstance(ranking_thresholds, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: ranking_thresholds must be an object"
+        )
+    if not isinstance(provenance_requirements, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: provenance_requirements must be an object"
+        )
+    if not isinstance(concept_grounding_requirements, dict):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: "
+            "concept_grounding_requirements must be an object"
+        )
+    return RetrievalQualityPolicy(
+        version=_optional_quality_policy_text(raw.get("version")) or "retrieval_quality_policy.v1",
+        severity_penalties={
+            _required_quality_policy_text(key, path=path): _quality_policy_penalty(
+                value,
+                path=path,
+            )
+            for key, value in severity_penalties.items()
+        },
+        blocking_severities=tuple(
+            _required_quality_policy_text(value, path=path) for value in blocking_severities
+        ),
+        review_severities=tuple(
+            _required_quality_policy_text(value, path=path) for value in review_severities
+        ),
+        review_score_below=_quality_policy_score_threshold(
+            status_thresholds.get("review_score_below"),
+            path=path,
+        ),
+        default_top_action=_optional_quality_policy_text(raw.get("default_top_action"))
+        or _default_quality_policy().default_top_action,
+        ranking_thresholds={
+            _required_quality_policy_text(key, path=path): _quality_policy_ranking_threshold(
+                value,
+                path=path,
+            )
+            for key, value in ranking_thresholds.items()
+        },
+        provenance_requirements=_quality_policy_provenance_requirements(
+            provenance_requirements,
+            path=path,
+        ),
+        concept_grounding_requirements=_quality_policy_concept_grounding_requirements(
+            concept_grounding_requirements,
+            path=path,
+        ),
+    )
+
+
+def _default_quality_policy() -> RetrievalQualityPolicy:
+    return RetrievalQualityPolicy(
+        version="retrieval_quality_policy.v1",
+        severity_penalties={
+            "success": 0,
+            "info": 5,
+            "warning": 15,
+            "destructive": 40,
+            "error": 40,
+        },
+        blocking_severities=("destructive", "error"),
+        review_severities=("warning",),
+        review_score_below=85,
+        default_top_action="Run retrieval before assessing package readiness.",
+        ranking_thresholds={"min_top_matched_terms": 1},
+        provenance_requirements={
+            "source_types": [
+                EvidenceSourceType.HEALTHCARE_STANDARD.value,
+                EvidenceSourceType.TERMINOLOGY_SYSTEM.value,
+                EvidenceSourceType.DATA_DICTIONARY.value,
+            ],
+            "require_source_version": True,
+            "locator_any_keys": [
+                "path",
+                "url",
+                "standard",
+                "pmid",
+                "doi",
+                "api",
+                "resource",
+                "table",
+                "document_id",
+            ],
+        },
+        concept_grounding_requirements={
+            "require_detected_concepts": True,
+            "min_confidence": 0.7,
+        },
+    )
+
+
+def _required_quality_policy_text(value: Any, *, path: Path) -> str:
+    text = _optional_quality_policy_text(value)
+    if not text:
+        raise ValueError(f"Invalid retrieval quality policy at {path}: value cannot be blank")
+    return text
+
+
+def _optional_quality_policy_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None
+
+
+def _quality_policy_penalty(value: Any, *, path: Path) -> int:
+    if not isinstance(value, int):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: severity penalty must be an integer"
+        )
+    if value < 0 or value > 100:
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: severity penalty must be 0-100"
+        )
+    return value
+
+
+def _quality_policy_score_threshold(value: Any, *, path: Path) -> int:
+    if not isinstance(value, int):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: review_score_below must be an integer"
+        )
+    if value < 0 or value > 100:
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: review_score_below must be 0-100"
+        )
+    return value
+
+
+def _quality_policy_ranking_threshold(value: Any, *, path: Path) -> int | float:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: ranking threshold must be numeric"
+        )
+    if value < 0:
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: ranking threshold must be non-negative"
+        )
+    return value
+
+
+def _quality_policy_provenance_requirements(
+    value: dict[str, Any],
+    *,
+    path: Path,
+) -> dict[str, Any]:
+    requirements: dict[str, Any] = {}
+    if "source_types" in value:
+        requirements["source_types"] = [
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value["source_types"],
+                field="source_types",
+                path=path,
+            )
+        ]
+    if "locator_any_keys" in value:
+        requirements["locator_any_keys"] = [
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value["locator_any_keys"],
+                field="locator_any_keys",
+                path=path,
+            )
+        ]
+    if "require_source_version" in value:
+        if not isinstance(value["require_source_version"], bool):
+            raise ValueError(
+                f"Invalid retrieval quality policy at {path}: "
+                "require_source_version must be a boolean"
+            )
+        requirements["require_source_version"] = value["require_source_version"]
+    return requirements
+
+
+def _quality_policy_concept_grounding_requirements(
+    value: dict[str, Any],
+    *,
+    path: Path,
+) -> dict[str, Any]:
+    requirements: dict[str, Any] = {}
+    if "require_detected_concepts" in value:
+        if not isinstance(value["require_detected_concepts"], bool):
+            raise ValueError(
+                f"Invalid retrieval quality policy at {path}: "
+                "require_detected_concepts must be a boolean"
+            )
+        requirements["require_detected_concepts"] = value["require_detected_concepts"]
+    if "min_confidence" in value:
+        min_confidence = _quality_policy_ranking_threshold(value["min_confidence"], path=path)
+        if min_confidence > 1:
+            raise ValueError(
+                f"Invalid retrieval quality policy at {path}: min_confidence must be 0-1"
+            )
+        requirements["min_confidence"] = min_confidence
+    return requirements
+
+
+def _quality_policy_text_list(value: Any, *, field: str, path: Path) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError(
+            f"Invalid retrieval quality policy at {path}: {field} must be a list"
+        )
+    return value
+
+
+def facets_from_chunks(chunks: list[KnowledgeChunk]) -> RetrievalFacets:
+    """Build final-hit facets for operator scan/filter UX."""
+
+    return RetrievalFacets(
+        source_type=_facet_buckets(chunk.source_type.value for chunk in chunks),
+        clinical_domain=_facet_buckets(chunk.clinical_domain for chunk in chunks),
+        standard_system=_facet_buckets(chunk.standard_system for chunk in chunks),
+        trust_level=_facet_buckets(chunk.trust_level.value for chunk in chunks),
     )
 
 
@@ -240,6 +1188,55 @@ def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence
         locator=locator,
         confidence=round(confidence, 4),
         trust_level=chunk.trust_level,
+    )
+
+
+def snippet_from_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    query_tokens: set[str],
+    matched_terms: list[str],
+) -> RetrievalSnippet:
+    """Extract the most query-relevant sentence/window from a chunk."""
+
+    content = _snippet_source_text(chunk.content)
+    if not content:
+        content = chunk.title
+    segments = _snippet_segments(content)
+    ranked_segments = [
+        (
+            _snippet_score(segment_text, query_tokens=query_tokens, matched_terms=matched_terms),
+            start,
+            end,
+            segment_text,
+        )
+        for start, end, segment_text in segments
+    ]
+    ranked_segments.sort(
+        key=lambda item: (
+            item[0],
+            -abs(len(item[3]) - SNIPPET_MAX_CHARS),
+        ),
+        reverse=True,
+    )
+    _, start, _end, text = (
+        ranked_segments[0] if ranked_segments[0][0] > 0 else (0.0, *segments[0])
+    )
+    cropped_start, cropped_text = _crop_snippet(
+        text,
+        start_char=start,
+        matched_terms=matched_terms,
+    )
+    snippet_terms = [
+        term
+        for term in matched_terms
+        if term in set(tokenize(cropped_text))
+    ][:8]
+    return RetrievalSnippet(
+        text=cropped_text,
+        start_char=cropped_start,
+        end_char=cropped_start + len(cropped_text),
+        matched_terms=snippet_terms,
     )
 
 
@@ -357,6 +1354,51 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             standard_system="OMOP",
             locator={"standard": "OMOP CDM"},
         ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_mesh_pubmed_search_v0",
+            source_id="standard:mesh_pubmed_search",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="MeSH and PubMed Search",
+            content=(
+                "MeSH is the controlled vocabulary direction for biomedical literature "
+                "subject searching. PubMed search should combine MeSH review with "
+                "title/abstract text words, field tags, publication type filters, and "
+                "Search Details review before being treated as a final evidence strategy."
+            ),
+            clinical_domain="literature",
+            standard_system="MeSH",
+            locator={"standard": "NLM MeSH and PubMed"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_clinicaltrials_gov_api_v0",
+            source_id="standard:clinicaltrials_gov_api",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="ClinicalTrials.gov API v2",
+            content=(
+                "ClinicalTrials.gov API v2 provides study search for clinical trial "
+                "context. OJTFlow search hints should prefer condition, intervention, "
+                "recruitment status, eligibility, NCT identifier, and dataTimestamp "
+                "verification before trial records are used as workflow evidence."
+            ),
+            clinical_domain="literature",
+            standard_system="ClinicalTrials.gov",
+            locator={"standard": "ClinicalTrials.gov API v2"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_openfda_drug_apis_v0",
+            source_id="standard:openfda_drug_apis",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="openFDA Drug APIs",
+            content=(
+                "openFDA drug APIs provide public drug label, adverse event, NDC, "
+                "recall, and Drugs@FDA retrieval context. OJTFlow should treat FAERS "
+                "adverse event records as signal context only and preserve endpoint, "
+                "query, date, product identity, and limitations in evidence."
+            ),
+            clinical_domain="medication",
+            standard_system="openFDA",
+            locator={"standard": "openFDA drug APIs"},
+        ),
     ]
 
     file_specs = [
@@ -386,6 +1428,132 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             knowledge_root / "transformation_examples/csv_lab_to_json_records.md",
             "laboratory",
             "ojtflow_example",
+        ),
+        (
+            "chunk_terminology_medical_concepts_v1",
+            "terminology:medical_concepts_v1",
+            EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            "Medical Concept Seed Registry",
+            knowledge_root / "terminologies/medical_concepts.json",
+            "multi_domain",
+            "ojtflow_terminology",
+        ),
+        (
+            "chunk_dictionary_query_expansion_rules_v1",
+            "dictionary:query_expansion_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Query Expansion Rule Registry",
+            knowledge_root / "retrieval/query_expansion_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_filter_suggestion_rules_v1",
+            "dictionary:filter_suggestion_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Filter Suggestion Rule Registry",
+            knowledge_root / "retrieval/filter_suggestion_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_query_profile_rules_v1",
+            "dictionary:query_profile_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Query Profile Rule Registry",
+            knowledge_root / "retrieval/query_profile_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_query_aspect_rules_v1",
+            "dictionary:query_aspect_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Query Aspect Rule Registry",
+            knowledge_root / "retrieval/query_aspect_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_ranking_boost_rules_v1",
+            "dictionary:ranking_boost_rules_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Ranking Boost Rule Registry",
+            knowledge_root / "retrieval/ranking_boost_rules.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_evaluation_policy_v1",
+            "dictionary:retrieval_evaluation_policy_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Retrieval Evaluation Policy Registry",
+            knowledge_root / "retrieval/evaluation_policy.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_quality_gate_policy_v1",
+            "dictionary:retrieval_quality_gate_policy_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Retrieval Quality Gate Policy Registry",
+            knowledge_root / "retrieval/quality_gate_policy.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_dictionary_search_hint_targets_v1",
+            "dictionary:search_hint_targets_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Search Hint Target Registry",
+            knowledge_root / "retrieval/search_hint_targets.json",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_source_catalog_official_healthcare_sources_v1",
+            "catalog:official_healthcare_sources_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Official Healthcare Source Catalog",
+            knowledge_root / "source_catalog/official_healthcare_sources.json",
+            "multi_domain",
+            "ojtflow_source_catalog",
+        ),
+        (
+            "chunk_standard_fhir_search_parameters_r4_v1",
+            "standard:fhir_search_parameters_r4_v1",
+            EvidenceSourceType.HEALTHCARE_STANDARD,
+            "FHIR R4 Search Parameter Seed",
+            knowledge_root / "terminologies/fhir_search_parameters.json",
+            "interoperability",
+            "FHIR",
+        ),
+        (
+            "chunk_standard_clinical_data_standards_map_v1",
+            "standard:clinical_data_standards_map_v1",
+            EvidenceSourceType.HEALTHCARE_STANDARD,
+            "Clinical Data Standards Map",
+            knowledge_root / "corpus/clinical_data_standards_map.md",
+            "multi_domain",
+            "ojtflow_standard_map",
+        ),
+        (
+            "chunk_dictionary_medical_search_playbook_v1",
+            "dictionary:medical_search_playbook_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Medical Search Playbook",
+            knowledge_root / "corpus/medical_search_playbook.md",
+            "retrieval",
+            "ojtflow_retrieval",
+        ),
+        (
+            "chunk_catalog_public_dataset_ingestion_plan_v1",
+            "catalog:public_dataset_ingestion_plan_v1",
+            EvidenceSourceType.DATA_DICTIONARY,
+            "Public Dataset Ingestion Plan",
+            knowledge_root / "corpus/public_dataset_ingestion_plan.md",
+            "multi_domain",
+            "ojtflow_source_catalog",
         ),
     ]
     for (
@@ -448,21 +1616,977 @@ def _lexical_score(
     return overlap + phrase_boost + title_boost
 
 
-def _rerank_boost(chunk: KnowledgeChunk, query: RetrievalQuery, matched_terms: list[str]) -> float:
+def _facet_buckets(values: Iterable[object | None]) -> list[RetrievalFacetBucket]:
+    counts = Counter(str(value) for value in values if value)
+    return [
+        RetrievalFacetBucket(value=value, count=count)
+        for value, count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
+
+
+def _expected_standard_values(standards: list[str]) -> list[str]:
+    mapped: list[str] = []
+    for standard in standards:
+        if standard in {
+            "FHIR",
+            "LOINC",
+            "UCUM",
+            "RxNorm",
+            "OMOP",
+            "MeSH",
+            "ClinicalTrials.gov",
+            "openFDA",
+        }:
+            mapped.append(standard)
+        elif standard == "OJTFlow policy":
+            mapped.append("ojtflow_policy")
+        elif standard == "OJTFlow schema":
+            mapped.append("ojtflow_schema")
+    return _dedupe_strings(mapped)
+
+
+def _standard_coverage_item(
+    standard: str,
+    counts: Counter,
+) -> RetrievalCoverageItem:
+    selected_count = int(counts.get(standard, 0))
+    if selected_count:
+        return RetrievalCoverageItem(
+            field="standard_system",
+            value=standard,
+            selected_count=selected_count,
+            status="covered",
+            severity="info",
+            reason=f"Selected evidence includes {standard} grounding.",
+            suggested_action=(
+                "Keep the current retrieval scope; selected evidence already includes "
+                f"{standard} grounding."
+            ),
+        )
+    return RetrievalCoverageItem(
+        field="standard_system",
+        value=standard,
+        selected_count=0,
+        status="missing",
+        severity="warning",
+        reason=f"Query analysis expected {standard} grounding, but no selected evidence used that standard.",
+        suggested_action=(
+            f"Apply standard_system={standard} or broaden the query to retrieve "
+            f"{standard}-grounded evidence."
+        ),
+        suggested_filter={"standard_system": standard},
+    )
+
+
+def _query_aspect_coverage_item(
+    aspect: RetrievalQueryAspect,
+    chunks: list[KnowledgeChunk],
+) -> RetrievalCoverageItem | None:
+    supported_filters = {
+        field: value
+        for field, value in aspect.suggested_filters.items()
+        if field in {"clinical_domain", "standard_system", "source_type", "trust_level"}
+    }
+    if not supported_filters:
+        return None
+    selected_count = sum(
+        1 for chunk in chunks if _chunk_matches_filters(chunk, supported_filters)
+    )
+    if selected_count:
+        return RetrievalCoverageItem(
+            field="query_aspect",
+            value=aspect.aspect_id,
+            selected_count=selected_count,
+            status="covered",
+            severity="info",
+            reason=(
+                f"Selected evidence covers search aspect {aspect.label} "
+                f"using supported filter criteria."
+            ),
+            suggested_action=(
+                "Keep the current retrieval scope; selected evidence covers this "
+                "search aspect."
+            ),
+            suggested_filter=dict(supported_filters),
+        )
+    return RetrievalCoverageItem(
+        field="query_aspect",
+        value=aspect.aspect_id,
+        selected_count=0,
+        status="missing",
+        severity="warning",
+        reason=(
+            f"Search aspect {aspect.label} expected evidence matching "
+            f"{_format_filter_map(supported_filters)}, but no selected evidence matched."
+        ),
+        suggested_action=(
+            "Apply the aspect filter or broaden the query to retrieve evidence for "
+            f"{aspect.label}."
+        ),
+        suggested_filter=dict(supported_filters),
+    )
+
+
+def _chunk_matches_filters(chunk: KnowledgeChunk, filters: dict[str, str]) -> bool:
+    return all(
+        _normalized_chunk_filter_value(chunk, field) == value.lower()
+        for field, value in filters.items()
+    )
+
+
+def _normalized_chunk_filter_value(chunk: KnowledgeChunk, field: str) -> str | None:
+    if field == "clinical_domain":
+        return chunk.clinical_domain.lower() if chunk.clinical_domain else None
+    if field == "standard_system":
+        return chunk.standard_system.lower() if chunk.standard_system else None
+    if field == "source_type":
+        return chunk.source_type.value.lower()
+    if field == "trust_level":
+        return chunk.trust_level.value.lower()
+    return None
+
+
+def _format_filter_map(filters: dict[str, str]) -> str:
+    return ", ".join(f"{field}={value}" for field, value in sorted(filters.items()))
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            deduped.append(value)
+    return deduped
+
+
+def _has_intersection(left: Iterable[str], right: Iterable[str]) -> bool:
+    right_set = {value.lower() for value in right}
+    return bool(right_set and {value.lower() for value in left}.intersection(right_set))
+
+
+def _snippet_source_text(content: str) -> str:
+    text = re.sub(r"^#{1,6}\s+", "", content, flags=re.MULTILINE)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _snippet_segments(content: str) -> list[tuple[int, int, str]]:
+    segments: list[tuple[int, int, str]] = []
+    cursor = 0
+    for match in SNIPPET_SEGMENT_PATTERN.finditer(content):
+        end = match.start()
+        segment = content[cursor:end].strip()
+        if segment:
+            start = content.find(segment, cursor, end + len(segment))
+            segments.append((start, start + len(segment), segment))
+        cursor = match.end()
+    tail = content[cursor:].strip()
+    if tail:
+        start = content.find(tail, cursor)
+        segments.append((start, start + len(tail), tail))
+    if not segments and content:
+        segments.append((0, len(content), content))
+    return segments
+
+
+def _snippet_score(
+    text: str,
+    *,
+    query_tokens: set[str],
+    matched_terms: list[str],
+) -> float:
+    text_tokens = set(tokenize(text))
+    matched = set(matched_terms)
+    if not text_tokens:
+        return 0.0
+    exact_overlap = len(text_tokens.intersection(matched))
+    query_overlap = len(text_tokens.intersection(query_tokens))
+    density = exact_overlap / max(1, len(text_tokens))
+    return exact_overlap * 2.0 + query_overlap * 0.25 + density
+
+
+def _crop_snippet(
+    text: str,
+    *,
+    start_char: int,
+    matched_terms: list[str],
+) -> tuple[int, str]:
+    if len(text) <= SNIPPET_MAX_CHARS:
+        return start_char, text
+    lower_text = text.lower()
+    first_match = min(
+        (
+            index
+            for term in matched_terms
+            if term
+            for index in [lower_text.find(term.lower())]
+            if index >= 0
+        ),
+        default=0,
+    )
+    local_start = max(0, first_match - SNIPPET_MAX_CHARS // 3)
+    local_end = min(len(text), local_start + SNIPPET_MAX_CHARS)
+    local_start = max(0, local_end - SNIPPET_MAX_CHARS)
+    raw = text[local_start:local_end]
+    leading_trim = len(raw) - len(raw.lstrip())
+    return start_char + local_start + leading_trim, raw.strip()
+
+
+def _ranking_boost(
+    chunk: KnowledgeChunk,
+    query: RetrievalQuery,
+    matched_terms: list[str],
+    *,
+    query_analysis: RetrievalQueryAnalysis,
+) -> tuple[float, list[AppliedRankingBoost]]:
     boost = 0.0
-    if query.schema_id and query.schema_id in chunk.source_id:
-        boost += 0.04
-    if query.fields and any(field.lower() in matched_terms for field in query.fields):
-        boost += 0.035
-    if chunk.trust_level == TrustLevel.APPROVED:
-        boost += 0.025
-    if chunk.standard_system in {"FHIR", "LOINC", "UCUM"} and {
-        "lab",
-        "unit",
-        "fhir",
-    }.intersection(matched_terms):
-        boost += 0.02
-    filter_domain = query.filters.get("clinical_domain")
-    if filter_domain and filter_domain == chunk.clinical_domain:
-        boost += 0.03
-    return boost
+    applied_rules: list[AppliedRankingBoost] = []
+    for rule in _ranking_boost_rules():
+        if _ranking_boost_rule_matches(
+            rule,
+            chunk=chunk,
+            query=query,
+            matched_terms=matched_terms,
+            query_analysis=query_analysis,
+        ):
+            boost += rule.weight
+            applied_rules.append(
+                AppliedRankingBoost(
+                    rule_id=rule.rule_id,
+                    weight=rule.weight,
+                    reason=rule.reason,
+                )
+            )
+    return boost, applied_rules
+
+
+def _score_components(
+    *,
+    lexical_rrf: float,
+    vector_rrf: float,
+    policy_boost: float,
+    lexical_rank: int,
+    vector_rank: int,
+    lexical_score: float,
+    vector_score: float,
+    applied_boost_rules: list[AppliedRankingBoost],
+) -> list[RetrievalScoreComponent]:
+    components = [
+        RetrievalScoreComponent(
+            component="lexical_rrf",
+            label="Lexical RRF",
+            value=round(lexical_rrf, 6),
+            rank=lexical_rank,
+            description="Reciprocal-rank contribution from lexical retrieval.",
+            metadata={
+                "raw_score": round(lexical_score, 6),
+                "rrf_k": RRF_K,
+            },
+        ),
+        RetrievalScoreComponent(
+            component="vector_rrf",
+            label="Vector RRF",
+            value=round(vector_rrf, 6),
+            rank=vector_rank,
+            description="Reciprocal-rank contribution from vector retrieval.",
+            metadata={
+                "raw_score": round(vector_score, 6),
+                "rrf_k": RRF_K,
+            },
+        ),
+    ]
+    if policy_boost:
+        components.append(
+            RetrievalScoreComponent(
+                component="policy_boost",
+                label="Policy boost",
+                value=round(policy_boost, 6),
+                description="Sum of applied deterministic ranking boost policy weights.",
+                metadata={
+                    "rule_ids": [rule.rule_id for rule in applied_boost_rules],
+                },
+            )
+        )
+    return components
+
+
+def _external_rerank_score_component(
+    *,
+    external_score: float,
+    contribution: float,
+    score_weight: float,
+) -> RetrievalScoreComponent:
+    return RetrievalScoreComponent(
+        component="external_rerank",
+        label="External rerank",
+        value=round(contribution, 6),
+        description="Weighted second-stage reranker contribution.",
+        metadata={
+            "raw_score": round(external_score, 6),
+            "score_weight": score_weight,
+        },
+    )
+
+
+def _ranking_boost_rule_matches(
+    rule: RankingBoostRule,
+    *,
+    chunk: KnowledgeChunk,
+    query: RetrievalQuery,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> bool:
+    if not _ranking_boost_condition_matches(
+        rule.match,
+        chunk=chunk,
+        query=query,
+        matched_terms=matched_terms,
+        query_analysis=query_analysis,
+    ):
+        return False
+    if not rule.any_of:
+        return True
+    return any(
+        _ranking_boost_condition_matches(
+            condition,
+            chunk=chunk,
+            query=query,
+            matched_terms=matched_terms,
+            query_analysis=query_analysis,
+        )
+        for condition in rule.any_of
+    )
+
+
+def _ranking_boost_condition_matches(
+    condition: RankingBoostCondition,
+    *,
+    chunk: KnowledgeChunk,
+    query: RetrievalQuery,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> bool:
+    if condition.query_schema_id_in_source_id and not (
+        query.schema_id and query.schema_id in chunk.source_id
+    ):
+        return False
+    if condition.any_query_fields_in_matched_terms and not (
+        query.fields and {field.lower() for field in query.fields}.intersection(matched_terms)
+    ):
+        return False
+    if condition.query_detected_format_present and not query.detected_format:
+        return False
+    if condition.filter_clinical_domain_matches_chunk and not (
+        query.filters.get("clinical_domain") and query.filters.get("clinical_domain") == chunk.clinical_domain
+    ):
+        return False
+    if condition.chunk_trust_levels and chunk.trust_level.value not in condition.chunk_trust_levels:
+        return False
+    if condition.chunk_source_types and chunk.source_type.value not in condition.chunk_source_types:
+        return False
+    if condition.chunk_standard_systems and chunk.standard_system not in condition.chunk_standard_systems:
+        return False
+    if condition.any_matched_terms and not _has_intersection(matched_terms, condition.any_matched_terms):
+        return False
+    if condition.any_concepts and not _has_intersection(
+        query_analysis.detected_concepts,
+        condition.any_concepts,
+    ):
+        return False
+    if condition.any_rule_ids and not _has_intersection(query_analysis.rule_ids, condition.any_rule_ids):
+        return False
+    return True
+
+
+def _ranking_boost_rules() -> tuple[RankingBoostRule, ...]:
+    path = os.environ.get("OJT_RANKING_BOOST_RULES_PATH")
+    return _load_ranking_boost_rules(path or str(DEFAULT_RANKING_BOOST_RULE_REGISTRY))
+
+
+def _load_ranking_boost_rules(path_text: str) -> tuple[RankingBoostRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid ranking boost registry at {path}: expected rules list")
+    rules = tuple(_ranking_boost_rule(record, path=path) for record in records)
+    _ensure_unique_ranking_boost_rule_ids(rules, path=path)
+    return rules
+
+
+def _ranking_boost_rule(record: Any, *, path: Path) -> RankingBoostRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid ranking boost registry at {path}: rule must be an object")
+    required = ("rule_id", "weight", "reason", "match")
+    missing = [field_name for field_name in required if field_name not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(f"Invalid ranking boost registry at {path}: missing {missing_text}")
+    any_of = record.get("any_of", [])
+    if not isinstance(any_of, list):
+        raise ValueError(f"Invalid ranking boost registry at {path}: any_of must be a list")
+    return RankingBoostRule(
+        rule_id=_required_ranking_boost_text(record["rule_id"], field="rule_id", path=path),
+        weight=_ranking_boost_weight(record["weight"], path=path),
+        reason=_required_ranking_boost_text(record["reason"], field="reason", path=path),
+        match=_ranking_boost_condition(record["match"], path=path),
+        any_of=tuple(_ranking_boost_condition(condition, path=path) for condition in any_of),
+    )
+
+
+def _ranking_boost_condition(record: Any, *, path: Path) -> RankingBoostCondition:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid ranking boost registry at {path}: condition must be an object")
+    condition = RankingBoostCondition(
+        query_schema_id_in_source_id=_optional_bool(
+            record.get("query_schema_id_in_source_id"),
+            field="query_schema_id_in_source_id",
+            path=path,
+        ),
+        any_query_fields_in_matched_terms=_optional_bool(
+            record.get("any_query_fields_in_matched_terms"),
+            field="any_query_fields_in_matched_terms",
+            path=path,
+        ),
+        query_detected_format_present=_optional_bool(
+            record.get("query_detected_format_present"),
+            field="query_detected_format_present",
+            path=path,
+        ),
+        filter_clinical_domain_matches_chunk=_optional_bool(
+            record.get("filter_clinical_domain_matches_chunk"),
+            field="filter_clinical_domain_matches_chunk",
+            path=path,
+        ),
+        chunk_trust_levels=_enum_values(
+            record.get("chunk_trust_levels"),
+            field="chunk_trust_levels",
+            path=path,
+            enum_type=TrustLevel,
+        ),
+        chunk_source_types=_enum_values(
+            record.get("chunk_source_types"),
+            field="chunk_source_types",
+            path=path,
+            enum_type=EvidenceSourceType,
+        ),
+        chunk_standard_systems=_optional_text_tuple(
+            record.get("chunk_standard_systems"),
+            field="chunk_standard_systems",
+            path=path,
+        ),
+        any_matched_terms=_optional_text_tuple(
+            record.get("any_matched_terms"),
+            field="any_matched_terms",
+            path=path,
+        ),
+        any_concepts=_optional_text_tuple(record.get("any_concepts"), field="any_concepts", path=path),
+        any_rule_ids=_optional_text_tuple(record.get("any_rule_ids"), field="any_rule_ids", path=path),
+    )
+    if not _ranking_condition_has_criterion(condition):
+        raise ValueError(
+            f"Invalid ranking boost registry at {path}: condition must include at least one criterion"
+        )
+    return condition
+
+
+def _ranking_condition_has_criterion(condition: RankingBoostCondition) -> bool:
+    return any(
+        (
+            condition.query_schema_id_in_source_id,
+            condition.any_query_fields_in_matched_terms,
+            condition.query_detected_format_present,
+            condition.filter_clinical_domain_matches_chunk,
+            condition.chunk_trust_levels,
+            condition.chunk_source_types,
+            condition.chunk_standard_systems,
+            condition.any_matched_terms,
+            condition.any_concepts,
+            condition.any_rule_ids,
+        )
+    )
+
+
+def _ranking_boost_weight(value: Any, *, path: Path) -> float:
+    try:
+        weight = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid ranking boost registry at {path}: weight must be a number") from exc
+    if weight < 0.0 or weight > 1.0:
+        raise ValueError(f"Invalid ranking boost registry at {path}: weight must be between 0 and 1")
+    return weight
+
+
+def _optional_bool(value: Any, *, field: str, path: Path) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise ValueError(f"Invalid ranking boost registry at {path}: {field} must be a boolean")
+    return value
+
+
+def _enum_values(value: Any, *, field: str, path: Path, enum_type: Any) -> tuple[str, ...]:
+    values = _optional_text_tuple(value, field=field, path=path)
+    normalized: list[str] = []
+    for item in values:
+        try:
+            normalized.append(enum_type(item).value)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid ranking boost registry at {path}: unsupported {field} value {item}"
+            ) from exc
+    return tuple(normalized)
+
+
+def _optional_text_tuple(value: Any, *, field: str, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid ranking boost registry at {path}: {field} must be a list")
+    return tuple(
+        normalized
+        for item in value
+        for normalized in [" ".join(str(item).split())]
+        if normalized
+    )
+
+
+def _required_ranking_boost_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid ranking boost registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _ensure_unique_ranking_boost_rule_ids(
+    rules: tuple[RankingBoostRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid ranking boost registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
+def hit_source_locator_from_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    applied_boost_rules: list[AppliedRankingBoost],
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> dict[str, Any]:
+    locator = dict(chunk.locator)
+    if applied_boost_rules:
+        locator["ranking_boost_rules"] = [rule.rule_id for rule in applied_boost_rules]
+        locator["ranking_boosts"] = [
+            rule.as_locator_payload()
+            for rule in applied_boost_rules
+        ]
+    aspect_matches = _query_aspect_matches_for_chunk(
+        chunk,
+        matched_terms=matched_terms,
+        query_analysis=query_analysis,
+    )
+    if aspect_matches:
+        locator["query_aspect_matches"] = aspect_matches
+    concept_matches = _concept_matches_for_chunk(
+        chunk,
+        matched_terms=matched_terms,
+        query_analysis=query_analysis,
+    )
+    if concept_matches:
+        locator["concept_matches"] = concept_matches
+    return locator
+
+
+def _concept_matches_for_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> list[dict[str, Any]]:
+    if not query_analysis.concept_candidates:
+        return []
+    haystack = _concept_match_haystack(chunk)
+    token_set = set(tokenize(haystack))
+    matched_term_set = set(matched_terms)
+    matches: list[dict[str, Any]] = []
+    for candidate in query_analysis.concept_candidates:
+        matched_fields: list[str] = []
+        matched_aliases = [
+            alias
+            for alias in candidate.matched_aliases
+            if _concept_term_matches(alias, haystack=haystack, tokens=token_set)
+        ]
+        candidate_terms = [
+            candidate.display_name,
+            candidate.code or "",
+            candidate.concept_id,
+            *candidate.matched_aliases,
+        ]
+        matched_terms_for_candidate = sorted(
+            {
+                term
+                for term in matched_term_set
+                if any(
+                    _concept_term_matches(
+                        concept_term,
+                        haystack=term,
+                        tokens={term},
+                    )
+                    for concept_term in candidate_terms
+                    if concept_term
+                )
+            }
+        )
+        if chunk.standard_system and chunk.standard_system == candidate.standard_system:
+            matched_fields.append("standard_system")
+        if candidate.code and _concept_term_matches(
+            candidate.code,
+            haystack=haystack,
+            tokens=token_set,
+        ):
+            matched_fields.append("code")
+        if _concept_term_matches(
+            candidate.display_name,
+            haystack=haystack,
+            tokens=token_set,
+        ):
+            matched_fields.append("display_name")
+        if matched_aliases:
+            matched_fields.append("alias")
+        if matched_terms_for_candidate:
+            matched_fields.append("matched_term")
+        if not matched_fields:
+            continue
+        matches.append(
+            {
+                "concept_id": candidate.concept_id,
+                "display_name": candidate.display_name,
+                "standard_system": candidate.standard_system,
+                "code": candidate.code,
+                "clinical_domain": candidate.clinical_domain,
+                "confidence": candidate.confidence,
+                "matched_aliases": matched_aliases[:6],
+                "matched_fields": sorted(set(matched_fields)),
+                "matched_terms": matched_terms_for_candidate[:8],
+                "reason": (
+                    f"Evidence supports detected {candidate.standard_system} concept "
+                    f"{candidate.display_name}."
+                ),
+            }
+        )
+    return matches
+
+
+def _concept_match_haystack(chunk: KnowledgeChunk) -> str:
+    return " ".join(
+        [
+            chunk.chunk_id,
+            chunk.source_id,
+            chunk.title,
+            chunk.content,
+            chunk.clinical_domain or "",
+            chunk.standard_system or "",
+            json.dumps(chunk.locator, default=str, sort_keys=True),
+            json.dumps(chunk.metadata, default=str, sort_keys=True),
+        ]
+    ).lower()
+
+
+def _concept_term_matches(term: str, *, haystack: str, tokens: set[str]) -> bool:
+    normalized = " ".join(str(term).lower().split())
+    if not normalized:
+        return False
+    if " " in normalized:
+        return normalized in haystack
+    return normalized in tokens or normalized in haystack
+
+
+def _query_aspect_matches_for_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> list[dict[str, Any]]:
+    matches = [
+        match
+        for aspect in query_analysis.query_aspects
+        for match in [_query_aspect_match_for_chunk(chunk, aspect, matched_terms)]
+        if match is not None
+    ]
+    matches.sort(key=lambda item: (item["priority"], item["aspect_id"]))
+    return matches
+
+
+def _query_aspect_match_for_chunk(
+    chunk: KnowledgeChunk,
+    aspect: RetrievalQueryAspect,
+    matched_terms: list[str],
+) -> dict[str, Any] | None:
+    supported_filters = {
+        field: value
+        for field, value in aspect.suggested_filters.items()
+        if field in {"clinical_domain", "standard_system", "source_type", "trust_level"}
+    }
+    matched_filters = (
+        dict(supported_filters)
+        if supported_filters and _chunk_matches_filters(chunk, supported_filters)
+        else {}
+    )
+    matched_suggested_terms = _matched_aspect_terms(chunk, aspect, matched_terms)
+    if not matched_filters and not matched_suggested_terms:
+        return None
+    reasons: list[str] = []
+    if matched_filters:
+        reasons.append(f"metadata matched {_format_filter_map(matched_filters)}")
+    if matched_suggested_terms:
+        reasons.append(f"term matched {', '.join(matched_suggested_terms[:4])}")
+    return {
+        "aspect_id": aspect.aspect_id,
+        "label": aspect.label,
+        "priority": aspect.priority,
+        "rule_id": aspect.rule_id,
+        "matched_filters": matched_filters,
+        "matched_terms": matched_suggested_terms,
+        "reason": "; ".join(reasons),
+    }
+
+
+def _matched_aspect_terms(
+    chunk: KnowledgeChunk,
+    aspect: RetrievalQueryAspect,
+    matched_terms: list[str],
+) -> list[str]:
+    if not aspect.suggested_terms:
+        return []
+    chunk_text = f"{chunk.title} {chunk.content} {chunk.source_id}".lower()
+    matched_token_set = {term.lower() for term in matched_terms}
+    matched: list[str] = []
+    for term in aspect.suggested_terms:
+        term_text = term.lower()
+        term_tokens = set(tokenize(term_text))
+        if term_text in chunk_text or (term_tokens and term_tokens.intersection(matched_token_set)):
+            matched.append(term)
+    return _dedupe_strings(matched)
+
+
+def _reranker_enabled(reranker: Any | None) -> bool:
+    return bool(reranker and getattr(reranker, "enabled", False))
+
+
+def _reranker_metadata(reranker: Any | None) -> dict[str, Any]:
+    if reranker is None:
+        return {"provider": "none", "model": "none", "enabled": False}
+    metadata = getattr(reranker, "metadata", None)
+    if callable(metadata):
+        return metadata()
+    return {
+        "provider": getattr(reranker, "provider_name", "unknown"),
+        "model": getattr(reranker, "model", "unknown"),
+        "enabled": _reranker_enabled(reranker),
+    }
+
+
+def _select_diverse_hits(
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]],
+    *,
+    top_k: int,
+    enabled: bool,
+    lambda_mult: float,
+) -> tuple[list[tuple[KnowledgeChunk, RetrievalHit]], dict[str, Any]]:
+    original_ranks = {
+        hit.evidence.evidence_id: rank
+        for rank, (_, hit) in enumerate(ranked_hits, start=1)
+    }
+    relevance = _normalized_hit_relevance(ranked_hits) if ranked_hits else {}
+    if not enabled or top_k <= 1 or len(ranked_hits) <= 1:
+        selected = ranked_hits[:top_k]
+        selection_details = _score_order_selection_details(
+            selected,
+            relevance=relevance,
+            original_ranks=original_ranks,
+        )
+        return selected, _diversity_metadata(
+            ranked_hits,
+            selected,
+            enabled=enabled,
+            lambda_mult=lambda_mult,
+            selection_details=selection_details,
+        )
+
+    clamped_lambda = max(0.0, min(1.0, lambda_mult))
+    candidates = list(ranked_hits)
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]] = [candidates.pop(0)]
+    selection_details = [
+        _diversity_selection_detail(
+            selected[0],
+            selected_rank=1,
+            original_rank=original_ranks[selected[0][1].evidence.evidence_id],
+            relevance_score=relevance[selected[0][1].evidence.evidence_id],
+            redundancy_score=0.0,
+            selection_score=relevance[selected[0][1].evidence.evidence_id],
+            reason="Top-ranked hit selected as the initial MMR seed.",
+        )
+    ]
+
+    while candidates and len(selected) < top_k:
+        best_index = 0
+        best_score = float("-inf")
+        best_redundancy = 0.0
+        for index, candidate in enumerate(candidates):
+            chunk, hit = candidate
+            redundancy = max(
+                _chunk_redundancy(chunk, selected_chunk)
+                for selected_chunk, _ in selected
+            )
+            mmr_score = (
+                clamped_lambda * relevance[hit.evidence.evidence_id]
+                - (1.0 - clamped_lambda) * redundancy
+            )
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_index = index
+                best_redundancy = redundancy
+        selected_candidate = candidates.pop(best_index)
+        selected.append(selected_candidate)
+        _, selected_hit = selected_candidate
+        selection_details.append(
+            _diversity_selection_detail(
+                selected_candidate,
+                selected_rank=len(selected),
+                original_rank=original_ranks[selected_hit.evidence.evidence_id],
+                relevance_score=relevance[selected_hit.evidence.evidence_id],
+                redundancy_score=best_redundancy,
+                selection_score=best_score,
+                reason=_mmr_selection_reason(best_redundancy),
+            )
+        )
+
+    return selected, _diversity_metadata(
+        ranked_hits,
+        selected,
+        enabled=enabled,
+        lambda_mult=clamped_lambda,
+        selection_details=selection_details,
+    )
+
+
+def _score_order_selection_details(
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]],
+    *,
+    relevance: dict[str, float],
+    original_ranks: dict[str, int],
+) -> list[RetrievalDiversitySelection]:
+    return [
+        _diversity_selection_detail(
+            candidate,
+            selected_rank=index,
+            original_rank=original_ranks[hit.evidence.evidence_id],
+            relevance_score=relevance.get(hit.evidence.evidence_id, 1.0),
+            redundancy_score=0.0,
+            selection_score=relevance.get(hit.evidence.evidence_id, 1.0),
+            reason="Selected by score order because diversity selection was not applied.",
+        )
+        for index, candidate in enumerate(selected, start=1)
+        for _, hit in [candidate]
+    ]
+
+
+def _diversity_selection_detail(
+    candidate: tuple[KnowledgeChunk, RetrievalHit],
+    *,
+    selected_rank: int,
+    original_rank: int,
+    relevance_score: float,
+    redundancy_score: float,
+    selection_score: float,
+    reason: str,
+) -> RetrievalDiversitySelection:
+    chunk, hit = candidate
+    return RetrievalDiversitySelection(
+        evidence_id=hit.evidence.evidence_id,
+        source_id=chunk.source_id,
+        selected_rank=selected_rank,
+        original_rank=original_rank,
+        relevance_score=round(relevance_score, 6),
+        redundancy_score=round(redundancy_score, 6),
+        selection_score=round(selection_score, 6),
+        reason=reason,
+    )
+
+
+def _mmr_selection_reason(redundancy_score: float) -> str:
+    if redundancy_score >= 0.999:
+        return "Selected despite same-source redundancy because relevance remained strongest."
+    if redundancy_score > 0:
+        return "Selected after balancing relevance against overlap with already selected evidence."
+    return "Selected from a new source with no measured redundancy penalty."
+
+
+def _normalized_hit_relevance(
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]],
+) -> dict[str, float]:
+    scores = [hit.score for _, hit in ranked_hits]
+    minimum = min(scores)
+    maximum = max(scores)
+    if maximum == minimum:
+        return {hit.evidence.evidence_id: 1.0 for _, hit in ranked_hits}
+    span = maximum - minimum
+    return {
+        hit.evidence.evidence_id: (hit.score - minimum) / span
+        for _, hit in ranked_hits
+    }
+
+
+def _chunk_redundancy(left: KnowledgeChunk, right: KnowledgeChunk) -> float:
+    source_similarity = 1.0 if left.source_id == right.source_id else 0.0
+    left_tokens = set(tokenize(f"{left.title} {left.content}"))
+    right_tokens = set(tokenize(f"{right.title} {right.content}"))
+    token_similarity = _jaccard_similarity(left_tokens, right_tokens)
+    return max(source_similarity, token_similarity)
+
+
+def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left.intersection(right)) / len(left.union(right))
+
+
+def _diversity_metadata(
+    ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]],
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]],
+    *,
+    enabled: bool,
+    lambda_mult: float,
+    selection_details: list[RetrievalDiversitySelection],
+) -> dict[str, Any]:
+    candidate_sources = {chunk.source_id for chunk, _ in ranked_hits}
+    selected_sources = [chunk.source_id for chunk, _ in selected]
+    return {
+        "enabled": enabled,
+        "selection_mode": "mmr_source_diversity" if enabled else "score_order",
+        "lambda": round(lambda_mult, 4),
+        "candidate_source_count": len(candidate_sources),
+        "selected_source_count": len(set(selected_sources)),
+        "duplicate_selected_source_count": len(selected_sources) - len(set(selected_sources)),
+        "selected_hits": [
+            detail.model_dump(mode="json")
+            for detail in selection_details
+        ],
+    }

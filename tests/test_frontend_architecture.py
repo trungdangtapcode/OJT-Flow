@@ -54,6 +54,15 @@ WORKFLOW_DETAIL_SPLIT_FILES = [
 WORKBENCH_PAGE = (
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-page.tsx"
 )
+RETRIEVAL_PAGE = (
+    REPO_ROOT / "frontend" / "src" / "features" / "retrieval" / "retrieval-page.tsx"
+)
+SETTINGS_PAGE = (
+    REPO_ROOT / "frontend" / "src" / "features" / "settings" / "settings-page.tsx"
+)
+ASSISTANT_PAGE = (
+    REPO_ROOT / "frontend" / "src" / "features" / "assistant" / "assistant-page.tsx"
+)
 WORKBENCH_SPLIT_FILES = [
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-controls.tsx",
     REPO_ROOT / "frontend" / "src" / "features" / "workbench" / "workbench-examples.ts",
@@ -167,6 +176,417 @@ def test_workbench_shell_stays_split_by_responsibility() -> None:
     )
     for split_file in [WORKBENCH_PAGE, *WORKBENCH_SPLIT_FILES]:
         assert split_file.name in frontend_architecture
+
+
+def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
+    retrieval_page = RETRIEVAL_PAGE.read_text(encoding="utf-8")
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "rankingStackFromPackage" in retrieval_page
+    assert "diversityFromPackage" in retrieval_page
+    assert "scoreComponentsFromHit" in retrieval_page
+    assert "ScoreExplanation" in retrieval_page
+    assert "Score explanation" in retrieval_page
+    assert "QualitySignalList" in retrieval_page
+    assert "QualitySignalMetadataDetails" in retrieval_page
+    assert "Signal details" in retrieval_page
+    assert "qualitySignalMetadataDetails" in retrieval_page
+    assert "Retrieval quality" in retrieval_page
+    assert "quality_signals" in retrieval_page
+    assert "quality_summary" in (REPO_ROOT / "frontend/src/types.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "Readiness" in retrieval_page
+    assert "qualitySummaryTone" in retrieval_page
+    assert "qualitySignalBadgeVariant" in retrieval_page
+    assert "queryVariantsFromTrace" in retrieval_page
+    assert "QueryVariantList" in retrieval_page
+    assert "Query rewrites" in retrieval_page
+    assert "query_variant_details" in retrieval_page
+    assert "QueryProfileCard" in retrieval_page
+    assert "queryProfileValue" in retrieval_page
+    assert "query_profile" in retrieval_page
+    assert "QueryAspectPlan" in retrieval_page
+    assert "queryAspectsValue" in retrieval_page
+    assert "query_aspects" in retrieval_page
+    assert "Search aspect plan" in retrieval_page
+    assert "RunComparisonQueryAspects" in retrieval_page
+    assert "queryAspectComparisonBetweenRuns" in retrieval_page
+    assert "queryAspectComparison" in retrieval_page
+    assert "Search aspects" in retrieval_page
+    assert "queryAspectFilterEntries" in retrieval_page
+    assert "Suggested by search aspect" in retrieval_page
+    assert "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`" in retrieval_page
+    assert "RunComparisonCoverage" in retrieval_page
+    assert "coverageComparisonBetweenRuns" in retrieval_page
+    assert "coverageComparison" in retrieval_page
+    assert "coverage_diagnostics_changed" in retrieval_page
+    assert "QueryAspectMatchExplanation" in retrieval_page
+    assert "queryAspectMatchesFromHit" in retrieval_page
+    assert "Aspect support" in retrieval_page
+    assert "ConceptMatchExplanation" in retrieval_page
+    assert "conceptMatchesFromHit" in retrieval_page
+    assert "Concept grounding" in retrieval_page
+    assert "concept_grounding_requirements" in retrieval_page
+    assert "HitEvidenceAuditStrip" in retrieval_page
+    assert "Evidence support summary" in retrieval_page
+    assert "EvidenceSupportSummary" in retrieval_page
+    assert "support_summary: evidenceSupportSummary(hit, provenanceEntries)" in retrieval_page
+    assert "matched_term_count" in retrieval_page
+    assert "ranking_signal_count" in retrieval_page
+    assert "EvidenceProvenanceSummary" in retrieval_page
+    assert "Evidence provenance" in retrieval_page
+    assert "provenanceEntriesFromEvidence" in retrieval_page
+    assert "provenanceHrefForLocator" in retrieval_page
+    assert "https://pubmed.ncbi.nlm.nih.gov" in retrieval_page
+    assert "https://doi.org" in retrieval_page
+    assert "Copy evidence" in retrieval_page
+    assert "useCopyFeedback" in retrieval_page
+    assert "markCopied" in retrieval_page
+    assert "clearCopied" in retrieval_page
+    assert "Copied" in retrieval_page
+    assert "evidenceReportFromHit" in retrieval_page
+    assert "retrieval_evidence_hit" in retrieval_page
+    assert "RunComparisonConceptGrounding" in retrieval_page
+    assert "conceptGroundingComparisonBetweenRuns" in retrieval_page
+    assert "conceptGroundingComparison" in retrieval_page
+    assert "concept_grounding_changed" in retrieval_page
+    assert "serverSearchSignatureFromPackage" in retrieval_page
+    assert "Search signature" in retrieval_page
+    assert "search_signature: comparison.activeSummary.serverSignature" in retrieval_page
+    assert "qualityPolicyFromPackage" in retrieval_page
+    assert "Quality policy" in retrieval_page
+    assert "query_profiles" in retrieval_page
+    assert "queryProfileSummaryFromPackage" in retrieval_page
+    assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_page
+    assert "Profile: {run.summary.queryProfile.label}" in retrieval_page
+    assert "SearchRunEvidenceSummary" in retrieval_page
+    assert "searchRunScopeLabels" in retrieval_page
+    assert "Run scope" in retrieval_page
+    assert "Top action" in retrieval_page
+    assert "qualitySummary: packageData.quality_summary ?? null" in retrieval_page
+    assert "qualitySummaryFingerprint" in retrieval_page
+    assert "qualitySummaryChanged" in retrieval_page
+    assert "quality_score: comparison.qualityScoreDelta" in retrieval_page
+    assert "searchRunQualityBadgeVariant" in retrieval_page
+    assert "RunComparisonQueryProfile" in retrieval_page
+    assert "QueryProfileSummaryCard" in retrieval_page
+    assert "RunComparisonQualitySignals" in retrieval_page
+    assert "QualitySignalChangeList" in retrieval_page
+    assert "qualitySignalComparisonBetweenRuns" in retrieval_page
+    assert "qualitySignalSummariesFromRun" in retrieval_page
+    assert "qualitySignalComparison" in retrieval_page
+    assert "Quality signals" in retrieval_page
+    assert "RunComparisonFacetCoverage" in retrieval_page
+    assert "FacetValueChange" in retrieval_page
+    assert "facetComparisonsBetweenRuns" in retrieval_page
+    assert "facetValuesFromRun" in retrieval_page
+    assert "facetComparisons" in retrieval_page
+    assert "Facet coverage" in retrieval_page
+    assert "queryProfilesChanged" in retrieval_page
+    assert "queryProfileChanged" in retrieval_page
+    assert "profile changed" in retrieval_page
+    assert "retrievalMode" in retrieval_page
+    assert "suggestedFilters" in retrieval_page
+    assert "queryProfileFilterEntries" in retrieval_page
+    assert "appliedFilterMatches" in retrieval_page
+    assert "appliedFilters={trace.filters_applied}" in retrieval_page
+    assert "entry.applied" in retrieval_page
+    assert "Suggested by query profile" in retrieval_page
+    assert "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`" in retrieval_page
+    assert "RerankBadge" in retrieval_page
+    assert "DiversityBadge" in retrieval_page
+    assert "DiversitySelectionExplanation" in retrieval_page
+    assert "diversitySelectionByEvidenceId" in retrieval_page
+    assert "selected_hits" in retrieval_page
+    assert "Diversity selection" in retrieval_page
+    assert "packageData.handoff_context.reranker" in retrieval_page
+    assert "packageData.handoff_context.diversity" in retrieval_page
+    assert "runtime?.rerank?.enabled" in retrieval_page
+    assert "rankingBoostSignalsFromHit" in retrieval_page
+    assert "ranking_boosts" in retrieval_page
+    assert "ranking_boost_rules" in retrieval_page
+    assert "Ranking boost rule applied." in retrieval_page
+    assert "Ranking signals" in retrieval_page
+    assert "applyFilterSuggestion" in retrieval_page
+    assert "applySearchFilter" in retrieval_page
+    assert "clearSearchFilter" in retrieval_page
+    assert "clearAllSearchFilters" in retrieval_page
+    assert "ActiveFilterBar" in retrieval_page
+    assert "activeFilterEntries" in retrieval_page
+    assert "Active filters" in retrieval_page
+    assert "lastSearchSignature" in retrieval_page
+    assert "currentSearchSignature" in retrieval_page
+    assert "isSearchResultStale" in retrieval_page
+    assert "retrievalPayloadFromForm" in retrieval_page
+    assert "retrievalSearchSignature" in retrieval_page
+    assert "Search settings changed" in retrieval_page
+    assert "pending changes" in retrieval_page
+    assert "submittedSearchPayload" in retrieval_page
+    assert "SubmittedSearchSummary" in retrieval_page
+    assert "Submitted search" in retrieval_page
+    assert "SearchRunHistory" in retrieval_page
+    assert "Search runs" in retrieval_page
+    assert "searchRuns" in retrieval_page
+    assert "createSearchRun" in retrieval_page
+    assert "restoreSearchRun" in retrieval_page
+    assert "retrievalRunSummary" in retrieval_page
+    assert "SearchRunComparison" in retrieval_page
+    assert "Run comparison" in retrieval_page
+    assert "RunComparisonAtAGlance" in retrieval_page
+    assert "Comparison at a glance" in retrieval_page
+    assert "readinessGlanceLabel" in retrieval_page
+    assert "baselineSummary.qualitySummary?.status" in retrieval_page
+    assert "activeSummary.qualitySummary?.status" in retrieval_page
+    assert "Action priority" in retrieval_page
+    assert "Evidence overlap" in retrieval_page
+    assert "label=\"Top source\"" in retrieval_page
+    assert "comparison.topSourceChanged ? \"changed\" : \"stable\"" in retrieval_page
+    assert "RunComparisonDiagnosis" in retrieval_page
+    assert "Comparison diagnosis" in retrieval_page
+    assert "RunComparisonRecommendedActions" in retrieval_page
+    assert "Recommended actions" in retrieval_page
+    assert "const recommendedActions = React.useMemo" in retrieval_page
+    assert "actions={recommendedActions}" in retrieval_page
+    assert "comparisonReportFromComparison(comparison, judgments, recommendedActions)" in retrieval_page
+    assert "RetrievalComparisonRecommendedAction" in retrieval_page
+    assert "comparisonRecommendedActionSummary" in retrieval_page
+    assert "recommended_action_summary: comparisonRecommendedActionSummary" in retrieval_page
+    assert "highest_priority" in retrieval_page
+    assert "source_count" in retrieval_page
+    assert "source_counts" in retrieval_page
+    assert "actionSummary.sources.map" in retrieval_page
+    assert "actionSummary.source_counts[source]" in retrieval_page
+    assert "priority: comparison.activeSummary.qualitySummary?.status === \"blocked\" ? 1 : 2" in retrieval_page
+    assert "left.priority - right.priority" in retrieval_page
+    assert "comparisonDiagnosisFromComparison" in retrieval_page
+    assert "diagnosis: comparison.diagnosis" in retrieval_page
+    assert "compareSearchRuns" in retrieval_page
+    assert "comparisonRunForActive" in retrieval_page
+    assert "comparisonBaselineRunId" in retrieval_page
+    assert "Set baseline" in retrieval_page
+    assert "as comparison baseline" in retrieval_page
+    assert "GitCompareArrows" in retrieval_page
+    assert "addedEvidenceIds" in retrieval_page
+    assert "retainedEvidenceIds" in retrieval_page
+    assert "RunComparisonRankChanges" in retrieval_page
+    assert "Rank movement" in retrieval_page
+    assert "rankChangesBetweenRuns" in retrieval_page
+    assert "rankDelta" in retrieval_page
+    assert "Copy report" in retrieval_page
+    assert "Copy retrieval comparison report" in retrieval_page
+    assert "comparisonReportFromComparison" in retrieval_page
+    assert "comparisonReportSummary" in retrieval_page
+    assert "summary: comparisonReportSummary(comparison, judgments)" in retrieval_page
+    assert "before: comparison.topSourceBefore" in retrieval_page
+    assert "after: comparison.topSourceAfter" in retrieval_page
+    assert "comparisonReportRecommendedActions" in retrieval_page
+    assert "recommended_actions: recommendedActions" in retrieval_page
+    assert "changed_dimensions" in retrieval_page
+    assert "judgment_count: judgments.length" in retrieval_page
+    assert "retrieval_run_comparison" in retrieval_page
+    assert "RunComparisonMetrics" in retrieval_page
+    assert "RunComparisonRulePacks" in retrieval_page
+    assert "rulePackChangesBetweenRuns" in retrieval_page
+    assert "rulePackFingerprint" in retrieval_page
+    assert "rulePackChanged" in retrieval_page
+    assert "rule_packs" in retrieval_page
+    assert "retrievalRulePacksFromPackage" in retrieval_page
+    assert "configured" in retrieval_page
+    assert "content_hash" in retrieval_page
+    assert "Search comparison metrics" in retrieval_page
+    assert "comparisonMetrics" in retrieval_page
+    assert "overlapRatio" in retrieval_page
+    assert "churnRate" in retrieval_page
+    assert "meanAbsoluteRankDelta" in retrieval_page
+    assert "RelevanceJudgmentControl" in retrieval_page
+    assert "Relevance judgment" in retrieval_page
+    assert "relevanceJudgments" in retrieval_page
+    assert "useRetrievalJudgmentsQuery" in retrieval_page
+    assert "useRetrievalJudgmentMutation" in retrieval_page
+    assert "useRetrievalJudgmentSummaryQuery" in retrieval_page
+    assert "useRetrievalJudgmentEvaluationQuery" in retrieval_page
+    assert "useDeleteRetrievalJudgmentMutation" in retrieval_page
+    assert "relevanceJudgmentFromPersisted" in retrieval_page
+    assert "/retrieval/judgments" in (REPO_ROOT / "frontend/src/api.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "/retrieval/judgments/summary" in (REPO_ROOT / "frontend/src/api.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "/retrieval/judgments/evaluate" in (REPO_ROOT / "frontend/src/api.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "judgmentsForComparison" in retrieval_page
+    assert "RelevanceJudgmentSummary" in retrieval_page
+    assert "Judgment metrics" in retrieval_page
+    assert "relevanceJudgmentMetrics" in retrieval_page
+    assert "relevanceJudgmentRating" in retrieval_page
+    assert "judgmentsForRunHits" in retrieval_page
+    assert "discountedCumulativeGain" in retrieval_page
+    assert "Precision@k" in retrieval_page
+    assert "nDCG@k" in retrieval_page
+    assert "Server MAP@k" in retrieval_page
+    assert "Server HitRate@k" in retrieval_page
+    assert "Server MRR@k" in retrieval_page
+    assert "Server nDCG@k" in retrieval_page
+    assert "Evaluation recommendations" in retrieval_page
+    assert "Copy eval" in retrieval_page
+    assert "Copy retrieval judgment evaluation report" in retrieval_page
+    assert "evaluationReportFromJudgmentSummary" in retrieval_page
+    assert "retrieval_judgment_evaluation" in retrieval_page
+    assert "retrievalRulePacksFromPackage" in retrieval_page
+    assert "retrieval_rule_packs" in retrieval_page
+    assert "content_hash" in retrieval_page
+    assert "retrieval_rule_packs?: RuntimeRetrievalRulePack[]" in (
+        REPO_ROOT / "frontend/src/types.ts"
+    ).read_text(encoding="utf-8")
+    assert "recommendations" in (REPO_ROOT / "frontend/src/types.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "persistedJudgmentEvaluation" in retrieval_page
+    assert "average_precision_at_k" in retrieval_page
+    assert "hit_rate_at_k" in retrieval_page
+    assert "mrr_at_k" in retrieval_page
+    assert "judgmentCoverage" in retrieval_page
+    assert "judgedPrecision" in retrieval_page
+    assert "not_relevant" in retrieval_page
+    assert "judgment-aware metrics" in frontend_architecture
+    assert "/retrieval/judgments" in frontend_architecture
+    assert "/retrieval/judgments/summary" in frontend_architecture
+    assert "/retrieval/judgments/evaluate" in frontend_architecture
+    assert "stored label" in retrieval_page
+    assert "isJudgmentSyncing" in retrieval_page
+    assert "restoreSubmittedSearch" in retrieval_page
+    assert "onRestoreSubmittedSearch" in retrieval_page
+    assert "Restore submitted search" in retrieval_page
+    assert "displayed request" in retrieval_page
+    assert "useRetrievalPresetsQuery" in retrieval_page
+    assert "SearchPresetStrip" in retrieval_page
+    assert "activePresetId" in retrieval_page
+    assert "Loading retrieval presets" in retrieval_page
+    assert "data-driven" in retrieval_page
+    assert "useRetrievalSearchOptionsQuery" in retrieval_page
+    assert "formatOptions" in retrieval_page
+    assert "mergeSearchOptions" in retrieval_page
+    assert "categoryFilter" in retrieval_page
+    assert "presetSearch" in retrieval_page
+    assert "presetMatchesSearch" in retrieval_page
+    assert "Filter retrieval presets" in retrieval_page
+    assert "Preset categories" in retrieval_page
+    assert "sourceSearch" in retrieval_page
+    assert "sourceTypeFilter" in retrieval_page
+    assert "sourceMatchesInventoryFilters" in retrieval_page
+    assert "Filter trusted sources" in retrieval_page
+    assert "Source inventory filters" in retrieval_page
+    assert '<option value="csv">CSV</option>' not in retrieval_page
+    assert '<option value="fhir_like">FHIR-like</option>' not in retrieval_page
+    assert "defaultQuery" not in retrieval_page
+    assert "activeFacetFiltersFromPayload" in retrieval_page
+    assert "onApplyFacet" in retrieval_page
+    assert "aria-pressed={applied}" in retrieval_page
+    assert "supportedSuggestionFilterFields" in retrieval_page
+    assert "onApplyFilterSuggestion" in retrieval_page
+    assert "coverageSuggestedFilter" in retrieval_page
+    assert "coverageSuggestedAction" in retrieval_page
+    assert "CoverageItemList" in retrieval_page
+    assert "Aspect coverage" in retrieval_page
+    assert "coverage?.query_aspects" in retrieval_page
+    assert "suggested_filter" in retrieval_page
+    assert "onApplyCoverageFilter" in retrieval_page
+    assert "Copy medical search hint" in retrieval_page
+    assert "Open medical search hint" in retrieval_page
+    assert "launchable hint" in retrieval_page
+    assert "copyTextToClipboard" in retrieval_page
+    assert "Embedding and rerank provider state" in frontend_architecture
+    assert "per-hit ranking boost signals" in frontend_architecture
+    assert "source coverage" in frontend_architecture
+    assert "explicit operator apply" in frontend_architecture
+    assert "actionable refinements" in frontend_architecture
+    assert "removable chips" in frontend_architecture
+    assert "pending changes" in frontend_architecture
+    assert "submitted request summary" in frontend_architecture
+    assert "compare recent search packages" in frontend_architecture
+    assert "select a baseline run" in frontend_architecture
+    assert "rank movement" in frontend_architecture
+    assert "copyable JSON report" in frontend_architecture
+    assert "overlap and churn metrics" in frontend_architecture
+    assert "explicit relevance judgments" in frontend_architecture
+    assert "restore the query builder" in frontend_architecture
+    assert "copyable and launchable" in frontend_architecture
+    assert "/retrieval/presets" in frontend_architecture
+    assert "/retrieval/search-options" in frontend_architecture
+    assert "trusted knowledge data" in frontend_architecture
+    assert "Preset category filters" in frontend_architecture
+    assert "trusted source inventory" in frontend_architecture
+    assert "searchable and filterable" in frontend_architecture
+
+
+def test_settings_page_exposes_reloadable_assistant_runtime() -> None:
+    settings_page = SETTINGS_PAGE.read_text(encoding="utf-8")
+    server_state = (FRONTEND_SRC / "lib" / "server-state.ts").read_text(encoding="utf-8")
+    api_module = API_MODULE.read_text(encoding="utf-8")
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "AssistantSettingsForm" in settings_page
+    assert "useRuntimeAssistantSettingsMutation" in settings_page
+    assert "runtimeAssistantPayloadFromForm" in settings_page
+    assert "OpenAI key configured" in settings_page
+    assert "updateRuntimeAssistantSettings" in server_state
+    assert '"/runtime/assistant-settings"' in api_module
+    assert "Assistant runtime" in frontend_architecture
+
+
+def test_settings_page_surfaces_retrieval_rule_pack_inventory() -> None:
+    settings_page = SETTINGS_PAGE.read_text(encoding="utf-8")
+    types_module = (FRONTEND_SRC / "types.ts").read_text(encoding="utf-8")
+    api_contract = (REPO_ROOT / "docs" / "api_contract_v0.md").read_text(
+        encoding="utf-8"
+    )
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "RetrievalRulePackInventory" in settings_page
+    assert "ReadinessRulePackDetails" in settings_page
+    assert "retrievalRulePacksFromDetails" in settings_page
+    assert "shortRulePackHash" in settings_page
+    assert "retrieval_rule_packs" in settings_page
+    assert "Rule pack readiness" in settings_page
+    assert "Retrieval rule packs" in settings_page
+    assert "runtime?.retrieval?.rule_packs" in settings_page
+    assert "RuntimeRetrievalRulePack" in types_module
+    assert "rule_packs?: RuntimeRetrievalRulePack[]" in types_module
+    assert "content_hash?: string | null" in types_module
+    assert "version?: string | null" in types_module
+    assert "retrieval.rule_packs[]" in api_contract
+    assert "OJT_QUERY_DIAGNOSTIC_RULES_PATH" in api_contract
+    assert "sanitized pack name" in frontend_architecture
+
+
+def test_assistant_ui_surfaces_tool_layer() -> None:
+    assistant_page = ASSISTANT_PAGE.read_text(encoding="utf-8")
+    app_shell = APP_SHELL.read_text(encoding="utf-8")
+    api_module = API_MODULE.read_text(encoding="utf-8")
+    server_state = (FRONTEND_SRC / "lib" / "server-state.ts").read_text(encoding="utf-8")
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'to="/assistant"' in app_shell
+    assert "Open assistant" in app_shell
+    assert "AssistantToolSpec" in assistant_page
+    assert "ToolCatalogPanel" in assistant_page
+    assert "Assistant tool catalog" in assistant_page
+    assert "useAssistantToolsQuery" in assistant_page
+    assert "listAssistantTools" in api_module
+    assert '"/assistant/tools"' in api_module
+    assert "assistantTools" in server_state
+    assert "server allowlisted assistant/MCP tools" in frontend_architecture
 
 
 def test_frontend_browser_storage_is_not_used_for_auth_or_state() -> None:

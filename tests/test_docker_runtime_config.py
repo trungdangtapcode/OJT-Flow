@@ -24,12 +24,14 @@ def test_compose_uses_separate_api_and_frontend_build_contexts() -> None:
 
     assert "build:" in api_section
     assert "\n      context: .\n" in api_section
+    assert "OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}" in api_section
     assert "\n      context: ./frontend\n" in frontend_section
     assert "\n      context: .\n" not in frontend_section
 
 
 def test_api_container_includes_runtime_contracts_without_dev_server() -> None:
     dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    constraints = (REPO_ROOT / "constraints.txt").read_text(encoding="utf-8")
     normalized = dockerfile.lower()
 
     assert "from python:3.12-slim" in normalized
@@ -37,6 +39,7 @@ def test_api_container_includes_runtime_contracts_without_dev_server() -> None:
     assert "pythonunbuffered=1" in normalized
     assert "pythonpath=/app/src" in normalized
     assert "arg pip_version=" in normalized
+    assert "arg ojt_python_extras=parsing" in normalized
     assert "copy pyproject.toml readme.md constraints.txt" in normalized
     assert "copy src ./src" in normalized
     assert "copy knowledge ./knowledge" in normalized
@@ -44,7 +47,11 @@ def test_api_container_includes_runtime_contracts_without_dev_server() -> None:
     assert "pip==" in normalized
     assert "--constraint /app/constraints.txt" in normalized
     assert "--build-constraint /app/constraints.txt" in normalized
+    assert '".[${ojt_python_extras}]"' in normalized
     assert "python -m pip install --no-cache-dir" in normalized
+    assert "markitdown==0.1.6" in constraints
+    assert "pdfminer-six==20251230" in constraints
+    assert "pdfplumber==0.11.9" in constraints
     assert "pip_constraint" not in normalized
     assert "--upgrade pip" not in normalized
     assert 'cmd ["python", "-m", "uvicorn"' in normalized
@@ -134,12 +141,32 @@ def test_compose_runtime_uses_postgres_redis_and_persistent_app_data() -> None:
     ) in api_section
     assert "OJT_REDIS_URL: redis://redis:6379/0" in api_section
     assert "OJT_DATA_DIR: /app/var" in api_section
+    assert "OJT_RUNTIME_SETTINGS_PATH: ${OJT_RUNTIME_SETTINGS_PATH:-/app/var/runtime_settings.json}" in api_section
     assert "OJT_KNOWLEDGE_DIR: /app/knowledge" in api_section
     assert "OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations" in api_section
     assert "OJT_MAX_UPLOAD_BYTES: ${OJT_MAX_UPLOAD_BYTES:-26214400}" in api_section
     assert "OJT_MAX_INLINE_DATA_BYTES: ${OJT_MAX_INLINE_DATA_BYTES:-1048576}" in api_section
     assert "OJT_UPLOAD_READ_CHUNK_BYTES: ${OJT_UPLOAD_READ_CHUNK_BYTES:-1048576}" in api_section
     assert "OJT_ALLOWED_UPLOAD_EXTENSIONS: ${OJT_ALLOWED_UPLOAD_EXTENSIONS:-" in api_section
+    assert "OJT_RERANK_PROVIDER: ${OJT_RERANK_PROVIDER:-none}" in api_section
+    assert "OJT_RERANK_MODEL: ${OJT_RERANK_MODEL:-BAAI/bge-reranker-base}" in api_section
+    assert "OJT_RERANK_DEVICE: ${OJT_RERANK_DEVICE:-auto}" in api_section
+    assert "OJT_RERANK_BATCH_SIZE: ${OJT_RERANK_BATCH_SIZE:-16}" in api_section
+    assert "OJT_RERANK_CANDIDATE_LIMIT: ${OJT_RERANK_CANDIDATE_LIMIT:-20}" in api_section
+    assert "OJT_RERANK_SCORE_WEIGHT: ${OJT_RERANK_SCORE_WEIGHT:-0.08}" in api_section
+    assert "OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-disabled}" in api_section
+    assert "OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}" in api_section
+    assert "OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}" in api_section
+    assert "OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-30.0}" in api_section
+    assert "OJT_LLM_MAX_TOOL_CALLS: ${OJT_LLM_MAX_TOOL_CALLS:-4}" in api_section
+    assert "OJT_RETRIEVAL_DIVERSITY_ENABLED: ${OJT_RETRIEVAL_DIVERSITY_ENABLED:-true}" in api_section
+    assert "OJT_RETRIEVAL_DIVERSITY_LAMBDA: ${OJT_RETRIEVAL_DIVERSITY_LAMBDA:-0.72}" in api_section
+    assert "OJT_RETRIEVAL_HNSW_EF_SEARCH: ${OJT_RETRIEVAL_HNSW_EF_SEARCH:-100}" in api_section
+    assert "OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}" in api_section
+    assert "OJT_RETRIEVAL_CANDIDATE_MULTIPLIER: ${OJT_RETRIEVAL_CANDIDATE_MULTIPLIER:-4}" in api_section
+    assert "OJT_RETRIEVAL_MIN_CANDIDATES: ${OJT_RETRIEVAL_MIN_CANDIDATES:-12}" in api_section
+    assert "OJT_RETRIEVAL_VECTOR_WEIGHT: ${OJT_RETRIEVAL_VECTOR_WEIGHT:-0.62}" in api_section
+    assert "OJT_RETRIEVAL_BM25_WEIGHT: ${OJT_RETRIEVAL_BM25_WEIGHT:-0.38}" in api_section
     assert '"${OJT_API_PORT:-8000}:8000"' in api_section
     assert "- app_data:/app/var" in api_section
     assert "postgres:" in api_section
@@ -176,11 +203,27 @@ def test_env_example_exposes_compose_and_upload_runtime_knobs() -> None:
         "OJT_API_PORT=8000",
         "OJT_FRONTEND_PORT=5173",
         "VITE_API_BASE_URL=/api/v1",
+        "OJT_PYTHON_EXTRAS=parsing",
         "OJT_KNOWLEDGE_DIR=knowledge",
         "OJT_MIGRATIONS_DIR=sql/postgres/migrations",
         "OJT_MAX_UPLOAD_BYTES=26214400",
         "OJT_MAX_INLINE_DATA_BYTES=1048576",
         "OJT_UPLOAD_READ_CHUNK_BYTES=1048576",
+        "OJT_HF_EMBEDDING_DEVICE=auto",
+        "OJT_HF_EMBEDDING_BATCH_SIZE=32",
+        "OJT_HF_EMBEDDING_CACHE_DIR=var/huggingface",
+        "OJT_RERANK_PROVIDER=none",
+        "OJT_RERANK_MODEL=BAAI/bge-reranker-base",
+        "OJT_RERANK_DEVICE=auto",
+        "OJT_RERANK_BATCH_SIZE=16",
+        "OJT_RERANK_CANDIDATE_LIMIT=20",
+        "OJT_RERANK_SCORE_WEIGHT=0.08",
+        "OJT_RETRIEVAL_CORPUS_DIRS=knowledge/corpus",
+        "OJT_RETRIEVAL_CHUNK_MAX_CHARS=1200",
+        "OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS=160",
+        "OJT_RETRIEVAL_DIVERSITY_ENABLED=true",
+        "OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72",
+        "OJT_RETRIEVAL_HNSW_EF_SEARCH=100",
     }
 
     assert required_settings <= lines

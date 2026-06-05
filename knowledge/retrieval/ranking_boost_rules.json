@@ -1,0 +1,110 @@
+{
+  "version": "retrieval_ranking_boost_rules.v1",
+  "rules": [
+    {
+      "rule_id": "boost_schema_source_match",
+      "weight": 0.08,
+      "reason": "Prefer evidence whose source ID matches the requested schema.",
+      "match": {
+        "query_schema_id_in_source_id": true
+      }
+    },
+    {
+      "rule_id": "boost_query_field_term_match",
+      "weight": 0.035,
+      "reason": "Prefer evidence that directly matches requested input fields.",
+      "match": {
+        "any_query_fields_in_matched_terms": true
+      }
+    },
+    {
+      "rule_id": "boost_approved_trust_level",
+      "weight": 0.025,
+      "reason": "Prefer approved trusted sources during deterministic retrieval.",
+      "match": {
+        "chunk_trust_levels": ["approved"]
+      }
+    },
+    {
+      "rule_id": "boost_core_lab_standard_terms",
+      "weight": 0.02,
+      "reason": "Prefer core lab interoperability standards when lab, unit, or FHIR terms match.",
+      "match": {
+        "chunk_standard_systems": ["FHIR", "LOINC", "UCUM"],
+        "any_matched_terms": ["lab", "unit", "fhir"]
+      }
+    },
+    {
+      "rule_id": "boost_loinc_hba1c_concept",
+      "weight": 0.08,
+      "reason": "Prefer LOINC evidence when HbA1c laboratory concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["LOINC"],
+        "any_concepts": ["hba1c_laboratory_test"]
+      }
+    },
+    {
+      "rule_id": "boost_ucum_unit_concept",
+      "weight": 0.05,
+      "reason": "Prefer UCUM evidence when unit-normalization concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["UCUM"],
+        "any_concepts": ["unit_normalization"]
+      }
+    },
+    {
+      "rule_id": "boost_fhir_observation_concept",
+      "weight": 0.05,
+      "reason": "Prefer FHIR evidence when FHIR Observation profile concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["FHIR"],
+        "any_concepts": ["fhir_observation_profile"]
+      }
+    },
+    {
+      "rule_id": "boost_clinicaltrials_trial_concept",
+      "weight": 0.08,
+      "reason": "Prefer ClinicalTrials.gov evidence when trial-search concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["ClinicalTrials.gov"],
+        "any_concepts": ["clinical_trial_search"]
+      }
+    },
+    {
+      "rule_id": "boost_openfda_drug_safety_concept",
+      "weight": 0.08,
+      "reason": "Prefer openFDA evidence when regulatory drug-safety concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["openFDA"],
+        "any_concepts": ["regulatory_drug_safety_search"]
+      }
+    },
+    {
+      "rule_id": "boost_transformation_example_context",
+      "weight": 0.09,
+      "reason": "Prefer transformation examples for CSV, conversion, and tabular quality contexts.",
+      "match": {
+        "chunk_source_types": ["transformation_example"]
+      },
+      "any_of": [
+        {
+          "any_concepts": ["csv_tabular_quality"]
+        },
+        {
+          "query_detected_format_present": true
+        },
+        {
+          "any_matched_terms": ["convert", "conversion", "transformation", "example"]
+        }
+      ]
+    },
+    {
+      "rule_id": "boost_applied_domain_filter_match",
+      "weight": 0.03,
+      "reason": "Prefer evidence that matches the explicitly applied clinical-domain filter.",
+      "match": {
+        "filter_clinical_domain_matches_chunk": true
+      }
+    }
+  ]
+}

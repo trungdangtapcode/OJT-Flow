@@ -4,22 +4,46 @@ import { toast } from "sonner";
 import {
   ApiRequestError,
   API_BASE_URL,
+  chatWithAssistant,
   createWorkflow,
+  deleteRetrievalJudgment,
+  evaluateRetrievalJudgments,
   getExtractorInventory,
+  getRetrievalJudgmentSummary,
+  getRetrievalIntegrity,
+  getRetrievalSearchOptions,
   getRuntimeConfig,
   getRuntimeHealth,
   getRuntimeReadiness,
   getWorkflow,
   getWorkflowOutput,
   getWorkflowStats,
+  listAssistantTools,
+  listRetrievalJudgments,
+  listRetrievalPresets,
+  listRetrievalSources,
   listReviewSummaries,
   listSchemas,
   listWorkflowEvents,
   listWorkflowSummaries,
+  reindexRetrieval,
+  searchRetrieval,
   submitReview,
+  updateRuntimeAssistantSettings,
+  updateRuntimeRetrievalSettings,
+  upsertRetrievalJudgment,
   uploadFileWorkflow,
 } from "../api";
-import type { StartWorkflowPayload } from "../types";
+import type {
+  AssistantChatPayload,
+  RetrievalJudgmentEvaluationPayload,
+  RetrievalJudgmentPayload,
+  RetrievalReindexPayload,
+  RetrievalSearchPayload,
+  RuntimeAssistantSettingsPayload,
+  RuntimeRetrievalSettingsPayload,
+  StartWorkflowPayload,
+} from "../types";
 
 export const queryKeys = {
   stats: ["workflow-stats"] as const,
@@ -29,10 +53,21 @@ export const queryKeys = {
   output: (workflowId: string | null) => ["workflow-output", workflowId] as const,
   events: (workflowId: string | null) => ["workflow-events", workflowId] as const,
   schemas: ["schemas"] as const,
+  retrievalSources: ["retrieval-sources"] as const,
+  retrievalJudgments: (params: Record<string, unknown>) =>
+    ["retrieval-judgments", params] as const,
+  retrievalJudgmentSummary: (params: Record<string, unknown>) =>
+    ["retrieval-judgment-summary", params] as const,
+  retrievalJudgmentEvaluation: (params: Record<string, unknown>) =>
+    ["retrieval-judgment-evaluation", params] as const,
+  retrievalSearchOptions: ["retrieval-search-options"] as const,
+  retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
+  assistantTools: ["assistant-tools"] as const,
+  retrievalPresets: ["retrieval-presets"] as const,
 };
 
 export const runtimeConfig = {
@@ -113,8 +148,159 @@ export function useRuntimeReadinessQuery() {
   return useQuery({ queryKey: queryKeys.runtimeReadiness, queryFn: getRuntimeReadiness });
 }
 
+export function useRuntimeRetrievalSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RuntimeRetrievalSettingsPayload) =>
+      updateRuntimeRetrievalSettings(payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfig }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeReadiness }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSearchOptions }),
+        queryClient.invalidateQueries({ queryKey: ["retrieval-integrity"] }),
+      ]);
+      toast.success("Retrieval settings reloaded");
+    },
+  });
+}
+
+export function useRuntimeAssistantSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RuntimeAssistantSettingsPayload) =>
+      updateRuntimeAssistantSettings(payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfig }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeReadiness }),
+      ]);
+      toast.success("Assistant settings reloaded");
+    },
+  });
+}
+
 export function useSchemasQuery() {
   return useQuery({ queryKey: queryKeys.schemas, queryFn: listSchemas });
+}
+
+export function useRetrievalSourcesQuery() {
+  return useQuery({ queryKey: queryKeys.retrievalSources, queryFn: listRetrievalSources });
+}
+
+export function useRetrievalPresetsQuery() {
+  return useQuery({ queryKey: queryKeys.retrievalPresets, queryFn: listRetrievalPresets });
+}
+
+export function useRetrievalSearchOptionsQuery() {
+  return useQuery({ queryKey: queryKeys.retrievalSearchOptions, queryFn: getRetrievalSearchOptions });
+}
+
+export function useRetrievalIntegrityQuery(params: {
+  include_seeded: boolean;
+  include_corpus: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.retrievalIntegrity(params),
+    queryFn: () => getRetrievalIntegrity(params),
+  });
+}
+
+export function useRetrievalSearchMutation() {
+  return useMutation({
+    mutationFn: (payload: RetrievalSearchPayload) => searchRetrieval(payload),
+  });
+}
+
+export function useRetrievalJudgmentsQuery(params: {
+  query?: string | null;
+  run_id?: string | null;
+  evidence_id?: string | null;
+  limit?: number;
+}) {
+  return useQuery({
+    enabled: Boolean(params.query || params.run_id || params.evidence_id),
+    queryKey: queryKeys.retrievalJudgments(params),
+    queryFn: () => listRetrievalJudgments(params),
+  });
+}
+
+export function useRetrievalJudgmentSummaryQuery(params: {
+  query?: string | null;
+  limit?: number;
+}) {
+  return useQuery({
+    enabled: Boolean(params.query),
+    queryKey: queryKeys.retrievalJudgmentSummary(params),
+    queryFn: () => getRetrievalJudgmentSummary(params),
+  });
+}
+
+export function useRetrievalJudgmentEvaluationQuery(
+  payload: RetrievalJudgmentEvaluationPayload | null,
+) {
+  return useQuery({
+    enabled: Boolean(payload && payload.ranked_evidence_ids.length),
+    queryKey: queryKeys.retrievalJudgmentEvaluation(payload ?? {}),
+    queryFn: () => evaluateRetrievalJudgments(payload!),
+  });
+}
+
+export function useRetrievalJudgmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RetrievalJudgmentPayload) => upsertRetrievalJudgment(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-evaluation"] });
+    },
+  });
+}
+
+export function useDeleteRetrievalJudgmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (judgmentId: string) => deleteRetrievalJudgment(judgmentId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-evaluation"] });
+    },
+  });
+}
+
+export function useAssistantChatMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AssistantChatPayload) => chatWithAssistant(payload),
+    onSuccess: async (response) => {
+      if (
+        response.tool_calls.some(
+          (call) => call.tool_name === "start_workflow" && call.status === "completed",
+        )
+      ) {
+        await invalidateWorkflowCollections(queryClient);
+      }
+    },
+  });
+}
+
+export function useAssistantToolsQuery() {
+  return useQuery({ queryKey: queryKeys.assistantTools, queryFn: listAssistantTools });
+}
+
+export function useRetrievalReindexMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RetrievalReindexPayload) => reindexRetrieval(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources });
+      await queryClient.invalidateQueries({ queryKey: ["retrieval-integrity"] });
+      toast.success("Retrieval index refreshed");
+    },
+  });
 }
 
 export function useCreateWorkflowMutation() {

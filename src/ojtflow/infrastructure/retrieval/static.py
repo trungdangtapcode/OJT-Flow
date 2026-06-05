@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalSource,
+)
+from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
@@ -15,6 +22,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     rank_chunks,
     sources_from_chunks,
 )
+from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
 
 
 class StaticKnowledgeRepository:
@@ -74,10 +82,26 @@ class StaticRetrievalRepository:
     def __init__(
         self,
         root: Path | str,
-        embedding_provider: DeterministicEmbeddingProvider | None = None,
+        embedding_provider: Any | None = None,
+        reranker: Any | None = None,
+        rerank_candidate_limit: int = 20,
+        rerank_score_weight: float = 0.08,
+        diversity_enabled: bool = True,
+        diversity_lambda: float = 0.72,
+        corpus_dirs: tuple[Path, ...] | None = None,
+        chunk_max_chars: int = 1200,
+        chunk_overlap_chars: int = 160,
     ) -> None:
         self.root = Path(root)
         self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        self.reranker = reranker
+        self.rerank_candidate_limit = rerank_candidate_limit
+        self.rerank_score_weight = rerank_score_weight
+        self.diversity_enabled = diversity_enabled
+        self.diversity_lambda = diversity_lambda
+        self.corpus_dirs = corpus_dirs or (self.root / "corpus",)
+        self.chunk_max_chars = chunk_max_chars
+        self.chunk_overlap_chars = chunk_overlap_chars
         self._chunks = default_healthcare_chunks(self.root)
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
@@ -91,12 +115,63 @@ class StaticRetrievalRepository:
             chunks,
             query,
             embedding_provider=self.embedding_provider,
+            reranker=self.reranker,
+            rerank_candidate_limit=self.rerank_candidate_limit,
+            rerank_score_weight=self.rerank_score_weight,
+            diversity_enabled=self.diversity_enabled,
+            diversity_lambda=self.diversity_lambda,
             strategy="static_hybrid_rrf",
             warnings=warnings,
         )
 
     def list_sources(self) -> list[RetrievalSource]:
         return sources_from_chunks(self._chunks)
+
+    def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
+        chunks: list[KnowledgeChunk] = []
+        result = None
+        if include_seeded:
+            chunks.extend(default_healthcare_chunks(self.root))
+        if include_corpus:
+            corpus_chunks, result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            chunks.extend(corpus_chunks)
+        self._chunks = chunks
+        return {
+            "repository": "static",
+            "include_seeded": include_seeded,
+            "include_corpus": include_corpus,
+            "chunks_indexed": len(chunks),
+            "corpus": result.__dict__ if result else None,
+        }
+
+    def integrity_report(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = False,
+    ) -> RetrievalIntegrityReport:
+        expected_chunks: list[KnowledgeChunk] = []
+        if include_seeded:
+            expected_chunks.extend(default_healthcare_chunks(self.root))
+        if include_corpus:
+            corpus_chunks, _result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            expected_chunks.extend(corpus_chunks)
+        return build_integrity_report(
+            repository="static",
+            expected_chunks=expected_chunks,
+            indexed_chunks=self._chunks,
+            checked_scope=_checked_scope(include_seeded=include_seeded, include_corpus=include_corpus),
+        )
 
     def _filter_chunks(
         self,
@@ -106,6 +181,7 @@ class StaticRetrievalRepository:
         trust_level = query.filters.get("trust_level")
         clinical_domain = query.filters.get("clinical_domain")
         standard_system = query.filters.get("standard_system")
+        source_type = query.filters.get("source_type")
         filtered = chunks
         if trust_level:
             filtered = [chunk for chunk in filtered if chunk.trust_level == TrustLevel(trust_level)]
@@ -113,4 +189,19 @@ class StaticRetrievalRepository:
             filtered = [chunk for chunk in filtered if chunk.clinical_domain == clinical_domain]
         if standard_system:
             filtered = [chunk for chunk in filtered if chunk.standard_system == standard_system]
+        if source_type:
+            filtered = [
+                chunk
+                for chunk in filtered
+                if chunk.source_type == EvidenceSourceType(source_type)
+            ]
         return filtered
+
+
+def _checked_scope(*, include_seeded: bool, include_corpus: bool) -> str:
+    scopes = []
+    if include_seeded:
+        scopes.append("seeded")
+    if include_corpus:
+        scopes.append("corpus")
+    return "+".join(scopes) or "none"

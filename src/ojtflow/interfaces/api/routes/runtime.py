@@ -2,22 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Any
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
 
-from ojtflow.config import Settings
 from ojtflow.application.workflow_service import WorkflowService
+from ojtflow.config import (
+    Settings,
+    clear_settings_cache,
+    get_settings,
+    runtime_assistant_settings,
+    runtime_retrieval_settings,
+    save_runtime_assistant_settings,
+    save_runtime_retrieval_settings,
+)
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.core.errors import ToolExecutionError
 from ojtflow.interfaces.api.deps import (
+    clear_workflow_service_cache,
     get_api_settings,
     get_workflow_service,
     require_authentication,
 )
 from ojtflow.interfaces.api.responses import ok
+from ojtflow.interfaces.api.schemas import (
+    RuntimeAssistantSettingsRequest,
+    RuntimeRetrievalSettingsRequest,
+)
+from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 
 try:
     import redis as redis_client
@@ -64,6 +79,46 @@ async def runtime_config(
                 "provider": settings.embedding_provider,
                 "model": settings.embedding_model,
                 "dimensions": settings.embedding_dimensions,
+                "openai_configured": bool(settings.openai_api_key),
+                "openai_base_url_configured": bool(settings.openai_embedding_base_url),
+                "hf_device": settings.hf_embedding_device,
+                "hf_batch_size": settings.hf_embedding_batch_size,
+                "hf_cache_dir_configured": bool(settings.hf_embedding_cache_dir),
+            },
+            "llm": {
+                "provider": settings.llm_provider,
+                "model": settings.llm_model,
+                "openai_configured": bool(settings.openai_api_key),
+                "base_url_configured": bool(settings.llm_base_url),
+                "timeout_seconds": settings.llm_timeout_seconds,
+                "max_tool_calls": settings.llm_max_tool_calls,
+                "runtime_settings_configured": bool(settings.runtime_settings_path),
+                "runtime_settings": runtime_assistant_settings(settings),
+            },
+            "rerank": {
+                "provider": settings.rerank_provider,
+                "enabled": settings.rerank_provider != "none",
+                "model": settings.rerank_model,
+                "device": settings.rerank_device,
+                "batch_size": settings.rerank_batch_size,
+                "candidate_limit": settings.rerank_candidate_limit,
+                "score_weight": settings.rerank_score_weight,
+            },
+            "retrieval": {
+                "framework": settings.retrieval_framework,
+                "corpus_dir_count": len(settings.retrieval_corpus_dirs),
+                "chunk_max_chars": settings.retrieval_chunk_max_chars,
+                "chunk_overlap_chars": settings.retrieval_chunk_overlap_chars,
+                "candidate_multiplier": settings.retrieval_candidate_multiplier,
+                "min_candidates": settings.retrieval_min_candidates,
+                "vector_weight": settings.retrieval_vector_weight,
+                "bm25_weight": settings.retrieval_bm25_weight,
+                "diversity_enabled": settings.retrieval_diversity_enabled,
+                "diversity_lambda": settings.retrieval_diversity_lambda,
+                "hnsw_ef_search": settings.retrieval_hnsw_ef_search,
+                "runtime_settings_configured": bool(settings.runtime_settings_path),
+                "runtime_settings": runtime_retrieval_settings(settings),
+                "rule_packs": retrieval_rule_packs(settings.resolved_knowledge_dir),
             },
             "upload": {
                 "max_upload_bytes": settings.max_upload_bytes,
@@ -71,6 +126,64 @@ async def runtime_config(
                 "read_chunk_bytes": settings.upload_read_chunk_bytes,
                 "allowed_extensions": list(settings.allowed_upload_extensions),
             },
+        }
+    )
+
+
+@router.put("/runtime/retrieval-settings")
+async def update_runtime_retrieval_settings(
+    request: RuntimeRetrievalSettingsRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Persist operator-tuned retrieval settings and reload cached services."""
+
+    del authenticated
+    updates = request.model_dump(exclude_none=True)
+    try:
+        save_runtime_retrieval_settings(settings, updates)
+    except (TypeError, ValueError) as exc:
+        raise ToolExecutionError(
+            "Invalid runtime retrieval settings.",
+            details={"reason": str(exc)},
+        ) from exc
+
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    fresh_settings = get_settings()
+    return ok(
+        {
+            "settings": runtime_retrieval_settings(fresh_settings),
+            "reloaded": True,
+        }
+    )
+
+
+@router.put("/runtime/assistant-settings")
+async def update_runtime_assistant_settings(
+    request: RuntimeAssistantSettingsRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Persist operator-tuned Assistant/LLM settings and reload cached services."""
+
+    del authenticated
+    updates = request.model_dump(exclude_none=True)
+    try:
+        save_runtime_assistant_settings(settings, updates)
+    except (TypeError, ValueError) as exc:
+        raise ToolExecutionError(
+            "Invalid runtime assistant settings.",
+            details={"reason": str(exc)},
+        ) from exc
+
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    fresh_settings = get_settings()
+    return ok(
+        {
+            "settings": runtime_assistant_settings(fresh_settings),
+            "reloaded": True,
         }
     )
 
@@ -97,6 +210,7 @@ async def runtime_readiness(
 
     checks.append(_artifact_directory_check(settings))
     checks.append(_session_cache_check(settings.storage_backend, settings.redis_url))
+    checks.append(_retrieval_rule_pack_readiness_check(settings))
 
     try:
         stats = service.workflows.stats(owner_user_id=authenticated.user.user_id)
@@ -179,6 +293,23 @@ def _artifact_directory_check(settings: Settings) -> dict[str, Any]:
         {
             "required": True,
             **probes,
+        },
+    )
+
+
+def _retrieval_rule_pack_readiness_check(settings: Settings) -> dict[str, Any]:
+    packs = retrieval_rule_packs(settings.resolved_knowledge_dir)
+    issues = [pack for pack in packs if pack["status"] != "ok"]
+    return _check(
+        "retrieval_rule_packs",
+        "ok" if not issues else "error",
+        "Retrieval rule packs are loadable."
+        if not issues
+        else "One or more retrieval rule packs are missing or malformed.",
+        {
+            "pack_count": len(packs),
+            "issue_count": len(issues),
+            "packs": packs,
         },
     )
 

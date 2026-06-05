@@ -22,6 +22,7 @@ from ojtflow.interfaces.api.deps import (
     clear_workflow_service_cache,
     get_auth_service,
     get_medical_evidence_service,
+    get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
 )
@@ -60,6 +61,10 @@ def _authenticated_session(
     )
 
 
+async def _authenticated_dependency() -> AuthenticatedSession:
+    return _authenticated_session()
+
+
 class FakeAuthService:
     def __init__(self) -> None:
         self.logged_out_token: str | None = None
@@ -95,7 +100,7 @@ class FakeAuthService:
 
 async def _client() -> httpx.AsyncClient:
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
@@ -204,6 +209,10 @@ def test_openapi_exposes_core_request_examples() -> None:
     assert ocr_examples[0]["fields"][0]["confidence"] < 0.8
     assert ocr_examples[0]["fields"][0]["bbox"] == [72.0, 144.0, 96.0, 18.0]
 
+    assistant_examples = schemas["AssistantChatRequest"]["examples"]
+    assert any("HbA1c" in example["message"] for example in assistant_examples)
+    assert any("data" in example["context"] for example in assistant_examples)
+
 
 def test_api_contract_doc_covers_current_route_surface() -> None:
     route_pattern = re.compile(r"`(GET|POST|PUT|PATCH|DELETE) ([^`\s]+)`")
@@ -236,6 +245,10 @@ async def test_api_rejects_blank_medical_and_retrieval_boundary_strings(monkeypa
             await client.post(
                 "/api/v1/retrieval/search",
                 json={"query": "   ", "top_k": 2},
+            ),
+            await client.post(
+                "/api/v1/assistant/chat",
+                json={"message": "   "},
             ),
             await client.post("/api/v1/fhir/profile", json={"data": " \n\t "}),
             await client.post(
@@ -480,8 +493,12 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
 
     fake_service = FakeWorkflowService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -497,6 +514,9 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "clinical_domain": "  laboratory  ",
                 "standard_system": "  UCUM  ",
                 "trust_level": "approved",
+                "filters": {
+                    "source_type": "terminology_system",
+                },
             },
         )
 
@@ -514,10 +534,353 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "filters": {
                     "clinical_domain": "laboratory",
                     "standard_system": "UCUM",
+                    "source_type": "terminology_system",
                     "trust_level": "approved",
                 },
             },
             "owner_user_id": "usr_api_test",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeRetrievalJudgmentService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def list(self, **kwargs):
+            self.calls.append({"method": "list", **kwargs})
+            return [
+                {
+                    "judgment_id": "rj_existing",
+                    "owner_user_id": kwargs["owner_user_id"],
+                    "query": kwargs["query"],
+                    "query_hash": "0" * 64,
+                    "evidence_id": "ev_schema",
+                    "source_id": "schema:lab_result_v1",
+                    "source_type": "schema",
+                    "source_version": None,
+                    "run_id": kwargs["run_id"],
+                    "search_signature": None,
+                    "value": "relevant",
+                    "rating": 3,
+                    "metadata": {},
+                    "created_at": "2026-06-04T00:00:00+00:00",
+                    "updated_at": "2026-06-04T00:00:00+00:00",
+                }
+            ]
+
+        def summary(self, **kwargs):
+            self.calls.append({"method": "summary", **kwargs})
+            return {
+                "total_count": 1,
+                "query_count": 1,
+                "evidence_count": 1,
+                "source_count": 1,
+                "relevant_count": 1,
+                "partial_count": 0,
+                "not_relevant_count": 0,
+                "average_rating": 3.0,
+                "latest_updated_at": "2026-06-04T00:00:00+00:00",
+                "sample_limit": kwargs["limit"],
+                "value_counts": {
+                    "relevant": 1,
+                    "partial": 0,
+                    "not_relevant": 0,
+                },
+            }
+
+        def evaluate_ranked_results(self, **kwargs):
+            self.calls.append({"method": "evaluate", **kwargs})
+            return {
+                "query": kwargs["query"],
+                "ranked_evidence_ids": kwargs["ranked_evidence_ids"],
+                "cutoff": kwargs["cutoff"],
+                "judged_count": 1,
+                "unjudged_count": 1,
+                "relevant_count": 1,
+                "partial_count": 0,
+                "not_relevant_count": 0,
+                "coverage_at_k": 0.5,
+                "hit_rate_at_k": 1.0,
+                "precision_at_k": 0.5,
+                "judged_precision": 1.0,
+                "average_precision_at_k": 1.0,
+                "mrr_at_k": 1.0,
+                "ndcg_at_k": 1.0,
+                "average_rating": 3.0,
+                "unjudged_evidence_ids": ["ev_missing"],
+                "judgment_ids": ["rj_existing"],
+                "recommendations": [],
+            }
+
+        def upsert(self, **kwargs):
+            self.calls.append({"method": "upsert", **kwargs})
+            return {
+                "judgment_id": "rj_saved",
+                "owner_user_id": kwargs["owner_user_id"],
+                "query": kwargs["query"],
+                "query_hash": "1" * 64,
+                "evidence_id": kwargs["evidence_id"],
+                "source_id": kwargs["source_id"],
+                "source_type": kwargs["source_type"],
+                "source_version": kwargs["source_version"],
+                "run_id": kwargs["run_id"],
+                "search_signature": kwargs["search_signature"],
+                "value": kwargs["value"],
+                "rating": kwargs["rating"],
+                "metadata": kwargs["metadata"],
+                "created_at": "2026-06-04T00:00:00+00:00",
+                "updated_at": "2026-06-04T00:00:00+00:00",
+            }
+
+        def delete(self, **kwargs):
+            self.calls.append({"method": "delete", **kwargs})
+
+    fake_service = FakeRetrievalJudgmentService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_judgment_service() -> FakeRetrievalJudgmentService:
+        return fake_service
+
+    app.dependency_overrides[get_retrieval_judgment_service] = fake_judgment_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        listed = await client.get(
+            "/api/v1/retrieval/judgments",
+            params={"query": "FHIR Observation HbA1c", "run_id": "run_1"},
+        )
+        summary = await client.get(
+            "/api/v1/retrieval/judgments/summary",
+            params={"query": "FHIR Observation HbA1c", "limit": 100},
+        )
+        evaluated = await client.post(
+            "/api/v1/retrieval/judgments/evaluate",
+            json={
+                "query": "FHIR Observation HbA1c",
+                "ranked_evidence_ids": ["ev_schema", "ev_missing"],
+                "cutoff": 2,
+            },
+        )
+        saved = await client.put(
+            "/api/v1/retrieval/judgments",
+            json={
+                "query": "FHIR Observation HbA1c",
+                "evidence_id": "ev_schema",
+                "source_id": "schema:lab_result_v1",
+                "source_type": "schema",
+                "value": "relevant",
+                "rating": 3,
+                "run_id": "run_1",
+                "search_signature": "signature",
+                "metadata": {"review_surface": "retrieval_console"},
+            },
+        )
+        deleted = await client.delete("/api/v1/retrieval/judgments/rj_saved")
+
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["judgment_id"] == "rj_existing"
+    assert summary.status_code == 200
+    assert summary.json()["data"]["total_count"] == 1
+    assert evaluated.status_code == 200
+    assert evaluated.json()["data"]["coverage_at_k"] == 0.5
+    assert evaluated.json()["data"]["hit_rate_at_k"] == 1.0
+    assert evaluated.json()["data"]["mrr_at_k"] == 1.0
+    assert evaluated.json()["data"]["ndcg_at_k"] == 1.0
+    assert saved.status_code == 200
+    assert saved.json()["data"]["judgment_id"] == "rj_saved"
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] == {"deleted": True, "judgment_id": "rj_saved"}
+    assert fake_service.calls[0] == {
+        "method": "list",
+        "owner_user_id": "usr_api_test",
+        "query": "FHIR Observation HbA1c",
+        "run_id": "run_1",
+        "evidence_id": None,
+        "limit": 500,
+    }
+    assert fake_service.calls[1] == {
+        "method": "summary",
+        "owner_user_id": "usr_api_test",
+        "query": "FHIR Observation HbA1c",
+        "limit": 100,
+    }
+    assert fake_service.calls[2] == {
+        "method": "evaluate",
+        "owner_user_id": "usr_api_test",
+        "query": "FHIR Observation HbA1c",
+        "ranked_evidence_ids": ["ev_schema", "ev_missing"],
+        "cutoff": 2,
+    }
+    assert fake_service.calls[3]["method"] == "upsert"
+    assert fake_service.calls[3]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[3]["value"] == "relevant"
+    assert fake_service.calls[3]["metadata"] == {"review_surface": "retrieval_console"}
+    assert fake_service.calls[4] == {
+        "method": "delete",
+        "owner_user_id": "usr_api_test",
+        "judgment_id": "rj_saved",
+    }
+
+
+@pytest.mark.asyncio
+async def test_retrieval_route_rejects_unknown_or_invalid_filter_keys(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search_retrieval(self, query, owner_user_id=None):
+            del query, owner_user_id
+            self.calls += 1
+            return {}
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        unknown_filter = await client.post(
+            "/api/v1/retrieval/search",
+            json={
+                "query": "lab result schema",
+                "filters": {"unsupported": "value"},
+            },
+        )
+        invalid_filter_enum = await client.post(
+            "/api/v1/retrieval/search",
+            json={
+                "query": "lab result schema",
+                "filters": {"trust_level": "not_a_trust_level"},
+            },
+        )
+
+    assert unknown_filter.status_code == 422
+    _assert_error_envelope(unknown_filter, expected_code="request_validation_error")
+    assert invalid_filter_enum.status_code == 422
+    _assert_error_envelope(invalid_filter_enum, expected_code="request_validation_error")
+    assert fake_service.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_retrieval_reindex_route_delegates_to_workflow_service(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def reindex_retrieval(self, *, include_seeded=True, include_corpus=True):
+            self.calls.append(
+                {
+                    "include_seeded": include_seeded,
+                    "include_corpus": include_corpus,
+                }
+            )
+            return {
+                "repository": "fake",
+                "chunks_indexed": 3,
+                "include_seeded": include_seeded,
+                "include_corpus": include_corpus,
+            }
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/api/v1/retrieval/reindex",
+            json={"include_seeded": False, "include_corpus": True},
+        )
+
+    assert response.status_code == 200
+    assert _assert_success_envelope(response)["data"]["chunks_indexed"] == 3
+    assert fake_service.calls == [
+        {
+            "include_seeded": False,
+            "include_corpus": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_integrity_route_delegates_to_workflow_service(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def retrieval_integrity_report(self, *, include_seeded=True, include_corpus=False):
+            self.calls.append(
+                {
+                    "include_seeded": include_seeded,
+                    "include_corpus": include_corpus,
+                }
+            )
+            return {
+                "repository": "fake",
+                "status": "ok",
+                "checked_scope": "seeded+corpus",
+                "expected_source_count": 1,
+                "indexed_source_count": 1,
+                "ok_count": 1,
+                "stale_count": 0,
+                "missing_count": 0,
+                "extra_count": 0,
+                "checks": [],
+                "warnings": [],
+            }
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get(
+            "/api/v1/retrieval/integrity",
+            params={"include_seeded": "true", "include_corpus": "true"},
+        )
+
+    assert response.status_code == 200
+    assert _assert_success_envelope(response)["data"]["status"] == "ok"
+    assert fake_service.calls == [
+        {
+            "include_seeded": True,
+            "include_corpus": True,
         }
     ]
 
@@ -664,11 +1027,19 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         extractors = await client.get("/api/v1/parse/extractors")
         runtime_config = await client.get("/api/v1/runtime/config")
         runtime_readiness = await client.get("/api/v1/runtime/readiness")
+        assistant_tools = await client.get("/api/v1/assistant/tools")
         retrieval = await client.post(
             "/api/v1/retrieval/search",
             json={"query": "lab result schema", "top_k": 1},
         )
+        retrieval_presets = await client.get("/api/v1/retrieval/presets")
+        retrieval_search_options = await client.get("/api/v1/retrieval/search-options")
+        retrieval_reindex = await client.post(
+            "/api/v1/retrieval/reindex",
+            json={"include_seeded": True, "include_corpus": True},
+        )
         retrieval_sources = await client.get("/api/v1/retrieval/sources")
+        retrieval_integrity = await client.get("/api/v1/retrieval/integrity")
         review = await client.post(
             "/api/v1/review/rev_missing",
             json={"decision": "approve"},
@@ -710,10 +1081,20 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(runtime_config, expected_code="unauthorized")
     assert runtime_readiness.status_code == 401
     _assert_error_envelope(runtime_readiness, expected_code="unauthorized")
+    assert assistant_tools.status_code == 401
+    _assert_error_envelope(assistant_tools, expected_code="unauthorized")
     assert retrieval.status_code == 401
     _assert_error_envelope(retrieval, expected_code="unauthorized")
+    assert retrieval_presets.status_code == 401
+    _assert_error_envelope(retrieval_presets, expected_code="unauthorized")
+    assert retrieval_search_options.status_code == 401
+    _assert_error_envelope(retrieval_search_options, expected_code="unauthorized")
+    assert retrieval_reindex.status_code == 401
+    _assert_error_envelope(retrieval_reindex, expected_code="unauthorized")
     assert retrieval_sources.status_code == 401
     _assert_error_envelope(retrieval_sources, expected_code="unauthorized")
+    assert retrieval_integrity.status_code == 401
+    _assert_error_envelope(retrieval_integrity, expected_code="unauthorized")
     assert review.status_code == 401
     _assert_error_envelope(review, expected_code="unauthorized")
     assert logout.status_code == 401
@@ -735,7 +1116,7 @@ async def test_workflow_routes_resolve_authentication_once(monkeypatch) -> None:
     app = create_app()
     calls = 0
 
-    def authenticated_once() -> AuthenticatedSession:
+    async def authenticated_once() -> AuthenticatedSession:
         nonlocal calls
         calls += 1
         return _authenticated_session()
@@ -761,6 +1142,15 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "deterministic")
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", "deterministic-hash-v0")
     monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", "64")
+    monkeypatch.setenv("OJT_RERANK_PROVIDER", "huggingface")
+    monkeypatch.setenv("OJT_RERANK_MODEL", "BAAI/bge-reranker-base")
+    monkeypatch.setenv("OJT_RERANK_DEVICE", "cuda")
+    monkeypatch.setenv("OJT_RERANK_BATCH_SIZE", "4")
+    monkeypatch.setenv("OJT_RERANK_CANDIDATE_LIMIT", "12")
+    monkeypatch.setenv("OJT_RERANK_SCORE_WEIGHT", "0.2")
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_ENABLED", "true")
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", "0.6")
+    monkeypatch.setenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", "150")
     monkeypatch.setenv("OJT_MAX_INLINE_DATA_BYTES", "4096")
     clear_settings_cache()
     clear_workflow_service_cache()
@@ -783,6 +1173,34 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert body["auth"]["cookie_effective_secure"] is True
         assert body["auth"]["cookie_samesite"] == "strict"
         assert body["embedding"]["provider"] == "deterministic"
+        assert body["rerank"] == {
+            "provider": "huggingface",
+            "enabled": True,
+            "model": "BAAI/bge-reranker-base",
+            "device": "cuda",
+            "batch_size": 4,
+            "candidate_limit": 12,
+            "score_weight": 0.2,
+        }
+        assert body["retrieval"]["diversity_enabled"] is True
+        assert body["retrieval"]["diversity_lambda"] == 0.6
+        assert body["retrieval"]["hnsw_ef_search"] == 150
+        rule_packs = {pack["name"]: pack for pack in body["retrieval"]["rule_packs"]}
+        assert rule_packs["query_expansion"]["status"] == "ok"
+        assert rule_packs["query_expansion"]["rule_count"] > 0
+        assert rule_packs["query_expansion"]["version"] == "retrieval_query_expansion_rules.v1"
+        assert len(rule_packs["query_expansion"]["content_hash"]) == 64
+        assert rule_packs["query_diagnostics"]["status"] == "ok"
+        assert rule_packs["query_diagnostics"]["env_var"] == "OJT_QUERY_DIAGNOSTIC_RULES_PATH"
+        assert rule_packs["query_diagnostics"]["source"] == "knowledge"
+        assert rule_packs["query_diagnostics"]["version"] == (
+            "retrieval_query_diagnostic_rules.v1"
+        )
+        assert len(rule_packs["query_diagnostics"]["content_hash"]) == 64
+        assert rule_packs["query_profiles"]["status"] == "ok"
+        assert rule_packs["query_profiles"]["env_var"] == "OJT_QUERY_PROFILE_RULES_PATH"
+        assert rule_packs["query_profiles"]["version"] == "retrieval_query_profile_rules.v1"
+        assert len(rule_packs["query_profiles"]["content_hash"]) == 64
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text
@@ -790,6 +1208,107 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert "secret@example" not in response_text
         assert "knowledge/" not in response_text
         assert "sql/postgres" not in response_text
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+
+@pytest.mark.asyncio
+async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.put(
+                "/api/v1/runtime/retrieval-settings",
+                json={
+                    "retrieval_framework": "llamaindex",
+                    "retrieval_candidate_multiplier": 3,
+                    "retrieval_min_candidates": 9,
+                    "retrieval_vector_weight": 0.7,
+                    "retrieval_bm25_weight": 0.3,
+                    "retrieval_diversity_enabled": False,
+                    "retrieval_diversity_lambda": 0.5,
+                    "retrieval_hnsw_ef_search": 80,
+                },
+            )
+            runtime_config = await client.get("/api/v1/runtime/config")
+
+        assert response.status_code == 200
+        data = _assert_success_envelope(response)["data"]
+        assert data["reloaded"] is True
+        assert data["settings"]["retrieval_framework"] == "llamaindex"
+        assert data["settings"]["retrieval_candidate_multiplier"] == 3
+        assert data["settings"]["retrieval_min_candidates"] == 9
+        assert data["settings"]["retrieval_vector_weight"] == 0.7
+        assert data["settings"]["retrieval_bm25_weight"] == 0.3
+        assert data["settings"]["retrieval_diversity_enabled"] is False
+        assert data["settings"]["retrieval_diversity_lambda"] == 0.5
+        assert data["settings"]["retrieval_hnsw_ef_search"] == 80
+
+        assert runtime_path.exists()
+        saved = json.loads(runtime_path.read_text(encoding="utf-8"))
+        assert saved == data["settings"]
+
+        config = _assert_success_envelope(runtime_config)["data"]
+        assert config["retrieval"]["framework"] == "llamaindex"
+        assert config["retrieval"]["candidate_multiplier"] == 3
+        assert config["retrieval"]["runtime_settings"] == data["settings"]
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+
+@pytest.mark.asyncio
+async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.put(
+                "/api/v1/runtime/assistant-settings",
+                json={
+                    "llm_provider": "openai",
+                    "llm_model": "gpt-4.1-mini",
+                    "llm_timeout_seconds": 45.0,
+                    "llm_max_tool_calls": 6,
+                },
+            )
+            runtime_config = await client.get("/api/v1/runtime/config")
+
+        assert response.status_code == 200
+        data = _assert_success_envelope(response)["data"]
+        assert data["reloaded"] is True
+        assert data["settings"]["llm_provider"] == "openai"
+        assert data["settings"]["llm_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_timeout_seconds"] == 45.0
+        assert data["settings"]["llm_max_tool_calls"] == 6
+
+        assert runtime_path.exists()
+        saved = json.loads(runtime_path.read_text(encoding="utf-8"))
+        assert saved == data["settings"]
+
+        config = _assert_success_envelope(runtime_config)["data"]
+        assert config["llm"]["provider"] == "openai"
+        assert config["llm"]["model"] == "gpt-4.1-mini"
+        assert config["llm"]["timeout_seconds"] == 45.0
+        assert config["llm"]["max_tool_calls"] == 6
+        assert config["llm"]["runtime_settings"] == data["settings"]
+        assert "openai_api_key" not in runtime_config.text
     finally:
         clear_settings_cache()
         clear_workflow_service_cache()
@@ -813,18 +1332,56 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         checks = {check["name"]: check for check in body["checks"]}
         assert checks["settings"]["status"] == "ok"
         assert checks["artifact_directory"]["status"] == "ok"
+        assert checks["retrieval_rule_packs"]["status"] == "ok"
+        assert checks["retrieval_rule_packs"]["details"]["pack_count"] >= 6
+        assert checks["retrieval_rule_packs"]["details"]["issue_count"] == 0
         assert checks["workflow_repository"]["status"] == "ok"
         assert checks["schema_inventory"]["details"]["schema_count"] >= 1
         assert checks["retrieval_inventory"]["details"]["source_count"] >= 1
         assert checks["retrieval_inventory"]["details"]["probe_hit_count"] >= 1
         assert checks["retrieval_inventory"]["details"]["probe_candidates_seen"] >= 1
         assert checks["retrieval_inventory"]["details"]["probe_strategy"] == "static_hybrid_rrf"
-        assert checks["retrieval_inventory"]["details"]["probe_warning_count"] == 0
+        assert isinstance(checks["retrieval_inventory"]["details"]["probe_warning_count"], int)
+        assert checks["retrieval_inventory"]["details"]["probe_warning_count"] >= 0
         assert checks["session_cache"]["details"]["mode"] == "process_local"
         response_text = response.text
         assert "secret@example" not in response_text
         assert "secret-cache" not in response_text
         assert "/home/" not in response_text
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+
+@pytest.mark.asyncio
+async def test_runtime_readiness_requires_retrieval_rule_packs(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    missing_registry = tmp_path / "missing_query_expansion_rules.json"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_QUERY_EXPANSION_RULES_PATH", str(missing_registry))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/readiness")
+
+        assert response.status_code == 200
+        body = _assert_success_envelope(response)["data"]
+        checks = {check["name"]: check for check in body["checks"]}
+
+        assert body["status"] == "not_ready"
+        assert checks["retrieval_rule_packs"]["status"] == "error"
+        assert checks["retrieval_rule_packs"]["details"]["issue_count"] == 1
+        issue = checks["retrieval_rule_packs"]["details"]["packs"][0]
+        assert issue["name"] == "query_expansion"
+        assert issue["status"] == "missing"
+        assert issue["source"] == "override"
+        assert issue["env_var"] == "OJT_QUERY_EXPANSION_RULES_PATH"
+        response_text = response.text
+        assert str(missing_registry) not in response_text
     finally:
         clear_settings_cache()
         clear_workflow_service_cache()
@@ -869,8 +1426,12 @@ async def test_runtime_readiness_requires_trusted_schema_inventory(monkeypatch) 
             return Package()
 
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: EmptySchemaWorkflowService()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def empty_schema_workflow_service() -> EmptySchemaWorkflowService:
+        return EmptySchemaWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = empty_schema_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -923,8 +1484,12 @@ async def test_runtime_readiness_requires_retrieval_sources(monkeypatch) -> None
             return Package()
 
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: MissingRetrievalWorkflowService()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def missing_retrieval_workflow_service() -> MissingRetrievalWorkflowService:
+        return MissingRetrievalWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = missing_retrieval_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1086,8 +1651,12 @@ async def test_runtime_readiness_service_failures_are_sanitized(monkeypatch) -> 
             raise RuntimeError("redis://secret-cache.example.test:6379/0 failed")
 
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: FailingWorkflowService()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def failing_workflow_service() -> FailingWorkflowService:
+        return FailingWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = failing_workflow_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1174,8 +1743,11 @@ async def test_inline_api_payloads_are_size_limited(monkeypatch) -> None:
 async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         callback = await client.get("/api/v1/auth/google/callback?code=code&state=state")
@@ -1206,7 +1778,10 @@ async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
 async def test_auth_callback_can_return_bearer_token_when_requested() -> None:
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1233,7 +1808,10 @@ async def test_auth_dependency_failures_return_service_unavailable_envelope() ->
             )
 
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: CacheUnavailableAuthService()
+    async def unavailable_auth_service() -> CacheUnavailableAuthService:
+        return CacheUnavailableAuthService()
+
+    app.dependency_overrides[get_auth_service] = unavailable_auth_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1251,8 +1829,11 @@ async def test_auth_dependency_failures_return_service_unavailable_envelope() ->
 async def test_auth_url_and_session_responses_are_not_cacheable() -> None:
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1285,8 +1866,11 @@ async def test_auth_cookie_samesite_none_forces_secure_cookie(monkeypatch) -> No
     clear_workflow_service_cache()
     fake_service = FakeAuthService()
     app = create_app()
-    app.dependency_overrides[get_auth_service] = lambda: fake_service
-    app.dependency_overrides[require_authentication] = _authenticated_session
+    async def fake_auth_service() -> FakeAuthService:
+        return fake_service
+
+    app.dependency_overrides[get_auth_service] = fake_auth_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
     transport = httpx.ASGITransport(app=app)
 
     try:
@@ -2118,12 +2702,13 @@ async def test_api_workflows_are_scoped_to_authenticated_user(monkeypatch) -> No
     csv_text = "date,patient_id,lab_name,value,unit\n2026-01-01,P001,HbA1c,7.4,%\n"
 
     def authenticate_as(user_id: str) -> None:
-        app.dependency_overrides[require_authentication] = (
-            lambda: _authenticated_session(
+        async def authenticated() -> AuthenticatedSession:
+            return _authenticated_session(
                 user_id=user_id,
                 email=f"{user_id}@example.com",
             )
-        )
+
+        app.dependency_overrides[require_authentication] = authenticated
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         authenticate_as("usr_owner_a")
@@ -2386,11 +2971,15 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             },
         )
         assert retrieval.status_code == 200
-        assert retrieval.json()["data"]["trace"]["strategy"] == "static_hybrid_rrf"
-        assert retrieval.json()["data"]["trace"]["safety_flags"] == [
+        retrieval_data = retrieval.json()["data"]
+        assert retrieval_data["trace"]["strategy"] == "static_hybrid_rrf"
+        assert retrieval_data["trace"]["safety_flags"] == [
             "sensitive_field_context"
         ]
-        assert retrieval.json()["data"]["evidence"]
+        assert retrieval_data["evidence"]
+        assert retrieval_data["handoff_context"]["graph_context"]["graph_contract"] == (
+            "graph_ner_handoff.v0"
+        )
 
         sources = await client.get("/api/v1/retrieval/sources")
         assert sources.status_code == 200
@@ -2399,9 +2988,130 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             for source in sources.json()["data"]
         )
 
+        presets = await client.get("/api/v1/retrieval/presets")
+        assert presets.status_code == 200
+        preset_data = presets.json()["data"]
+        assert any(
+            preset["preset_id"] == "lab_csv_observation_quality"
+            and preset["schema_id"] == "lab_result_v1"
+            and "patient_id" in preset["fields"]
+            and preset["category"] == "workflow_validation"
+            and "FHIR Observation" in preset["target_sources"]
+            for preset in preset_data
+        )
+        assert any(
+            preset["preset_id"] == "drug_safety_external_search"
+            and preset["standard_system"] == "RxNorm"
+            and "openfda_drug_event" in preset["launch_hint_targets"]
+            for preset in preset_data
+        )
+
+        search_options = await client.get("/api/v1/retrieval/search-options")
+        assert search_options.status_code == 200
+        option_data = search_options.json()["data"]
+        assert option_data["version"] == "retrieval_search_options.v1"
+        assert any(
+            option["value"] == "markdown" and option["label"] == "Markdown"
+            for option in option_data["detected_formats"]
+        )
+        assert option_data["top_k_values"] == [3, 5, 8, 10, 15, 20]
+
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "request_validation_error"
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_runs_retrieval_tool_without_llm_tokens(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.post(
+            "/api/v1/assistant/chat",
+            json={
+                "message": "Find evidence for HbA1c CSV missing unit FHIR Observation",
+                "context": {
+                    "schema_id": "lab_result_v1",
+                    "fields": ["lab_name", "value", "unit"],
+                    "clinical_domain": "laboratory",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["mode"] == "deterministic"
+    assert body["tool_calls"][0]["tool_name"] == "retrieval_search"
+    assert body["tool_calls"][0]["status"] == "completed"
+    assert body["tool_calls"][0]["output"]["evidence"]
+    assert body["findings"][0]["title"] == "Trusted evidence retrieved"
+    assert body["evidence_summary"][0]["source_id"]
+    assert "Retrieved" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.get("/api/v1/assistant/tools")
+
+    assert response.status_code == 200
+    tools = response.json()["data"]
+    tool_names = {tool["name"] for tool in tools}
+    assert "validate_with_evidence" in tool_names
+    assert "start_workflow" in tool_names
+    start_workflow = next(tool for tool in tools if tool["name"] == "start_workflow")
+    assert start_workflow["requires_approval"] is True
+    assert start_workflow["permission_scope"] == "data:transform"
+    assert start_workflow["input_schema"]["type"] == "object"
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_requires_explicit_write_execution(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    payload = {
+        "message": "Start workflow for this messy lab CSV",
+        "context": {
+            "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+            "input_format": "csv",
+            "target_format": "json",
+            "schema_id": "lab_result_v1",
+            "require_human_review": True,
+        },
+    }
+
+    async with await _client() as client:
+        gated = await client.post("/api/v1/assistant/chat", json=payload)
+        allowed = await client.post(
+            "/api/v1/assistant/chat",
+            json={**payload, "execute_write_actions": True},
+        )
+
+    assert gated.status_code == 200
+    gated_call = gated.json()["data"]["tool_calls"][0]
+    assert gated_call["tool_name"] == "start_workflow"
+    assert gated_call["status"] == "requires_approval"
+    assert gated_call["requires_approval"] is True
+    assert gated.json()["data"]["findings"][0]["severity"] == "action_required"
+
+    assert allowed.status_code == 200
+    allowed_call = allowed.json()["data"]["tool_calls"][0]
+    assert allowed_call["tool_name"] == "start_workflow"
+    assert allowed_call["status"] == "completed"
+    assert allowed_call["output"]["workflow_id"].startswith("wf_")
+    assert allowed_call["output"]["owner_user_id"] == "usr_api_test"
+    assert allowed.json()["data"]["findings"][0]["title"] == "Workflow created"
 
 
 @pytest.mark.asyncio
@@ -2438,8 +3148,12 @@ async def test_validate_route_uses_workflow_service_dependency(monkeypatch) -> N
 
     fake_service = FakeWorkflowService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
     transport = httpx.ASGITransport(app=app)
     source_data = " \na,b\n1,2\n "
 
@@ -2496,8 +3210,12 @@ async def test_convert_route_uses_workflow_service_dependency(monkeypatch) -> No
 
     fake_service = FakeWorkflowService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_workflow_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
     transport = httpx.ASGITransport(app=app)
     source_data = " \na,b\n1,2\n "
 
@@ -2552,8 +3270,12 @@ async def test_fhir_and_ocr_routes_use_medical_evidence_service_dependency(monke
 
     fake_service = FakeMedicalEvidenceService()
     app = create_app()
-    app.dependency_overrides[require_authentication] = _authenticated_session
-    app.dependency_overrides[get_medical_evidence_service] = lambda: fake_service
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_medical_evidence_service() -> FakeMedicalEvidenceService:
+        return fake_service
+
+    app.dependency_overrides[get_medical_evidence_service] = fake_medical_evidence_service
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:

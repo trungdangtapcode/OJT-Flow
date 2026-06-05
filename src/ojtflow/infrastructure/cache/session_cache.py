@@ -64,11 +64,14 @@ class RedisSessionCache:
     def __init__(self, redis_url: str, *, allow_fallback: bool = True) -> None:
         self.redis_url = redis_url
         self._client_error: Exception | None = None
-        try:
-            self._client = redis.from_url(redis_url, decode_responses=True) if redis else None
-        except (RedisError, ValueError) as exc:
+        if not redis_url:
             self._client = None
-            self._client_error = exc
+        else:
+            try:
+                self._client = redis.from_url(redis_url, decode_responses=True) if redis else None
+            except (RedisError, ValueError) as exc:
+                self._client = None
+                self._client_error = exc
         self.allow_fallback = allow_fallback
         self._fallback = InMemorySessionCache()
 

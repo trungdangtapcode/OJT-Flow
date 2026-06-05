@@ -1,0 +1,98 @@
+# Clinical Data Standards Map
+
+This document maps OJTFlow retrieval tasks to the healthcare standards and
+public datasets that should ground the result. It is intentionally conservative:
+retrieval evidence can guide parsing, validation, and explanation, but final
+clinical code assignment must remain auditable and reviewable.
+
+## Laboratory Results
+
+Primary standards:
+
+- FHIR Observation for lab-result resource structure.
+- LOINC for laboratory test identity, usually in `Observation.code`.
+- UCUM for computable units, usually in `Observation.valueQuantity.code`.
+
+Common seed concepts:
+
+- HbA1c: LOINC `4548-4`.
+- Glucose in serum or plasma: LOINC `2345-7`.
+- Creatinine in serum or plasma: LOINC `2160-0`.
+- Sodium in serum or plasma: LOINC `2951-2`.
+- Potassium in serum or plasma: LOINC `2823-3`.
+- Total cholesterol in serum or plasma: LOINC `2093-3`.
+
+Retrieval behavior:
+
+- Prefer exact field and code evidence when query context includes lab names,
+  units, FHIR Observation, or CSV lab result fields.
+- Surface missing unit and ambiguous unit evidence before any downstream
+  transformation.
+- Preserve original `lab_name`, `value`, and `unit` text even when a candidate
+  LOINC or UCUM mapping is found.
+
+## Medication Data
+
+Primary standards:
+
+- RxNorm for normalized medication identity.
+- FHIR MedicationRequest or MedicationStatement for medication workflow records.
+- openFDA for public regulatory label and adverse-event evidence.
+
+Common seed concepts:
+
+- Metformin: RxNorm RxCUI `6809`.
+- Metformin: MeSH descriptor `D008687` for literature search context.
+
+Retrieval behavior:
+
+- Treat RxNorm candidate matches as normalization evidence, not automatic final
+  mapping.
+- For drug safety or adverse-event questions, route toward openFDA and PubMed
+  evidence rather than local schema evidence alone.
+- Keep dose, route, frequency, and status as separate evidence dimensions.
+
+## Literature And Evidence Search
+
+Primary standards and datasets:
+
+- MeSH for biomedical subject headings.
+- PubMed/MEDLINE for biomedical citation retrieval.
+- ClinicalTrials.gov for clinical study records.
+
+Common seed concepts:
+
+- Diabetes Mellitus: MeSH descriptor `D003920`.
+- Hypertension: MeSH descriptor `D006973`.
+- Kidney Failure, Chronic: MeSH descriptor `D007676`.
+
+Retrieval behavior:
+
+- Combine controlled-vocabulary candidates with title/abstract text words.
+- Warn operators that PubMed field tags, quoted phrases, and wildcards can alter
+  Automatic Term Mapping.
+- Use literature retrieval as evidence context, not clinical decision support.
+
+## Analytics Export
+
+Primary standards:
+
+- OMOP CDM for observational analytics export.
+- FHIR/LOINC/RxNorm/UCUM as source evidence before mapping.
+
+Retrieval behavior:
+
+- Do not map directly to OMOP until source evidence, validation issues, and
+  code confidence are preserved.
+- Keep transformation metadata and lossy warnings in the workflow state.
+
+## Review Gates
+
+Human review is required when:
+
+- A value changes meaning.
+- A unit is missing or ambiguous.
+- A controlled-vocabulary candidate has insufficient confidence.
+- Patient identifiers or PHI-like fields are involved.
+- Retrieval evidence is from public literature or regulatory data but is being
+  used to justify workflow transformation.

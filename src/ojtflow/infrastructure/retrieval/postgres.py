@@ -7,15 +7,26 @@ from pathlib import Path
 from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery, RetrievalSource
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalSource,
+)
+from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
+    build_query_variants,
     chunk_metadata_json,
     default_healthcare_chunks,
     rank_chunks,
 )
+from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
 from ojtflow.infrastructure.storage.postgres import PostgresBackboneStore
+
+
+POSTGRES_CANDIDATE_POOL_LIMIT = 200
 
 
 class PostgresRetrievalRepository:
@@ -25,23 +36,84 @@ class PostgresRetrievalRepository:
         self,
         backbone: PostgresBackboneStore,
         knowledge_root: Path | str,
-        embedding_provider: DeterministicEmbeddingProvider | None = None,
+        embedding_provider: Any | None = None,
+        reranker: Any | None = None,
+        rerank_candidate_limit: int = 20,
+        rerank_score_weight: float = 0.08,
+        diversity_enabled: bool = True,
+        diversity_lambda: float = 0.72,
+        corpus_dirs: tuple[Path, ...] | None = None,
+        chunk_max_chars: int = 1200,
+        chunk_overlap_chars: int = 160,
+        hnsw_ef_search: int = 100,
         seed_defaults: bool = True,
     ) -> None:
         self.backbone = backbone
         self.knowledge_root = Path(knowledge_root)
         self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        self.reranker = reranker
+        self.rerank_candidate_limit = rerank_candidate_limit
+        self.rerank_score_weight = rerank_score_weight
+        self.diversity_enabled = diversity_enabled
+        self.diversity_lambda = diversity_lambda
+        self.corpus_dirs = corpus_dirs or (self.knowledge_root / "corpus",)
+        self.chunk_max_chars = chunk_max_chars
+        self.chunk_overlap_chars = chunk_overlap_chars
+        self.hnsw_ef_search = hnsw_ef_search
         if seed_defaults:
             self.seed_defaults()
 
     def seed_defaults(self) -> None:
         """Idempotently load bundled healthcare knowledge into retrieval tables."""
 
-        chunks = default_healthcare_chunks(self.knowledge_root)
-        has_vector = self._has_vector_column()
+        self._upsert_chunks(default_healthcare_chunks(self.knowledge_root))
+
+    def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
+        """Refresh the trusted retrieval index from configured sources."""
+
+        chunks: list[KnowledgeChunk] = []
+        corpus_result = None
+        if include_seeded:
+            chunks.extend(default_healthcare_chunks(self.knowledge_root))
+        if include_corpus:
+            corpus_chunks, corpus_result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.knowledge_root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            chunks.extend(corpus_chunks)
+
+        if include_corpus:
+            with self.backbone.connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        delete from ojtflow.knowledge_documents
+                        where metadata #>> '{metadata,origin}' = 'local_corpus'
+                        """
+                    )
+                connection.commit()
+
+        self._upsert_chunks(chunks)
+        return {
+            "repository": "postgres",
+            "include_seeded": include_seeded,
+            "include_corpus": include_corpus,
+            "chunks_indexed": len(chunks),
+            "embedding": self.embedding_provider.metadata(),
+            "corpus": corpus_result.__dict__ if corpus_result else None,
+        }
+
+    def _upsert_chunks(self, chunks: list[KnowledgeChunk]) -> None:
+        if not chunks:
+            return
+        vector_dimensions = self._vector_column_dimensions()
+        chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
+        embeddings = self.embedding_provider.embed_documents(chunk_texts)
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
-                for chunk in chunks:
+                for chunk, embedding in zip(chunks, embeddings, strict=True):
                     cursor.execute(
                         """
                         insert into ojtflow.knowledge_documents (
@@ -69,7 +141,6 @@ class PostgresRetrievalRepository:
                             chunk_metadata_json(chunk),
                         ),
                     )
-                    embedding = self.embedding_provider.embed(f"{chunk.title}\n{chunk.content}")
                     cursor.execute(
                         """
                         insert into ojtflow.knowledge_chunks (
@@ -110,7 +181,7 @@ class PostgresRetrievalRepository:
                             json.dumps(embedding),
                         ),
                     )
-                    if has_vector:
+                    if vector_dimensions == len(embedding):
                         cursor.execute(
                             """
                             update ojtflow.knowledge_chunks
@@ -131,6 +202,11 @@ class PostgresRetrievalRepository:
             chunks,
             query,
             embedding_provider=self.embedding_provider,
+            reranker=self.reranker,
+            rerank_candidate_limit=self.rerank_candidate_limit,
+            rerank_score_weight=self.rerank_score_weight,
+            diversity_enabled=self.diversity_enabled,
+            diversity_lambda=self.diversity_lambda,
             strategy="postgres_fts_vector_rrf",
             warnings=postgres_warnings,
         )
@@ -178,16 +254,96 @@ class PostgresRetrievalRepository:
             for row in rows
         ]
 
+    def integrity_report(
+        self,
+        *,
+        include_seeded: bool = True,
+        include_corpus: bool = False,
+    ) -> RetrievalIntegrityReport:
+        expected_chunks: list[KnowledgeChunk] = []
+        if include_seeded:
+            expected_chunks.extend(default_healthcare_chunks(self.knowledge_root))
+        if include_corpus:
+            corpus_chunks, _result = load_local_corpus_chunks(
+                self.corpus_dirs,
+                knowledge_root=self.knowledge_root,
+                max_chars=self.chunk_max_chars,
+                overlap_chars=self.chunk_overlap_chars,
+            )
+            expected_chunks.extend(corpus_chunks)
+        return build_integrity_report(
+            repository="postgres",
+            expected_chunks=expected_chunks,
+            indexed_chunks=self._load_all_chunks(),
+            checked_scope=_checked_scope(include_seeded=include_seeded, include_corpus=include_corpus),
+        )
+
     def _load_candidate_chunks(
         self,
         query: RetrievalQuery,
     ) -> tuple[list[KnowledgeChunk], list[str]]:
         where_sql, filter_params = _filters_sql(query.filters)
-        params = [query.query, query.query, *filter_params]
+        vector_dimensions = self._vector_column_dimensions()
+        vector_literal: str | None = None
+        query_text = " ".join(build_query_variants(query))
+        if vector_dimensions == self.embedding_provider.dimensions:
+            vector_literal = _vector_literal(self.embedding_provider.embed_query(query_text))
+
+        if vector_literal is not None:
+            sql = _hybrid_candidate_sql(where_sql)
+            params: list[Any] = [
+                query_text,
+                query_text,
+                vector_literal,
+                *filter_params,
+                POSTGRES_CANDIDATE_POOL_LIMIT,
+                query_text,
+                query_text,
+                vector_literal,
+                *filter_params,
+                POSTGRES_CANDIDATE_POOL_LIMIT,
+            ]
+        else:
+            sql = _lexical_candidate_sql(where_sql)
+            params = [
+                query_text,
+                query_text,
+                *filter_params,
+                POSTGRES_CANDIDATE_POOL_LIMIT,
+            ]
+
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                if vector_literal is not None:
+                    cursor.execute(
+                        "select set_config('hnsw.ef_search', %s, true)",
+                        (str(self.hnsw_ef_search),),
+                    )
+                cursor.execute(sql, tuple(params))
+                rows = cursor.fetchall()
+
+        warnings: list[str] = []
+        if vector_dimensions is None:
+            warnings.append(
+                "Postgres pgvector column is unavailable; retrieval used full-text candidates "
+                "and JSON/Python vector reranking."
+            )
+        elif vector_dimensions != self.embedding_provider.dimensions:
+            warnings.append(
+                "Postgres pgvector dimension does not match the configured embedding provider; "
+                "retrieval used full-text candidates and JSON/Python vector reranking."
+            )
+        if rows and not any(row["lexical_match"] for row in rows):
+            warnings.append(
+                "No full-text match; ranked filtered knowledge chunks by fallback scoring."
+            )
+        return [_row_to_chunk(row) for row in rows], warnings
+
+    def _load_all_chunks(self) -> list[KnowledgeChunk]:
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    f"""
+                    """
                     select
                         chunk_id,
                         source_id,
@@ -199,44 +355,39 @@ class PostgresRetrievalRepository:
                         standard_system,
                         content,
                         locator,
-                        metadata,
-                        ts_rank_cd(
-                            search_vector,
-                            websearch_to_tsquery('english', %s)
-                        ) as lexical_rank,
-                        search_vector @@ websearch_to_tsquery('english', %s) as lexical_match
+                        metadata
                     from ojtflow.knowledge_chunks
-                    {where_sql}
-                    order by lexical_match desc, lexical_rank desc, updated_at desc
-                    limit 200
-                    """,
-                    tuple(params),
+                    order by source_id, chunk_id
+                    """
                 )
                 rows = cursor.fetchall()
+        return [_row_to_chunk(row) for row in rows]
 
-        warnings: list[str] = []
-        if rows and not any(row["lexical_match"] for row in rows):
-            warnings.append(
-                "No full-text match; ranked filtered knowledge chunks by fallback scoring."
-            )
-        return [_row_to_chunk(row) for row in rows], warnings
-
-    def _has_vector_column(self) -> bool:
+    def _vector_column_dimensions(self) -> int | None:
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    select exists (
-                        select 1
-                        from information_schema.columns
-                        where table_schema = 'ojtflow'
-                          and table_name = 'knowledge_chunks'
-                          and column_name = 'embedding'
-                    ) as has_vector
+                    select format_type(attribute.atttypid, attribute.atttypmod) as data_type
+                    from pg_attribute attribute
+                    join pg_class class on class.oid = attribute.attrelid
+                    join pg_namespace namespace on namespace.oid = class.relnamespace
+                    where namespace.nspname = 'ojtflow'
+                      and class.relname = 'knowledge_chunks'
+                      and attribute.attname = 'embedding'
+                      and not attribute.attisdropped
                     """
                 )
                 row = cursor.fetchone()
-        return bool(row and row["has_vector"])
+        if not row:
+            return None
+        data_type = str(row["data_type"])
+        if not data_type.startswith("vector(") or not data_type.endswith(")"):
+            return None
+        try:
+            return int(data_type.removeprefix("vector(").removesuffix(")"))
+        except ValueError:
+            return None
 
 
 def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
@@ -250,6 +401,133 @@ def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     if not clauses:
         return "", params
     return "where " + " and ".join(clauses), params
+
+
+def _lexical_candidate_sql(where_sql: str) -> str:
+    return f"""
+        select
+            chunk_id,
+            source_id,
+            source_type,
+            title,
+            source_version,
+            trust_level,
+            clinical_domain,
+            standard_system,
+            content,
+            locator,
+            metadata,
+            ts_rank_cd(
+                search_vector,
+                websearch_to_tsquery('english', %s)
+            ) as lexical_rank,
+            search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
+            null::double precision as vector_distance,
+            updated_at
+        from ojtflow.knowledge_chunks
+        {where_sql}
+        order by
+            lexical_match desc,
+            lexical_rank desc,
+            updated_at desc
+        limit %s
+    """
+
+
+def _hybrid_candidate_sql(where_sql: str) -> str:
+    vector_where_sql = _append_where_clause(where_sql, "embedding is not null")
+    return f"""
+        with lexical_candidates as (
+            select
+                chunk_id,
+                source_id,
+                source_type,
+                title,
+                source_version,
+                trust_level,
+                clinical_domain,
+                standard_system,
+                content,
+                locator,
+                metadata,
+                ts_rank_cd(
+                    search_vector,
+                    websearch_to_tsquery('english', %s)
+                ) as lexical_rank,
+                search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
+                embedding <=> %s::vector as vector_distance,
+                updated_at
+            from ojtflow.knowledge_chunks
+            {where_sql}
+            order by
+                lexical_match desc,
+                lexical_rank desc,
+                updated_at desc
+            limit %s
+        ),
+        vector_candidates as (
+            select
+                chunk_id,
+                source_id,
+                source_type,
+                title,
+                source_version,
+                trust_level,
+                clinical_domain,
+                standard_system,
+                content,
+                locator,
+                metadata,
+                ts_rank_cd(
+                    search_vector,
+                    websearch_to_tsquery('english', %s)
+                ) as lexical_rank,
+                search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
+                embedding <=> %s::vector as vector_distance,
+                updated_at
+            from ojtflow.knowledge_chunks
+            {vector_where_sql}
+            order by
+                vector_distance asc nulls last,
+                lexical_match desc,
+                lexical_rank desc,
+                updated_at desc
+            limit %s
+        )
+        select distinct on (chunk_id)
+            chunk_id,
+            source_id,
+            source_type,
+            title,
+            source_version,
+            trust_level,
+            clinical_domain,
+            standard_system,
+            content,
+            locator,
+            metadata,
+            lexical_rank,
+            lexical_match,
+            vector_distance,
+            updated_at
+        from (
+            select * from lexical_candidates
+            union all
+            select * from vector_candidates
+        ) candidates
+        order by
+            chunk_id,
+            lexical_match desc,
+            lexical_rank desc,
+            vector_distance asc nulls last,
+            updated_at desc
+    """
+
+
+def _append_where_clause(where_sql: str, clause: str) -> str:
+    if where_sql.strip():
+        return f"{where_sql} and {clause}"
+    return f"where {clause}"
 
 
 def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:
@@ -266,6 +544,15 @@ def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:
         locator=row["locator"] or {},
         metadata=row["metadata"] or {},
     )
+
+
+def _checked_scope(*, include_seeded: bool, include_corpus: bool) -> str:
+    scopes = []
+    if include_seeded:
+        scopes.append("seeded")
+    if include_corpus:
+        scopes.append("corpus")
+    return "+".join(scopes) or "none"
 
 
 def _vector_literal(values: list[float]) -> str:

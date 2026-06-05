@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.retrieval import (
+    RetrievalRelevanceJudgment,
+    RetrievalRelevanceJudgmentWrite,
+)
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.summary import WorkflowStats, WorkflowSummaryPage
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import NotFoundError
 from ojtflow.core.ids import new_id
+from ojtflow.core.time import utc_now
 from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
 from ojtflow.infrastructure.storage.file_refs import artifact_path_from_file_ref
 from ojtflow.infrastructure.storage.summary import filter_sort_page_summaries, workflow_stats
@@ -79,6 +85,33 @@ class SQLiteBackboneStore:
                     storage_ref text not null unique,
                     created_at text default current_timestamp
                 );
+
+                create table if not exists retrieval_relevance_judgments (
+                    judgment_id text primary key,
+                    owner_user_id text not null,
+                    query_hash text not null,
+                    query_text text not null,
+                    evidence_id text not null,
+                    source_id text,
+                    source_type text,
+                    source_version text,
+                    run_id text,
+                    search_signature text,
+                    value text not null,
+                    rating integer not null,
+                    metadata_json text not null,
+                    created_at text not null,
+                    updated_at text not null,
+                    unique(owner_user_id, query_hash, evidence_id),
+                    check (value in ('relevant', 'partial', 'not_relevant')),
+                    check (rating >= 0 and rating <= 3)
+                );
+
+                create index if not exists idx_retrieval_judgments_owner_updated
+                    on retrieval_relevance_judgments(owner_user_id, updated_at desc);
+
+                create index if not exists idx_retrieval_judgments_owner_query
+                    on retrieval_relevance_judgments(owner_user_id, query_hash, updated_at desc);
                 """
             )
             columns = {
@@ -357,3 +390,151 @@ class SQLiteEventRepository:
                 (workflow_id,),
             ).fetchall()
         return [WorkflowEvent.model_validate_json(row["event_json"]) for row in rows]
+
+
+class SQLiteRetrievalJudgmentRepository:
+    """SQLite-backed user retrieval relevance judgments."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        write: RetrievalRelevanceJudgmentWrite,
+    ) -> RetrievalRelevanceJudgment:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            existing = connection.execute(
+                """
+                select judgment_id, created_at
+                from retrieval_relevance_judgments
+                where owner_user_id = ? and query_hash = ? and evidence_id = ?
+                """,
+                (owner_user_id, query_hash, write.evidence_id),
+            ).fetchone()
+            judgment_id = existing["judgment_id"] if existing else new_id("rj")
+            created_at = existing["created_at"] if existing else now
+            connection.execute(
+                """
+                insert into retrieval_relevance_judgments (
+                    judgment_id, owner_user_id, query_hash, query_text,
+                    evidence_id, source_id, source_type, source_version, run_id,
+                    search_signature, value, rating, metadata_json, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(owner_user_id, query_hash, evidence_id) do update set
+                    query_text = excluded.query_text,
+                    source_id = excluded.source_id,
+                    source_type = excluded.source_type,
+                    source_version = excluded.source_version,
+                    run_id = excluded.run_id,
+                    search_signature = excluded.search_signature,
+                    value = excluded.value,
+                    rating = excluded.rating,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    judgment_id,
+                    owner_user_id,
+                    query_hash,
+                    write.query,
+                    write.evidence_id,
+                    write.source_id,
+                    write.source_type.value if write.source_type else None,
+                    write.source_version,
+                    write.run_id,
+                    write.search_signature,
+                    write.value,
+                    write.rating,
+                    _json_dump(write.metadata),
+                    created_at,
+                    now,
+                ),
+            )
+            row = connection.execute(
+                """
+                select * from retrieval_relevance_judgments
+                where owner_user_id = ? and query_hash = ? and evidence_id = ?
+                """,
+                (owner_user_id, query_hash, write.evidence_id),
+            ).fetchone()
+        return _sqlite_judgment_from_row(row)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str | None = None,
+        run_id: str | None = None,
+        evidence_id: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalRelevanceJudgment]:
+        clauses = ["owner_user_id = ?"]
+        params: list[object] = [owner_user_id]
+        if query_hash is not None:
+            clauses.append("query_hash = ?")
+            params.append(query_hash)
+        if run_id is not None:
+            clauses.append("run_id = ?")
+            params.append(run_id)
+        if evidence_id is not None:
+            clauses.append("evidence_id = ?")
+            params.append(evidence_id)
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                f"""
+                select * from retrieval_relevance_judgments
+                where {' and '.join(clauses)}
+                order by updated_at desc, judgment_id asc
+                limit ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [_sqlite_judgment_from_row(row) for row in rows]
+
+    def delete(self, *, owner_user_id: str, judgment_id: str) -> None:
+        with self.backbone.connect() as connection:
+            cursor = connection.execute(
+                """
+                delete from retrieval_relevance_judgments
+                where owner_user_id = ? and judgment_id = ?
+                """,
+                (owner_user_id, judgment_id),
+            )
+        if cursor.rowcount == 0:
+            raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
+
+
+def _sqlite_judgment_from_row(row) -> RetrievalRelevanceJudgment:
+    return RetrievalRelevanceJudgment(
+        judgment_id=row["judgment_id"],
+        owner_user_id=row["owner_user_id"],
+        query=row["query_text"],
+        query_hash=row["query_hash"],
+        evidence_id=row["evidence_id"],
+        source_id=row["source_id"],
+        source_type=row["source_type"],
+        source_version=row["source_version"],
+        run_id=row["run_id"],
+        search_signature=row["search_signature"],
+        value=row["value"],
+        rating=int(row["rating"]),
+        metadata=_json_load(row["metadata_json"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _json_dump(value: object) -> str:
+    return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def _json_load(value: str | None) -> dict:
+    if not value:
+        return {}
+    loaded = json.loads(value)
+    return loaded if isinstance(loaded, dict) else {}

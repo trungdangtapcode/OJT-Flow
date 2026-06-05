@@ -1,0 +1,145 @@
+{
+  "version": "2026-06-04",
+  "source_note": "Seed registry for deterministic retrieval query normalization. Codes are limited examples and must be verified against the authoritative terminology before clinical or production use.",
+  "concepts": [
+    {
+      "concept_id": "hba1c_lab_test",
+      "display_name": "Hemoglobin A1c",
+      "clinical_domain": "laboratory",
+      "standard_system": "LOINC",
+      "code": "4548-4",
+      "source": "https://loinc.org/4548-4",
+      "aliases": ["hba1c", "a1c", "hemoglobin a1c", "glycated hemoglobin"],
+      "metadata": {
+        "loinc_long_common_name": "Hemoglobin A1c/Hemoglobin.total in Blood",
+        "preferred_units": ["%"]
+      }
+    },
+    {
+      "concept_id": "glucose_serum_plasma",
+      "display_name": "Glucose in serum or plasma",
+      "clinical_domain": "laboratory",
+      "standard_system": "LOINC",
+      "code": "2345-7",
+      "source": "https://loinc.org/2345-7",
+      "aliases": ["glucose", "blood glucose", "serum glucose", "plasma glucose", "glucose serum"],
+      "metadata": {
+        "loinc_long_common_name": "Glucose [Mass/volume] in Serum or Plasma",
+        "preferred_units": ["mg/dL", "mmol/L"]
+      }
+    },
+    {
+      "concept_id": "creatinine_serum_plasma",
+      "display_name": "Creatinine in serum or plasma",
+      "clinical_domain": "laboratory",
+      "standard_system": "LOINC",
+      "code": "2160-0",
+      "source": "https://loinc.org/2160-0",
+      "aliases": ["creatinine", "serum creatinine", "plasma creatinine", "crea"],
+      "metadata": {
+        "loinc_long_common_name": "Creatinine [Mass/volume] in Serum or Plasma",
+        "preferred_units": ["mg/dL", "umol/L"]
+      }
+    },
+    {
+      "concept_id": "sodium_serum_plasma",
+      "display_name": "Sodium in serum or plasma",
+      "clinical_domain": "laboratory",
+      "standard_system": "LOINC",
+      "code": "2951-2",
+      "source": "https://loinc.org/2951-2",
+      "aliases": ["sodium", "serum sodium", "plasma sodium", "sodium level"],
+      "metadata": {
+        "loinc_long_common_name": "Sodium [Moles/volume] in Serum or Plasma",
+        "preferred_units": ["mmol/L"]
+      }
+    },
+    {
+      "concept_id": "potassium_serum_plasma",
+      "display_name": "Potassium in serum or plasma",
+      "clinical_domain": "laboratory",
+      "standard_system": "LOINC",
+      "code": "2823-3",
+      "source": "https://loinc.org/2823-3",
+      "aliases": ["potassium", "serum potassium", "plasma potassium", "potassium level"],
+      "metadata": {
+        "loinc_long_common_name": "Potassium [Moles/volume] in Serum or Plasma",
+        "preferred_units": ["mmol/L"]
+      }
+    },
+    {
+      "concept_id": "cholesterol_total_serum_plasma",
+      "display_name": "Total cholesterol in serum or plasma",
+      "clinical_domain": "laboratory",
+      "standard_system": "LOINC",
+      "code": "2093-3",
+      "source": "https://loinc.org/2093-3",
+      "aliases": ["cholesterol", "total cholesterol", "serum cholesterol", "plasma cholesterol"],
+      "metadata": {
+        "loinc_long_common_name": "Cholesterol [Mass/volume] in Serum or Plasma",
+        "preferred_units": ["mg/dL", "mmol/L"]
+      }
+    },
+    {
+      "concept_id": "metformin_medication",
+      "display_name": "Metformin",
+      "clinical_domain": "medication",
+      "standard_system": "RxNorm",
+      "code": "6809",
+      "source": "https://lhncbc.nlm.nih.gov/RxNav/APIs/api-RxNorm.getRxcuiHistoryStatus.html",
+      "aliases": ["metformin", "metformin hydrochloride"],
+      "metadata": {
+        "identifier_type": "RxCUI",
+        "scope": "ingredient-level seed concept"
+      }
+    },
+    {
+      "concept_id": "diabetes_mellitus_subject",
+      "display_name": "Diabetes Mellitus",
+      "clinical_domain": "literature",
+      "standard_system": "MeSH",
+      "code": "D003920",
+      "source": "https://meshb.nlm.nih.gov/record/ui?ui=D003920",
+      "aliases": ["diabetes", "diabetes mellitus", "diabetic"],
+      "metadata": {
+        "identifier_type": "MeSH Descriptor UI"
+      }
+    },
+    {
+      "concept_id": "hypertension_subject",
+      "display_name": "Hypertension",
+      "clinical_domain": "literature",
+      "standard_system": "MeSH",
+      "code": "D006973",
+      "source": "https://www.ncbi.nlm.nih.gov/mesh?Cmd=DetailsSearch&Db=mesh&Term=%22Hypertension%22%5BMeSH+Terms%5D",
+      "aliases": ["hypertension", "high blood pressure", "blood pressure high"],
+      "metadata": {
+        "identifier_type": "MeSH Descriptor UI"
+      }
+    },
+    {
+      "concept_id": "kidney_failure_chronic_subject",
+      "display_name": "Kidney Failure, Chronic",
+      "clinical_domain": "literature",
+      "standard_system": "MeSH",
+      "code": "D007676",
+      "source": "https://meshb.nlm.nih.gov/record/ui?ui=D007676",
+      "aliases": ["chronic kidney failure", "chronic renal failure", "ckd", "kidney failure chronic"],
+      "metadata": {
+        "identifier_type": "MeSH Descriptor UI"
+      }
+    },
+    {
+      "concept_id": "metformin_mesh_subject",
+      "display_name": "Metformin",
+      "clinical_domain": "literature",
+      "standard_system": "MeSH",
+      "code": "D008687",
+      "source": "https://www.ncbi.nlm.nih.gov/mesh?Cmd=DetailsSearch&Db=mesh&Term=%22Metformin%22%5BMeSH+Terms%5D",
+      "aliases": ["metformin", "glucophage", "metformin hcl", "metformin hydrochloride"],
+      "metadata": {
+        "identifier_type": "MeSH Descriptor UI"
+      }
+    }
+  ]
+}

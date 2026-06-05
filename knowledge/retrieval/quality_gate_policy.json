@@ -1,0 +1,42 @@
+{
+  "version": "retrieval_quality_policy.v1",
+  "severity_penalties": {
+    "success": 0,
+    "info": 5,
+    "warning": 15,
+    "destructive": 40,
+    "error": 40
+  },
+  "blocking_severities": ["destructive", "error"],
+  "review_severities": ["warning"],
+  "status_thresholds": {
+    "review_score_below": 85
+  },
+  "ranking_thresholds": {
+    "min_top_matched_terms": 1
+  },
+  "provenance_requirements": {
+    "source_types": [
+      "healthcare_standard",
+      "terminology_system",
+      "data_dictionary"
+    ],
+    "require_source_version": true,
+    "locator_any_keys": [
+      "path",
+      "url",
+      "standard",
+      "pmid",
+      "doi",
+      "api",
+      "resource",
+      "table",
+      "document_id"
+    ]
+  },
+  "concept_grounding_requirements": {
+    "require_detected_concepts": true,
+    "min_confidence": 0.7
+  },
+  "default_top_action": "Run retrieval before assessing package readiness."
+}

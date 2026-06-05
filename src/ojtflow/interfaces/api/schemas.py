@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr, NonBlankText
 from ojtflow.core.contracts.enums import (
@@ -159,6 +159,26 @@ class OcrEvidenceRequest(ContractModel):
     }
 
 
+class RetrievalSearchFilters(ContractModel):
+    trust_level: TrustLevel | None = None
+    clinical_domain: NonBlankStr | None = None
+    standard_system: NonBlankStr | None = None
+    source_type: EvidenceSourceType | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "trust_level": "approved",
+                    "clinical_domain": "laboratory",
+                    "standard_system": "UCUM",
+                    "source_type": "terminology_system",
+                }
+            ]
+        }
+    }
+
+
 class RetrievalSearchRequest(ContractModel):
     query: NonBlankStr
     top_k: int = Field(default=5, ge=1, le=20)
@@ -171,7 +191,7 @@ class RetrievalSearchRequest(ContractModel):
     standard_system: NonBlankStr | None = None
     trust_level: TrustLevel | None = TrustLevel.APPROVED
     source_type: EvidenceSourceType | None = None
-    filters: dict[str, Any] = Field(default_factory=dict)
+    filters: RetrievalSearchFilters = Field(default_factory=RetrievalSearchFilters)
 
     model_config = {
         "json_schema_extra": {
@@ -184,6 +204,177 @@ class RetrievalSearchRequest(ContractModel):
                     "clinical_domain": "laboratory",
                     "trust_level": "approved",
                 }
+            ]
+        }
+    }
+
+
+class RetrievalJudgmentRequest(ContractModel):
+    query: NonBlankStr
+    evidence_id: NonBlankStr
+    value: Literal["relevant", "partial", "not_relevant"]
+    rating: int | None = Field(default=None, ge=0, le=3)
+    source_id: NonBlankStr | None = None
+    source_type: EvidenceSourceType | None = None
+    source_version: NonBlankStr | None = None
+    run_id: NonBlankStr | None = None
+    search_signature: NonBlankStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "query": "FHIR Observation HbA1c unit",
+                    "evidence_id": "ev_schema_lab_result_v1",
+                    "source_id": "schema:lab_result_v1",
+                    "source_type": "schema",
+                    "value": "relevant",
+                    "rating": 3,
+                    "run_id": "browser-run-1",
+                    "search_signature": "{\"query\":\"FHIR Observation HbA1c unit\"}",
+                    "metadata": {"review_surface": "retrieval_console"},
+                }
+            ]
+        }
+    }
+
+
+class RetrievalJudgmentEvaluationRequest(ContractModel):
+    query: NonBlankStr
+    ranked_evidence_ids: list[NonBlankStr] = Field(min_length=1, max_length=100)
+    cutoff: int | None = Field(default=None, ge=1, le=100)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "query": "FHIR Observation HbA1c unit",
+                    "ranked_evidence_ids": [
+                        "ev_schema_lab_result_v1",
+                        "ev_terminology_ucum",
+                    ],
+                    "cutoff": 5,
+                }
+            ]
+        }
+    }
+
+
+class RetrievalReindexRequest(ContractModel):
+    include_seeded: bool = True
+    include_corpus: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "include_seeded": True,
+                    "include_corpus": True,
+                }
+            ]
+        }
+    }
+
+
+class RuntimeRetrievalSettingsRequest(ContractModel):
+    retrieval_framework: Literal["custom", "llamaindex"] | None = None
+    retrieval_candidate_multiplier: int | None = Field(default=None, ge=1, le=20)
+    retrieval_min_candidates: int | None = Field(default=None, ge=1, le=200)
+    retrieval_vector_weight: float | None = Field(default=None, ge=0, le=1)
+    retrieval_bm25_weight: float | None = Field(default=None, ge=0, le=1)
+    retrieval_diversity_enabled: bool | None = None
+    retrieval_diversity_lambda: float | None = Field(default=None, ge=0, le=1)
+    retrieval_hnsw_ef_search: int | None = Field(default=None, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def _has_runtime_update(self) -> "RuntimeRetrievalSettingsRequest":
+        if not self.model_dump(exclude_none=True):
+            raise ValueError("At least one retrieval setting must be provided.")
+        if (
+            self.retrieval_vector_weight is not None
+            and self.retrieval_bm25_weight is not None
+            and self.retrieval_vector_weight + self.retrieval_bm25_weight <= 0
+        ):
+            raise ValueError(
+                "retrieval_vector_weight and retrieval_bm25_weight cannot both be zero."
+            )
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "retrieval_framework": "llamaindex",
+                    "retrieval_candidate_multiplier": 4,
+                    "retrieval_min_candidates": 12,
+                    "retrieval_vector_weight": 0.62,
+                    "retrieval_bm25_weight": 0.38,
+                    "retrieval_diversity_enabled": True,
+                    "retrieval_diversity_lambda": 0.72,
+                    "retrieval_hnsw_ef_search": 100,
+                }
+            ]
+        }
+    }
+
+
+class RuntimeAssistantSettingsRequest(ContractModel):
+    llm_provider: Literal["disabled", "openai"] | None = None
+    llm_model: NonBlankStr | None = None
+    llm_timeout_seconds: float | None = Field(default=None, gt=0, le=300)
+    llm_max_tool_calls: int | None = Field(default=None, ge=1, le=12)
+
+    @model_validator(mode="after")
+    def _has_runtime_update(self) -> "RuntimeAssistantSettingsRequest":
+        if not self.model_dump(exclude_none=True):
+            raise ValueError("At least one assistant setting must be provided.")
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "llm_provider": "openai",
+                    "llm_model": "gpt-4.1-mini",
+                    "llm_timeout_seconds": 30.0,
+                    "llm_max_tool_calls": 4,
+                }
+            ]
+        }
+    }
+
+
+class AssistantChatRequest(ContractModel):
+    message: NonBlankStr
+    context: dict[str, Any] = Field(default_factory=dict)
+    execute_write_actions: bool = False
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "message": "Find trusted evidence for HbA1c CSV rows with missing units.",
+                    "context": {
+                        "schema_id": "lab_result_v1",
+                        "fields": ["lab_name", "value", "unit"],
+                        "clinical_domain": "laboratory",
+                    },
+                    "execute_write_actions": False,
+                },
+                {
+                    "message": "Validate this messy lab CSV and explain it with trusted evidence.",
+                    "context": {
+                        "data": (
+                            "date,patient_id,lab_name,value,unit\n"
+                            "2026/01/02,P002,HbA1c,,\n"
+                        ),
+                        "input_format": "csv",
+                        "schema_id": "lab_result_v1",
+                        "clinical_domain": "laboratory",
+                    },
+                    "execute_write_actions": False,
+                },
             ]
         }
     }

@@ -1,9 +1,17 @@
+import json
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from ojtflow.config import clear_settings_cache, get_settings
+from ojtflow.config import (
+    clear_settings_cache,
+    get_settings,
+    runtime_assistant_settings,
+    runtime_retrieval_settings,
+    save_runtime_assistant_settings,
+    save_runtime_retrieval_settings,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +60,14 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.google_frontend_redirect_uri == "http://localhost:5173/auth/callback"
     assert settings.max_inline_data_bytes == 1048576
     assert settings.embedding_model == "deterministic-hash-v0"
+    assert settings.llm_provider == "disabled"
+    assert settings.llm_model == "chat-latest"
+    assert settings.llm_max_tool_calls == 4
+    assert settings.retrieval_hnsw_ef_search == 100
+    assert settings.retrieval_candidate_multiplier == 4
+    assert settings.retrieval_min_candidates == 12
+    assert settings.retrieval_vector_weight == 0.62
+    assert settings.retrieval_bm25_weight == 0.38
     assert settings.resolved_knowledge_dir == REPO_ROOT / "knowledge"
     assert settings.resolved_migrations_dir == REPO_ROOT / "sql/postgres/migrations"
 
@@ -70,6 +86,97 @@ def test_runtime_resource_paths_are_configurable_and_resolved(monkeypatch, tmp_p
 
     assert settings.resolved_knowledge_dir == knowledge_dir
     assert settings.resolved_migrations_dir == migrations_dir
+
+
+def test_runtime_retrieval_settings_are_persisted_and_reloaded(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+        updated = save_runtime_retrieval_settings(
+            settings,
+            {
+                "retrieval_framework": "llamaindex",
+                "retrieval_candidate_multiplier": 3,
+                "retrieval_min_candidates": 9,
+                "retrieval_vector_weight": 0.7,
+                "retrieval_bm25_weight": 0.3,
+                "retrieval_diversity_enabled": False,
+                "retrieval_diversity_lambda": 0.5,
+                "retrieval_hnsw_ef_search": 80,
+            },
+        )
+        clear_settings_cache()
+        reloaded = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert runtime_path.exists()
+    assert json.loads(runtime_path.read_text(encoding="utf-8")) == runtime_retrieval_settings(
+        updated
+    )
+    assert runtime_retrieval_settings(reloaded) == runtime_retrieval_settings(updated)
+    assert reloaded.retrieval_framework == "llamaindex"
+    assert reloaded.retrieval_candidate_multiplier == 3
+    assert reloaded.retrieval_min_candidates == 9
+    assert reloaded.retrieval_vector_weight == 0.7
+    assert reloaded.retrieval_bm25_weight == 0.3
+    assert reloaded.retrieval_diversity_enabled is False
+    assert reloaded.retrieval_diversity_lambda == 0.5
+    assert reloaded.retrieval_hnsw_ef_search == 80
+
+
+def test_runtime_assistant_settings_are_persisted_and_preserved(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime_settings.json"
+    monkeypatch.setenv("OJT_RUNTIME_SETTINGS_PATH", str(runtime_path))
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+        assistant_updated = save_runtime_assistant_settings(
+            settings,
+            {
+                "llm_provider": "openai",
+                "llm_model": "gpt-4.1-mini",
+                "llm_timeout_seconds": 45.0,
+                "llm_max_tool_calls": 6,
+            },
+        )
+        retrieval_updated = save_runtime_retrieval_settings(
+            assistant_updated,
+            {
+                "retrieval_framework": "llamaindex",
+                "retrieval_candidate_multiplier": 2,
+            },
+        )
+        clear_settings_cache()
+        reloaded = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert runtime_path.exists()
+    saved = json.loads(runtime_path.read_text(encoding="utf-8"))
+    assert saved["llm_provider"] == "openai"
+    assert saved["llm_model"] == "gpt-4.1-mini"
+    assert saved["llm_timeout_seconds"] == 45.0
+    assert saved["llm_max_tool_calls"] == 6
+    assert saved["retrieval_framework"] == "llamaindex"
+    assert saved["retrieval_candidate_multiplier"] == 2
+    assert runtime_assistant_settings(reloaded) == runtime_assistant_settings(assistant_updated)
+    assert reloaded.llm_provider == "openai"
+    assert reloaded.llm_model == "gpt-4.1-mini"
+    assert reloaded.llm_timeout_seconds == 45.0
+    assert reloaded.llm_max_tool_calls == 6
+    assert reloaded.retrieval_framework == "llamaindex"
+    assert runtime_retrieval_settings(reloaded) == runtime_retrieval_settings(retrieval_updated)
 
 
 @pytest.mark.parametrize(
@@ -425,7 +532,7 @@ def test_auth_cookie_domain_must_be_dns_domain(monkeypatch, bad_domain) -> None:
         clear_settings_cache()
 
 
-def test_embedding_settings_accept_only_implemented_provider(monkeypatch) -> None:
+def test_embedding_settings_accept_deterministic_provider(monkeypatch) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", " DETERMINISTIC ")
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", " deterministic-hash-v0 ")
     monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", " 64 ")
@@ -441,7 +548,150 @@ def test_embedding_settings_accept_only_implemented_provider(monkeypatch) -> Non
     assert settings.embedding_dimensions == 64
 
 
-@pytest.mark.parametrize("bad_provider", ["", "   ", "openai", "vertex", "sentence-transformers"])
+def test_embedding_settings_accept_openai_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", " OPENAI ")
+    monkeypatch.setenv("OJT_EMBEDDING_MODEL", " text-embedding-3-small ")
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", " 384 ")
+    monkeypatch.setenv("OPENAI_API_KEY", "host-key")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.embedding_provider == "openai"
+    assert settings.embedding_model == "text-embedding-3-small"
+    assert settings.embedding_dimensions == 384
+    assert settings.openai_api_key == "host-key"
+
+
+def test_embedding_settings_accept_huggingface_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", " HF ")
+    monkeypatch.setenv("OJT_EMBEDDING_MODEL", " BAAI/bge-small-en-v1.5 ")
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", " 384 ")
+    monkeypatch.setenv("OJT_HF_EMBEDDING_DEVICE", " cuda:0 ")
+    monkeypatch.setenv("OJT_HF_EMBEDDING_BATCH_SIZE", " 8 ")
+    monkeypatch.setenv("OJT_RETRIEVAL_CORPUS_DIRS", "knowledge/corpus, data/trusted")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.embedding_provider == "huggingface"
+    assert settings.embedding_model == "BAAI/bge-small-en-v1.5"
+    assert settings.embedding_dimensions == 384
+    assert settings.hf_embedding_device == "cuda:0"
+    assert settings.hf_embedding_batch_size == 8
+    assert settings.resolved_retrieval_corpus_dirs == (
+        REPO_ROOT / "knowledge/corpus",
+        REPO_ROOT / "data/trusted",
+    )
+
+
+def test_rerank_settings_accept_huggingface_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_RERANK_PROVIDER", " HF ")
+    monkeypatch.setenv("OJT_RERANK_MODEL", " BAAI/bge-reranker-base ")
+    monkeypatch.setenv("OJT_RERANK_DEVICE", " cuda:0 ")
+    monkeypatch.setenv("OJT_RERANK_BATCH_SIZE", " 4 ")
+    monkeypatch.setenv("OJT_RERANK_CANDIDATE_LIMIT", " 12 ")
+    monkeypatch.setenv("OJT_RERANK_SCORE_WEIGHT", " 0.2 ")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.rerank_provider == "huggingface"
+    assert settings.rerank_model == "BAAI/bge-reranker-base"
+    assert settings.rerank_device == "cuda:0"
+    assert settings.rerank_batch_size == 4
+    assert settings.rerank_candidate_limit == 12
+    assert settings.rerank_score_weight == 0.2
+
+
+def test_llm_settings_accept_openai_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_LLM_PROVIDER", " OPENAI ")
+    monkeypatch.setenv("OJT_LLM_MODEL", " chat-latest ")
+    monkeypatch.setenv("OJT_LLM_BASE_URL", " https://api.openai.com/v1/ ")
+    monkeypatch.setenv("OJT_LLM_TIMEOUT_SECONDS", " 12.5 ")
+    monkeypatch.setenv("OJT_LLM_MAX_TOOL_CALLS", " 3 ")
+    monkeypatch.setenv("OPENAI_API_KEY", "host-key")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.llm_provider == "openai"
+    assert settings.llm_model == "chat-latest"
+    assert settings.llm_base_url == "https://api.openai.com/v1"
+    assert settings.llm_timeout_seconds == 12.5
+    assert settings.llm_max_tool_calls == 3
+    assert settings.openai_api_key == "host-key"
+
+
+@pytest.mark.parametrize("bad_provider", ["anthropic", "ollama", "responses"])
+def test_llm_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
+    monkeypatch.setenv("OJT_LLM_PROVIDER", bad_provider)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid LLM provider"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_provider", ["vertex", "openai", "crossencoder"])
+def test_rerank_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
+    monkeypatch.setenv("OJT_RERANK_PROVIDER", bad_provider)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid rerank provider"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_device", ["", "   ", "gpu", "cuda:abc"])
+def test_rerank_device_must_be_supported(monkeypatch, bad_device) -> None:
+    monkeypatch.setenv("OJT_RERANK_DEVICE", bad_device)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid Hugging Face rerank device"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize(
+    ("env_var", "bad_value"),
+    [
+        ("OJT_RERANK_BATCH_SIZE", "0"),
+        ("OJT_RERANK_CANDIDATE_LIMIT", "0"),
+        ("OJT_RERANK_SCORE_WEIGHT", "0"),
+        ("OJT_RERANK_SCORE_WEIGHT", "1.1"),
+    ],
+)
+def test_rerank_numeric_settings_are_validated(monkeypatch, env_var, bad_value) -> None:
+    monkeypatch.setenv(env_var, bad_value)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValidationError):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_provider", ["", "   ", "vertex"])
 def test_embedding_provider_must_match_implemented_adapter(monkeypatch, bad_provider) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", bad_provider)
     clear_settings_cache()
@@ -453,8 +703,8 @@ def test_embedding_provider_must_match_implemented_adapter(monkeypatch, bad_prov
         clear_settings_cache()
 
 
-@pytest.mark.parametrize("bad_model", ["", "   ", "text-embedding-3-large", "hash-v1"])
-def test_embedding_model_must_match_implemented_adapter(monkeypatch, bad_model) -> None:
+@pytest.mark.parametrize("bad_model", ["", "   ", "hash-v1"])
+def test_deterministic_embedding_model_must_match_adapter(monkeypatch, bad_model) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", bad_model)
     clear_settings_cache()
 
@@ -466,7 +716,7 @@ def test_embedding_model_must_match_implemented_adapter(monkeypatch, bad_model) 
 
 
 @pytest.mark.parametrize("bad_dimensions", ["", "   ", "0", "1", "128", "not-a-number"])
-def test_embedding_dimensions_must_match_postgres_vector_schema(
+def test_deterministic_embedding_dimensions_must_match_adapter(
     monkeypatch,
     bad_dimensions,
 ) -> None:
@@ -475,6 +725,71 @@ def test_embedding_dimensions_must_match_postgres_vector_schema(
 
     try:
         with pytest.raises(ValueError, match="Invalid embedding dimensions"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_dimensions", ["", "   ", "0", "-1", "not-a-number"])
+def test_openai_embedding_dimensions_must_be_positive(monkeypatch, bad_dimensions) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", bad_dimensions)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="Invalid embedding dimensions"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+def test_retrieval_chunk_overlap_must_be_smaller_than_chunk_size(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_CHUNK_MAX_CHARS", "100")
+    monkeypatch.setenv("OJT_RETRIEVAL_CHUNK_OVERLAP_CHARS", "100")
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="OVERLAP"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+def test_retrieval_diversity_settings_are_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_ENABLED", "false")
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", "0.35")
+    monkeypatch.setenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", "200")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.retrieval_diversity_enabled is False
+    assert settings.retrieval_diversity_lambda == 0.35
+    assert settings.retrieval_hnsw_ef_search == 200
+
+
+@pytest.mark.parametrize("bad_lambda", ["-0.1", "1.1"])
+def test_retrieval_diversity_lambda_must_be_probability(monkeypatch, bad_lambda) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_DIVERSITY_LAMBDA", bad_lambda)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValidationError):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+@pytest.mark.parametrize("bad_value", ["0", "-1", "1001"])
+def test_retrieval_hnsw_ef_search_must_be_bounded(monkeypatch, bad_value) -> None:
+    monkeypatch.setenv("OJT_RETRIEVAL_HNSW_EF_SEARCH", bad_value)
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValidationError):
             get_settings()
     finally:
         clear_settings_cache()
@@ -629,10 +944,20 @@ def test_runtime_docs_explain_embedding_provider_validation() -> None:
     )
 
     assert "OJT_EMBEDDING_PROVIDER" in docs
-    assert "only implemented embedding provider" in docs
+    assert "OJT_EMBEDDING_PROVIDER=openai" in docs
+    assert "OJT_EMBEDDING_PROVIDER=huggingface" in docs
+    assert "OJT_HF_EMBEDDING_DEVICE=cuda" in docs
+    assert "OJT_OPENAI_API_KEY" in docs
+    assert "OJT_RERANK_PROVIDER=huggingface" in docs
+    assert "OJT_RERANK_MODEL=BAAI/bge-reranker-base" in docs
+    assert "CrossEncoder" in docs
+    assert "OJT_RETRIEVAL_DIVERSITY_ENABLED" in docs
+    assert "OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72" in docs
+    assert "OJT_RETRIEVAL_HNSW_EF_SEARCH" in docs
+    assert "source-aware MMR" in docs
     assert "deterministic-hash-v0" in docs
-    assert "OJT_EMBEDDING_DIMENSIONS=64" in docs
-    assert "vector(64)" in docs
+    assert "OJT_EMBEDDING_DIMENSIONS=384" in docs
+    assert "vector(384)" in docs
 
 
 def test_runtime_docs_explain_auth_cookie_name_validation() -> None:

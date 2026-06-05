@@ -15,6 +15,7 @@ from ojtflow.interfaces.api.responses import (
 )
 from ojtflow.interfaces.api.deps import require_authentication
 from ojtflow.interfaces.api.routes import (
+    assistant,
     auth,
     convert,
     fhir,
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     protected = [Depends(require_authentication)]
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(assistant.router, prefix="/api/v1")
     app.include_router(workflows.router, prefix="/api/v1")
     app.include_router(review.router, prefix="/api/v1")
     app.include_router(convert.router, prefix="/api/v1", dependencies=protected)

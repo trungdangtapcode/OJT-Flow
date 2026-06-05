@@ -1,0 +1,215 @@
+{
+  "version": "retrieval_query_expansion_rules.v1",
+  "rules": [
+    {
+      "rule_id": "lab_observation_identity",
+      "concept": "laboratory_observation_identity",
+      "triggers": ["lab", "laboratory", "lab_name", "test", "observation", "result"],
+      "expanded_terms": [
+        "laboratory test identifier",
+        "lab name normalization",
+        "observation code",
+        "LOINC code"
+      ],
+      "standards": ["LOINC"],
+      "variant": "LOINC laboratory observation test identifiers lab_name code"
+    },
+    {
+      "rule_id": "hba1c_lab_test",
+      "concept": "hba1c_laboratory_test",
+      "triggers": ["hba1c", "a1c", "hemoglobin a1c", "glycated hemoglobin"],
+      "expanded_terms": [
+        "HbA1c",
+        "hemoglobin A1c",
+        "glycated hemoglobin",
+        "laboratory observation value"
+      ],
+      "standards": ["LOINC", "FHIR"],
+      "variant": "HbA1c hemoglobin A1c glycated hemoglobin laboratory Observation code value unit"
+    },
+    {
+      "rule_id": "unit_normalization",
+      "concept": "unit_normalization",
+      "triggers": [
+        "unit",
+        "units",
+        "missing unit",
+        "mg/dl",
+        "mmol/l",
+        "%",
+        "percent",
+        "valuequantity"
+      ],
+      "expanded_terms": [
+        "UCUM computable unit",
+        "ambiguous unit",
+        "missing unit",
+        "valueQuantity unit"
+      ],
+      "standards": ["UCUM", "FHIR"],
+      "variant": "UCUM computable units valueQuantity unit code missing ambiguous units"
+    },
+    {
+      "rule_id": "fhir_observation_profile",
+      "concept": "fhir_observation_profile",
+      "triggers": [
+        "fhir",
+        "observation",
+        "resourcetype",
+        "valuequantity",
+        "effectivedatetime"
+      ],
+      "expanded_terms": [
+        "FHIR Observation",
+        "resourceType",
+        "subject",
+        "effective date",
+        "valueQuantity"
+      ],
+      "standards": ["FHIR"],
+      "variant": "FHIR Observation resource status code subject effectiveDateTime valueQuantity"
+    },
+    {
+      "rule_id": "csv_tabular_quality",
+      "concept": "csv_tabular_quality",
+      "triggers": [
+        "csv",
+        "row",
+        "rows",
+        "column",
+        "columns",
+        "malformed",
+        "missing cells",
+        "extra cells"
+      ],
+      "expanded_terms": [
+        "malformed row",
+        "extra cell",
+        "missing cell",
+        "parse report",
+        "tabular conversion"
+      ],
+      "standards": ["OJTFlow schema"],
+      "variant": "CSV malformed rows extra cells missing cells parse report conversion data quality"
+    },
+    {
+      "rule_id": "phi_review_context",
+      "concept": "sensitive_identifier_review",
+      "triggers": ["patient_id", "patient identifier", "mrn", "dob", "ssn", "identifier"],
+      "expanded_terms": [
+        "sensitive identifier",
+        "PHI review",
+        "human review",
+        "patient identifier"
+      ],
+      "standards": ["OJTFlow policy"],
+      "variant": "patient identifiers sensitive fields PHI human review governance"
+    },
+    {
+      "rule_id": "medication_normalization",
+      "concept": "medication_normalization",
+      "triggers": ["medication", "medications", "drug", "drugs", "rxnorm", "ndc", "dose"],
+      "expanded_terms": [
+        "RxNorm normalized medication concept",
+        "drug code mapping",
+        "medication terminology",
+        "dose form"
+      ],
+      "standards": ["RxNorm"],
+      "variant": "RxNorm medication drug normalized concept code dose form"
+    },
+    {
+      "rule_id": "observational_analytics_export",
+      "concept": "observational_analytics_export",
+      "triggers": ["omop", "cdm", "analytics", "cohort", "observational"],
+      "expanded_terms": [
+        "OMOP Common Data Model",
+        "observational health data",
+        "analytics export",
+        "source evidence preservation"
+      ],
+      "standards": ["OMOP"],
+      "variant": "OMOP Common Data Model observational health analytics export mapping"
+    },
+    {
+      "rule_id": "biomedical_literature_search",
+      "concept": "biomedical_literature_search",
+      "triggers": [
+        "pubmed",
+        "medline",
+        "mesh",
+        "literature",
+        "paper",
+        "papers",
+        "study",
+        "studies",
+        "trial",
+        "systematic review",
+        "meta-analysis",
+        "guideline",
+        "evidence"
+      ],
+      "expanded_terms": [
+        "MeSH subject heading",
+        "PubMed automatic term mapping",
+        "title abstract text words",
+        "publication type filter"
+      ],
+      "standards": ["MeSH"],
+      "variant": "PubMed MEDLINE MeSH title abstract systematic review clinical trial evidence"
+    },
+    {
+      "rule_id": "clinical_trial_search",
+      "concept": "clinical_trial_search",
+      "triggers": [
+        "clinical trial",
+        "clinical trials",
+        "clinicaltrials",
+        "clinicaltrials.gov",
+        "nct",
+        "recruiting",
+        "eligibility",
+        "enrollment",
+        "intervention",
+        "phase"
+      ],
+      "expanded_terms": [
+        "ClinicalTrials.gov API v2",
+        "condition search",
+        "intervention search",
+        "recruitment status filter",
+        "eligibility criteria"
+      ],
+      "standards": ["ClinicalTrials.gov"],
+      "variant": "ClinicalTrials.gov API v2 studies condition intervention eligibility recruitment status"
+    },
+    {
+      "rule_id": "regulatory_drug_safety_search",
+      "concept": "regulatory_drug_safety_search",
+      "triggers": [
+        "openfda",
+        "faers",
+        "fda",
+        "adverse event",
+        "adverse events",
+        "side effect",
+        "side effects",
+        "boxed warning",
+        "drug label",
+        "drug labeling",
+        "recall",
+        "ndc",
+        "drug safety"
+      ],
+      "expanded_terms": [
+        "openFDA drug label API",
+        "openFDA drug adverse event API",
+        "FAERS public reports",
+        "boxed warning",
+        "drug safety signal"
+      ],
+      "standards": ["openFDA"],
+      "variant": "openFDA drug label adverse event FAERS boxed warning recall NDC safety"
+    }
+  ]
+}

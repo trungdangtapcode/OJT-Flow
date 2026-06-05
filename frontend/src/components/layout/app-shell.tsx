@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Bot,
   ClipboardCheck,
   Database,
   FileCode,
@@ -9,6 +10,7 @@ import {
   Layers,
   LogOut,
   RefreshCw,
+  Search,
   Settings,
   UserCircle,
 } from "lucide-react";
@@ -23,8 +25,10 @@ const navGroups = [
   {
     label: "Operations",
     items: [
+      { to: "/assistant", label: "Assistant", icon: Bot },
       { to: "/workflows", label: "Workflows", icon: Layers },
       { to: "/reviews", label: "Reviews", icon: ClipboardCheck },
+      { to: "/retrieval", label: "Retrieval", icon: Search },
       { to: "/audit", label: "Audit", icon: History },
     ],
   },
@@ -65,8 +69,8 @@ export function AppShell() {
 
   return (
     <div className="grid min-h-screen grid-cols-[204px_minmax(0,1fr)] bg-sidebar max-lg:grid-cols-1">
-      <aside className="sticky top-0 z-20 flex h-dvh flex-col border-r border-black/15 bg-sidebar p-3 text-sidebar-foreground shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-r-0 max-lg:p-2 max-sm:gap-0.5 max-sm:p-1.5">
-        <div className="mb-6 flex shrink-0 items-center gap-3 px-1 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:gap-0">
+      <aside className="sticky top-0 z-20 flex h-dvh flex-col border-r border-black/15 bg-sidebar p-3 text-sidebar-foreground shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-r-0 max-lg:p-2 max-sm:grid-cols-1 max-sm:gap-0 max-sm:p-1.5">
+        <div className="mb-6 flex shrink-0 items-center gap-3 px-1 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:hidden">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ccfbf1] text-[11px] font-black text-sidebar shadow-[0_8px_24px_rgba(45,212,191,0.16)] sm:h-9 sm:w-9 sm:rounded-lg sm:text-sm">
             OF
           </div>
@@ -117,16 +121,28 @@ export function AppShell() {
             </div>
             <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
               <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card px-2.5 shadow-sm md:max-w-[18rem]">
-                {user?.avatar_url ? (
-                  <img alt="" className="h-6 w-6 rounded-full" src={user.avatar_url} />
-                ) : (
-                  <UserCircle className="h-6 w-6 shrink-0 text-muted-foreground" />
-                )}
+                <UserAvatar
+                  avatarUrl={user?.avatar_url}
+                  displayName={user?.display_name}
+                  email={user?.email}
+                />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-bold max-sm:text-xs">{user?.display_name || user?.email}</div>
                   <div className="truncate text-[11px] leading-4 text-muted-foreground max-sm:hidden">{user?.email}</div>
                 </div>
               </div>
+              <Button
+                asChild
+                className="shrink-0 max-sm:h-11 max-sm:w-11 max-sm:px-0"
+                title="Assistant"
+                type="button"
+                variant="outline"
+              >
+                <Link aria-label="Open assistant" to="/assistant">
+                  <Bot className="h-4 w-4" />
+                  <span className="max-sm:hidden">Assistant</span>
+                </Link>
+              </Button>
               <Button
                 aria-label="Refresh application data"
                 className="max-sm:h-11 max-sm:w-11"
@@ -159,4 +175,91 @@ export function AppShell() {
       </main>
     </div>
   );
+}
+
+function UserAvatar({
+  avatarUrl,
+  displayName,
+  email,
+}: {
+  avatarUrl?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+}) {
+  const normalizedAvatarUrl = normalizeAvatarUrl(avatarUrl);
+  const [loadedAvatarUrl, setLoadedAvatarUrl] = React.useState<string | null>(null);
+  const initials = userInitials(displayName, email);
+
+  React.useEffect(() => {
+    setLoadedAvatarUrl(null);
+    if (!normalizedAvatarUrl) return;
+
+    let cancelled = false;
+    const image = new Image();
+    image.referrerPolicy = "no-referrer";
+    image.onload = () => {
+      if (!cancelled) setLoadedAvatarUrl(normalizedAvatarUrl);
+    };
+    image.onerror = () => {
+      if (!cancelled) setLoadedAvatarUrl(null);
+    };
+    image.src = normalizedAvatarUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedAvatarUrl]);
+
+  if (loadedAvatarUrl) {
+    return (
+      <span
+        aria-label={displayName || email || "User avatar"}
+        className="h-6 w-6 shrink-0 rounded-full border border-border bg-muted bg-cover bg-center"
+        role="img"
+        style={{ backgroundImage: `url("${escapeCssUrl(loadedAvatarUrl)}")` }}
+      />
+    );
+  }
+
+  if (initials) {
+    return (
+      <span
+        aria-label={displayName || email || "User avatar"}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-primary/10 text-[10px] font-black uppercase text-primary"
+      >
+        {initials}
+      </span>
+    );
+  }
+
+  return <UserCircle className="h-6 w-6 shrink-0 text-muted-foreground" />;
+}
+
+function userInitials(displayName?: string | null, email?: string | null) {
+  const source = (displayName || email?.split("@")[0] || "").trim();
+  if (!source) return "";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${firstGrapheme(parts[0])}${firstGrapheme(parts[parts.length - 1])}`.toUpperCase();
+  }
+  const compact = source.replace(/[^A-Za-z0-9]/g, "");
+  return compact.slice(0, 2).toUpperCase() || firstGrapheme(source).toUpperCase();
+}
+
+function firstGrapheme(value: string) {
+  return Array.from(value)[0] ?? "";
+}
+
+function normalizeAvatarUrl(value?: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function escapeCssUrl(value: string) {
+  return value.replace(/["\\]/g, "\\$&");
 }

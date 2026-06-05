@@ -239,7 +239,7 @@ def test_readme_architecture_tree_matches_repo_boundaries() -> None:
 
     assert "src/ojtflow/" in readme
     assert "  medical/          OCR/DICOM/visual evidence extension contracts" in readme
-    assert "  mcp_servers/      planned MCP wrapper boundary" in readme
+    assert "  mcp_servers/      local MCP wrappers for allowlisted OJTFlow tools" in readme
     assert "frontend/\n  src/              React product UI and API client" in readme
     assert "frontend/\n  src/              React product UI and API client\n  medical/" not in readme
     assert "frontend/\n  src/              React product UI and API client\n  mcp_servers/" not in readme
@@ -279,7 +279,7 @@ def test_release_candidate_checklist_matches_current_release_gate() -> None:
         "Workflow, review, event, summary, stats, retrieval-with-workflow, and output",
         "FHIR-like profiling",
         "OCR evidence endpoint",
-        "Graph-NER/RAG remains a handoff contract in v0",
+        "Graph-NER/RAG emits an auditable GraphRAG-lite handoff",
         "Google OAuth, ADC, service-account, key, and certificate filenames",
         "`plan/` is ignored and not tracked as source",
     ]

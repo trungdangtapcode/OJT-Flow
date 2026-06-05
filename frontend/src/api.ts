@@ -1,11 +1,31 @@
 import type {
   ApiEnvelope,
+  AssistantChatPayload,
+  AssistantResponse,
+  AssistantToolSpec,
   AuthLoginResponse,
   AuthSessionResponse,
   ExtractorInventory,
+  RetrievalJudgmentEvaluationPayload,
+  RetrievalJudgmentEvaluationResult,
+  RetrievalIntegrityReport,
+  RetrievalJudgmentPayload,
+  RetrievalPackage,
+  RetrievalRelevanceJudgment,
+  RetrievalRelevanceJudgmentSummary,
+  RetrievalReindexPayload,
+  RetrievalReindexResult,
+  RetrievalSearchPayload,
+  RetrievalSearchOptions,
+  RetrievalSearchPreset,
+  RetrievalSource,
+  RuntimeAssistantSettingsPayload,
+  RuntimeAssistantSettingsUpdate,
   RuntimeConfig,
   RuntimeHealth,
   RuntimeReadiness,
+  RuntimeRetrievalSettingsPayload,
+  RuntimeRetrievalSettingsUpdate,
   SchemaEntry,
   StartWorkflowPayload,
   WorkflowEvent,
@@ -350,6 +370,106 @@ export function listSchemas(): Promise<SchemaEntry[]> {
   return request<SchemaEntry[]>("/schemas");
 }
 
+export function searchRetrieval(payload: RetrievalSearchPayload): Promise<RetrievalPackage> {
+  return request<RetrievalPackage>("/retrieval/search", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listRetrievalPresets(): Promise<RetrievalSearchPreset[]> {
+  return request<RetrievalSearchPreset[]>("/retrieval/presets");
+}
+
+export function getRetrievalSearchOptions(): Promise<RetrievalSearchOptions> {
+  return request<RetrievalSearchOptions>("/retrieval/search-options");
+}
+
+export function listRetrievalJudgments(params: {
+  query?: string | null;
+  run_id?: string | null;
+  evidence_id?: string | null;
+  limit?: number;
+}): Promise<RetrievalRelevanceJudgment[]> {
+  return request<RetrievalRelevanceJudgment[]>(
+    `/retrieval/judgments${queryString(params)}`,
+  );
+}
+
+export function getRetrievalJudgmentSummary(params: {
+  query?: string | null;
+  limit?: number;
+}): Promise<RetrievalRelevanceJudgmentSummary> {
+  return request<RetrievalRelevanceJudgmentSummary>(
+    `/retrieval/judgments/summary${queryString(params)}`,
+  );
+}
+
+export function evaluateRetrievalJudgments(
+  payload: RetrievalJudgmentEvaluationPayload,
+): Promise<RetrievalJudgmentEvaluationResult> {
+  return request<RetrievalJudgmentEvaluationResult>("/retrieval/judgments/evaluate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function upsertRetrievalJudgment(
+  payload: RetrievalJudgmentPayload,
+): Promise<RetrievalRelevanceJudgment> {
+  return request<RetrievalRelevanceJudgment>("/retrieval/judgments", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteRetrievalJudgment(judgmentId: string): Promise<{
+  deleted: boolean;
+  judgment_id: string;
+}> {
+  return request(`/retrieval/judgments/${pathSegment(judgmentId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function chatWithAssistant(
+  payload: AssistantChatPayload,
+): Promise<AssistantResponse> {
+  return request<AssistantResponse>("/assistant/chat", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAssistantTools(): Promise<AssistantToolSpec[]> {
+  return request<AssistantToolSpec[]>("/assistant/tools");
+}
+
+export function listRetrievalSources(): Promise<RetrievalSource[]> {
+  return request<RetrievalSource[]>("/retrieval/sources");
+}
+
+export function getRetrievalIntegrity(params: {
+  include_seeded: boolean;
+  include_corpus: boolean;
+}): Promise<RetrievalIntegrityReport> {
+  return request<RetrievalIntegrityReport>(
+    `/retrieval/integrity${queryString({
+      include_seeded: String(params.include_seeded),
+      include_corpus: String(params.include_corpus),
+    })}`,
+  );
+}
+
+export function reindexRetrieval(
+  payload: RetrievalReindexPayload,
+): Promise<RetrievalReindexResult> {
+  return request<RetrievalReindexResult>("/retrieval/reindex", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getExtractorInventory(): Promise<ExtractorInventory> {
   return request<ExtractorInventory>("/parse/extractors");
 }
@@ -360,6 +480,24 @@ export function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 export function getRuntimeReadiness(): Promise<RuntimeReadiness> {
   return request<RuntimeReadiness>("/runtime/readiness");
+}
+
+export function updateRuntimeRetrievalSettings(
+  payload: RuntimeRetrievalSettingsPayload,
+): Promise<RuntimeRetrievalSettingsUpdate> {
+  return request<RuntimeRetrievalSettingsUpdate>("/runtime/retrieval-settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateRuntimeAssistantSettings(
+  payload: RuntimeAssistantSettingsPayload,
+): Promise<RuntimeAssistantSettingsUpdate> {
+  return request<RuntimeAssistantSettingsUpdate>("/runtime/assistant-settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getRuntimeHealth(): Promise<RuntimeHealth> {

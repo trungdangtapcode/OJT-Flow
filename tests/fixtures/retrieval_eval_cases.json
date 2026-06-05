@@ -1,0 +1,83 @@
+[
+  {
+    "case_id": "lab_required_fields",
+    "description": "Lab result validation should retrieve the schema evidence.",
+    "query": "lab result required fields date patient_id value unit",
+    "fields": ["date", "patient_id", "value", "unit"],
+    "schema_id": "lab_result_v1",
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["schema:lab_result_v1"],
+    "judgments": [
+      {
+        "source_id": "schema:lab_result_v1",
+        "rating": 3,
+        "reason": "Canonical schema evidence for required lab result fields."
+      }
+    ]
+  },
+  {
+    "case_id": "missing_units",
+    "description": "Missing unit review should retrieve UCUM evidence.",
+    "query": "missing UCUM units lab human review",
+    "fields": ["unit"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["terminology:ucum"],
+    "judgments": [
+      {
+        "source_id": "terminology:ucum",
+        "rating": 3,
+        "reason": "Canonical terminology evidence for computable lab units."
+      }
+    ]
+  },
+  {
+    "case_id": "fhir_observation",
+    "description": "FHIR-like lab observation should retrieve the Observation profile evidence.",
+    "query": "FHIR Observation laboratory value unit subject code effective date",
+    "resource_type": "Observation",
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["standard:fhir_observation_r4"],
+    "judgments": [
+      {
+        "source_id": "standard:fhir_observation_r4",
+        "rating": 3,
+        "reason": "Canonical FHIR Observation profile evidence for lab observations."
+      }
+    ]
+  },
+  {
+    "case_id": "csv_json_transformation",
+    "description": "CSV to JSON conversion should retrieve the transformation example.",
+    "query": "CSV lab rows convert to JSON records transformation example",
+    "detected_format": "csv",
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["example:csv_lab_to_json_records_v1"],
+    "judgments": [
+      {
+        "source_id": "example:csv_lab_to_json_records_v1",
+        "rating": 3,
+        "reason": "Canonical transformation example for lab CSV rows to JSON records."
+      }
+    ]
+  },
+  {
+    "case_id": "hba1c_standard_mapping",
+    "description": "HbA1c terminology lookup should retrieve LOINC grounding evidence.",
+    "query": "A1c result needs standard lab test code and lab_name mapping",
+    "fields": ["lab_name", "value", "unit"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["terminology:loinc"],
+    "judgments": [
+      {
+        "source_id": "terminology:loinc",
+        "rating": 3,
+        "reason": "Canonical terminology evidence for lab test code grounding."
+      }
+    ]
+  }
+]
