@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from collections.abc import AsyncIterator
+from typing import Any, Protocol
 
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
@@ -201,3 +202,34 @@ class AssistantPlanner(Protocol):
         tools: list[AssistantToolSpec],
         max_tool_calls: int,
     ) -> AssistantPlan: ...
+
+    def plan_stream(
+        self,
+        *,
+        message: str,
+        context: dict,
+        tools: list[AssistantToolSpec],
+        max_tool_calls: int,
+    ) -> AsyncIterator[dict[str, Any]]: ...
+
+    async def synthesize(
+        self,
+        *,
+        message: str,
+        context: dict[str, Any],
+        plan: AssistantPlan,
+        tool_results: list[dict[str, Any]],
+        findings: list[dict[str, Any]],
+        evidence_summary: list[dict[str, Any]],
+    ) -> str: ...
+
+    def synthesize_stream(
+        self,
+        *,
+        message: str,
+        context: dict[str, Any],
+        plan: AssistantPlan,
+        tool_results: list[dict[str, Any]],
+        findings: list[dict[str, Any]],
+        evidence_summary: list[dict[str, Any]],
+    ) -> AsyncIterator[str]: ...

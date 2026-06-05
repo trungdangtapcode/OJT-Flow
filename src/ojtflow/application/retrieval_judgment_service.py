@@ -12,6 +12,7 @@ from ojtflow.application.retrieval_evaluation_policy import (
 )
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalEvaluationReadiness,
     RetrievalJudgmentEvaluationResult,
     RetrievalJudgmentValue,
     RetrievalRelevanceJudgment,
@@ -23,6 +24,9 @@ from ojtflow.data_tools.hashing import sha256_text
 
 class RetrievalJudgmentService:
     """Coordinates user-scoped relevance judgments for retrieval evaluation."""
+
+    MIN_EVALUATION_JUDGED_COUNT = 3
+    MIN_EVALUATION_COVERAGE_AT_K = 0.6
 
     def __init__(
         self,
@@ -232,6 +236,13 @@ class RetrievalJudgmentService:
             average_rating=average_rating,
             unjudged_evidence_ids=unjudged_ids,
             judgment_ids=[judgment.judgment_id for judgment in ranked_judgments],
+            evaluation_readiness=evaluation_readiness(
+                judged_count=judged_count,
+                coverage_at_k=coverage_at_k,
+                min_judged_count=self.MIN_EVALUATION_JUDGED_COUNT,
+                min_coverage_at_k=self.MIN_EVALUATION_COVERAGE_AT_K,
+                unjudged_count=len(unjudged_ids),
+            ),
             recommendations=recommendations_from_policy(
                 rules=self.evaluation_policy_rules,
                 context=recommendation_context,
@@ -257,6 +268,54 @@ def rating_from_judgment_value(value: RetrievalJudgmentValue) -> int:
     if value == "partial":
         return 1
     return 0
+
+
+def evaluation_readiness(
+    *,
+    coverage_at_k: float,
+    judged_count: int,
+    min_coverage_at_k: float,
+    min_judged_count: int,
+    unjudged_count: int,
+) -> RetrievalEvaluationReadiness:
+    if judged_count == 0:
+        return RetrievalEvaluationReadiness(
+            status="unlabeled",
+            label="No judgments yet",
+            message="Label ranked evidence before using retrieval metrics for tuning.",
+            min_judged_count=min_judged_count,
+            min_coverage_at_k=min_coverage_at_k,
+        )
+    if judged_count < min_judged_count or coverage_at_k < min_coverage_at_k:
+        return RetrievalEvaluationReadiness(
+            status="low_confidence",
+            label="Low-confidence metrics",
+            message=(
+                f"Metrics need at least {min_judged_count} judged hits and "
+                f"{int(min_coverage_at_k * 100)}% Coverage@k before ranking quality is reliable. "
+                f"{unjudged_count} ranked hit(s) remain unjudged."
+            ),
+            min_judged_count=min_judged_count,
+            min_coverage_at_k=min_coverage_at_k,
+        )
+    if unjudged_count:
+        return RetrievalEvaluationReadiness(
+            status="usable_with_gaps",
+            label="Usable with gaps",
+            message=(
+                "Enough labels exist for directional tuning, but unjudged hits can still "
+                "change rank-aware metrics."
+            ),
+            min_judged_count=min_judged_count,
+            min_coverage_at_k=min_coverage_at_k,
+        )
+    return RetrievalEvaluationReadiness(
+        status="ready",
+        label="Ready for tuning",
+        message="The ranked set is fully judged for the current cutoff.",
+        min_judged_count=min_judged_count,
+        min_coverage_at_k=min_coverage_at_k,
+    )
 
 
 def _average_precision_at_k(

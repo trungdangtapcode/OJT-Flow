@@ -1,0 +1,37 @@
+{
+  "version": "assistant_examples.v1",
+  "examples": [
+    {
+      "example_id": "check_uploaded_healthcare_data",
+      "label": "Check uploaded data",
+      "description": "Validate healthcare rows and explain issues with trusted evidence.",
+      "message": "Validate the supplied healthcare data and explain the issues with trusted evidence.",
+      "context": {
+        "input_format": "csv",
+        "schema_id": "lab_result_v1",
+        "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+        "clinical_domain": "laboratory"
+      }
+    },
+    {
+      "example_id": "find_medical_standards",
+      "label": "Find medical standards",
+      "description": "Retrieve FHIR, LOINC, UCUM, policy, and schema evidence.",
+      "message": "Find trusted evidence for HbA1c CSV rows with missing units.",
+      "context": {
+        "schema_id": "lab_result_v1",
+        "fields": ["lab_name", "value", "unit"],
+        "clinical_domain": "laboratory"
+      }
+    },
+    {
+      "example_id": "review_work_queue",
+      "label": "Review work queue",
+      "description": "Show pending human review tasks that need operator action.",
+      "message": "Show pending human reviews.",
+      "context": {
+        "status": "pending"
+      }
+    }
+  ]
+}

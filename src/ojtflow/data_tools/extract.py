@@ -14,11 +14,15 @@ Install dependencies:
 
 from __future__ import annotations
 
+import base64
 import io
+import os
 import tempfile
 from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import httpx
 
 from ojtflow.core.errors import ToolExecutionError, UnsupportedUploadError
 
@@ -57,6 +61,7 @@ class Extractor:
 
 ALLOWED_EXTRACTORS = {Extractor.AUTO, Extractor.MARKITDOWN, Extractor.MINERU}
 MAX_UPLOAD_FILENAME_BYTES = 255
+OCR_SENSITIVE_FORMATS = {"pdf", "docx", "pptx", "xlsx", "xls", "image"}
 
 
 def sanitize_upload_filename(
@@ -155,7 +160,19 @@ def extract_document(
     # AUTO: try markitdown first, fall back to minerU
     markitdown_error: Exception | None = None
     try:
-        return _extract_markitdown(data, safe_filename, source_format, list(warnings))
+        result = _extract_markitdown(data, safe_filename, source_format, list(warnings))
+        if source_format == "image" and not result.text.strip():
+            fallback_warnings = list(result.warnings)
+            vision_result = _extract_openai_vision(
+                data=data,
+                filename=safe_filename,
+                source_format=source_format,
+                warnings=fallback_warnings,
+            )
+            if vision_result is not None:
+                return vision_result
+            result.warnings = fallback_warnings
+        return result
     except ImportError as exc:
         markitdown_error = exc
         warnings.append("markitdown not installed, falling back to minerU.")
@@ -179,6 +196,142 @@ def extract_document(
         ) from exc
 
 
+def _extract_openai_vision(
+    *,
+    data: bytes,
+    filename: str,
+    source_format: str,
+    warnings: list[str],
+) -> ExtractionResult | None:
+    """Use OpenAI vision as an OCR fallback for image attachments when configured."""
+
+    api_key = _openai_api_key()
+    if not api_key:
+        warnings.append(
+            "OpenAI vision OCR fallback is not configured; set OJT_OPENAI_API_KEY."
+        )
+        return None
+    mime_type = _image_mime_type(filename)
+    if not mime_type:
+        warnings.append(
+            "OpenAI vision OCR fallback supports PNG, JPEG, WEBP, and non-animated GIF images."
+        )
+        return None
+
+    model = _openai_vision_model()
+    base_url = (os.getenv("OJT_LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+    timeout_seconds = float(os.getenv("OJT_LLM_TIMEOUT_SECONDS", "30.0"))
+    image_url = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+    payload = {
+        "model": model,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Extract all readable text from this image for a healthcare "
+                            "data workflow. Preserve tables, field names, units, patient "
+                            "identifiers, warnings, and uncertainty. If no text is visible, "
+                            "return a concise visual description and state that no OCR text "
+                            "was found."
+                        ),
+                    },
+                    {"type": "input_image", "image_url": image_url, "detail": "high"},
+                ],
+            }
+        ],
+    }
+
+    try:
+        with httpx.Client(timeout=timeout_seconds) as client:
+            response = client.post(
+                f"{base_url}/responses",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+    except httpx.HTTPError as exc:
+        warnings.append(f"OpenAI vision OCR fallback failed: {exc}")
+        return None
+
+    if response.status_code >= 400:
+        warnings.append(
+            "OpenAI vision OCR fallback failed with status "
+            f"{response.status_code}: {response.text[:300]}"
+        )
+        return None
+
+    text = _openai_response_text(response.json()).strip()
+    if not text:
+        warnings.append("OpenAI vision OCR fallback returned empty text.")
+        return None
+
+    warnings.append("markitdown returned empty image text; used OpenAI vision OCR fallback.")
+    return ExtractionResult(
+        text=text,
+        extractor_used="openai_vision",
+        source_format=source_format,
+        filename=filename,
+        warnings=warnings,
+    )
+
+
+def _image_mime_type(filename: str) -> str | None:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".png":
+        return "image/png"
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".webp":
+        return "image/webp"
+    if suffix == ".gif":
+        return "image/gif"
+    return None
+
+
+def _openai_api_key() -> str | None:
+    return os.getenv("OJT_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+
+def _openai_vision_model() -> str:
+    model = os.getenv("OJT_OPENAI_VISION_MODEL") or os.getenv("OJT_LLM_MODEL") or "gpt-4.1-mini"
+    if model == "chat-latest":
+        return "gpt-4.1-mini"
+    return model
+
+
+def _env_bool(name: str, *, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _openai_response_text(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str):
+        return output_text
+    chunks: list[str] = []
+    for item in payload.get("output", []) if isinstance(payload.get("output"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content", []) if isinstance(item.get("content"), list) else []:
+            if isinstance(content, dict) and isinstance(content.get("text"), str):
+                chunks.append(content["text"])
+    return "\n".join(chunks)
+
+
 # ---------------------------------------------------------------------------
 # markitdown extractor
 # ---------------------------------------------------------------------------
@@ -197,7 +350,12 @@ def _extract_markitdown(
             "markitdown is not installed. Run: pip install 'ojtflow[parsing]'"
         ) from exc
 
-    md = MarkItDown(enable_plugins=False)
+    deferred_warnings: list[str] = []
+    md = _build_markitdown_converter(
+        MarkItDown=MarkItDown,
+        source_format=source_format,
+        deferred_warnings=deferred_warnings,
+    )
     suffix = Path(filename).suffix
 
     # markitdown reliably detects format from file extension on a real path
@@ -220,6 +378,7 @@ def _extract_markitdown(
             "markitdown returned empty text. "
             "The file may be a scanned image without OCR or an encrypted PDF."
         )
+        warnings.extend(deferred_warnings)
 
     return ExtractionResult(
         text=text,
@@ -228,6 +387,56 @@ def _extract_markitdown(
         filename=filename,
         warnings=warnings,
     )
+
+
+def _build_markitdown_converter(
+    *,
+    MarkItDown,
+    source_format: str,
+    deferred_warnings: list[str],
+):
+    if not _markitdown_ocr_enabled(source_format):
+        return MarkItDown(enable_plugins=False)
+
+    api_key = _openai_api_key()
+    if not api_key:
+        deferred_warnings.append(
+            "MarkItDown OCR plugin is enabled but no OpenAI API key is configured."
+        )
+        return MarkItDown(enable_plugins=False)
+
+    try:
+        import markitdown_ocr  # noqa: F401  # type: ignore[import]
+        from openai import OpenAI  # type: ignore[import]
+    except ImportError:
+        deferred_warnings.append(
+            "MarkItDown OCR plugin is not installed; install 'ojtflow[parsing]' "
+            "or markitdown-ocr."
+        )
+        return MarkItDown(enable_plugins=False)
+
+    kwargs = {
+        "api_key": api_key,
+    }
+    base_url = os.getenv("OJT_LLM_BASE_URL")
+    if base_url:
+        kwargs["base_url"] = base_url.rstrip("/")
+
+    return MarkItDown(
+        enable_plugins=True,
+        llm_client=OpenAI(**kwargs),
+        llm_model=_openai_vision_model(),
+        llm_prompt=(
+            "Extract all readable text for a healthcare data workflow. Preserve "
+            "tables, field names, units, identifiers, uncertainty, and warnings."
+        ),
+    )
+
+
+def _markitdown_ocr_enabled(source_format: str) -> bool:
+    if source_format not in OCR_SENSITIVE_FORMATS:
+        return False
+    return _env_bool("OJT_MARKITDOWN_OCR_ENABLED", default=True)
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +587,8 @@ def available_extractors() -> list[str]:
         available.append(Extractor.MINERU)
     except ImportError:
         pass
+    if os.getenv("OJT_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"):
+        available.append("openai_vision")
     return available
 
 

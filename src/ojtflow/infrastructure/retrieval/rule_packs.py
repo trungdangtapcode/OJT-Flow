@@ -51,6 +51,21 @@ RULE_PACK_SPECS: tuple[tuple[str, Path, str], ...] = (
         "OJT_RETRIEVAL_QUALITY_POLICY_PATH",
     ),
     (
+        "corrective_actions",
+        Path("retrieval/corrective_action_rules.json"),
+        "OJT_CORRECTIVE_ACTION_RULES_PATH",
+    ),
+    (
+        "strategy_recommendations",
+        Path("retrieval/strategy_recommendation_rules.json"),
+        "OJT_STRATEGY_RECOMMENDATION_RULES_PATH",
+    ),
+    (
+        "evidence_buckets",
+        Path("retrieval/evidence_bucket_rules.json"),
+        "OJT_EVIDENCE_BUCKET_RULES_PATH",
+    ),
+    (
         "search_hint_targets",
         Path("retrieval/search_hint_targets.json"),
         "OJT_SEARCH_HINT_TARGETS_PATH",
@@ -106,7 +121,16 @@ def retrieval_rule_pack(
     version = raw.get("version") if isinstance(raw, dict) else None
     rules = raw.get("rules") if isinstance(raw, dict) else None
     targets = raw.get("targets") if isinstance(raw, dict) else None
-    items = rules if isinstance(rules, list) else targets if isinstance(targets, list) else []
+    buckets = raw.get("buckets") if isinstance(raw, dict) else None
+    items = (
+        rules
+        if isinstance(rules, list)
+        else targets
+        if isinstance(targets, list)
+        else buckets
+        if isinstance(buckets, list)
+        else []
+    )
     return {
         **details,
         "status": "ok",

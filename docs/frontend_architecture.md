@@ -75,6 +75,17 @@ The authenticated app shell owns global navigation, session identity, refresh,
 and sign-out. Desktop navigation may be dense, but mobile shell controls must
 stay at least 44px in each tap dimension, keep one active `aria-current="page"`
 navigation item, and preserve icon-only labels with explicit accessible names.
+The app must also expose operator guidance as first-class routes and contextual
+control help. `/help` owns role-based onboarding and task routing, `/help/tutorials`
+owns step-by-step walkthroughs, and `/help/manual` owns input format guidance,
+glossary, output interpretation, issue/warning interpretation, a retrieval search manual,
+and safety rules. Dense surfaces such as Assistant,
+Workbench, Workflow Operations, Reviews, Schemas, and Retrieval should use the
+shared guide panel for page-level orientation and compact keyboard-focusable tooltips
+for high-risk controls. Tooltips explain meaning and operator risk, not
+implementation trivia. Page-level guides should answer: what this page is for,
+what the user should inspect first, which decision is safe, and when to send a
+workflow to human review.
 Workflow detail follows the same pattern: identity first, workflow facts second,
 then tabbed groups for steps, validation issues, retrieval evidence, review,
 output, and audit. Evidence uses structured rows on desktop and compact cards
@@ -124,13 +135,30 @@ lists trusted sources, refreshes the retrieval index, and renders rank signals,
 trace warnings, safety flags, and Graph-NER handoff context. It should stay an
 inspection console, not a separate workflow executor: workflow creation remains
 in Workbench and workflow-scoped evidence remains in Workflow Detail. The route
+must guide first-time users before a search runs: the ranked evidence empty
+state should explain what Retrieval is for, how to start from presets, how
+schema/format/source context changes scope, and why readiness should be read
+before individual hits. The route should also explain source inventory filters
+because exact source scope can over-constrain evidence. Exact source scope
+controls must explain that the search is constrained to one source, show when a
+source is applied, and tell operators to clear it before judging corpus-wide
+coverage.
+When a completed search returns zero ranked hits, the result panel must render
+operator remediation instead of a generic empty state: candidate count, active
+submitted filters, missing required evidence buckets, source-inventory guidance,
+direct controls to clear exact source scope or all active metadata filters, and
+any supported backend corrective filter.
+The route
 loads search presets from `/retrieval/presets` so healthcare examples and
 default query-builder state are managed as trusted knowledge data rather than
 hardcoded React constants. The preset selector should apply query, fields,
 schema, format, resource, and metadata constraints without executing a search;
 operators still submit explicitly. Preset category filters and preset text
 search are derived from preset data so the selector remains usable as the
-registry grows. Format and top-K controls come from
+registry grows. Query-builder controls must explain what each scope parameter
+does, especially query text, fields, schema, Top K, source format, resource,
+domain, standard, trust, and source type, because these parameters directly
+change evidence recall and governance risk. Format and top-K controls come from
 `/retrieval/search-options` so Markdown, FHIR-like, and future search profiles
 can be added through trusted registry data. The route
 must surface embedding and rerank provider metadata from runtime config and
@@ -158,33 +186,169 @@ confidence, matched fields, aliases, and reason.
 Result cards must render a compact evidence support summary above the detailed
 sections, using data-derived counts for matched terms, provenance fields,
 grounded concepts, supported aspects, and ranking signals.
+Result cards must also render a compact `Why this matched` explanation using
+existing retrieval package data: top score driver, evidence-pack bucket
+membership, exact matched terms, concept/aspect grounding, provenance count,
+and ranking-signal count. The same `match_explanation` object used by copied
+reports must include stable bucket IDs, concept IDs, query-aspect IDs,
+provenance field labels, ranking-signal rule IDs, and the top score component
+object, not only display labels. This explanation should sit near the claim so
+users do not need to inspect raw score components or locator JSON to understand
+why a source appeared.
+Each result card must also translate support signals into operator action
+guidance: strong evidence can be used with provenance check, partial evidence
+needs review before relying on it, and weak evidence should trigger query/source
+adjustment or a not-relevant judgment. This guidance must be derived from
+matched terms, provenance, concept/aspect grounding, ranking signals, evidence
+buckets, and persisted relevance judgment state. It must not create new medical
+claims or hide the raw evidence details.
 Result cards must render a compact evidence provenance summary with source
 version and key locator fields such as standard, URL, path, PMID, DOI, API,
 resource, table, document, and chunk identifiers before the raw JSON details.
 URL/API values, PubMed IDs, and DOIs must render as external links when they can
 be safely normalized.
 Each ranked evidence card must also offer a copyable `retrieval_evidence_hit`
-report containing evidence identity, support-summary counts, ranking
-scores/components, concept/aspect grounding, provenance summary, locators, and
-snippet context.
+report containing evidence identity, support-summary counts, `match_explanation`,
+ranking scores/components, concept/aspect grounding, provenance summary,
+locators, and snippet context.
 Copy actions for evidence, comparison, evaluation, and search-hint reports must
 show transient success feedback so operators can tell the clipboard action
-completed without opening developer tools or raw browser state.
+completed without opening developer tools or raw browser state. Report copy
+buttons should identify that they export JSON and explain the report's intended
+offline use, such as cockpit audit context, single-hit evidence support,
+run-comparison tuning, or judgment-evaluation metrics.
+The ranked-result panel must render the package-level clinical evidence pack
+from `evidence_buckets[]`, including required schema/policy gaps, bucket hit
+counts, source IDs, and warnings. This gives operators a fast readiness scan
+across evidence classes before reading individual cards.
+The ranked-result panel must also render an evidence support matrix before the
+long card list. Each row should summarize rank, source, standard system,
+package evidence buckets, matched-term count, provenance count, concept
+grounding count, query-aspect count, persisted judgment state, final score, and
+a deterministic support status. The matrix must derive from `RetrievalPackage`
+hits, `evidence_buckets[]`, `source_locator` metadata, and persisted judgments;
+it must not create hidden clinical claims or browser-only relevance scores. The
+matrix must explain how to interpret weak rows, missing provenance, and missing
+concept/aspect support before users inspect long evidence cards.
+On mobile, the evidence support matrix must render card rows instead of forcing
+the wide table as the primary view. The desktop table can remain horizontally
+scrollable for comparison, but the mobile-first view should show each evidence
+row as rank/source, standard, buckets, support badges, judgment, and score.
+The same ranked-result panel must render an evidence-readiness summary above
+the bucket grid. It should translate the backend
+`missing_required_evidence_buckets` quality signal into required-gap badges,
+show the current `quality_summary` status/score, and display the backend
+suggested action so operators know the next remediation step without opening
+trace metadata. When a missing bucket provides a supported `suggested_filter`,
+the panel should expose an explicit Apply action that reruns search through the
+same typed filter path used by facets and coverage diagnostics.
+The readiness summary must also provide an operator interpretation of the
+quality status: ready means inspect provenance before use, review means require
+human review, blocked means do not use downstream, and missing scores are
+treated as unreviewed.
+The ranked-result and trace panels must render backend
+`recommended_actions[]` as a corrective-action checklist. Each action should
+show priority, action type, source quality signal, description, and an Apply
+button only when the backend provides a supported `suggested_filter`. The UI
+must not invent hidden corrective actions in the browser; the mapping comes
+from the active backend `corrective_actions` retrieval rule pack.
+The corrective-action checklist and recent-run summaries should show backend
+action-type counts from `recommended_action_summary.action_type_counts`,
+including broaden-query and apply-filter counts, so users can understand the
+kind of remediation requested before reading detailed action rows.
+Recent-run rows render those values as compact action-type chips beside the
+total action count, sorted by count, so repeated searches can be compared
+without opening the trace.
+Each recent-run row should also render a plain-language `Run remediation`
+summary derived from backend quality/action summaries: top corrective action
+when available, quality top action when no corrective action exists, warning
+inspection when only warnings exist, or broadening/source-inventory guidance for
+zero-hit runs. The same derived summary should be included in copied cockpit and
+comparison JSON reports as `remediation_summary` so audit notes match what the
+operator saw in the run history. New packages should use backend
+`RetrievalPackage.remediation_summary`; local derivation is only a compatibility
+fallback for older payloads.
+The ranked-result panel should also render a compact package-level `Search
+answer` section before detailed readiness, facets, matrices, and hit cards.
+This section must derive from the backend retrieval package and show the
+operator-visible status, readiness score, remediation summary, top evidence
+source, required-support coverage, warnings, and backend action count. It should
+state that the summary supports workflow evidence review and is not clinical
+advice. Its copy action should export a `retrieval_search_answer` JSON report
+including backend `interpretation` so operators can share the plain-language
+result without copying raw trace state.
+Immediately after `Search answer`, the ranked-result panel should render an
+`Evidence interpretation` section that translates the same package into
+operational review language: why the top result matched, required bucket
+coverage, warnings, and the next backend-recommended action. This panel must be
+derived from `hits[]`, `evidence_buckets[]`, `recommended_actions[]`,
+`coverage`, and `trace` data. It must not hardcode medical conclusions or
+clinical advice; it explains retrieval support quality for the operator before
+they inspect individual evidence cards.
+When the backend action is `broaden_query`, the ranked-result panel should
+expose explicit broadening controls using the same submitted-search filter
+handlers as Query Health: clear exact source scope when active, or clear all
+metadata filters and rerun retrieval. The UI should show whether the action was
+derived from a package `quality_signal` or a `query_diagnostic` so users can
+distinguish retrieval-readiness failures from query-health warnings.
+The retrieval cockpit must also render backend `strategy_recommendations[]`.
+When a recommendation provides a supported `suggested_filters` entry, the UI
+may expose an Apply action through the same typed filter path used by facets,
+coverage gaps, and corrective actions. Unsupported recommendation filters must
+remain display-only.
 The trace and recent-run list must show the backend
 `handoff_context.search_signature` in compact form, and copied run-comparison
 reports must include active/baseline server search signatures for offline audit
 correlation.
+The “Search settings changed” warning must compare the current query-builder
+payload against the last submitted payload, not against the backend
+`search_signature`. Server signatures include backend/rule-pack context for
+audit correlation and can differ from the browser form signature immediately
+after a valid search.
 The trace panel must render `quality_signals` as a compact retrieval-quality
 checklist with severity, message, suggested action, and evidence references so
 operators can review package readiness without opening raw JSON. Known metadata
 payloads such as missing concepts, provenance issues, missing standards/aspects,
 and suggested filters must render as explicit signal details.
+Trace sections must also explain their operational meaning: quality signals
+explain readiness, coverage diagnostics explain missing standards/aspects,
+query rewrites are backend-generated variants, diagnostics explain parser and
+expansion issues, and safety flags mark untrusted or sensitive query context.
 It must also show `handoff_context.quality_policy` so the readiness score can
 be traced to the active data-driven gate policy, including top-hit match
 thresholds and provenance requirement scope.
 The top retrieval summary strip should also surface `quality_summary` as a
 readiness score, so operators can tell whether the active package is ready,
 needs review, or is blocked before reading detailed traces.
+The ranked-result panel must start with a compact retrieval cockpit before the
+long evidence list. The cockpit summarizes the active query profile, retrieval
+route, hybrid stack, reranker state, candidate/hit counts, required evidence
+bucket coverage, quality readiness, concept grounding, query-aspect plan, and
+backend recommended next action. It must derive every value from the visible
+`RetrievalPackage` and submitted search payload; the browser must not invent
+hidden actions, routes, or medical standards.
+The cockpit must also render a query-health checklist derived from the submitted
+payload and retrieval package: query specificity, clinical context, search
+scope, result coverage, readiness, and safety signals. This checklist should
+tell users when a search is too short, missing schema/format/field context,
+over-constrained by exact source scope or many filters, returning sparse hits,
+blocked by readiness, or carrying safety warnings. The same `query_health[]`
+data must be exported in the cockpit JSON report.
+Backend `query_analysis.diagnostics[]` warnings must also appear as query-health
+rows, including `overconstrained_metadata_filters`, so data-driven rule-pack
+diagnostics are visible before users open the detailed trace panel.
+The trace query-diagnostics list should render structured diagnostic metadata
+as compact chips, including query token count, active filter count,
+active metadata filter names, applied standard, and suggested standards when
+present.
+When that over-constraint diagnostic is present, query health should expose
+explicit broadening actions: clear exact source scope when active, or clear all metadata filters
+and rerun search. The UI must not silently clear filters.
+The cockpit must expose a copyable `retrieval_cockpit` JSON report containing
+the submitted payload, search signature, query-analysis profile/aspects,
+ranking stack, package `interpretation`, quality readiness, evidence buckets,
+compact `evidence_hits` with per-hit `match_explanation`, recommended actions,
+facets, graph context, and active retrieval rule-pack fingerprints.
 The query-analysis panel should render `query_profile` when present, including
 profile label, route, complexity, recommended retrieval mode, suggested
 filters, and contributing rule IDs. This makes adaptive retrieval guidance
@@ -235,8 +399,14 @@ Each recent-run row should also render a compact data-derived run scope from the
 submitted payload and returned package, including quality status/score,
 coverage-gap count, grounded concept count, search-aspect count, and active
 schema/format/resource/domain/standard/source/trust/field filters. The row must
-show `quality_summary.top_action` when present so operators see the next
-readiness action without opening raw JSON.
+show `quality_summary.top_action` and the backend corrective-action count/top
+action when present so operators see the next readiness action without opening
+raw JSON.
+The retrieval query builder must expose exact source ID scoping from
+`/retrieval/sources` and submit it through the typed `filters.source_id`
+contract. Active filter chips, submitted-search restoration, run history, and
+search signatures must preserve that exact source scope rather than filtering
+only visible cards on the client.
 Comparison output should include a copyable JSON report with the active payload,
 baseline payload, summaries, deltas, metrics, evidence changes, and rank
 movement so tuning notes can be reproduced outside the browser. Search-run
@@ -283,6 +453,12 @@ rule-pack fingerprints from the active
 and baseline packages. This lets operators separate relevance changes caused by
 query/filter edits from changes caused by rule-pack data, and the copyable
 comparison report must include the same rule-pack delta.
+The comparison panel must also explain how to read the comparison before showing
+long deltas: baseline is the older selected run, active is the currently
+displayed package, warning deltas and quality changes are tuning signals, and
+rank movement is not clinical evidence. Overlap, churn, shared-evidence, and
+mean-rank-delta metrics must include operator-facing interpretation so users can
+distinguish broad result replacement from rank-order instability.
 Result cards
 should collect explicit relevance judgments for the query-document pair and
 persist those judgments through `/retrieval/judgments` so rerun queries can
@@ -293,6 +469,12 @@ in-session judgments, including coverage, Precision@k, judged precision, and
 nDCG@k. It should also surface the persisted judgment summary from
 `/retrieval/judgments/summary`, including stored label count and sync state, so
 operators can distinguish transient local labels from durable evaluation data.
+Judgment controls and metric summaries must explain that labels are for the
+submitted query-document pair, that coverage is the share of hits judged, and
+that Precision@k/nDCG@k are only meaningful after enough explicit judgments.
+The persisted judgment evaluation panel must render `evaluation_readiness`
+before server metrics so operators can see whether the current label set is
+unlabeled, low confidence, usable with gaps, or ready for tuning.
 For the active ranked result list, the panel should also call
 `/retrieval/judgments/evaluate` and show server-computed Coverage@k,
 HitRate@k, MAP@k, MRR@k, nDCG@k, unjudged-hit count, and policy-driven
@@ -306,15 +488,73 @@ and active retrieval rule-pack fingerprints for offline relevance tuning notes.
 The trusted source inventory should be searchable and filterable by
 data-derived source type, clinical domain, and standard system so large corpora
 remain inspectable.
+The source inventory panel must also show source readiness before filters and
+source rows: visible/total source count, indexed chunk count, domain coverage,
+standard coverage, source-type coverage, empty-source warnings, and whether the
+inventory is filtered. This prevents operators from confusing a filtered source
+view with corpus-wide evidence coverage, and makes reindexing problems visible
+before a source-scoped search is run.
 Medical search hints in the trace should be copyable and launchable when the
 backend provides a vetted URL, so PubMed, ClinicalTrials.gov, and openFDA
 workflows remain backend-owned and data-driven instead of hardcoded in React.
 The assistant route is the operator shortcut over those same backend contracts.
-It calls `/assistant/chat` through a typed mutation, renders model/tool mode,
-write-gate state, executed tool calls, and compact evidence/output previews.
+The chat UI should call `/assistant/chat/stream` through the server-state
+boundary, render planning and tool-call events as they arrive, and stream OpenAI
+answer deltas into the current assistant bubble instead of waiting for a single
+final response. It must still support the non-streaming `/assistant/chat`
+contract for API clients, but the product UI should prefer the stream path.
+The stream request must be abortable from the composer, preserving any partial
+transcript and showing a cancellation state rather than leaving a stuck spinner.
+Long LLM planning must not look frozen: the UI should render backend
+`planning_step` events and streamed `planning_delta` planner text before
+`plan_ready`, so users can see what the model is doing before tools execute.
+If the configured planner cannot stream, the UI should still render fallback
+`planning_progress` heartbeat events between `planning_started` and
+`plan_ready`, including elapsed seconds, so users can tell the assistant is
+still waiting for a tool plan.
+Assistant stream UI must render events chronologically in one timeline:
+connection, planning, planner text, validated plan, tool calls, answer
+synthesis, streamed LLM text, warnings, and errors. It must not place the LLM
+answer in a separate section above a long tool panel, because users lose sight
+of streamed model output while tools expand below it. Tool rows should stay
+compact by default and expose detailed arguments/results only inside expandable
+sections.
+The timeline should also render the validated `plan_ready` payload before
+tool execution: plan mode, selected tool sequence, rationale, and bounded
+argument JSON. The UI must not imply that partial planning text is executable;
+backend tools run only after the structured plan validates.
+If the backend emits an `error` stream event, the UI should render it in the
+live tool timeline and stop waiting for a final response.
+The transcript renders model/tool mode, answer synthesis mode, write-gate
+state, executed tool calls, and compact evidence/output previews.
+Assistant evidence summary cards must render compact retrieval
+`match_explanation` fields when present: support status, top score driver,
+evidence buckets, concept/aspect labels, provenance count, and ranking-signal
+count. This keeps chat evidence explainable without requiring users to open raw
+tool output.
+Its primary form should be understandable to an end user: show outcome-oriented
+starter tasks from `/assistant/examples`, ask what operation the user wants
+done, and reserve JSON for optional data/filter context. Starter task data must
+come from `knowledge/assistant/examples.json`; the form should not preload
+hidden sample data.
+The assistant composer should also accept one attached file or pasted
+clipboard image. Attachments are extracted through `/parse/extract` before the
+chat stream starts, and the extracted text plus filename, source format,
+extractor, size/count metadata, and warnings are inserted into assistant
+context. The UI should show the attached source as a removable chip and render
+the parsed source summary in the transcript so users know which file/image was
+used.
+For image/scanned-document uploads, the transcript must preserve extractor
+warnings so operators can see whether base MarkItDown conversion, MarkItDown
+OCR plugin support, or direct OpenAI vision fallback produced the usable text.
 It should also show the server allowlisted assistant/MCP tools from
 `/assistant/tools` before a command is run, so users can see what the assistant
 can do without reading backend docs or waiting for a transcript.
+Unsupported chat should display the backend no-action warning instead of
+looking like a successful retrieval or workflow operation.
+When OpenAI mode is enabled, the transcript should make clear that the model
+planned tool use and streamed the final answer after backend execution; raw
+tool output remains secondary audit detail.
 It must not duplicate workflow detail, retrieval console, or review-decision
 logic; it should route users into the underlying workflow/retrieval artifacts
 once a command has produced durable state or evidence.
@@ -336,8 +576,9 @@ environment variable. The UI must not expose local filesystem paths for those
 packs.
 The readiness panel should render the `retrieval_rule_packs` check as a nested
 pack list, not only generic detail chips, so missing or malformed query
-expansion, diagnostic, ranking, evaluation, or search-hint rules and their
-fingerprints are visible to operators before they run searches.
+expansion, diagnostic, ranking, corrective-action, evidence-bucket, evaluation,
+or search-hint rules and their fingerprints are visible to operators before
+they run searches.
 
 ## Extension Rules
 

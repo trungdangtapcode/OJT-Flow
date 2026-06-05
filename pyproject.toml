@@ -22,10 +22,14 @@ dev = [
 ]
 parsing = [
   "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
+  "markitdown-ocr>=0.1.0,<0.2",
+  "openai>=1.0,<3",
 ]
 parsing-full = [
   "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
+  "markitdown-ocr>=0.1.0,<0.2",
   "magic-pdf[full]>=0.11.0",
+  "openai>=1.0,<3",
 ]
 embeddings-local = [
   "sentence-transformers>=3.0,<4",

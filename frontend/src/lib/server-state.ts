@@ -8,6 +8,7 @@ import {
   createWorkflow,
   deleteRetrievalJudgment,
   evaluateRetrievalJudgments,
+  extractFileText,
   getExtractorInventory,
   getRetrievalJudgmentSummary,
   getRetrievalIntegrity,
@@ -19,6 +20,7 @@ import {
   getWorkflowOutput,
   getWorkflowStats,
   listAssistantTools,
+  listAssistantExamples,
   listRetrievalJudgments,
   listRetrievalPresets,
   listRetrievalSources,
@@ -28,6 +30,7 @@ import {
   listWorkflowSummaries,
   reindexRetrieval,
   searchRetrieval,
+  streamAssistantChat,
   submitReview,
   updateRuntimeAssistantSettings,
   updateRuntimeRetrievalSettings,
@@ -36,6 +39,8 @@ import {
 } from "../api";
 import type {
   AssistantChatPayload,
+  AssistantResponse,
+  AssistantStreamEvent,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentPayload,
   RetrievalReindexPayload,
@@ -44,6 +49,12 @@ import type {
   RuntimeRetrievalSettingsPayload,
   StartWorkflowPayload,
 } from "../types";
+
+type AssistantStreamMutationPayload = {
+  payload: AssistantChatPayload;
+  onEvent: (event: AssistantStreamEvent) => void;
+  signal?: AbortSignal;
+};
 
 export const queryKeys = {
   stats: ["workflow-stats"] as const,
@@ -67,6 +78,7 @@ export const queryKeys = {
   runtimeConfig: ["runtime-config"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
   assistantTools: ["assistant-tools"] as const,
+  assistantExamples: ["assistant-examples"] as const,
   retrievalPresets: ["retrieval-presets"] as const,
 };
 
@@ -134,6 +146,13 @@ export function useWorkflowOutputQuery(workflowId: string | null, enabled: boole
 
 export function useExtractorInventoryQuery() {
   return useQuery({ queryKey: queryKeys.extractors, queryFn: getExtractorInventory });
+}
+
+export function useExtractFileTextMutation() {
+  return useMutation({
+    mutationFn: ({ file, extractor }: { file: File; extractor: string }) =>
+      extractFileText(file, { extractor }),
+  });
 }
 
 export function useRuntimeHealthQuery() {
@@ -287,8 +306,32 @@ export function useAssistantChatMutation() {
   });
 }
 
+export function useAssistantChatStreamMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<AssistantResponse, Error, AssistantStreamMutationPayload>({
+    mutationFn: ({ payload, onEvent, signal }) =>
+      streamAssistantChat(payload, onEvent, signal),
+    onSuccess: async (response) => {
+      if (
+        response.tool_calls.some(
+          (call) => call.tool_name === "start_workflow" && call.status === "completed",
+        )
+      ) {
+        await invalidateWorkflowCollections(queryClient);
+      }
+    },
+  });
+}
+
 export function useAssistantToolsQuery() {
   return useQuery({ queryKey: queryKeys.assistantTools, queryFn: listAssistantTools });
+}
+
+export function useAssistantExamplesQuery() {
+  return useQuery({
+    queryKey: queryKeys.assistantExamples,
+    queryFn: listAssistantExamples,
+  });
 }
 
 export function useRetrievalReindexMutation() {

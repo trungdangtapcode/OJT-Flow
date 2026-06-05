@@ -29,9 +29,13 @@ from ojtflow.infrastructure.retrieval.engine import (
     KnowledgeChunk,
     build_query_variants,
     coverage_from_chunks,
+    evidence_buckets_from_hits,
     rank_chunks,
     retrieval_safety_flags,
     snippet_from_chunk,
+)
+from ojtflow.infrastructure.retrieval.llamaindex_adapter import (
+    _framework_fusion_diagnostics,
 )
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 from ojtflow.infrastructure.retrieval.reranking import HuggingFaceCrossEncoderReranker
@@ -121,6 +125,9 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     assert evaluation.mrr_at_k == 1.0
     assert evaluation.ndcg_at_k == 1.0
     assert evaluation.unjudged_evidence_ids == ["ev_unjudged"]
+    assert evaluation.evaluation_readiness.status == "low_confidence"
+    assert evaluation.evaluation_readiness.min_judged_count == 3
+    assert evaluation.evaluation_readiness.min_coverage_at_k == 0.6
     assert len(evaluation.recommendations) == 1
     assert evaluation.recommendations[0].rule_id == "label_unjudged_top_results"
     assert evaluation.recommendations[0].evidence_ids == ["ev_unjudged"]
@@ -355,6 +362,63 @@ def test_query_analysis_reports_conflicting_standard_filter() -> None:
     assert diagnostics["standard_filter_conflicts_with_query"].severity == "warning"
     assert "LOINC" in diagnostics["standard_filter_conflicts_with_query"].message
     assert "UCUM" in diagnostics["standard_filter_conflicts_with_query"].message
+    conflict_metadata = diagnostics["standard_filter_conflicts_with_query"].metadata
+    assert conflict_metadata["rule_code"] == "standard_filter_conflicts_with_query"
+    assert conflict_metadata["query_token_count"] == 2
+    assert conflict_metadata["active_metadata_filters"] == ["standard_system"]
+    assert conflict_metadata["active_metadata_filter_count"] == 1
+    assert conflict_metadata["applied_standard"] == "LOINC"
+    assert "UCUM" in conflict_metadata["suggested_standards"]
+    assert "unit_normalization" in conflict_metadata["detected_concepts"]
+    assert "UCUM" in conflict_metadata["detected_standards"]
+
+
+def test_query_analysis_reports_overconstrained_metadata_filters() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="quality",
+            filters={
+                "clinical_domain": "laboratory",
+                "source_id": "terminology:ucum",
+                "source_type": "terminology_system",
+                "trust_level": "approved",
+            },
+        )
+    )
+
+    diagnostics = {diagnostic.code: diagnostic for diagnostic in analysis.diagnostics}
+
+    assert diagnostics["overconstrained_metadata_filters"].severity == "warning"
+    assert "4 active metadata filters" in diagnostics["overconstrained_metadata_filters"].message
+    assert "source_id" in diagnostics["overconstrained_metadata_filters"].message
+    assert "remove narrow filters" in diagnostics["overconstrained_metadata_filters"].suggested_action
+    assert diagnostics["overconstrained_metadata_filters"].metadata[
+        "active_metadata_filters"
+    ] == ["clinical_domain", "source_id", "source_type", "trust_level"]
+    assert diagnostics["overconstrained_metadata_filters"].metadata[
+        "active_metadata_filter_count"
+    ] == 4
+    assert diagnostics["overconstrained_metadata_filters"].metadata["query_token_count"] == 1
+
+
+def test_query_analysis_does_not_warn_overconstrained_when_context_is_rich() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="FHIR Observation HbA1c missing UCUM unit",
+            fields=["lab_name", "value", "unit"],
+            schema_id="lab_result_v1",
+            detected_format="csv",
+            filters={
+                "clinical_domain": "laboratory",
+                "source_type": "terminology_system",
+                "trust_level": "approved",
+            },
+        )
+    )
+
+    diagnostics = {diagnostic.code for diagnostic in analysis.diagnostics}
+
+    assert "overconstrained_metadata_filters" not in diagnostics
 
 
 def test_query_analysis_detects_medication_and_analytics_routes() -> None:
@@ -803,7 +867,48 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert any(item.value == "UCUM" for item in package.coverage.standard_system)
     assert package.quality_summary is not None
     assert package.quality_summary.score >= 70
+    buckets = {bucket.bucket_id: bucket for bucket in package.evidence_buckets}
+    assert {
+        "schema",
+        "policy",
+        "terminology",
+        "fhir_mapping",
+        "source_locator",
+        "prior_decision",
+        "other",
+    } == set(buckets)
+    assert buckets["schema"].required is True
+    assert buckets["policy"].required is True
+    assert buckets["schema"].hit_count >= 1
+    assert buckets["terminology"].hit_count >= 1
+    assert buckets["source_locator"].hit_count == len(package.hits)
+    assert buckets["schema"].source_ids
+    assert buckets["schema"].status == "available"
+    assert buckets["policy"].warnings == (
+        [] if buckets["policy"].hit_count else ["missing_policy_evidence"]
+    )
+    top_explanation = package.hits[0].match_explanation
+    assert top_explanation["version"] == 1
+    assert top_explanation["support_status"] in {"strong", "partial", "weak"}
+    assert top_explanation["top_score_component"]["component"]
+    assert isinstance(top_explanation["matched_terms"], list)
+    assert isinstance(top_explanation["bucket_ids"], list)
+    assert "source_locator" in {
+        bucket_id
+        for hit in package.hits
+        for bucket_id in hit.match_explanation["bucket_ids"]
+    }
+    assert isinstance(top_explanation["concept_ids"], list)
+    assert isinstance(top_explanation["aspect_ids"], list)
+    assert isinstance(top_explanation["provenance_fields"], list)
+    assert isinstance(top_explanation["ranking_signal_rule_ids"], list)
     assert package.handoff_context["quality_summary"]["score"] == package.quality_summary.score
+    assert package.strategy_recommendations
+    assert package.strategy_recommendations[0].recommendation_id.startswith("strategy:")
+    assert package.strategy_recommendations[0].technique == "hybrid_fusion_retrieval"
+    assert package.handoff_context["strategy_recommendations"] == [
+        item.model_dump(mode="json") for item in package.strategy_recommendations
+    ]
     analysis = package.handoff_context["query_analysis"]
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
@@ -829,6 +934,128 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
         and match["standard_system"] == "LOINC"
         for match in concept_matches
     )
+
+
+def test_retrieval_evidence_buckets_classify_audit_sources() -> None:
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="schema",
+            source_id="schema:lab_result_v1",
+            source_type=EvidenceSourceType.SCHEMA,
+            title="Lab schema",
+            content="Lab rows require date, patient_id, value, and unit.",
+        ),
+        KnowledgeChunk(
+            chunk_id="policy",
+            source_id="policy:phi_review_v1",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="PHI review policy",
+            content="Patient identifiers require human review before export.",
+        ),
+        KnowledgeChunk(
+            chunk_id="ucum",
+            source_id="terminology:ucum",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="UCUM units",
+            content="UCUM is the target unit vocabulary.",
+            standard_system="UCUM",
+        ),
+    ]
+    package = rank_chunks(
+        chunks,
+        RetrievalQuery(query="lab unit patient review", top_k=3),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+        strategy="test_evidence_buckets",
+    )
+
+    buckets = {bucket.bucket_id: bucket for bucket in package.evidence_buckets}
+
+    assert buckets["schema"].hit_count >= 1
+    assert "schema:lab_result_v1" in buckets["schema"].source_ids
+    assert buckets["schema"].evidence_ids
+    assert buckets["schema"].suggested_filter == {"source_type": "schema"}
+    assert buckets["policy"].source_ids == ["policy:phi_review_v1"]
+    assert buckets["policy"].suggested_filter == {"standard_system": "ojtflow_policy"}
+    assert buckets["terminology"].source_ids == ["terminology:ucum"]
+    assert buckets["terminology"].suggested_filter == {
+        "source_type": "terminology_system"
+    }
+    assert buckets["source_locator"].hit_count == 3
+    assert buckets["other"].status == "missing"
+
+    empty_buckets = {
+        bucket.bucket_id: bucket for bucket in evidence_buckets_from_hits([])
+    }
+    assert empty_buckets["schema"].warnings == ["missing_schema_evidence"]
+    assert empty_buckets["policy"].warnings == ["missing_policy_evidence"]
+
+
+def test_retrieval_evidence_buckets_use_data_driven_registry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    registry_path = tmp_path / "evidence_bucket_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_evidence_bucket_rules.v1",
+                "buckets": [
+                    {
+                        "bucket_id": "schema",
+                        "label": "Custom schema",
+                        "description": "Custom schema evidence bucket.",
+                        "required": True,
+                        "suggested_filter": {"source_id": "custom-schema"},
+                        "match": {"source_id_contains": ["custom-schema"]},
+                    },
+                    {
+                        "bucket_id": "policy",
+                        "label": "Custom policy",
+                        "description": "Custom policy evidence bucket.",
+                        "required": False,
+                        "suggested_filter": {"source_id": "policy"},
+                        "match": {"source_id_contains": ["policy"]},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_EVIDENCE_BUCKET_RULES_PATH", str(registry_path))
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="schema",
+            source_id="custom-schema:lab",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Custom lab schema",
+            content="Lab row contract.",
+        ),
+        KnowledgeChunk(
+            chunk_id="dictionary",
+            source_id="dictionary:lab",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="General lab dictionary",
+            content="General dictionary.",
+        ),
+    ]
+
+    package = rank_chunks(
+        chunks,
+        RetrievalQuery(query="lab dictionary", top_k=2),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+        strategy="test_custom_evidence_buckets",
+    )
+
+    buckets = {bucket.bucket_id: bucket for bucket in package.evidence_buckets}
+
+    assert buckets["schema"].label == "Custom schema"
+    assert buckets["schema"].required is True
+    assert buckets["schema"].suggested_filter == {"source_id": "custom-schema"}
+    assert buckets["schema"].source_ids == ["custom-schema:lab"]
+    assert buckets["policy"].required is False
+    assert buckets["other"].source_ids == ["dictionary:lab"]
 
 
 def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch) -> None:
@@ -899,6 +1126,14 @@ def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch)
     assert score_components["policy_boost"].metadata["rule_ids"] == [
         "custom_boost_standard"
     ]
+    fusion_diagnostics = package.trace.fusion_diagnostics
+    assert fusion_diagnostics["method"] == "reciprocal_rank_fusion"
+    assert fusion_diagnostics["rrf_k"] == 60
+    assert fusion_diagnostics["cutoff"] == 2
+    assert 0 <= fusion_diagnostics["top_overlap_ratio"] <= 1
+    assert fusion_diagnostics["selected_signal_balance"]["lexical_dominant"] >= 0
+    assert fusion_diagnostics["selected_hits"][0]["evidence_id"] == package.hits[0].evidence.evidence_id
+    assert package.handoff_context["fusion_diagnostics"] == fusion_diagnostics
 
     registry_path.write_text(
         json.dumps(
@@ -1122,6 +1357,24 @@ def test_static_retrieval_filters_by_source_type() -> None:
     assert _bucket_counts(package.facets.source_type) == {"terminology_system": 4}
 
 
+def test_static_retrieval_filters_by_exact_source_id() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    package = repository.search(
+        RetrievalQuery(
+            query="FHIR Observation UCUM units",
+            top_k=5,
+            filters={
+                "source_id": "terminology:ucum",
+                "trust_level": "approved",
+            },
+        )
+    )
+
+    assert package.evidence
+    assert {item.source_id for item in package.evidence} == {"terminology:ucum"}
+    assert package.trace.filters_applied["source_id"] == "terminology:ucum"
+
+
 def test_llamaindex_retrieval_applies_metadata_filters_before_ranking() -> None:
     pytest.importorskip("llama_index.core")
     from ojtflow.infrastructure.retrieval.llamaindex_adapter import (
@@ -1147,6 +1400,31 @@ def test_llamaindex_retrieval_applies_metadata_filters_before_ranking() -> None:
     assert package.trace.candidates_seen == 1
     assert framework_components["filtered_node_count"] == 1
     assert framework_components["metadata_filter_count"] == 2
+    assert package.strategy_recommendations
+    assert package.handoff_context["strategy_recommendations"] == [
+        item.model_dump(mode="json") for item in package.strategy_recommendations
+    ]
+
+
+def test_llamaindex_metadata_filters_include_exact_source_id() -> None:
+    from ojtflow.infrastructure.retrieval.llamaindex_adapter import (
+        _metadata_filter_values,
+    )
+
+    values = _metadata_filter_values(
+        RetrievalQuery(
+            query="UCUM source scoped search",
+            filters={
+                "source_id": "terminology:ucum",
+                "source_type": "terminology_system",
+                "trust_level": "approved",
+            },
+        )
+    )
+
+    assert values["source_id"] == "terminology:ucum"
+    assert values["source_type"] == "terminology_system"
+    assert values["trust_level"] == "approved"
 
 
 def test_retrieval_coverage_reports_missing_expected_standard() -> None:
@@ -1228,14 +1506,170 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
         "lab_identity_standardization"
     ]
     assert signals["query_context_clear"].severity == "success"
+    assert signals["missing_required_evidence_buckets"].severity == "warning"
+    assert signals["missing_required_evidence_buckets"].metadata["missing_buckets"] == [
+        {
+            "bucket_id": "schema",
+            "label": "Schema",
+            "required": True,
+            "status": "missing",
+            "warnings": ["missing_schema_evidence"],
+            "suggested_filter": {"source_type": "schema"},
+        },
+        {
+            "bucket_id": "policy",
+            "label": "Policy",
+            "required": True,
+            "status": "missing",
+            "warnings": ["missing_policy_evidence"],
+            "suggested_filter": {"standard_system": "ojtflow_policy"},
+        },
+    ]
     assert package.quality_summary is not None
     assert package.quality_summary.status == "review"
-    assert package.quality_summary.warning_count == 2
+    assert package.quality_summary.warning_count == 3
     assert package.quality_summary.warning_codes == [
+        "missing_required_evidence_buckets",
         "missing_standard_coverage",
         "missing_query_aspect_coverage",
     ]
-    assert package.quality_summary.score == 70
+    assert package.quality_summary.score == 55
+    assert [action.action_type for action in package.recommended_actions[:3]] == [
+        "apply_filter",
+        "apply_filter",
+        "apply_filter",
+    ]
+    assert package.recommended_actions[0].priority == 20
+    assert package.recommended_actions[0].title == "Recover Schema evidence"
+    assert package.recommended_actions[0].suggested_filter == {"source_type": "schema"}
+    assert package.recommended_actions[1].title == "Recover Policy evidence"
+    assert package.recommended_actions[1].suggested_filter == {
+        "standard_system": "ojtflow_policy"
+    }
+    assert package.recommended_action_summary is not None
+    assert package.recommended_action_summary.count == len(package.recommended_actions)
+    assert package.recommended_action_summary.highest_priority == 20
+    assert package.recommended_action_summary.highest_severity == "warning"
+    assert package.recommended_action_summary.top_action_title == "Recover Schema evidence"
+    assert package.recommended_action_summary.apply_filter_count == 4
+    assert package.recommended_action_summary.broaden_query_count >= 0
+    assert package.recommended_action_summary.action_type_counts["apply_filter"] == 4
+    assert package.remediation_summary is not None
+    assert package.remediation_summary.startswith("Recover Schema evidence")
+    assert package.handoff_context["remediation_summary"] == package.remediation_summary
+    assert package.interpretation is not None
+    assert package.interpretation.status == "support_gaps"
+    assert package.interpretation.top_source_id == "standard:fhir_observation"
+    assert package.interpretation.required_bucket_count >= 2
+    assert package.interpretation.missing_required_buckets == ["Schema", "Policy"]
+    assert package.interpretation.next_action_title == "Recover Schema evidence"
+    assert package.handoff_context["interpretation"] == package.interpretation.model_dump(
+        mode="json"
+    )
+    assert any(
+        action.suggested_filter == {"standard_system": "UCUM"}
+        and action.source_signal_codes == ["missing_standard_coverage"]
+        for action in package.recommended_actions
+    )
+    assert package.handoff_context["recommended_actions"] == [
+        action.model_dump(mode="json") for action in package.recommended_actions
+    ]
+    assert package.handoff_context["recommended_action_summary"] == (
+        package.recommended_action_summary.model_dump(mode="json")
+    )
+
+
+def test_retrieval_corrective_actions_use_data_driven_registry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry_path = tmp_path / "corrective_action_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_corrective_action_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_no_hit_review",
+                        "signal_code": "no_hits",
+                        "priority": 7,
+                        "action_type": "require_review",
+                        "title": "Escalate empty retrieval",
+                        "description": "Custom deployment policy for empty retrieval.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_CORRECTIVE_ACTION_RULES_PATH", str(registry_path))
+
+    package = rank_chunks(
+        [],
+        RetrievalQuery(query="missing source", top_k=1),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+
+    assert len(package.recommended_actions) == 1
+    action = package.recommended_actions[0]
+    assert action.priority == 7
+    assert action.action_type == "require_review"
+    assert action.title == "Escalate empty retrieval"
+    assert action.metadata["corrective_rule_id"] == "custom_no_hit_review"
+    assert action.metadata["corrective_rule_source"] == "quality_signal"
+
+
+def test_retrieval_corrective_actions_include_query_diagnostics() -> None:
+    package = rank_chunks(
+        [],
+        RetrievalQuery(
+            query="quality",
+            top_k=1,
+            filters={
+                "clinical_domain": "laboratory",
+                "source_id": "terminology:ucum",
+                "source_type": "terminology_system",
+                "trust_level": "approved",
+            },
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+
+    diagnostic_actions = [
+        action
+        for action in package.recommended_actions
+        if action.metadata.get("corrective_rule_source") == "query_diagnostic"
+    ]
+
+    assert diagnostic_actions
+    action = diagnostic_actions[0]
+    assert action.priority == 8
+    assert action.action_type == "broaden_query"
+    assert action.title == "Broaden over-filtered search"
+    assert action.source_signal_codes == ["overconstrained_metadata_filters"]
+    assert action.metadata["corrective_rule_id"] == "overconstrained_metadata_broaden_query"
+    assert action.metadata["active_metadata_filter_count"] == 4
+    assert action.metadata["active_metadata_filters"] == [
+        "clinical_domain",
+        "source_id",
+        "source_type",
+        "trust_level",
+    ]
+    assert package.recommended_actions[0] == action
+    assert package.handoff_context["recommended_actions"][0] == action.model_dump(mode="json")
+    assert package.handoff_context["recommended_action_summary"] == (
+        package.recommended_action_summary.model_dump(mode="json")
+    )
+    assert package.recommended_action_summary is not None
+    assert package.recommended_action_summary.broaden_query_count == (
+        package.recommended_action_summary.action_type_counts["broaden_query"]
+    )
+    assert package.recommended_action_summary.broaden_query_count >= 1
+    assert package.recommended_action_summary.count == sum(
+        package.recommended_action_summary.action_type_counts.values()
+    )
 
 
 def test_retrieval_quality_summary_uses_data_driven_policy(
@@ -1257,6 +1691,7 @@ def test_retrieval_quality_summary_uses_data_driven_policy(
                 "blocking_severities": ["destructive", "error"],
                 "review_severities": [],
                 "status_thresholds": {"review_score_below": 80},
+                "evidence_bucket_requirements": {"required_bucket_ids": []},
                 "default_top_action": "Run retrieval before review.",
             }
         ),
@@ -1285,6 +1720,9 @@ def test_retrieval_quality_summary_uses_data_driven_policy(
     assert package.quality_summary.status == "ready"
     assert package.handoff_context["quality_policy"]["version"] == "custom_quality_policy.v1"
     assert package.handoff_context["quality_policy"]["severity_penalties"]["warning"] == 5
+    assert package.handoff_context["quality_policy"]["evidence_bucket_requirements"] == {
+        "required_bucket_ids": []
+    }
 
 
 def test_retrieval_quality_signals_flag_weak_top_hit_match(
@@ -1702,6 +2140,24 @@ def test_second_stage_reranker_refines_ranked_candidates() -> None:
     assert components["external_rerank"].value == 1.0
     assert components["external_rerank"].metadata["score_weight"] == 1.0
     assert package.handoff_context["reranker"]["provider"] == "fake"
+
+
+def test_llamaindex_fusion_diagnostics_are_framework_managed() -> None:
+    diagnostics = _framework_fusion_diagnostics(
+        bm25_available=True,
+        bm25_weight=0.38,
+        candidate_top_k=12,
+        filtered_node_count=42,
+        hits=[],
+        vector_weight=0.62,
+    )
+
+    assert diagnostics["method"] == "llamaindex_hybrid_rrf"
+    assert diagnostics["diagnostic_scope"] == "framework_managed_fusion"
+    assert diagnostics["top_overlap_ratio"] is None
+    assert diagnostics["mean_selected_rank_delta"] is None
+    assert diagnostics["weights"] == {"vector": 0.62, "bm25": 0.38}
+    assert diagnostics["interpretation"] == "framework_managed_hybrid"
 
 
 def test_retrieval_diversity_selection_reduces_redundant_sources() -> None:

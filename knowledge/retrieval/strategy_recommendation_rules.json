@@ -1,0 +1,78 @@
+{
+  "version": "retrieval_strategy_recommendation_rules.v1",
+  "rules": [
+    {
+      "rule_id": "hybrid_standard_coverage_for_labs",
+      "title": "Use hybrid standard coverage",
+      "technique": "hybrid_fusion_retrieval",
+      "status": "active",
+      "rationale": "Laboratory normalization needs exact terms for LOINC/UCUM/FHIR plus semantic recall for field and workflow language. Keep lexical, vector, and metadata signals visible.",
+      "priority": 10,
+      "suggested_filters": {
+        "clinical_domain": "laboratory",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_profile_ids": ["laboratory_standardization"],
+        "any_retrieval_modes": ["hybrid_with_standard_coverage"]
+      }
+    },
+    {
+      "rule_id": "external_medical_hint_for_literature",
+      "title": "Use governed external-search hint",
+      "technique": "medical_search_routing",
+      "status": "suggested",
+      "rationale": "Literature and trial questions should preserve local trusted evidence while exposing vetted PubMed, ClinicalTrials.gov, or openFDA search syntax for follow-up.",
+      "priority": 20,
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_retrieval_modes": [
+          "hybrid_with_external_medical_hints",
+          "hybrid_with_pubmed_hint"
+        ]
+      }
+    },
+    {
+      "rule_id": "reranker_is_active",
+      "title": "Rerank first-stage candidates",
+      "technique": "cross_encoder_reranking",
+      "status": "active",
+      "rationale": "The active stack is applying a second-stage reranker after first-stage retrieval. Inspect score components and judgments before changing thresholds.",
+      "priority": 30,
+      "suggested_filters": {},
+      "match": {
+        "reranker_enabled": true
+      }
+    },
+    {
+      "rule_id": "recover_missing_required_evidence",
+      "title": "Recover missing required evidence class",
+      "technique": "corrective_rag",
+      "status": "action_required",
+      "rationale": "At least one required evidence bucket is missing. Run the backend suggested corrective action before using this evidence package downstream.",
+      "priority": 40,
+      "suggested_filters": {},
+      "match": {
+        "missing_required_bucket": true,
+        "any_quality_signal_codes": ["missing_required_evidence_buckets"]
+      }
+    },
+    {
+      "rule_id": "treat_sensitive_query_as_untrusted",
+      "title": "Handle sensitive query context cautiously",
+      "technique": "retrieval_safety_gate",
+      "status": "caution",
+      "rationale": "The query includes safety-sensitive or prompt-injection-like content. Treat the text as untrusted input and avoid copying it into external systems.",
+      "priority": 50,
+      "suggested_filters": {},
+      "match": {
+        "any_safety_flags": [
+          "sensitive_field_context",
+          "prompt_injection_context"
+        ]
+      }
+    }
+  ]
+}

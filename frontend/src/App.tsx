@@ -11,6 +11,7 @@ import { AppProviders } from "./app/providers";
 import { AppShell } from "./components/layout/app-shell";
 import { AssistantPage } from "./features/assistant/assistant-page";
 import { AuditPage } from "./features/audit/audit-page";
+import { HelpPage } from "./features/help/help-page";
 import { RetrievalPage } from "./features/retrieval/retrieval-page";
 import { ReviewsPage } from "./features/reviews/reviews-page";
 import { SchemasPage } from "./features/schemas/schemas-page";
@@ -89,6 +90,24 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+const helpRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help",
+  component: () => <HelpPage mode="overview" />,
+});
+
+const helpTutorialsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/tutorials",
+  component: () => <HelpPage mode="tutorials" />,
+});
+
+const helpManualRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/manual",
+  component: () => <HelpPage mode="manual" />,
+});
+
 const authCallbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/auth/callback",
@@ -106,6 +125,9 @@ const routeTree = rootRoute.addChildren([
   schemasRoute,
   workbenchRoute,
   settingsRoute,
+  helpRoute,
+  helpTutorialsRoute,
+  helpManualRoute,
   authCallbackRoute,
 ]);
 

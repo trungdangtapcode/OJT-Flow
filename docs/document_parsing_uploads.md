@@ -12,9 +12,13 @@ The feature is intentionally conservative:
 - workflow parsing, validation, review, transformation, and explanation run from the derived text artifact;
 - failed extraction/parsing is persisted as a failed workflow with audit events and returned as a structured API error;
 - structured text uploads (`.csv`, `.json`, `.yaml`, `.md`, `.txt`) bypass optional document
-  extractors and go directly through deterministic parsing.
+  extractors and go directly through deterministic parsing;
+- configured OpenAI-compatible OCR can recover text from pasted images,
+  scanned PDFs, and image-heavy Office files before assistant/tool execution.
 
-The upload feature does not claim production OCR, FHIR compliance, diagnosis, treatment, or autonomous medical interpretation.
+The upload feature does not claim FHIR compliance, diagnosis, treatment, or
+autonomous medical interpretation. OCR output is untrusted extracted evidence
+and should remain review-gated when confidence or content risk requires it.
 
 ## Runtime Configuration
 
@@ -24,6 +28,8 @@ The upload feature does not claim production OCR, FHIR compliance, diagnosis, tr
 | `OJT_MAX_INLINE_DATA_BYTES` | `1048576` | Maximum inline text/JSON payload size for pasted workflow, conversion, validation, FHIR profile, and OCR evidence requests. Must be positive. Larger inputs should use upload workflows. |
 | `OJT_UPLOAD_READ_CHUNK_BYTES` | `1048576` | Read chunk size for multipart uploads. Must be positive. |
 | `OJT_ALLOWED_UPLOAD_EXTENSIONS` | Built-in allowlist | Comma-separated extension allowlist. Values may include or omit the leading dot. This may only narrow supported upload extensions. |
+| `OJT_MARKITDOWN_OCR_ENABLED` | `true` | Enables MarkItDown OCR plugins for OCR-sensitive formats when an OpenAI-compatible key is configured. Set `false` to keep MarkItDown in plain conversion mode. |
+| `OJT_OPENAI_VISION_MODEL` | `OJT_LLM_MODEL` | Optional OCR model override. The `chat-latest` alias is mapped to a vision-capable OpenAI model for extraction. |
 
 Default supported extensions:
 
@@ -44,14 +50,20 @@ rejected before the API starts accepting traffic.
 `python-multipart` is a base dependency because FastAPI validates multipart route parameters when the app is built.
 
 The Docker API image installs the lightweight parsing extra by default, so
-MarkItDown is available for PDF, DOCX, XLSX/XLS, and PPTX extraction in the
-local Compose runtime.
+MarkItDown and the MarkItDown OCR plugin are available for PDF, DOCX, XLSX/XLS,
+PPTX, and OCR-sensitive extraction in the local Compose runtime.
 
 For local non-Docker Python runs, install the same lightweight extractor set:
 
 ```bash
 pip install 'ojtflow[parsing]'
 ```
+
+The parsing extra installs `markitdown-ocr` and `openai`. When
+`OJT_MARKITDOWN_OCR_ENABLED=true` and `OJT_OPENAI_API_KEY` or `OPENAI_API_KEY`
+is set, MarkItDown runs with plugins enabled for OCR-sensitive formats. If a
+plain image still returns empty text, the backend uses a direct OpenAI vision
+fallback and reports both extraction warnings in the API response.
 
 For heavier PDF/image extraction experiments:
 

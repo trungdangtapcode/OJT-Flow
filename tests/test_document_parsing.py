@@ -14,6 +14,7 @@ from ojtflow.core.contracts.auth import (
 from ojtflow.core.contracts.enums import DataFormat, EventType, WorkflowStatus
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.core.errors import ToolExecutionError, UnsupportedUploadError
+from ojtflow.data_tools import extract as extract_module
 from ojtflow.data_tools.extract import ExtractionResult, sanitize_upload_filename
 from ojtflow.data_tools.parse import parse_data
 from ojtflow.interfaces.api.app import create_app
@@ -124,6 +125,128 @@ def test_file_workflow_extraction_failure_is_persisted(monkeypatch) -> None:
     assert persisted.input is not None
     assert persisted.handoff_context["raw_upload"]["filename"] == "lab_report.pdf"
     assert any(event.event_type == EventType.WORKFLOW_FAILED for event in events)
+
+
+def test_image_auto_extraction_uses_openai_vision_when_markitdown_is_empty(
+    monkeypatch,
+) -> None:
+    calls: list[dict] = []
+
+    def fake_markitdown(data, filename, source_format, warnings):
+        warnings.append("markitdown returned empty text.")
+        return ExtractionResult(
+            text="",
+            extractor_used="markitdown",
+            source_format=source_format,
+            filename=filename,
+            warnings=warnings,
+        )
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"output_text": "patient_id,value\nP001,7.4"}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, headers, json):
+            calls.append({"url": url, "headers": headers, "json": json})
+            return FakeResponse()
+
+    monkeypatch.setenv("OJT_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OJT_LLM_MODEL", "chat-latest")
+    monkeypatch.setattr(extract_module, "_extract_markitdown", fake_markitdown)
+    monkeypatch.setattr(extract_module.httpx, "Client", FakeClient)
+
+    result = extract_module.extract_document(b"fake-image-bytes", "clipboard.png")
+
+    assert result.extractor_used == "openai_vision"
+    assert result.text == "patient_id,value\nP001,7.4"
+    assert "used OpenAI vision OCR fallback" in " ".join(result.warnings)
+    assert calls
+    assert calls[0]["url"].endswith("/responses")
+    assert calls[0]["json"]["model"] == "gpt-4.1-mini"
+    image_part = calls[0]["json"]["input"][0]["content"][1]
+    assert image_part["type"] == "input_image"
+    assert image_part["image_url"].startswith("data:image/png;base64,")
+
+
+def test_image_auto_extraction_reports_missing_vision_key_when_markitdown_is_empty(
+    monkeypatch,
+) -> None:
+    def fake_markitdown(data, filename, source_format, warnings):
+        warnings.append("markitdown returned empty text.")
+        return ExtractionResult(
+            text="",
+            extractor_used="markitdown",
+            source_format=source_format,
+            filename=filename,
+            warnings=warnings,
+        )
+
+    monkeypatch.delenv("OJT_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(extract_module, "_extract_markitdown", fake_markitdown)
+
+    result = extract_module.extract_document(b"fake-image-bytes", "clipboard.png")
+
+    assert result.extractor_used == "markitdown"
+    assert result.text == ""
+    assert any("OpenAI vision OCR fallback is not configured" in warning for warning in result.warnings)
+
+
+def test_markitdown_converter_enables_ocr_plugin_when_configured(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class FakeMarkItDown:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setenv("OJT_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OJT_MARKITDOWN_OCR_ENABLED", "true")
+    monkeypatch.setenv("OJT_LLM_MODEL", "chat-latest")
+
+    converter = extract_module._build_markitdown_converter(
+        MarkItDown=FakeMarkItDown,
+        source_format="pdf",
+        deferred_warnings=[],
+    )
+
+    assert converter is not None
+    assert calls[0]["enable_plugins"] is True
+    assert calls[0]["llm_model"] == "gpt-4.1-mini"
+    assert "llm_client" in calls[0]
+
+
+def test_markitdown_converter_keeps_plain_mode_when_ocr_disabled(monkeypatch) -> None:
+    calls: list[dict] = []
+    deferred_warnings: list[str] = []
+
+    class FakeMarkItDown:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setenv("OJT_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OJT_MARKITDOWN_OCR_ENABLED", "false")
+
+    extract_module._build_markitdown_converter(
+        MarkItDown=FakeMarkItDown,
+        source_format="pdf",
+        deferred_warnings=deferred_warnings,
+    )
+
+    assert calls == [{"enable_plugins": False}]
+    assert deferred_warnings == []
 
 
 @pytest.mark.asyncio

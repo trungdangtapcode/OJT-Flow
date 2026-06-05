@@ -7,6 +7,8 @@ import { PageHeader } from "../../components/layout/page-header";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input, Label, Select } from "../../components/ui/form";
+import { GuideGrid, GuideItem, GuidePanel } from "../../components/ui/guide-panel";
+import { HelpTooltip } from "../../components/ui/help-tooltip";
 import { Notice } from "../../components/ui/notice";
 import { PaginationFooter } from "../../components/ui/pagination";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -94,6 +96,19 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
         title="Workflow operations"
         description="Command center for governed healthcare data workflows, review gates, evidence, and audit state."
       />
+      <GuidePanel title="How to read workflow operations">
+        <GuideGrid>
+          <GuideItem title="Queue">
+            Each row is one persisted run. Select a workflow to inspect parser output, validation issues, evidence, and audit history.
+          </GuideItem>
+          <GuideItem title="Status">
+            Completed means output exists. Needs review means a human must approve, edit, reject, or clarify before completion.
+          </GuideItem>
+          <GuideItem title="Issues and evidence">
+            Issue count shows validation pressure. Evidence count shows how much trusted support was attached to the run.
+          </GuideItem>
+        </GuideGrid>
+      </GuidePanel>
       <OperationsSummary
         queueLoading={summariesQuery.isLoading}
         stats={stats}
@@ -119,7 +134,12 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <CardTitle>Workflow queue</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">Search, filter, and inspect governed runs.</p>
+                  <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                    Search, filter, and inspect governed runs.
+                    <HelpTooltip label="Workflow queue help">
+                      Use this queue to find a run, then inspect the selected detail panel for issues, evidence, output, and audit events.
+                    </HelpTooltip>
+                  </p>
                 </div>
                 <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground">
                   {summariesQuery.isLoading ? "loading queue" : `${total} queued`}
@@ -155,7 +175,12 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
                   <option value="running">Running</option>
                 </Select>
                 <Label className="gap-1 text-xs text-muted-foreground">
-                  <span>Sort</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    Sort
+                    <HelpTooltip label="Workflow sort help">
+                      Sort by updated time for active work, created time for chronology, issues for risk triage, or evidence for grounding coverage.
+                    </HelpTooltip>
+                  </span>
                   <Select
                     className="w-full"
                     onChange={(event) => {
@@ -173,7 +198,12 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
                   </Select>
                 </Label>
                 <Label className="gap-1 text-xs text-muted-foreground">
-                  <span>Direction</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    Direction
+                    <HelpTooltip label="Workflow direction help">
+                      Desc shows newest or highest values first. Asc shows oldest or lowest values first.
+                    </HelpTooltip>
+                  </span>
                   <Select
                     className="w-full"
                     onChange={(event) => {

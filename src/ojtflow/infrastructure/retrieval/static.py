@@ -182,6 +182,7 @@ class StaticRetrievalRepository:
         clinical_domain = query.filters.get("clinical_domain")
         standard_system = query.filters.get("standard_system")
         source_type = query.filters.get("source_type")
+        source_id = query.filters.get("source_id")
         filtered = chunks
         if trust_level:
             filtered = [chunk for chunk in filtered if chunk.trust_level == TrustLevel(trust_level)]
@@ -195,6 +196,8 @@ class StaticRetrievalRepository:
                 for chunk in filtered
                 if chunk.source_type == EvidenceSourceType(source_type)
             ]
+        if source_id:
+            filtered = [chunk for chunk in filtered if chunk.source_id == source_id]
         return filtered
 
 

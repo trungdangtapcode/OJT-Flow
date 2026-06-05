@@ -256,6 +256,7 @@ def _build_assistant_service() -> AssistantService:
         ),
         planner=planner,
         max_tool_calls=settings.llm_max_tool_calls,
+        planning_progress_interval_seconds=settings.llm_planning_progress_interval_seconds,
     )
 
 

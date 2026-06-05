@@ -21,6 +21,7 @@ from ojtflow.interfaces.api.deps import (
     bearer_scheme,
     clear_workflow_service_cache,
     get_auth_service,
+    get_assistant_service,
     get_medical_evidence_service,
     get_retrieval_judgment_service,
     get_workflow_service,
@@ -515,6 +516,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "standard_system": "  UCUM  ",
                 "trust_level": "approved",
                 "filters": {
+                    "source_id": "  terminology:ucum  ",
                     "source_type": "terminology_system",
                 },
             },
@@ -533,6 +535,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "top_k": 5,
                 "filters": {
                     "clinical_domain": "laboratory",
+                    "source_id": "terminology:ucum",
                     "standard_system": "UCUM",
                     "source_type": "terminology_system",
                     "trust_level": "approved",
@@ -616,6 +619,13 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "average_rating": 3.0,
                 "unjudged_evidence_ids": ["ev_missing"],
                 "judgment_ids": ["rj_existing"],
+                "evaluation_readiness": {
+                    "status": "low_confidence",
+                    "label": "Low-confidence metrics",
+                    "message": "Metrics need more labels.",
+                    "min_judged_count": 3,
+                    "min_coverage_at_k": 0.6,
+                },
                 "recommendations": [],
             }
 
@@ -694,6 +704,7 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
     assert evaluated.json()["data"]["hit_rate_at_k"] == 1.0
     assert evaluated.json()["data"]["mrr_at_k"] == 1.0
     assert evaluated.json()["data"]["ndcg_at_k"] == 1.0
+    assert evaluated.json()["data"]["evaluation_readiness"]["status"] == "low_confidence"
     assert saved.status_code == 200
     assert saved.json()["data"]["judgment_id"] == "rj_saved"
     assert deleted.status_code == 200
@@ -1028,6 +1039,11 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         runtime_config = await client.get("/api/v1/runtime/config")
         runtime_readiness = await client.get("/api/v1/runtime/readiness")
         assistant_tools = await client.get("/api/v1/assistant/tools")
+        assistant_examples = await client.get("/api/v1/assistant/examples")
+        assistant_stream = await client.post(
+            "/api/v1/assistant/chat/stream",
+            json={"message": "Find evidence for lab units."},
+        )
         retrieval = await client.post(
             "/api/v1/retrieval/search",
             json={"query": "lab result schema", "top_k": 1},
@@ -1083,6 +1099,10 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(runtime_readiness, expected_code="unauthorized")
     assert assistant_tools.status_code == 401
     _assert_error_envelope(assistant_tools, expected_code="unauthorized")
+    assert assistant_examples.status_code == 401
+    _assert_error_envelope(assistant_examples, expected_code="unauthorized")
+    assert assistant_stream.status_code == 401
+    _assert_error_envelope(assistant_stream, expected_code="unauthorized")
     assert retrieval.status_code == 401
     _assert_error_envelope(retrieval, expected_code="unauthorized")
     assert retrieval_presets.status_code == 401
@@ -1201,6 +1221,29 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert rule_packs["query_profiles"]["env_var"] == "OJT_QUERY_PROFILE_RULES_PATH"
         assert rule_packs["query_profiles"]["version"] == "retrieval_query_profile_rules.v1"
         assert len(rule_packs["query_profiles"]["content_hash"]) == 64
+        assert rule_packs["corrective_actions"]["status"] == "ok"
+        assert rule_packs["corrective_actions"]["env_var"] == "OJT_CORRECTIVE_ACTION_RULES_PATH"
+        assert rule_packs["corrective_actions"]["version"] == (
+            "retrieval_corrective_action_rules.v1"
+        )
+        assert rule_packs["corrective_actions"]["rule_count"] > 0
+        assert len(rule_packs["corrective_actions"]["content_hash"]) == 64
+        assert rule_packs["strategy_recommendations"]["status"] == "ok"
+        assert rule_packs["strategy_recommendations"]["env_var"] == (
+            "OJT_STRATEGY_RECOMMENDATION_RULES_PATH"
+        )
+        assert rule_packs["strategy_recommendations"]["version"] == (
+            "retrieval_strategy_recommendation_rules.v1"
+        )
+        assert rule_packs["strategy_recommendations"]["rule_count"] > 0
+        assert len(rule_packs["strategy_recommendations"]["content_hash"]) == 64
+        assert rule_packs["evidence_buckets"]["status"] == "ok"
+        assert rule_packs["evidence_buckets"]["env_var"] == "OJT_EVIDENCE_BUCKET_RULES_PATH"
+        assert rule_packs["evidence_buckets"]["version"] == (
+            "retrieval_evidence_bucket_rules.v1"
+        )
+        assert rule_packs["evidence_buckets"]["rule_count"] > 0
+        assert len(rule_packs["evidence_buckets"]["content_hash"]) == 64
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text
@@ -1382,6 +1425,48 @@ async def test_runtime_readiness_requires_retrieval_rule_packs(
         assert issue["env_var"] == "OJT_QUERY_EXPANSION_RULES_PATH"
         response_text = response.text
         assert str(missing_registry) not in response_text
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+
+@pytest.mark.asyncio
+async def test_runtime_readiness_requires_corrective_action_rule_pack(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    missing_registry = tmp_path / "missing_corrective_action_rules.json"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_CORRECTIVE_ACTION_RULES_PATH", str(missing_registry))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/readiness")
+
+        assert response.status_code == 200
+        body = _assert_success_envelope(response)["data"]
+        checks = {check["name"]: check for check in body["checks"]}
+
+        assert body["status"] == "not_ready"
+        assert checks["retrieval_rule_packs"]["status"] == "error"
+        issues = [
+            pack
+            for pack in checks["retrieval_rule_packs"]["details"]["packs"]
+            if pack["status"] != "ok"
+        ]
+        assert issues == [
+            {
+                "name": "corrective_actions",
+                "status": "missing",
+                "source": "override",
+                "env_var": "OJT_CORRECTIVE_ACTION_RULES_PATH",
+                "configured": True,
+                "rule_count": 0,
+            }
+        ]
+        assert str(missing_registry) not in response.text
     finally:
         clear_settings_cache()
         clear_workflow_service_cache()
@@ -2977,6 +3062,26 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             "sensitive_field_context"
         ]
         assert retrieval_data["evidence"]
+        assert retrieval_data["recommended_actions"]
+        assert retrieval_data["recommended_action_summary"]["count"] == len(
+            retrieval_data["recommended_actions"]
+        )
+        assert retrieval_data["remediation_summary"]
+        assert retrieval_data["interpretation"]["summary"]
+        assert retrieval_data["interpretation"]["top_source_id"]
+        assert retrieval_data["handoff_context"]["recommended_action_summary"] == (
+            retrieval_data["recommended_action_summary"]
+        )
+        assert retrieval_data["handoff_context"]["remediation_summary"] == (
+            retrieval_data["remediation_summary"]
+        )
+        assert retrieval_data["handoff_context"]["interpretation"] == (
+            retrieval_data["interpretation"]
+        )
+        assert retrieval_data["strategy_recommendations"]
+        assert retrieval_data["handoff_context"]["strategy_recommendations"] == (
+            retrieval_data["strategy_recommendations"]
+        )
         assert retrieval_data["handoff_context"]["graph_context"]["graph_contract"] == (
             "graph_ner_handoff.v0"
         )
@@ -3049,7 +3154,97 @@ async def test_assistant_chat_runs_retrieval_tool_without_llm_tokens(monkeypatch
     assert body["tool_calls"][0]["output"]["evidence"]
     assert body["findings"][0]["title"] == "Trusted evidence retrieved"
     assert body["evidence_summary"][0]["source_id"]
-    assert "Retrieved" in body["message"]
+    assert body["evidence_summary"][0]["match_explanation"]["version"] == 1
+    assert body["evidence_summary"][0]["match_explanation"]["support_status"] in {
+        "strong",
+        "partial",
+        "weak",
+    }
+    assert body["message"]
+    if any(finding["title"] == "Retrieval remediation" for finding in body["findings"]):
+        assert any(
+            suggestion.startswith("Next retrieval step:")
+            for suggestion in body["suggestions"]
+        )
+    if any(finding["title"] == "Retrieval interpretation" for finding in body["findings"]):
+        assert body["suggestions"]
+    else:
+        assert "Retrieved" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_stream_emits_tool_progress_and_final_response(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        async with client.stream(
+            "POST",
+            "/api/v1/assistant/chat/stream",
+            json={
+                "message": "Find evidence for HbA1c CSV missing unit FHIR Observation",
+                "context": {
+                    "schema_id": "lab_result_v1",
+                    "fields": ["lab_name", "value", "unit"],
+                    "clinical_domain": "laboratory",
+                },
+            },
+        ) as response:
+            body = await response.aread()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    event_text = body.decode("utf-8")
+    assert "event: stream_opened" in event_text
+    assert "event: planning_started" in event_text
+    assert event_text.index("event: stream_opened") < event_text.index("event: planning_started")
+    assert "event: plan_ready" in event_text
+    assert "event: tool_started" in event_text
+    assert "event: tool_completed" in event_text
+    assert "event: final" in event_text
+    assert '"tool_name":"retrieval_search"' in event_text
+    assert '"status":"completed"' in event_text
+    assert '"mode":"deterministic"' in event_text
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_stream_emits_structured_error_event(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    app = create_app()
+
+    class FailingAssistantService:
+        tool_specs = []
+
+        async def chat_stream(self, **kwargs):
+            del kwargs
+            yield {"type": "planning_started", "mode": "deterministic", "message": "start"}
+            raise RuntimeError("stream exploded")
+
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_assistant_service] = lambda: FailingAssistantService()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with client.stream(
+            "POST",
+            "/api/v1/assistant/chat/stream",
+            json={"message": "Find evidence for lab units."},
+        ) as response:
+            body = await response.aread()
+
+    event_text = body.decode("utf-8")
+    assert response.status_code == 200
+    assert "event: stream_opened" in event_text
+    assert "event: planning_started" in event_text
+    assert event_text.index("event: stream_opened") < event_text.index("event: planning_started")
+    assert "event: error" in event_text
+    assert '"type":"error"' in event_text
+    assert '"code":"RuntimeError"' in event_text
+    assert "Assistant stream failed before completion." in event_text
 
 
 @pytest.mark.asyncio
@@ -3071,6 +3266,26 @@ async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
     assert start_workflow["requires_approval"] is True
     assert start_workflow["permission_scope"] == "data:transform"
     assert start_workflow["input_schema"]["type"] == "object"
+
+
+@pytest.mark.asyncio
+async def test_assistant_examples_endpoint_returns_data_driven_starters(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.get("/api/v1/assistant/examples")
+
+    assert response.status_code == 200
+    examples = response.json()["data"]
+    assert {example["example_id"] for example in examples} >= {
+        "check_uploaded_healthcare_data",
+        "find_medical_standards",
+        "review_work_queue",
+    }
+    assert all("data" not in example["context"] for example in examples)
 
 
 @pytest.mark.asyncio

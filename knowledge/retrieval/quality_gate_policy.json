@@ -38,5 +38,8 @@
     "require_detected_concepts": true,
     "min_confidence": 0.7
   },
+  "evidence_bucket_requirements": {
+    "required_bucket_ids": ["schema", "policy"]
+  },
   "default_top_action": "Run retrieval before assessing package readiness."
 }

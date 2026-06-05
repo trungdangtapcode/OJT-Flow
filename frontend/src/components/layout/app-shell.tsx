@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   Database,
   FileCode,
+  HelpCircle,
   History,
   Layers,
   LogOut,
@@ -41,6 +42,7 @@ const navGroups = [
     items: [
       { to: "/schemas", label: "Schemas", icon: Database },
       { to: "/settings", label: "Settings", icon: Settings },
+      { to: "/help", label: "Help", icon: HelpCircle },
     ],
   },
 ];
@@ -79,7 +81,7 @@ export function AppShell() {
             <div className="whitespace-nowrap text-xs text-sidebar-foreground/62 max-sm:hidden">Clinical data ops</div>
           </div>
         </div>
-        <nav className="grid gap-4 max-lg:flex max-lg:min-w-0 max-lg:justify-end max-lg:gap-1.5 max-lg:overflow-x-auto max-lg:pb-0 max-sm:flex-nowrap max-sm:justify-start max-sm:gap-0">
+        <nav className="grid gap-4 max-lg:flex max-lg:min-w-0 max-lg:justify-end max-lg:gap-1.5 max-lg:overflow-x-auto max-lg:pb-0 max-sm:grid max-sm:grid-cols-5 max-sm:justify-stretch max-sm:gap-1 max-sm:overflow-visible">
           {navGroups.map((group) => (
             <div className="grid gap-1 max-lg:contents" key={group.label}>
               <div className="px-3 text-[11px] font-bold uppercase tracking-wide text-sidebar-foreground/45 max-lg:hidden">
@@ -94,7 +96,7 @@ export function AppShell() {
                     aria-label={item.label}
                     data-active={active ? "true" : undefined}
                     className={cn(
-                      "mobile-nav-link flex h-9 items-center gap-3 rounded-md px-3 text-sm font-semibold text-sidebar-foreground/78 transition-colors hover:bg-white/10 hover:text-white max-lg:h-9 max-lg:min-w-[6.75rem] max-lg:shrink-0 max-lg:justify-center max-lg:bg-white/5 max-lg:px-3 max-lg:text-xs max-sm:h-11 max-sm:min-w-11 max-sm:px-0",
+                      "mobile-nav-link flex h-9 items-center gap-3 rounded-md px-3 text-sm font-semibold text-sidebar-foreground/78 transition-colors hover:bg-white/10 hover:text-white max-lg:h-9 max-lg:min-w-[6.75rem] max-lg:shrink-0 max-lg:justify-center max-lg:bg-white/5 max-lg:px-3 max-lg:text-xs max-sm:h-11 max-sm:min-w-0 max-sm:shrink max-sm:px-0",
                       active && "bg-white/12 text-white ring-1 ring-white/12 shadow-[inset_3px_0_0_#5eead4] max-lg:shadow-none",
                     )}
                     key={item.to}
@@ -169,7 +171,7 @@ export function AppShell() {
             </div>
           </div>
         </header>
-        <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4">
+        <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4 max-sm:p-2">
           <Outlet />
         </div>
       </main>
