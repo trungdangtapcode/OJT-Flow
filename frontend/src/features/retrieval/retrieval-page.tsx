@@ -2539,10 +2539,6 @@ function formatFilterValue(field: SupportedFilterField, value: string): string {
   return field === "standard_system" ? value : humanize(value);
 }
 
-function formatAspectFilterValue(field: string, value: string): string {
-  return isSupportedFilterField(field) ? formatFilterValue(field, value) : value;
-}
-
 function coverageSuggestedFilter(
   item: RetrievalCoverage["standard_system"][number],
 ): CoverageFilterAction | null {
@@ -3121,7 +3117,12 @@ function QueryAnalysisBlock({
         onApplyFilter={onApplyFilterSuggestion}
         profile={analysis.queryProfile}
       />
-      <QueryAspectPlan aspects={analysis.queryAspects} />
+      <QueryAspectPlan
+        appliedFilters={appliedFilters}
+        aspects={analysis.queryAspects}
+        isSearchPending={isSearchPending}
+        onApplyFilter={onApplyFilterSuggestion}
+      />
       <QueryDiagnosticList diagnostics={analysis.diagnostics} />
       <ConceptCandidateList candidates={analysis.conceptCandidates} />
       <SearchHintList hints={analysis.searchHints} />
@@ -3137,7 +3138,17 @@ function QueryAnalysisBlock({
   );
 }
 
-function QueryAspectPlan({ aspects }: { aspects: QueryAspectStack[] }) {
+function QueryAspectPlan({
+  appliedFilters,
+  aspects,
+  isSearchPending,
+  onApplyFilter,
+}: {
+  appliedFilters: Record<string, unknown>;
+  aspects: QueryAspectStack[];
+  isSearchPending: boolean;
+  onApplyFilter: (suggestion: FilterSuggestionStack) => void;
+}) {
   if (!aspects.length) {
     return <TokenList items={[]} title="Search aspect plan" />;
   }
@@ -3150,47 +3161,94 @@ function QueryAspectPlan({ aspects }: { aspects: QueryAspectStack[] }) {
         <Badge variant="muted">{formatCount(aspects.length, "aspect")}</Badge>
       </div>
       <div className="grid gap-2">
-        {aspects.map((aspect) => (
-          <div
-            className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
-            key={aspect.aspectId}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-bold">{aspect.label}</span>
-              <Badge variant="muted">priority {aspect.priority}</Badge>
-            </div>
-            <div className="break-words font-semibold text-foreground">
-              {aspect.question}
-            </div>
-            <div className="break-words text-muted-foreground">
-              {aspect.rationale}
-            </div>
-            {aspect.suggestedTerms.length ? (
-              <div className="flex min-w-0 flex-wrap gap-1">
-                {aspect.suggestedTerms.slice(0, 5).map((term) => (
-                  <Badge key={`${aspect.aspectId}-${term}`} variant="muted">
-                    {term}
-                  </Badge>
-                ))}
-                {aspect.suggestedTerms.length > 5 ? (
-                  <Badge variant="muted">+{aspect.suggestedTerms.length - 5}</Badge>
-                ) : null}
+        {aspects.map((aspect) => {
+          const filterEntries = queryAspectFilterEntries(aspect, appliedFilters);
+          return (
+            <div
+              className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
+              key={aspect.aspectId}
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="break-words font-bold">{aspect.label}</span>
+                <Badge variant="muted">priority {aspect.priority}</Badge>
               </div>
-            ) : null}
-            {Object.keys(aspect.suggestedFilters).length ? (
-              <div className="flex min-w-0 flex-wrap gap-1">
-                {Object.entries(aspect.suggestedFilters).map(([field, value]) => (
-                  <Badge key={`${aspect.aspectId}-${field}`} variant="success">
-                    {humanize(field)}={formatAspectFilterValue(field, value)}
-                  </Badge>
-                ))}
+              <div className="break-words font-semibold text-foreground">
+                {aspect.question}
               </div>
-            ) : null}
-            <code className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px] text-muted-foreground">
-              {aspect.ruleId}
-            </code>
-          </div>
-        ))}
+              <div className="break-words text-muted-foreground">
+                {aspect.rationale}
+              </div>
+              {aspect.suggestedTerms.length ? (
+                <div className="flex min-w-0 flex-wrap gap-1">
+                  {aspect.suggestedTerms.slice(0, 5).map((term) => (
+                    <Badge key={`${aspect.aspectId}-${term}`} variant="muted">
+                      {term}
+                    </Badge>
+                  ))}
+                  {aspect.suggestedTerms.length > 5 ? (
+                    <Badge variant="muted">+{aspect.suggestedTerms.length - 5}</Badge>
+                  ) : null}
+                </div>
+              ) : null}
+              {filterEntries.length ? (
+                <div className="flex min-w-0 flex-wrap gap-1">
+                  {filterEntries.map((entry) => (
+                    <Badge
+                      key={`${aspect.aspectId}-${entry.field}`}
+                      variant={entry.applied ? "success" : "muted"}
+                    >
+                      {entry.label}={entry.displayValue}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              {filterEntries.length ? (
+                <div className="flex min-w-0 flex-wrap gap-1.5">
+                  {filterEntries.map((entry) =>
+                    entry.supported ? (
+                      <Button
+                        disabled={isSearchPending || entry.applied}
+                        key={`${aspect.aspectId}-${entry.field}-${entry.value}-apply`}
+                        onClick={() =>
+                          onApplyFilter({
+                            applied: false,
+                            confidence: 1,
+                            field: entry.field,
+                            reason: `Suggested by search aspect ${aspect.aspectId}.`,
+                            value: entry.value,
+                          })
+                        }
+                        size="sm"
+                        title={`Apply ${entry.label}=${entry.displayValue}`}
+                        type="button"
+                        variant={entry.applied ? "secondary" : "outline"}
+                      >
+                        {entry.applied ? (
+                          <CheckCircle2 className="h-4 w-4" />
+                        ) : isSearchPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ListFilter className="h-4 w-4" />
+                        )}
+                        {entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`}
+                      </Button>
+                    ) : (
+                      <Badge
+                        key={`${aspect.aspectId}-${entry.field}-${entry.value}-unsupported`}
+                        variant="warning"
+                      >
+                        unsupported {humanize(entry.field)}
+                      </Badge>
+                    ),
+                  )}
+                </div>
+              ) : null}
+              <code className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px] text-muted-foreground">
+                {aspect.ruleId}
+              </code>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -4355,7 +4413,21 @@ function queryProfileFilterEntries(
   profile: QueryProfileStack,
   appliedFilters: Record<string, unknown>,
 ): QueryProfileFilterEntry[] {
-  return Object.entries(profile.suggestedFilters).map(([field, value]) => {
+  return suggestedFilterEntries(profile.suggestedFilters, appliedFilters);
+}
+
+function queryAspectFilterEntries(
+  aspect: QueryAspectStack,
+  appliedFilters: Record<string, unknown>,
+): QueryProfileFilterEntry[] {
+  return suggestedFilterEntries(aspect.suggestedFilters, appliedFilters);
+}
+
+function suggestedFilterEntries(
+  suggestedFilters: Record<string, string>,
+  appliedFilters: Record<string, unknown>,
+): QueryProfileFilterEntry[] {
+  return Object.entries(suggestedFilters).map(([field, value]) => {
     const supported = isSupportedFilterField(field);
     return {
       applied: supported && appliedFilterMatches(appliedFilters, field, value),

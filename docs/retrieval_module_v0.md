@@ -302,7 +302,11 @@ contributing rule ID, suggested terms, and suggested filters. Current rules
 cover laboratory identity/standardization, unit and value quality, sensitive
 data review, medication terminology/safety, literature/external evidence, and
 observational schema context. This is a search-planning and review aid; it does
-not silently execute subqueries or make clinical recommendations.
+not silently execute subqueries or make clinical recommendations. The Retrieval
+console shows aspect-suggested filters with applied-state badges based on the
+submitted retrieval trace and lets operators explicitly apply supported
+metadata filters through the same typed search path used by other filter
+suggestions.
 
 Deterministic query expansion rules are loaded from
 `knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query

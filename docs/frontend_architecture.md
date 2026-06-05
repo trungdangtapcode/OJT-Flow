@@ -167,7 +167,9 @@ The same query-analysis panel should render `query_aspects` as a compact search
 aspect plan, including aspect label, review question, rationale, priority,
 suggested terms, suggested filters, and contributing rule ID. These aspects are
 operator-visible decomposition guidance and must not silently run hidden
-subqueries or mutate filters.
+subqueries or mutate filters. Supported aspect-suggested filters should use the
+same explicit apply path and submitted-filter applied-state checks as profile
+and query-analysis filter suggestions.
 Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see
