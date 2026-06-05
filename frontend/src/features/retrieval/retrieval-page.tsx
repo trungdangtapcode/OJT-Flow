@@ -70,6 +70,7 @@ import type {
   RetrievalSearchOption,
   RetrievalSearchPreset,
   RetrievalSource,
+  RuntimeRetrievalRulePack,
   RuntimeConfig,
 } from "../../types";
 
@@ -114,8 +115,16 @@ type RetrievalRunSummary = {
   candidateCount: number;
   hitCount: number;
   qualityWarningCount: number;
+  rulePackCount: number;
+  rulePackFingerprint: string;
   topSourceId: string | null;
   warningCount: number;
+};
+type RetrievalRulePackChange = {
+  active?: RuntimeRetrievalRulePack;
+  baseline?: RuntimeRetrievalRulePack;
+  name: string;
+  status: "added" | "removed" | "changed" | "stable";
 };
 type RelevanceJudgmentValue = "relevant" | "partial" | "not_relevant";
 type RelevanceJudgment = {
@@ -161,6 +170,8 @@ type RetrievalRunComparison = {
   rankChanges: RetrievalRankChange[];
   removedEvidenceIds: string[];
   retainedEvidenceIds: string[];
+  rulePackChanges: RetrievalRulePackChange[];
+  rulePackChanged: boolean;
   topSourceAfter: string | null;
   topSourceBefore: string | null;
   topSourceChanged: boolean;
@@ -1096,6 +1107,9 @@ function SearchRunHistory({
                   <Badge variant="muted">
                     {formatCount(run.summary.candidateCount, "candidate")}
                   </Badge>
+                  <Badge variant="muted">
+                    {formatCount(run.summary.rulePackCount, "rule pack")}
+                  </Badge>
                   {run.summary.warningCount ? (
                     <Badge variant="warning">
                       {formatCount(run.summary.warningCount, "warning")}
@@ -1165,6 +1179,9 @@ function SearchRunComparison({
           <Badge variant={comparison.topSourceChanged ? "warning" : "success"}>
             {comparison.topSourceChanged ? "top source changed" : "top source stable"}
           </Badge>
+          <Badge variant={comparison.rulePackChanged ? "warning" : "success"}>
+            {comparison.rulePackChanged ? "rule packs changed" : "rule packs stable"}
+          </Badge>
           <Button
             aria-label="Copy retrieval comparison report"
             onClick={() => void copyReport()}
@@ -1204,6 +1221,7 @@ function SearchRunComparison({
         />
       </div>
       <div className="grid gap-2">
+        <RunComparisonRulePacks rulePackChanges={comparison.rulePackChanges} />
         <RunComparisonRankChanges rankChanges={comparison.rankChanges} />
         <RunComparisonEvidenceChange
           evidenceIds={comparison.addedEvidenceIds}
@@ -1292,6 +1310,59 @@ function RunComparisonMetric({
       <Badge variant={deltaBadgeVariant(delta, positiveIsGood)}>
         {formatSignedDelta(delta)}
       </Badge>
+    </div>
+  );
+}
+
+function RunComparisonRulePacks({
+  rulePackChanges,
+}: {
+  rulePackChanges: RetrievalRulePackChange[];
+}) {
+  const changedCount = rulePackChanges.filter((change) => change.status !== "stable").length;
+  if (!rulePackChanges.length) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <span className="text-xs font-bold text-muted-foreground">Rule packs</span>
+        <Badge variant="muted">not reported</Badge>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-muted-foreground">Rule packs</span>
+        <Badge variant={changedCount ? "warning" : "success"}>
+          {changedCount ? formatCount(changedCount, "changed pack") : "stable"}
+        </Badge>
+      </div>
+      <div className="grid gap-1">
+        {rulePackChanges.slice(0, 4).map((change) => {
+          const activeFingerprint = rulePackFingerprint(change.active);
+          const baselineFingerprint = rulePackFingerprint(change.baseline);
+          return (
+            <div
+              className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
+              key={change.name}
+            >
+              <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="break-words font-bold">{change.name}</span>
+                <Badge variant={change.status === "stable" ? "success" : "warning"}>
+                  {change.status}
+                </Badge>
+              </span>
+              <span className="break-words text-muted-foreground">
+                {baselineFingerprint} to {activeFingerprint}
+              </span>
+            </div>
+          );
+        })}
+        {rulePackChanges.length > 4 ? (
+          <div className="text-xs font-semibold text-muted-foreground">
+            +{formatCount(rulePackChanges.length - 4, "more rule pack")}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -4003,6 +4074,7 @@ function compareSearchRuns(
     baselineEvidenceIdSet.has(evidenceId),
   );
   const rankChanges = rankChangesBetweenRuns(activeRun, baselineRun);
+  const rulePackChanges = rulePackChangesBetweenRuns(activeRun, baselineRun);
 
   return {
     addedEvidenceIds,
@@ -4032,6 +4104,8 @@ function compareSearchRuns(
     rankChanges,
     removedEvidenceIds,
     retainedEvidenceIds,
+    rulePackChanges,
+    rulePackChanged: rulePackChanges.some((change) => change.status !== "stable"),
     topSourceAfter: activeRun.summary.topSourceId,
     topSourceBefore: baselineRun.summary.topSourceId,
     topSourceChanged:
@@ -4087,6 +4161,15 @@ function comparisonReportFromComparison(
       after: comparison.topSourceAfter,
       changed: comparison.topSourceChanged,
     },
+    rule_packs: {
+      changed: comparison.rulePackChanged,
+      changes: comparison.rulePackChanges.map((change) => ({
+        name: change.name,
+        status: change.status,
+        before: change.baseline ?? null,
+        after: change.active ?? null,
+      })),
+    },
   };
 }
 
@@ -4138,21 +4221,28 @@ function evaluationReportFromJudgmentSummary(
   };
 }
 
-function retrievalRulePacksFromPackage(packageData: RetrievalPackage) {
+function retrievalRulePacksFromPackage(packageData: RetrievalPackage): RuntimeRetrievalRulePack[] {
   const rawPacks = packageData.handoff_context.retrieval_rule_packs;
   if (!Array.isArray(rawPacks)) return [];
   return rawPacks
     .map((rawPack) => recordValue(rawPack))
     .map((pack) => ({
       name: stringValue(pack.name, ""),
-      status: stringValue(pack.status, "unknown"),
+      status: rulePackStatusValue(pack.status),
       source: stringValue(pack.source, "unknown"),
       env_var: stringValue(pack.env_var, ""),
+      configured: booleanValue(pack.configured),
       rule_count: numberValue(pack.rule_count) ?? 0,
       version: optionalStringValue(pack.version),
       content_hash: optionalStringValue(pack.content_hash),
+      error: optionalStringValue(pack.error) ?? undefined,
     }))
     .filter((pack) => pack.name && pack.env_var);
+}
+
+function rulePackStatusValue(value: unknown): RuntimeRetrievalRulePack["status"] {
+  if (value === "ok" || value === "missing" || value === "error") return value;
+  return "error";
 }
 
 function judgmentsForComparison(
@@ -4346,15 +4436,49 @@ function rankChangesBetweenRuns(
     .sort((left, right) => Math.abs(right.rankDelta) - Math.abs(left.rankDelta));
 }
 
+function rulePackChangesBetweenRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalRulePackChange[] {
+  const activePacks = retrievalRulePacksFromPackage(activeRun.packageData);
+  const baselinePacks = retrievalRulePacksFromPackage(baselineRun.packageData);
+  const activeByName = new Map(activePacks.map((pack) => [pack.name, pack]));
+  const baselineByName = new Map(baselinePacks.map((pack) => [pack.name, pack]));
+  const packNames = uniqueValues([...activeByName.keys(), ...baselineByName.keys()]);
+  return packNames.map((name) => {
+    const active = activeByName.get(name);
+    const baseline = baselineByName.get(name);
+    let status: RetrievalRulePackChange["status"] = "stable";
+    if (active && !baseline) status = "added";
+    else if (!active && baseline) status = "removed";
+    else if (rulePackFingerprint(active) !== rulePackFingerprint(baseline)) {
+      status = "changed";
+    }
+    return { active, baseline, name, status };
+  });
+}
+
+function rulePackFingerprint(pack?: RuntimeRetrievalRulePack): string {
+  if (!pack) return "missing";
+  if (pack.content_hash) return pack.content_hash;
+  if (pack.version) return pack.version;
+  return `${pack.status}:${pack.rule_count}`;
+}
+
 function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {
   return run.packageData.hits.map((hit) => hit.evidence.evidence_id);
 }
 
 function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary {
+  const rulePacks = retrievalRulePacksFromPackage(packageData);
   return {
     candidateCount: packageData.trace.candidates_seen,
     hitCount: packageData.hits.length,
     qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
+    rulePackCount: rulePacks.length,
+    rulePackFingerprint: rulePacks
+      .map((pack) => `${pack.name}:${rulePackFingerprint(pack)}`)
+      .join("|"),
     topSourceId: packageData.hits[0]?.evidence.source_id ?? null,
     warningCount: packageData.trace.warnings.length,
   };

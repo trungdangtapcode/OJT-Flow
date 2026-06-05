@@ -860,6 +860,10 @@ The current UI uses durable judgments for operator continuity and comparison
 reports. The offline fixture evaluator remains file-backed for release checks;
 a later evaluation dashboard can promote stored production judgments into
 curated eval sets once review and governance rules are defined.
+Recent-run comparison also includes active-vs-baseline rule-pack fingerprint
+deltas. A relevance run should therefore be interpreted with both its request
+payload and its active rule-pack inventory; if either changed, ranking movement
+may be caused by configuration or data changes rather than the query alone.
 
 ## Evaluation Harness
 

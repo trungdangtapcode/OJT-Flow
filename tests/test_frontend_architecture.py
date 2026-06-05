@@ -258,6 +258,14 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "comparisonReportFromComparison" in retrieval_page
     assert "retrieval_run_comparison" in retrieval_page
     assert "RunComparisonMetrics" in retrieval_page
+    assert "RunComparisonRulePacks" in retrieval_page
+    assert "rulePackChangesBetweenRuns" in retrieval_page
+    assert "rulePackFingerprint" in retrieval_page
+    assert "rulePackChanged" in retrieval_page
+    assert "rule_packs" in retrieval_page
+    assert "retrievalRulePacksFromPackage" in retrieval_page
+    assert "configured" in retrieval_page
+    assert "content_hash" in retrieval_page
     assert "Search comparison metrics" in retrieval_page
     assert "comparisonMetrics" in retrieval_page
     assert "overlapRatio" in retrieval_page

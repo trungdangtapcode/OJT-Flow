@@ -183,7 +183,12 @@ overlap and churn metrics, evidence IDs that were added, removed, or retained,
 and rank movement for retained evidence so relevance tuning remains inspectable.
 Comparison output should include a copyable JSON report with the active payload,
 baseline payload, summaries, deltas, metrics, evidence changes, and rank
-movement so tuning notes can be reproduced outside the browser. Result cards
+movement so tuning notes can be reproduced outside the browser. The comparison panel
+should also compare sanitized retrieval rule-pack fingerprints from the active
+and baseline packages. This lets operators separate relevance changes caused by
+query/filter edits from changes caused by rule-pack data, and the copyable
+comparison report must include the same rule-pack delta.
+Result cards
 should collect explicit relevance judgments for the query-document pair and
 persist those judgments through `/retrieval/judgments` so rerun queries can
 hydrate prior labels for matching evidence. Comparison reports should include
