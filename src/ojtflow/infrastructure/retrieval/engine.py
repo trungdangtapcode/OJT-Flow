@@ -316,6 +316,8 @@ def rank_chunks(
                     source_locator=_hit_source_locator(
                         chunk,
                         applied_boost_rules=applied_boost_rules,
+                        matched_terms=matched_terms[chunk.chunk_id],
+                        query_analysis=query_analysis,
                     ),
                     snippet=snippet_from_chunk(
                         chunk,
@@ -1854,6 +1856,8 @@ def _hit_source_locator(
     chunk: KnowledgeChunk,
     *,
     applied_boost_rules: list[AppliedRankingBoost],
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
 ) -> dict[str, Any]:
     locator = dict(chunk.locator)
     if applied_boost_rules:
@@ -1862,7 +1866,82 @@ def _hit_source_locator(
             rule.as_locator_payload()
             for rule in applied_boost_rules
         ]
+    aspect_matches = _query_aspect_matches_for_chunk(
+        chunk,
+        matched_terms=matched_terms,
+        query_analysis=query_analysis,
+    )
+    if aspect_matches:
+        locator["query_aspect_matches"] = aspect_matches
     return locator
+
+
+def _query_aspect_matches_for_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    matched_terms: list[str],
+    query_analysis: RetrievalQueryAnalysis,
+) -> list[dict[str, Any]]:
+    matches = [
+        match
+        for aspect in query_analysis.query_aspects
+        for match in [_query_aspect_match_for_chunk(chunk, aspect, matched_terms)]
+        if match is not None
+    ]
+    matches.sort(key=lambda item: (item["priority"], item["aspect_id"]))
+    return matches
+
+
+def _query_aspect_match_for_chunk(
+    chunk: KnowledgeChunk,
+    aspect: RetrievalQueryAspect,
+    matched_terms: list[str],
+) -> dict[str, Any] | None:
+    supported_filters = {
+        field: value
+        for field, value in aspect.suggested_filters.items()
+        if field in {"clinical_domain", "standard_system", "source_type", "trust_level"}
+    }
+    matched_filters = (
+        dict(supported_filters)
+        if supported_filters and _chunk_matches_filters(chunk, supported_filters)
+        else {}
+    )
+    matched_suggested_terms = _matched_aspect_terms(chunk, aspect, matched_terms)
+    if not matched_filters and not matched_suggested_terms:
+        return None
+    reasons: list[str] = []
+    if matched_filters:
+        reasons.append(f"metadata matched {_format_filter_map(matched_filters)}")
+    if matched_suggested_terms:
+        reasons.append(f"term matched {', '.join(matched_suggested_terms[:4])}")
+    return {
+        "aspect_id": aspect.aspect_id,
+        "label": aspect.label,
+        "priority": aspect.priority,
+        "rule_id": aspect.rule_id,
+        "matched_filters": matched_filters,
+        "matched_terms": matched_suggested_terms,
+        "reason": "; ".join(reasons),
+    }
+
+
+def _matched_aspect_terms(
+    chunk: KnowledgeChunk,
+    aspect: RetrievalQueryAspect,
+    matched_terms: list[str],
+) -> list[str]:
+    if not aspect.suggested_terms:
+        return []
+    chunk_text = f"{chunk.title} {chunk.content} {chunk.source_id}".lower()
+    matched_token_set = {term.lower() for term in matched_terms}
+    matched: list[str] = []
+    for term in aspect.suggested_terms:
+        term_text = term.lower()
+        term_tokens = set(tokenize(term_text))
+        if term_text in chunk_text or (term_tokens and term_tokens.intersection(matched_token_set)):
+            matched.append(term)
+    return _dedupe_strings(matched)
 
 
 def _reranker_enabled(reranker: Any | None) -> bool:

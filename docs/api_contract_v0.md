@@ -1259,7 +1259,10 @@ verify which medical evidence aspects the search should cover without silently
 running hidden independent searches or producing clinical recommendations.
 Matched aspects also contribute auditable `trace.query_variant_details[]` rows
 with `source="query_aspect_rule"` so first-stage ranking uses the decomposition
-plan transparently. It
+plan transparently. Ranked hits may include
+`source_locator.query_aspect_matches[]` with aspect ID, label, rule ID,
+priority, matched filters, matched terms, and reason, allowing clients to show
+which evidence supports which decomposed search aspect. It
 also includes `search_hints`, deterministic external medical search syntax
 scaffolds with `target`, `query`, optional `url`, `rationale`, and `warnings`
 for workflows such as PubMed/MeSH literature search, FHIR resource search

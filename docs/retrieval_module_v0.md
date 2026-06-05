@@ -324,14 +324,18 @@ observational schema context. This is a search-planning and review aid; it does
 not run hidden independent searches or make clinical recommendations. Each
 matched aspect contributes a transparent `query_variant_details[]` row with
 `source="query_aspect_rule"`, so first-stage retrieval can use the
-data-driven decomposition plan while preserving full provenance. The Retrieval
-console shows aspect-suggested filters with applied-state badges based on the
-submitted retrieval trace and lets operators explicitly apply supported
-metadata filters through the same typed search path used by other filter
-suggestions. The retrieval package also reports `coverage.query_aspects[]` for
-aspects with supported suggested filters, counting selected evidence that
-matches the aspect criteria and raising `missing_query_aspect_coverage` when
-the selected evidence does not cover the aspect plan.
+data-driven decomposition plan while preserving full provenance. Each ranked
+hit can also include `source_locator.query_aspect_matches[]`, recording the
+aspect ID, label, rule ID, priority, matched metadata filters, matched suggested
+terms, and deterministic reason for the hit-aspect support. The Retrieval
+console shows those rows as per-hit "Aspect support" evidence, shows
+aspect-suggested filters with applied-state badges based on the submitted
+retrieval trace, and lets operators explicitly apply supported metadata filters
+through the same typed search path used by other filter suggestions. The
+retrieval package also reports `coverage.query_aspects[]` for aspects with
+supported suggested filters, counting selected evidence that matches the aspect
+criteria and raising `missing_query_aspect_coverage` when the selected evidence
+does not cover the aspect plan.
 
 Deterministic query expansion rules are loaded from
 `knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query

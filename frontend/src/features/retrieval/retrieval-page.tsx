@@ -2709,6 +2709,7 @@ function HitCard({
   onSetJudgment: (value: RelevanceJudgmentValue) => void;
 }) {
   const evidence = hit.evidence;
+  const aspectMatches = queryAspectMatchesFromHit(hit);
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   const scoreComponents = scoreComponentsFromHit(hit);
   return (
@@ -2754,6 +2755,8 @@ function HitCard({
       <ScoreExplanation components={scoreComponents} />
 
       <DiversitySelectionExplanation selection={diversitySelection} />
+
+      <QueryAspectMatchExplanation matches={aspectMatches} />
 
       {rankingBoostSignals.length ? (
         <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
@@ -2970,6 +2973,56 @@ function DiversitySelectionExplanation({
         <div className="break-words font-semibold text-muted-foreground">
           {selection.reason}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function QueryAspectMatchExplanation({ matches }: { matches: QueryAspectMatchSignal[] }) {
+  if (!matches.length) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
+        <ListFilter className="h-3.5 w-3.5 shrink-0" />
+        <span>Aspect support</span>
+      </div>
+      <div className="grid gap-1.5">
+        {matches.map((match) => (
+          <div
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs"
+            key={`${match.aspectId}-${match.ruleId}`}
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <Badge className="max-w-full break-words" variant="success">
+                {match.label}
+              </Badge>
+              <Badge variant="muted">priority {match.priority}</Badge>
+              <span className="min-w-0 break-words font-semibold text-muted-foreground">
+                {match.reason}
+              </span>
+            </div>
+            {match.matchedTerms.length || Object.keys(match.matchedFilters).length ? (
+              <div className="flex min-w-0 flex-wrap gap-1">
+                {Object.entries(match.matchedFilters).map(([field, value]) => (
+                  <span
+                    className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
+                    key={`${match.aspectId}-${field}`}
+                  >
+                    {humanize(field)}: {value}
+                  </span>
+                ))}
+                {match.matchedTerms.slice(0, 4).map((term) => (
+                  <span
+                    className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
+                    key={`${match.aspectId}-${term}`}
+                  >
+                    {term}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -4392,6 +4445,16 @@ type RankingBoostSignal = {
   weight: number | null;
 };
 
+type QueryAspectMatchSignal = {
+  aspectId: string;
+  label: string;
+  matchedFilters: Record<string, string>;
+  matchedTerms: string[];
+  priority: number;
+  reason: string;
+  ruleId: string;
+};
+
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   const embedding = recordValue(packageData.handoff_context.embedding);
   const frameworkComponents = recordValue(packageData.handoff_context.framework_components);
@@ -4677,6 +4740,23 @@ function rankingBoostSignalsFromHit(hit: RetrievalHit): RankingBoostSignal[] {
     ruleId,
     weight: null,
   }));
+}
+
+function queryAspectMatchesFromHit(hit: RetrievalHit): QueryAspectMatchSignal[] {
+  const matches = hit.source_locator.query_aspect_matches;
+  if (!Array.isArray(matches)) return [];
+  return matches
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      aspectId: stringValue(item.aspect_id, ""),
+      label: stringValue(item.label, "Search aspect"),
+      matchedFilters: stringRecordValue(item.matched_filters),
+      matchedTerms: stringArrayValue(item.matched_terms),
+      priority: numberValue(item.priority) ?? 100,
+      reason: stringValue(item.reason, "Evidence matched this search aspect."),
+      ruleId: stringValue(item.rule_id, ""),
+    }))
+    .filter((item) => item.aspectId && item.ruleId);
 }
 
 function rankingBoostDetailsValue(value: unknown): RankingBoostSignal[] {

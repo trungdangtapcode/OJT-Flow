@@ -808,6 +808,17 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
     assert "UCUM" in analysis["standards"]
+    aspect_matches = [
+        match
+        for hit in package.hits
+        for match in hit.source_locator.get("query_aspect_matches", [])
+    ]
+    assert any(match["aspect_id"] == "unit_and_value_quality" for match in aspect_matches)
+    assert any(
+        match["aspect_id"] == "lab_identity_standardization"
+        and match["matched_filters"].get("clinical_domain") == "laboratory"
+        for match in aspect_matches
+    )
 
 
 def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch) -> None:

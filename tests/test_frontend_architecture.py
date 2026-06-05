@@ -220,6 +220,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "coverageComparisonBetweenRuns" in retrieval_page
     assert "coverageComparison" in retrieval_page
     assert "coverage_diagnostics_changed" in retrieval_page
+    assert "QueryAspectMatchExplanation" in retrieval_page
+    assert "queryAspectMatchesFromHit" in retrieval_page
+    assert "Aspect support" in retrieval_page
     assert "qualityPolicyFromPackage" in retrieval_page
     assert "Quality policy" in retrieval_page
     assert "query_profiles" in retrieval_page
