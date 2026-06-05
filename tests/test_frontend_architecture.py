@@ -202,6 +202,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "QueryVariantList" in retrieval_page
     assert "Query rewrites" in retrieval_page
     assert "query_variant_details" in retrieval_page
+    assert "QueryProfileCard" in retrieval_page
+    assert "queryProfileValue" in retrieval_page
+    assert "query_profile" in retrieval_page
+    assert "retrievalMode" in retrieval_page
+    assert "suggestedFilters" in retrieval_page
     assert "RerankBadge" in retrieval_page
     assert "DiversityBadge" in retrieval_page
     assert "DiversitySelectionExplanation" in retrieval_page

@@ -363,8 +363,75 @@ def test_query_analysis_detects_medication_and_analytics_routes() -> None:
 
     assert "medication_normalization" in medication.detected_concepts
     assert "RxNorm" in medication.standards
+    assert medication.query_profile is not None
+    assert medication.query_profile.profile_id == "medication_safety"
+    assert medication.query_profile.retrieval_mode == "hybrid_with_external_medical_hints"
     assert "observational_analytics_export" in analytics.detected_concepts
     assert "OMOP" in analytics.standards
+    assert analytics.query_profile is not None
+    assert analytics.query_profile.profile_id == "observational_analytics"
+
+
+def test_query_analysis_uses_data_driven_query_profile_rules(tmp_path, monkeypatch) -> None:
+    registry_path = tmp_path / "query_profile_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_profile_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_profile_rule",
+                        "profile_id": "custom_registry_profile",
+                        "label": "Custom registry profile",
+                        "route": "custom_route",
+                        "complexity": "high",
+                        "retrieval_mode": "hybrid_custom",
+                        "description": "Custom query profile from test registry.",
+                        "priority": 1,
+                        "suggested_filters": {"clinical_domain": "custom"},
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_QUERY_PROFILE_RULES_PATH", str(registry_path))
+
+    analysis = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert analysis.query_profile is not None
+    assert analysis.query_profile.profile_id == "custom_registry_profile"
+    assert analysis.query_profile.route == "custom_route"
+    assert analysis.query_profile.suggested_filters == {"clinical_domain": "custom"}
+    assert analysis.query_profile.rule_ids == ["custom_profile_rule"]
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_profile_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "reloaded_profile_rule",
+                        "profile_id": "reloaded_registry_profile",
+                        "label": "Reloaded registry profile",
+                        "route": "reloaded_route",
+                        "complexity": "moderate",
+                        "retrieval_mode": "hybrid_reloaded",
+                        "description": "Reloaded query profile from test registry.",
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert reloaded.query_profile is not None
+    assert reloaded.query_profile.profile_id == "reloaded_registry_profile"
+    assert reloaded.query_profile.retrieval_mode == "hybrid_reloaded"
 
 
 def test_query_analysis_uses_data_driven_expansion_rules(tmp_path, monkeypatch) -> None:

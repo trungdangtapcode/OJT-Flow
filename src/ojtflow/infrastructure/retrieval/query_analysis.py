@@ -18,6 +18,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalQueryDiagnostic,
+    RetrievalQueryProfile,
     RetrievalQueryVariant,
     RetrievalSearchHint,
 )
@@ -34,6 +35,9 @@ DEFAULT_FILTER_SUGGESTION_RULE_REGISTRY = (
 )
 DEFAULT_QUERY_DIAGNOSTIC_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_diagnostic_rules.json"
+)
+DEFAULT_QUERY_PROFILE_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_profile_rules.json"
 )
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
@@ -92,6 +96,34 @@ class QueryDiagnosticRule:
     severity: str
     message: str
     suggested_action: str
+
+
+@dataclass(frozen=True)
+class QueryProfileMatch:
+    """Matcher for a data-driven query profile rule."""
+
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_rule_ids: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    any_candidate_domains: tuple[str, ...] = ()
+    any_candidate_standards: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class QueryProfileRule:
+    """One data-driven query profile and route hint."""
+
+    rule_id: str
+    profile_id: str
+    label: str
+    route: str
+    complexity: str
+    retrieval_mode: str
+    description: str
+    priority: int
+    suggested_filters: dict[str, str]
+    match: QueryProfileMatch
 
 
 @dataclass(frozen=True)
@@ -183,6 +215,13 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
             query,
             concepts=concepts,
             standards=standards,
+            concept_candidates=concept_candidates,
+        ),
+        query_profile=_query_profile(
+            concepts=concepts,
+            standards=standards,
+            rule_ids=rule_ids,
+            tokens=tokens,
             concept_candidates=concept_candidates,
         ),
     )
@@ -594,6 +633,147 @@ def _default_query_diagnostic_rules() -> tuple[QueryDiagnosticRule, ...]:
     )
 
 
+def _query_profile_rules() -> tuple[QueryProfileRule, ...]:
+    path = os.environ.get("OJT_QUERY_PROFILE_RULES_PATH")
+    return _load_query_profile_rules(path or str(DEFAULT_QUERY_PROFILE_RULE_REGISTRY))
+
+
+def _load_query_profile_rules(path_text: str) -> tuple[QueryProfileRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid query profile registry at {path}: expected rules list")
+
+    rules = tuple(_query_profile_rule(record, path=path) for record in records)
+    _ensure_unique_query_profile_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_profile_rule(record: Any, *, path: Path) -> QueryProfileRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid query profile registry at {path}: rule must be an object")
+    required = (
+        "rule_id",
+        "profile_id",
+        "label",
+        "route",
+        "complexity",
+        "retrieval_mode",
+        "description",
+        "match",
+    )
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(f"Invalid query profile registry at {path}: missing {missing_text}")
+    match = record["match"]
+    if not isinstance(match, dict):
+        raise ValueError(f"Invalid query profile registry at {path}: match must be an object")
+    suggested_filters = record.get("suggested_filters", {})
+    if not isinstance(suggested_filters, dict):
+        raise ValueError(
+            f"Invalid query profile registry at {path}: suggested_filters must be an object"
+        )
+    return QueryProfileRule(
+        rule_id=_required_query_profile_text(record["rule_id"], field="rule_id", path=path),
+        profile_id=_required_query_profile_text(
+            record["profile_id"],
+            field="profile_id",
+            path=path,
+        ),
+        label=_required_query_profile_text(record["label"], field="label", path=path),
+        route=_required_query_profile_text(record["route"], field="route", path=path),
+        complexity=_required_query_profile_text(
+            record["complexity"],
+            field="complexity",
+            path=path,
+        ),
+        retrieval_mode=_required_query_profile_text(
+            record["retrieval_mode"],
+            field="retrieval_mode",
+            path=path,
+        ),
+        description=_required_query_profile_text(
+            record["description"],
+            field="description",
+            path=path,
+        ),
+        priority=_optional_query_profile_int(record.get("priority"), default=100, path=path),
+        suggested_filters={
+            _required_query_profile_text(
+                key,
+                field="suggested_filters key",
+                path=path,
+            ): _required_query_profile_text(
+                value,
+                field="suggested_filters value",
+                path=path,
+            )
+            for key, value in suggested_filters.items()
+        },
+        match=QueryProfileMatch(
+            any_concepts=_query_profile_text_tuple(match.get("any_concepts"), path=path),
+            any_standards=_query_profile_text_tuple(match.get("any_standards"), path=path),
+            any_rule_ids=_query_profile_text_tuple(match.get("any_rule_ids"), path=path),
+            any_tokens=_query_profile_text_tuple(match.get("any_tokens"), path=path),
+            any_candidate_domains=_query_profile_text_tuple(
+                match.get("any_candidate_domains"),
+                path=path,
+            ),
+            any_candidate_standards=_query_profile_text_tuple(
+                match.get("any_candidate_standards"),
+                path=path,
+            ),
+        ),
+    )
+
+
+def _required_query_profile_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid query profile registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _optional_query_profile_int(value: Any, *, default: int, path: Path) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, int):
+        raise ValueError(f"Invalid query profile registry at {path}: priority must be an integer")
+    return value
+
+
+def _query_profile_text_tuple(value: Any, *, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid query profile registry at {path}: match values must be lists")
+    return tuple(
+        _required_query_profile_text(item, field="match value", path=path) for item in value
+    )
+
+
+def _ensure_unique_query_profile_rule_ids(
+    rules: tuple[QueryProfileRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query profile registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
 def _search_hint_target(target: str) -> SearchHintTarget:
     targets = {item.target: item for item in _search_hint_targets()}
     return targets.get(
@@ -962,6 +1142,71 @@ def _query_diagnostics(
             )
         )
     return diagnostics
+
+
+def _query_profile(
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> RetrievalQueryProfile | None:
+    candidate_domains = [
+        candidate.clinical_domain
+        for candidate in concept_candidates
+        if candidate.clinical_domain
+    ]
+    candidate_standards = [candidate.standard_system for candidate in concept_candidates]
+    matched = [
+        rule
+        for rule in _query_profile_rules()
+        if _query_profile_rule_matches(
+            rule,
+            concepts=concepts,
+            standards=standards,
+            rule_ids=rule_ids,
+            tokens=tokens,
+            candidate_domains=candidate_domains,
+            candidate_standards=candidate_standards,
+        )
+    ]
+    if not matched:
+        return None
+    matched.sort(key=lambda rule: (rule.priority, rule.profile_id))
+    selected = matched[0]
+    return RetrievalQueryProfile(
+        profile_id=selected.profile_id,
+        label=selected.label,
+        route=selected.route,
+        complexity=selected.complexity,
+        retrieval_mode=selected.retrieval_mode,
+        description=selected.description,
+        suggested_filters=dict(selected.suggested_filters),
+        rule_ids=[rule.rule_id for rule in matched],
+    )
+
+
+def _query_profile_rule_matches(
+    rule: QueryProfileRule,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
+) -> bool:
+    match = rule.match
+    checks = [
+        _has_intersection(concepts, match.any_concepts),
+        _has_intersection(standards, match.any_standards),
+        _has_intersection(rule_ids, match.any_rule_ids),
+        _has_intersection(tokens, match.any_tokens),
+        _has_intersection(candidate_domains, match.any_candidate_domains),
+        _has_intersection(candidate_standards, match.any_candidate_standards),
+    ]
+    return any(checks)
 
 
 def _search_hints(

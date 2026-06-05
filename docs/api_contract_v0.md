@@ -851,7 +851,8 @@ Response data includes:
 
 Retrieval rule-pack entries may reference controlling environment variables
 such as `OJT_QUERY_EXPANSION_RULES_PATH`, `OJT_FILTER_SUGGESTION_RULES_PATH`,
-`OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_RANKING_BOOST_RULES_PATH`,
+`OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_QUERY_PROFILE_RULES_PATH`,
+`OJT_RANKING_BOOST_RULES_PATH`,
 `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, and `OJT_SEARCH_HINT_TARGETS_PATH`.
 The response exposes the env var name, loaded status, rule-pack version, and
 SHA-256 content hash, but not local paths.
@@ -1241,6 +1242,10 @@ deterministic metadata filter recommendations with `field`, `value`, `reason`,
 `rule_id`, `confidence`, and `applied`. It also includes `diagnostics`, a list
 of deterministic query-quality checks with `code`, `severity`, `message`, and
 `suggested_action`; warning diagnostics are copied into `trace.warnings`. It
+can include `query_profile`, a data-driven route hint with `profile_id`,
+`label`, `route`, `complexity`, `retrieval_mode`, `description`,
+`suggested_filters`, and contributing `rule_ids`; this is operator-visible
+guidance for adaptive retrieval, not a hidden automatic route change. It
 also includes `search_hints`, deterministic external medical search syntax
 scaffolds with `target`, `query`, optional `url`, `rationale`, and `warnings`
 for workflows such as PubMed/MeSH literature search, FHIR resource search
@@ -1251,7 +1256,7 @@ label/adverse-event search. Current targets include `pubmed`, `fhir`,
 rule-pack fingerprints with pack name, status, source, env var, rule count,
 version, and content hash. This lets copied evaluation reports and downstream
 audit records identify the exact query-expansion, diagnostic, ranking,
-evaluation, and search-hint rule data used for the search.
+query-profile, evaluation, and search-hint rule data used for the search.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.

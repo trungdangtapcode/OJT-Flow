@@ -154,6 +154,10 @@ operators can review package readiness without opening raw JSON.
 The top retrieval summary strip should also surface `quality_summary` as a
 readiness score, so operators can tell whether the active package is ready,
 needs review, or is blocked before reading detailed traces.
+The query-analysis panel should render `query_profile` when present, including
+profile label, route, complexity, recommended retrieval mode, suggested
+filters, and contributing rule IDs. This makes adaptive retrieval guidance
+visible before it becomes a backend route switch.
 Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see

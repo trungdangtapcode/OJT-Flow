@@ -265,6 +265,19 @@ class RetrievalSearchHint(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RetrievalQueryProfile(ContractModel):
+    """Data-driven query route hint for adaptive retrieval and operator review."""
+
+    profile_id: NonBlankStr
+    label: NonBlankStr
+    route: NonBlankStr
+    complexity: NonBlankStr
+    retrieval_mode: NonBlankStr
+    description: NonBlankStr
+    suggested_filters: dict[str, str] = Field(default_factory=dict)
+    rule_ids: list[NonBlankStr] = Field(default_factory=list)
+
+
 class RetrievalSearchPreset(ContractModel):
     """Operator-facing retrieval query preset loaded from trusted knowledge data."""
 
@@ -330,6 +343,7 @@ class RetrievalQueryAnalysis(ContractModel):
     filter_suggestions: list[RetrievalFilterSuggestion] = Field(default_factory=list)
     diagnostics: list[RetrievalQueryDiagnostic] = Field(default_factory=list)
     search_hints: list[RetrievalSearchHint] = Field(default_factory=list)
+    query_profile: RetrievalQueryProfile | None = None
 
 
 class RetrievalPackage(ContractModel):

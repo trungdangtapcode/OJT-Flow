@@ -144,6 +144,9 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/query_diagnostic_rules.json`: deterministic
   query-quality diagnostic rules for low-specificity queries, missing
   healthcare concept matches, and conflicting standard filters.
+- `knowledge/retrieval/query_profile_rules.json`: deterministic query-profile
+  rules that map concepts, standards, tokens, and candidate metadata to
+  operator-visible adaptive retrieval route guidance.
 - `knowledge/retrieval/ranking_boost_rules.json`: deterministic ranking boost
   rules for schema, field, trust-level, source-type, concept, and healthcare
   standard matches.
@@ -216,6 +219,19 @@ The public retrieval package exposes this under
   "expanded_terms": ["HbA1c", "UCUM computable unit"],
   "standards": ["LOINC", "FHIR", "UCUM"],
   "rule_ids": ["hba1c_lab_test", "unit_normalization"],
+  "query_profile": {
+    "profile_id": "laboratory_standardization",
+    "label": "Laboratory standardization",
+    "route": "clinical_data_normalization",
+    "complexity": "moderate",
+    "retrieval_mode": "hybrid_with_standard_coverage",
+    "description": "Use when the query is about lab values, LOINC identifiers, UCUM units, or FHIR Observation normalization.",
+    "suggested_filters": {
+      "clinical_domain": "laboratory",
+      "trust_level": "approved"
+    },
+    "rule_ids": ["profile_laboratory_standardization"]
+  },
   "query_variants": ["..."],
   "filter_suggestions": [
     {
@@ -240,6 +256,13 @@ The public retrieval package exposes this under
   ]
 }
 ```
+
+`query_profile` is loaded from
+`knowledge/retrieval/query_profile_rules.json`, with deployment override
+support through `OJT_QUERY_PROFILE_RULES_PATH`. It is a deterministic routing
+hint for adaptive retrieval and operator review, not an automatic hidden
+retriever switch. Current profile rules cover laboratory standardization,
+medication safety, biomedical literature evidence, and observational analytics.
 
 Filter suggestions are a deterministic self-query feature: they recommend
 metadata filters such as `clinical_domain=laboratory` or

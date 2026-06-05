@@ -1197,6 +1197,10 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
             "retrieval_query_diagnostic_rules.v1"
         )
         assert len(rule_packs["query_diagnostics"]["content_hash"]) == 64
+        assert rule_packs["query_profiles"]["status"] == "ok"
+        assert rule_packs["query_profiles"]["env_var"] == "OJT_QUERY_PROFILE_RULES_PATH"
+        assert rule_packs["query_profiles"]["version"] == "retrieval_query_profile_rules.v1"
+        assert len(rule_packs["query_profiles"]["content_hash"]) == 64
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text

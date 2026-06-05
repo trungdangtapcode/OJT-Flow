@@ -2731,6 +2731,7 @@ function QueryAnalysisBlock({
         <QueryAnalysisCounter label="Rules" value={analysis.ruleIds.length} />
         <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
       </div>
+      <QueryProfileCard profile={analysis.queryProfile} />
       <QueryDiagnosticList diagnostics={analysis.diagnostics} />
       <ConceptCandidateList candidates={analysis.conceptCandidates} />
       <SearchHintList hints={analysis.searchHints} />
@@ -2791,6 +2792,45 @@ function ConceptCandidateList({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function QueryProfileCard({ profile }: { profile: QueryProfileStack | null }) {
+  if (!profile) {
+    return <TokenList items={[]} title="Query profile" />;
+  }
+  const filterEntries = Object.entries(profile.suggestedFilters);
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="break-words font-bold">{profile.label}</span>
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          <Badge variant="default">{humanize(profile.complexity)}</Badge>
+          <Badge variant="muted">{humanize(profile.route)}</Badge>
+        </div>
+      </div>
+      <div className="break-words text-muted-foreground">{profile.description}</div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        <Badge variant="muted">{humanize(profile.retrievalMode)}</Badge>
+        {filterEntries.map(([field, value]) => (
+          <Badge key={`${field}-${value}`} variant="muted">
+            {humanize(field)}={value}
+          </Badge>
+        ))}
+      </div>
+      {profile.ruleIds.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {profile.ruleIds.map((ruleId) => (
+            <code
+              className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px]"
+              key={ruleId}
+            >
+              {ruleId}
+            </code>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3532,11 +3572,23 @@ type QueryAnalysisStack = {
   diagnostics: QueryDiagnosticStack[];
   expandedTerms: string[];
   filterSuggestions: FilterSuggestionStack[];
+  queryProfile: QueryProfileStack | null;
   ruleIds: string[];
   searchHints: SearchHintStack[];
   standards: string[];
   strategy: string;
   variantCount: number;
+};
+
+type QueryProfileStack = {
+  complexity: string;
+  description: string;
+  label: string;
+  profileId: string;
+  retrievalMode: string;
+  route: string;
+  ruleIds: string[];
+  suggestedFilters: Record<string, string>;
 };
 
 type ConceptCandidateStack = {
@@ -3617,6 +3669,7 @@ function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisS
     diagnostics: queryDiagnosticsValue(queryAnalysis.diagnostics),
     expandedTerms: stringArrayValue(queryAnalysis.expanded_terms),
     filterSuggestions: filterSuggestionsValue(queryAnalysis.filter_suggestions),
+    queryProfile: queryProfileValue(queryAnalysis.query_profile),
     ruleIds: stringArrayValue(queryAnalysis.rule_ids),
     searchHints: searchHintsValue(queryAnalysis.search_hints),
     standards: stringArrayValue(queryAnalysis.standards),
@@ -3742,6 +3795,22 @@ function queryVariantDetailsValue(value: unknown): RetrievalQueryVariant[] {
     .filter((item) => item.variant);
 }
 
+function queryProfileValue(value: unknown): QueryProfileStack | null {
+  const profile = recordValue(value);
+  const profileId = stringValue(profile.profile_id, "");
+  if (!profileId) return null;
+  return {
+    complexity: stringValue(profile.complexity, "unknown"),
+    description: stringValue(profile.description, "No query profile description provided."),
+    label: stringValue(profile.label, humanize(profileId)),
+    profileId,
+    retrievalMode: stringValue(profile.retrieval_mode, "unknown"),
+    route: stringValue(profile.route, "retrieval"),
+    ruleIds: stringArrayValue(profile.rule_ids),
+    suggestedFilters: stringRecordValue(profile.suggested_filters),
+  };
+}
+
 function scoreComponentsFromHit(hit: RetrievalHit): RetrievalScoreComponent[] {
   return (hit.score_components ?? [])
     .map((component) => ({
@@ -3815,6 +3884,15 @@ function optionalBooleanValue(value: unknown): boolean | null {
 function stringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function stringRecordValue(value: unknown): Record<string, string> {
+  const record = recordValue(value);
+  return Object.fromEntries(
+    Object.entries(record)
+      .map(([key, item]) => [key.trim(), typeof item === "string" ? item.trim() : ""])
+      .filter(([key, item]) => key && item),
+  );
 }
 
 function conceptCandidatesValue(value: unknown): ConceptCandidateStack[] {

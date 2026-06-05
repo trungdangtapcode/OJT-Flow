@@ -26,6 +26,11 @@ RULE_PACK_SPECS: tuple[tuple[str, Path, str], ...] = (
         "OJT_QUERY_DIAGNOSTIC_RULES_PATH",
     ),
     (
+        "query_profiles",
+        Path("retrieval/query_profile_rules.json"),
+        "OJT_QUERY_PROFILE_RULES_PATH",
+    ),
+    (
         "ranking_boosts",
         Path("retrieval/ranking_boost_rules.json"),
         "OJT_RANKING_BOOST_RULES_PATH",

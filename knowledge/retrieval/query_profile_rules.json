@@ -1,0 +1,127 @@
+{
+  "version": "retrieval_query_profile_rules.v1",
+  "rules": [
+    {
+      "rule_id": "profile_laboratory_standardization",
+      "profile_id": "laboratory_standardization",
+      "label": "Laboratory standardization",
+      "route": "clinical_data_normalization",
+      "complexity": "moderate",
+      "retrieval_mode": "hybrid_with_standard_coverage",
+      "description": "Use when the query is about lab values, LOINC identifiers, UCUM units, or FHIR Observation normalization.",
+      "priority": 10,
+      "suggested_filters": {
+        "clinical_domain": "laboratory",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "hba1c_laboratory_test",
+          "unit_normalization",
+          "fhir_observation_profile"
+        ],
+        "any_standards": [
+          "LOINC",
+          "UCUM",
+          "FHIR"
+        ],
+        "any_candidate_domains": [
+          "laboratory"
+        ]
+      }
+    },
+    {
+      "rule_id": "profile_medication_safety",
+      "profile_id": "medication_safety",
+      "label": "Medication safety",
+      "route": "drug_knowledge_grounding",
+      "complexity": "high",
+      "retrieval_mode": "hybrid_with_external_medical_hints",
+      "description": "Use when the query is about medications, RxNorm coding, drug labeling, or adverse-event evidence.",
+      "priority": 20,
+      "suggested_filters": {
+        "clinical_domain": "medication",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "medication_normalization",
+          "regulatory_drug_safety_search"
+        ],
+        "any_standards": [
+          "RxNorm",
+          "openFDA"
+        ],
+        "any_candidate_domains": [
+          "medication"
+        ],
+        "any_tokens": [
+          "medication",
+          "drug",
+          "adverse",
+          "boxed_warning"
+        ]
+      }
+    },
+    {
+      "rule_id": "profile_literature_evidence",
+      "profile_id": "literature_evidence",
+      "label": "Literature evidence",
+      "route": "biomedical_literature_grounding",
+      "complexity": "high",
+      "retrieval_mode": "hybrid_with_pubmed_hint",
+      "description": "Use when the query asks for biomedical literature, trials, guidelines, systematic reviews, or MeSH-grounded evidence.",
+      "priority": 30,
+      "suggested_filters": {
+        "clinical_domain": "literature",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "biomedical_literature_search",
+          "clinical_trial_search"
+        ],
+        "any_standards": [
+          "MeSH",
+          "ClinicalTrials.gov"
+        ],
+        "any_candidate_domains": [
+          "literature"
+        ],
+        "any_tokens": [
+          "trial",
+          "guideline",
+          "systematic",
+          "meta-analysis"
+        ]
+      }
+    },
+    {
+      "rule_id": "profile_observational_analytics",
+      "profile_id": "observational_analytics",
+      "label": "Observational analytics",
+      "route": "analytics_schema_grounding",
+      "complexity": "moderate",
+      "retrieval_mode": "hybrid_with_schema_priority",
+      "description": "Use when the query is about OMOP, observational analytics, cohort exports, or warehouse schema evidence.",
+      "priority": 40,
+      "suggested_filters": {
+        "standard_system": "OMOP",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "observational_analytics_export"
+        ],
+        "any_standards": [
+          "OMOP"
+        ],
+        "any_tokens": [
+          "omop",
+          "cohort",
+          "analytics"
+        ]
+      }
+    }
+  ]
+}
