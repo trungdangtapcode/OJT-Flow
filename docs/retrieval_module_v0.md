@@ -265,7 +265,10 @@ retriever switch. Current profile rules cover laboratory standardization,
 medication safety, biomedical literature evidence, and observational analytics.
 The Retrieval console renders profile-suggested filters as explicit operator
 actions when they map to supported metadata filters, and displays unsupported
-profile fields without applying them.
+profile fields without applying them. Applied-state badges are based on the
+submitted `trace.filters_applied` values for the displayed retrieval package,
+so draft query-builder edits do not change the apparent provenance of the
+current results.
 
 Filter suggestions are a deterministic self-query feature: they recommend
 metadata filters such as `clinical_domain=laboratory` or

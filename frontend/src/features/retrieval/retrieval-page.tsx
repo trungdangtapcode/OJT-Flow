@@ -2517,6 +2517,7 @@ function TracePanel({
             <QualitySignalList signals={qualitySignals} />
             <QueryAnalysisBlock
               analysis={queryAnalysis}
+              appliedFilters={trace.filters_applied}
               isSearchPending={isSearchPending}
               onApplyFilterSuggestion={onApplyFilterSuggestion}
             />
@@ -2707,10 +2708,12 @@ function QueryVariantList({ variants }: { variants: RetrievalQueryVariant[] }) {
 
 function QueryAnalysisBlock({
   analysis,
+  appliedFilters,
   isSearchPending,
   onApplyFilterSuggestion,
 }: {
   analysis: QueryAnalysisStack | null;
+  appliedFilters: Record<string, unknown>;
   isSearchPending: boolean;
   onApplyFilterSuggestion: (suggestion: FilterSuggestionStack) => void;
 }) {
@@ -2732,6 +2735,7 @@ function QueryAnalysisBlock({
         <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
       </div>
       <QueryProfileCard
+        appliedFilters={appliedFilters}
         isSearchPending={isSearchPending}
         onApplyFilter={onApplyFilterSuggestion}
         profile={analysis.queryProfile}
@@ -2801,10 +2805,12 @@ function ConceptCandidateList({
 }
 
 function QueryProfileCard({
+  appliedFilters,
   isSearchPending,
   onApplyFilter,
   profile,
 }: {
+  appliedFilters: Record<string, unknown>;
   isSearchPending: boolean;
   onApplyFilter: (suggestion: FilterSuggestionStack) => void;
   profile: QueryProfileStack | null;
@@ -2812,7 +2818,7 @@ function QueryProfileCard({
   if (!profile) {
     return <TokenList items={[]} title="Query profile" />;
   }
-  const filterEntries = queryProfileFilterEntries(profile);
+  const filterEntries = queryProfileFilterEntries(profile, appliedFilters);
   return (
     <div className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -2826,7 +2832,10 @@ function QueryProfileCard({
       <div className="flex min-w-0 flex-wrap gap-1.5">
         <Badge variant="muted">{humanize(profile.retrievalMode)}</Badge>
         {filterEntries.map((entry) => (
-          <Badge key={`${entry.field}-${entry.value}`} variant="muted">
+          <Badge
+            key={`${entry.field}-${entry.value}`}
+            variant={entry.applied ? "success" : "muted"}
+          >
             {entry.label}={entry.displayValue}
           </Badge>
         ))}
@@ -2836,7 +2845,7 @@ function QueryProfileCard({
           {filterEntries.map((entry) =>
             entry.supported ? (
               <Button
-                disabled={isSearchPending}
+                disabled={isSearchPending || entry.applied}
                 key={`${entry.field}-${entry.value}-apply`}
                 onClick={() =>
                   onApplyFilter({
@@ -2850,14 +2859,16 @@ function QueryProfileCard({
                 size="sm"
                 title={`Apply ${entry.label}=${entry.displayValue}`}
                 type="button"
-                variant="outline"
+                variant={entry.applied ? "secondary" : "outline"}
               >
-                {isSearchPending ? (
+                {entry.applied ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : isSearchPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <ListFilter className="h-4 w-4" />
                 )}
-                Apply {entry.label}
+                {entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`}
               </Button>
             ) : (
               <Badge key={`${entry.field}-${entry.value}-unsupported`} variant="warning">
@@ -3640,6 +3651,7 @@ type QueryProfileStack = {
 };
 
 type QueryProfileFilterEntry = {
+  applied: boolean;
   displayValue: string;
   field: string;
   label: string;
@@ -3867,10 +3879,14 @@ function queryProfileValue(value: unknown): QueryProfileStack | null {
   };
 }
 
-function queryProfileFilterEntries(profile: QueryProfileStack): QueryProfileFilterEntry[] {
+function queryProfileFilterEntries(
+  profile: QueryProfileStack,
+  appliedFilters: Record<string, unknown>,
+): QueryProfileFilterEntry[] {
   return Object.entries(profile.suggestedFilters).map(([field, value]) => {
     const supported = isSupportedFilterField(field);
     return {
+      applied: supported && appliedFilterMatches(appliedFilters, field, value),
       displayValue: supported ? formatFilterValue(field, value) : value,
       field,
       label: supported ? filterFieldLabel(field) : humanize(field),
@@ -3878,6 +3894,16 @@ function queryProfileFilterEntries(profile: QueryProfileStack): QueryProfileFilt
       value,
     };
   });
+}
+
+function appliedFilterMatches(
+  appliedFilters: Record<string, unknown>,
+  field: SupportedFilterField,
+  value: string,
+): boolean {
+  const appliedValue = appliedFilters[field];
+  if (typeof appliedValue !== "string") return false;
+  return appliedValue.toLowerCase() === value.toLowerCase();
 }
 
 function scoreComponentsFromHit(hit: RetrievalHit): RetrievalScoreComponent[] {

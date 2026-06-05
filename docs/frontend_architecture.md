@@ -160,7 +160,9 @@ filters, and contributing rule IDs. This makes adaptive retrieval guidance
 visible before it becomes a backend route switch. Supported profile-suggested
 filters should use the same explicit operator apply controls as query-analysis
 filter suggestions; unsupported profile fields should remain visible but not
-actionable.
+actionable. Profile filter controls must compare against the submitted
+`trace.filters_applied` payload, not the live query-builder draft, so displayed
+applied state remains tied to the visible result package.
 Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see
