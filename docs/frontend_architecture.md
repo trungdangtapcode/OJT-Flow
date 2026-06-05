@@ -164,8 +164,9 @@ resource, table, document, and chunk identifiers before the raw JSON details.
 URL/API values, PubMed IDs, and DOIs must render as external links when they can
 be safely normalized.
 Each ranked evidence card must also offer a copyable `retrieval_evidence_hit`
-report containing evidence identity, ranking scores/components, concept/aspect
-grounding, provenance summary, locators, and snippet context.
+report containing evidence identity, support-summary counts, ranking
+scores/components, concept/aspect grounding, provenance summary, locators, and
+snippet context.
 Copy actions for evidence, comparison, evaluation, and search-hint reports must
 show transient success feedback so operators can tell the clipboard action
 completed without opening developer tools or raw browser state.

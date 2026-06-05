@@ -320,10 +320,11 @@ the provenance quality gate inspectable during normal evidence review. URL/API
 locators, PubMed IDs, and DOIs render as external links when they can be safely
 normalized.
 Each ranked evidence card can copy a `retrieval_evidence_hit` report containing
-evidence identity, score components, ranking boosts, concept/aspect grounding,
-provenance summary, raw locators, and snippet context for audit notes or
-assistant handoff. Copyable evidence, comparison, evaluation, and search-hint
-actions show transient success feedback in the UI so operators know the
+evidence identity, support-summary counts, score components, ranking boosts,
+concept/aspect grounding, provenance summary, raw locators, and snippet context
+for audit notes or assistant handoff. Copyable evidence, comparison,
+evaluation, and search-hint actions show transient success feedback in the UI so
+operators know the
 clipboard action completed.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current

@@ -233,6 +233,13 @@ type RetrievalComparisonRecommendedAction = {
   severity: "success" | "warning" | "destructive" | "muted";
   source: string;
 };
+type EvidenceSupportSummary = {
+  aspect_count: number;
+  concept_count: number;
+  matched_term_count: number;
+  provenance_field_count: number;
+  ranking_signal_count: number;
+};
 type RetrievalComparisonRecommendedActionSummary = {
   action_count: number;
   badge_variant: "success" | "warning" | "destructive";
@@ -2989,6 +2996,7 @@ function HitCard({
   const provenanceEntries = provenanceEntriesFromEvidence(evidence);
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   const scoreComponents = scoreComponentsFromHit(hit);
+  const supportSummary = evidenceSupportSummary(hit, provenanceEntries);
   const { copiedKey, markCopied } = useCopyFeedback();
   const evidenceCopyKey = `evidence-report-${evidence.source_id}-${index}`;
   const evidenceCopied = copiedKey === evidenceCopyKey;
@@ -3045,13 +3053,7 @@ function HitCard({
         {formatClaim(evidence.claim)}
       </p>
 
-      <HitEvidenceAuditStrip
-        aspectCount={aspectMatches.length}
-        conceptCount={conceptMatches.length}
-        matchedTermCount={hit.matched_terms.length}
-        provenanceCount={provenanceEntries.length}
-        rankingSignalCount={rankingBoostSignals.length}
-      />
+      <HitEvidenceAuditStrip summary={supportSummary} />
 
       <EvidenceProvenanceSummary entries={provenanceEntries} />
 
@@ -3133,37 +3135,29 @@ function HitCard({
 }
 
 function HitEvidenceAuditStrip({
-  aspectCount,
-  conceptCount,
-  matchedTermCount,
-  provenanceCount,
-  rankingSignalCount,
+  summary,
 }: {
-  aspectCount: number;
-  conceptCount: number;
-  matchedTermCount: number;
-  provenanceCount: number;
-  rankingSignalCount: number;
+  summary: EvidenceSupportSummary;
 }) {
   return (
     <div
       aria-label="Evidence support summary"
       className="flex min-w-0 flex-wrap gap-1.5 rounded-md border border-border bg-muted/20 p-2"
     >
-      <Badge variant={matchedTermCount ? "success" : "warning"}>
-        {formatCount(matchedTermCount, "matched term")}
+      <Badge variant={summary.matched_term_count ? "success" : "warning"}>
+        {formatCount(summary.matched_term_count, "matched term")}
       </Badge>
-      <Badge variant={provenanceCount ? "success" : "warning"}>
-        {formatCount(provenanceCount, "provenance field")}
+      <Badge variant={summary.provenance_field_count ? "success" : "warning"}>
+        {formatCount(summary.provenance_field_count, "provenance field")}
       </Badge>
-      <Badge variant={conceptCount ? "success" : "muted"}>
-        {formatCount(conceptCount, "grounded concept")}
+      <Badge variant={summary.concept_count ? "success" : "muted"}>
+        {formatCount(summary.concept_count, "grounded concept")}
       </Badge>
-      <Badge variant={aspectCount ? "success" : "muted"}>
-        {formatCount(aspectCount, "aspect")}
+      <Badge variant={summary.aspect_count ? "success" : "muted"}>
+        {formatCount(summary.aspect_count, "aspect")}
       </Badge>
-      <Badge variant={rankingSignalCount ? "success" : "muted"}>
-        {formatCount(rankingSignalCount, "ranking signal")}
+      <Badge variant={summary.ranking_signal_count ? "success" : "muted"}>
+        {formatCount(summary.ranking_signal_count, "ranking signal")}
       </Badge>
     </div>
   );
@@ -5395,6 +5389,7 @@ function evidenceReportFromHit(
       confidence: hit.evidence.confidence ?? null,
       claim: formatClaim(hit.evidence.claim),
     },
+    support_summary: evidenceSupportSummary(hit, provenanceEntries),
     ranking: {
       score: hit.score,
       lexical_score: hit.lexical_score,
@@ -5414,6 +5409,19 @@ function evidenceReportFromHit(
       source_locator: hit.source_locator,
     },
     snippet: hit.snippet,
+  };
+}
+
+function evidenceSupportSummary(
+  hit: RetrievalHit,
+  provenanceEntries: EvidenceProvenanceEntry[],
+): EvidenceSupportSummary {
+  return {
+    aspect_count: queryAspectMatchesFromHit(hit).length,
+    concept_count: conceptMatchesFromHit(hit).length,
+    matched_term_count: hit.matched_terms.length,
+    provenance_field_count: provenanceEntries.length,
+    ranking_signal_count: rankingBoostSignalsFromHit(hit).length,
   };
 }
 
