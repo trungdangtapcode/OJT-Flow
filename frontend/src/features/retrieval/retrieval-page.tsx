@@ -1455,7 +1455,7 @@ function RunComparisonAtAGlance({
   comparison: RetrievalRunComparison;
 }) {
   return (
-    <div aria-label="Comparison at a glance" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div aria-label="Comparison at a glance" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
       <RunComparisonMetricCard
         label="Readiness"
         tone={comparison.qualitySummaryChanged ? "warning" : "success"}
@@ -1479,6 +1479,11 @@ function RunComparisonAtAGlance({
         label="Result churn"
         tone={comparison.metrics.churnRate > 0.5 ? "warning" : "success"}
         value={formatPercent(comparison.metrics.churnRate)}
+      />
+      <RunComparisonMetricCard
+        label="Top source"
+        tone={comparison.topSourceChanged ? "warning" : "success"}
+        value={comparison.topSourceChanged ? "changed" : "stable"}
       />
     </div>
   );
