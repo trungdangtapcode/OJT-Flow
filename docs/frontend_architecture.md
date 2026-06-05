@@ -160,6 +160,9 @@ version and key locator fields such as standard, URL, path, PMID, DOI, API,
 resource, table, document, and chunk identifiers before the raw JSON details.
 URL/API values, PubMed IDs, and DOIs must render as external links when they can
 be safely normalized.
+Each ranked evidence card must also offer a copyable `retrieval_evidence_hit`
+report containing evidence identity, ranking scores/components, concept/aspect
+grounding, provenance summary, locators, and snippet context.
 The trace and recent-run list must show the backend
 `handoff_context.search_signature` in compact form, and copied run-comparison
 reports must include active/baseline server search signatures for offline audit

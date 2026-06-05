@@ -2808,6 +2808,11 @@ function HitCard({
   const provenanceEntries = provenanceEntriesFromEvidence(evidence);
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   const scoreComponents = scoreComponentsFromHit(hit);
+  const copyEvidenceReport = async () => {
+    await copyTextToClipboard(
+      JSON.stringify(evidenceReportFromHit(hit, provenanceEntries), null, 2),
+    );
+  };
   return (
     <article className="grid min-w-0 gap-3 rounded-md border border-border bg-card p-3 shadow-sm">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -2831,6 +2836,16 @@ function HitCard({
         <div className="flex flex-wrap justify-end gap-1.5">
           <Badge variant="success">{formatConfidence(evidence.confidence)}</Badge>
           <Badge variant="muted">score {formatScore(hit.score)}</Badge>
+          <Button
+            aria-label={`Copy evidence report for ${evidence.source_id}`}
+            onClick={() => void copyEvidenceReport()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Clipboard className="h-4 w-4" />
+            Copy evidence
+          </Button>
         </div>
       </div>
 
@@ -5132,6 +5147,45 @@ function uniqueProvenanceEntries(
     seen.add(key);
     return true;
   });
+}
+
+function evidenceReportFromHit(
+  hit: RetrievalHit,
+  provenanceEntries: EvidenceProvenanceEntry[],
+) {
+  return {
+    report_type: "retrieval_evidence_hit",
+    version: 1,
+    generated_at: new Date().toISOString(),
+    evidence: {
+      evidence_id: hit.evidence.evidence_id,
+      source_id: hit.evidence.source_id,
+      source_type: hit.evidence.source_type,
+      source_version: hit.evidence.source_version ?? null,
+      trust_level: hit.evidence.trust_level,
+      confidence: hit.evidence.confidence ?? null,
+      claim: formatClaim(hit.evidence.claim),
+    },
+    ranking: {
+      score: hit.score,
+      lexical_score: hit.lexical_score,
+      vector_score: hit.vector_score,
+      rerank_score: hit.rerank_score,
+      matched_terms: hit.matched_terms,
+      score_components: scoreComponentsFromHit(hit),
+      ranking_boosts: rankingBoostSignalsFromHit(hit),
+    },
+    grounding: {
+      concept_matches: conceptMatchesFromHit(hit),
+      query_aspect_matches: queryAspectMatchesFromHit(hit),
+    },
+    provenance: {
+      summary: provenanceEntries,
+      locator: hit.evidence.locator,
+      source_locator: hit.source_locator,
+    },
+    snippet: hit.snippet,
+  };
 }
 
 function rankingBoostDetailsValue(value: unknown): RankingBoostSignal[] {

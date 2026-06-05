@@ -315,6 +315,10 @@ version and key locator metadata before the expandable raw locator JSON, making
 the provenance quality gate inspectable during normal evidence review. URL/API
 locators, PubMed IDs, and DOIs render as external links when they can be safely
 normalized.
+Each ranked evidence card can copy a `retrieval_evidence_hit` report containing
+evidence identity, score components, ranking boosts, concept/aspect grounding,
+provenance summary, raw locators, and snippet context for audit notes or
+assistant handoff.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

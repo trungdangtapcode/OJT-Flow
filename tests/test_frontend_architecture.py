@@ -236,6 +236,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "provenanceHrefForLocator" in retrieval_page
     assert "https://pubmed.ncbi.nlm.nih.gov" in retrieval_page
     assert "https://doi.org" in retrieval_page
+    assert "Copy evidence" in retrieval_page
+    assert "evidenceReportFromHit" in retrieval_page
+    assert "retrieval_evidence_hit" in retrieval_page
     assert "RunComparisonConceptGrounding" in retrieval_page
     assert "conceptGroundingComparisonBetweenRuns" in retrieval_page
     assert "conceptGroundingComparison" in retrieval_page
