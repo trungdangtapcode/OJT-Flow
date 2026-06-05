@@ -1225,6 +1225,7 @@ Response data is a `RetrievalPackage`:
 - `handoff_context`
 - `handoff_context.graph_context`
 - `handoff_context.query_analysis`
+- `handoff_context.retrieval_rule_packs`
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
@@ -1246,6 +1247,11 @@ for workflows such as PubMed/MeSH literature search, FHIR resource search
 templates, ClinicalTrials.gov API v2 study search, and openFDA drug
 label/adverse-event search. Current targets include `pubmed`, `fhir`,
 `clinicaltrials_gov`, `openfda_drug_label`, and `openfda_drug_event`.
+`handoff_context.retrieval_rule_packs` records sanitized active retrieval
+rule-pack fingerprints with pack name, status, source, env var, rule count,
+version, and content hash. This lets copied evaluation reports and downstream
+audit records identify the exact query-expansion, diagnostic, ranking,
+evaluation, and search-hint rule data used for the search.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.

@@ -841,6 +841,12 @@ The Retrieval UI can copy a `retrieval_judgment_evaluation` JSON report with
 server metrics, local in-session metrics, stored-label summary,
 recommendations, ranked evidence IDs, unjudged IDs, and contributing judgment
 IDs for offline relevance-tuning notes.
+Retrieval packages also copy sanitized active rule-pack metadata into
+`handoff_context.retrieval_rule_packs`, including pack name, status, source,
+environment variable, rule count, version, and content hash. The copied
+`retrieval_judgment_evaluation` report includes those fingerprints so offline
+relevance notes can be tied back to the exact query-expansion, diagnostic,
+ranking, evaluation, and search-hint rule data active during the run.
 
 Each durable judgment stores:
 

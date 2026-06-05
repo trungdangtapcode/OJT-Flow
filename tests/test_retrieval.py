@@ -1362,6 +1362,40 @@ def test_retrieval_service_adds_graph_context() -> None:
     assert any(edge["relation"] == "supports" for edge in graph["edges"])
 
 
+def test_retrieval_service_attaches_rule_pack_fingerprints() -> None:
+    class FakeRepository:
+        def search(self, query):
+            return StaticRetrievalRepository(ROOT / "knowledge").search(query)
+
+        def list_sources(self):
+            return []
+
+        def reindex(self, *, include_seeded=True, include_corpus=True):
+            return {}
+
+    service = RetrievalService(
+        FakeRepository(),
+        rule_packs=[
+            {
+                "name": "query_expansion",
+                "status": "ok",
+                "source": "knowledge",
+                "env_var": "OJT_QUERY_EXPANSION_RULES_PATH",
+                "configured": False,
+                "rule_count": 11,
+                "version": "retrieval_query_expansion_rules.v1",
+                "content_hash": "a" * 64,
+            }
+        ],
+    )
+    package = service.search(RetrievalQuery(query="FHIR Observation HbA1c unit", top_k=3))
+
+    rule_packs = package.handoff_context["retrieval_rule_packs"]
+    assert rule_packs[0]["name"] == "query_expansion"
+    assert rule_packs[0]["content_hash"] == "a" * 64
+    assert package.handoff_context["graph_context"]["graph_contract"] == "graph_ner_handoff.v0"
+
+
 def test_static_retrieval_reindex_adds_local_corpus(tmp_path: Path) -> None:
     knowledge = tmp_path / "knowledge"
     corpus = knowledge / "corpus"

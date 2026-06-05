@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.ports import RetrievalRepository
 from ojtflow.core.contracts.data import DataProfile
@@ -20,14 +23,17 @@ class RetrievalService:
         self,
         repository: RetrievalRepository,
         graph_ner: GraphNERService | None = None,
+        rule_packs: Sequence[dict[str, Any]] | None = None,
     ) -> None:
         self.repository = repository
         self.graph_ner = graph_ner or GraphNERService()
+        self.rule_packs = [dict(pack) for pack in rule_packs or ()]
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         """Run direct retrieval."""
 
         package = self.repository.search(query)
+        package = self._attach_rule_pack_metadata(package)
         return self.graph_ner.augment_package(package, query)
 
     def list_sources(self) -> list[RetrievalSource]:
@@ -89,3 +95,12 @@ class RetrievalService:
             filters={"trust_level": "approved"},
         )
         return self.search(query)
+
+    def _attach_rule_pack_metadata(self, package: RetrievalPackage) -> RetrievalPackage:
+        if not self.rule_packs:
+            return package
+        handoff_context = {
+            **package.handoff_context,
+            "retrieval_rule_packs": self.rule_packs,
+        }
+        return package.model_copy(update={"handoff_context": handoff_context})

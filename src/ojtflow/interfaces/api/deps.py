@@ -27,6 +27,7 @@ from ojtflow.infrastructure.retrieval.evaluation_policy import (
 from ojtflow.infrastructure.retrieval.llamaindex_adapter import LlamaIndexRetrievalRepository
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.reranking import build_reranker
+from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
@@ -152,6 +153,7 @@ def _build_workflow_service() -> WorkflowService:
         events=events,
         knowledge=StaticKnowledgeRepository(knowledge_root),
         retrieval=retrieval,
+        retrieval_rule_packs=retrieval_rule_packs(knowledge_root),
     )
 
 

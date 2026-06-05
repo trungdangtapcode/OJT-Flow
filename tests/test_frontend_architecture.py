@@ -299,6 +299,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copy retrieval judgment evaluation report" in retrieval_page
     assert "evaluationReportFromJudgmentSummary" in retrieval_page
     assert "retrieval_judgment_evaluation" in retrieval_page
+    assert "retrievalRulePacksFromPackage" in retrieval_page
+    assert "retrieval_rule_packs" in retrieval_page
+    assert "content_hash" in retrieval_page
+    assert "retrieval_rule_packs?: RuntimeRetrievalRulePack[]" in (
+        REPO_ROOT / "frontend/src/types.ts"
+    ).read_text(encoding="utf-8")
     assert "recommendations" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )

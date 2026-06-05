@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from typing import Any
 
 from ojtflow.agents.explanation_agent import ExplanationAgent
 from ojtflow.agents.parser_agent import ParserAgent
@@ -85,12 +87,16 @@ class WorkflowService:
         events: EventRepository,
         knowledge: KnowledgeRepository,
         retrieval: RetrievalRepository,
+        retrieval_rule_packs: Sequence[dict[str, Any]] | None = None,
     ) -> None:
         self.datasets = datasets
         self.workflows = workflows
         self.events = events
         self.knowledge = knowledge
-        self.retrieval_service = RetrievalService(retrieval)
+        self.retrieval_service = RetrievalService(
+            retrieval,
+            rule_packs=retrieval_rule_packs,
+        )
         self.parser_agent = ParserAgent()
         self.validation_agent = ValidationAgent()
         self.safety_agent = SafetyAgent()

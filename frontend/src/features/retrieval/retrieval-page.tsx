@@ -1606,6 +1606,7 @@ function SearchResults({
         <RelevanceJudgmentSummary
           isSyncing={isJudgmentSyncing}
           metrics={judgmentMetrics}
+          packageData={packageData}
           persistedEvaluation={persistedJudgmentEvaluation}
           persistedSummary={persistedJudgmentSummary}
         />
@@ -1718,11 +1719,13 @@ function ResultFacets({
 function RelevanceJudgmentSummary({
   isSyncing,
   metrics,
+  packageData,
   persistedEvaluation,
   persistedSummary,
 }: {
   isSyncing: boolean;
   metrics: RelevanceJudgmentMetrics;
+  packageData: RetrievalPackage;
   persistedEvaluation: RetrievalJudgmentEvaluationResult | null;
   persistedSummary: RetrievalRelevanceJudgmentSummary | null;
 }) {
@@ -1734,6 +1737,7 @@ function RelevanceJudgmentSummary({
           persistedEvaluation,
           metrics,
           persistedSummary,
+          packageData,
         ),
         null,
         2,
@@ -4090,6 +4094,7 @@ function evaluationReportFromJudgmentSummary(
   evaluation: RetrievalJudgmentEvaluationResult,
   metrics: RelevanceJudgmentMetrics,
   summary: RetrievalRelevanceJudgmentSummary | null,
+  packageData: RetrievalPackage,
 ) {
   return {
     report_type: "retrieval_judgment_evaluation",
@@ -4126,10 +4131,28 @@ function evaluationReportFromJudgmentSummary(
       total_hits: metrics.totalHits,
     },
     recommendations: evaluation.recommendations,
+    retrieval_rule_packs: retrievalRulePacksFromPackage(packageData),
     stored_label_summary: summary,
     unjudged_evidence_ids: evaluation.unjudged_evidence_ids,
     judgment_ids: evaluation.judgment_ids,
   };
+}
+
+function retrievalRulePacksFromPackage(packageData: RetrievalPackage) {
+  const rawPacks = packageData.handoff_context.retrieval_rule_packs;
+  if (!Array.isArray(rawPacks)) return [];
+  return rawPacks
+    .map((rawPack) => recordValue(rawPack))
+    .map((pack) => ({
+      name: stringValue(pack.name, ""),
+      status: stringValue(pack.status, "unknown"),
+      source: stringValue(pack.source, "unknown"),
+      env_var: stringValue(pack.env_var, ""),
+      rule_count: numberValue(pack.rule_count) ?? 0,
+      version: optionalStringValue(pack.version),
+      content_hash: optionalStringValue(pack.content_hash),
+    }))
+    .filter((pack) => pack.name && pack.env_var);
 }
 
 function judgmentsForComparison(

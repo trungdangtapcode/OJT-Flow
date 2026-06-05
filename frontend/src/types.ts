@@ -286,6 +286,7 @@ export type RetrievalPackage = {
   handoff_context: {
     graph_context?: RetrievalGraphContext;
     query_analysis?: RetrievalQueryAnalysis;
+    retrieval_rule_packs?: RuntimeRetrievalRulePack[];
     [key: string]: unknown;
   };
 };
