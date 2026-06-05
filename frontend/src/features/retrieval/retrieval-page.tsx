@@ -175,6 +175,7 @@ type RetrievalRunComparison = {
   hitDelta: number;
   metrics: RetrievalRunComparisonMetrics;
   qualityWarningDelta: number;
+  queryProfileChanged: boolean;
   rankChanges: RetrievalRankChange[];
   removedEvidenceIds: string[];
   retainedEvidenceIds: string[];
@@ -1198,6 +1199,9 @@ function SearchRunComparison({
           <Badge variant={comparison.topSourceChanged ? "warning" : "success"}>
             {comparison.topSourceChanged ? "top source changed" : "top source stable"}
           </Badge>
+          <Badge variant={comparison.queryProfileChanged ? "warning" : "success"}>
+            {comparison.queryProfileChanged ? "profile changed" : "profile stable"}
+          </Badge>
           <Badge variant={comparison.rulePackChanged ? "warning" : "success"}>
             {comparison.rulePackChanged ? "rule packs changed" : "rule packs stable"}
           </Badge>
@@ -1240,6 +1244,7 @@ function SearchRunComparison({
         />
       </div>
       <div className="grid gap-2">
+        <RunComparisonQueryProfile comparison={comparison} />
         <RunComparisonRulePacks rulePackChanges={comparison.rulePackChanges} />
         <RunComparisonRankChanges rankChanges={comparison.rankChanges} />
         <RunComparisonEvidenceChange
@@ -1329,6 +1334,62 @@ function RunComparisonMetric({
       <Badge variant={deltaBadgeVariant(delta, positiveIsGood)}>
         {formatSignedDelta(delta)}
       </Badge>
+    </div>
+  );
+}
+
+function RunComparisonQueryProfile({
+  comparison,
+}: {
+  comparison: RetrievalRunComparison;
+}) {
+  const before = comparison.baselineSummary.queryProfile;
+  const after = comparison.activeSummary.queryProfile;
+  if (!before && !after) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <span className="text-xs font-bold text-muted-foreground">Query profile</span>
+        <Badge variant="muted">not reported</Badge>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">Query profile</span>
+        <Badge variant={comparison.queryProfileChanged ? "warning" : "success"}>
+          {comparison.queryProfileChanged ? "changed" : "stable"}
+        </Badge>
+      </div>
+      <div className="grid gap-1 sm:grid-cols-2">
+        <QueryProfileSummaryCard label="Baseline" profile={before} />
+        <QueryProfileSummaryCard label="Active" profile={after} />
+      </div>
+    </div>
+  );
+}
+
+function QueryProfileSummaryCard({
+  label,
+  profile,
+}: {
+  label: string;
+  profile: QueryProfileSummary | null;
+}) {
+  if (!profile) {
+    return (
+      <div className="rounded-md bg-muted/40 px-2 py-1.5 text-muted-foreground">
+        {label}: none
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-1 rounded-md bg-muted/40 px-2 py-1.5">
+      <span className="font-bold">{label}: {profile.label}</span>
+      <span className="break-words text-muted-foreground">
+        {humanize(profile.route)} / {humanize(profile.retrievalMode)} /{" "}
+        {humanize(profile.complexity)}
+      </span>
     </div>
   );
 }
@@ -4267,6 +4328,10 @@ function compareSearchRuns(
   );
   const rankChanges = rankChangesBetweenRuns(activeRun, baselineRun);
   const rulePackChanges = rulePackChangesBetweenRuns(activeRun, baselineRun);
+  const queryProfileChanged = queryProfilesChanged(
+    activeRun.summary.queryProfile,
+    baselineRun.summary.queryProfile,
+  );
 
   return {
     addedEvidenceIds,
@@ -4293,6 +4358,7 @@ function compareSearchRuns(
     }),
     qualityWarningDelta:
       activeRun.summary.qualityWarningCount - baselineRun.summary.qualityWarningCount,
+    queryProfileChanged,
     rankChanges,
     removedEvidenceIds,
     retainedEvidenceIds,
@@ -4356,11 +4422,7 @@ function comparisonReportFromComparison(
     query_profiles: {
       before: comparison.baselineSummary.queryProfile,
       after: comparison.activeSummary.queryProfile,
-      changed:
-        comparison.baselineSummary.queryProfile?.profileId !==
-          comparison.activeSummary.queryProfile?.profileId ||
-        comparison.baselineSummary.queryProfile?.retrievalMode !==
-          comparison.activeSummary.queryProfile?.retrievalMode,
+      changed: comparison.queryProfileChanged,
     },
     rule_packs: {
       changed: comparison.rulePackChanged,
@@ -4677,6 +4739,17 @@ function rulePackFingerprint(pack?: RuntimeRetrievalRulePack): string {
   if (pack.content_hash) return pack.content_hash;
   if (pack.version) return pack.version;
   return `${pack.status}:${pack.rule_count}`;
+}
+
+function queryProfilesChanged(
+  active: QueryProfileSummary | null,
+  baseline: QueryProfileSummary | null,
+): boolean {
+  return (
+    active?.profileId !== baseline?.profileId ||
+    active?.retrievalMode !== baseline?.retrievalMode ||
+    active?.route !== baseline?.route
+  );
 }
 
 function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {
