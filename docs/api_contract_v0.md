@@ -219,6 +219,10 @@ detected query concepts by standard system, code, display name, alias, or exact
 matched term. If a detected controlled concept above the configured confidence
 threshold is not represented in selected evidence, `quality_signals[]` includes
 `missing_concept_grounding`.
+Copied `retrieval_run_comparison` reports include `concept_grounding.added`,
+`concept_grounding.removed`, and `concept_grounding.retained` so relevance
+tuning can distinguish text-rank movement from loss or gain of coded medical
+concept support.
 
 Runtime retrieval tuning recommendations are data-driven. By default,
 `POST /api/v1/retrieval/judgments/evaluate` loads policy rules from

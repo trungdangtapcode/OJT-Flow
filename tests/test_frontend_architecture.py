@@ -227,6 +227,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "conceptMatchesFromHit" in retrieval_page
     assert "Concept grounding" in retrieval_page
     assert "concept_grounding_requirements" in retrieval_page
+    assert "RunComparisonConceptGrounding" in retrieval_page
+    assert "conceptGroundingComparisonBetweenRuns" in retrieval_page
+    assert "conceptGroundingComparison" in retrieval_page
+    assert "concept_grounding_changed" in retrieval_page
     assert "serverSearchSignatureFromPackage" in retrieval_page
     assert "Search signature" in retrieval_page
     assert "search_signature: comparison.activeSummary.serverSignature" in retrieval_page

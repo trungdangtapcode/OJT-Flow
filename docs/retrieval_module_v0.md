@@ -302,6 +302,10 @@ represented by selected evidence, retrieval emits `missing_concept_grounding`.
 This keeps the package aligned with coded medical search practice such as FHIR
 `Coding`/`CodeableConcept`, LOINC code/display search, and RxNorm concept
 grounding.
+The Retrieval console carries the same concept grounding into run comparison:
+active-vs-baseline comparisons list added, removed, and retained grounded
+concepts, and copied `retrieval_run_comparison` reports include a
+`concept_grounding` section for offline relevance-tuning notes.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

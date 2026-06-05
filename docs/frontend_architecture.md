@@ -227,7 +227,9 @@ active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
 query-aspect plans across active and baseline runs, including added, removed,
 and retained aspects, so operators can see whether decomposition coverage
-changed before interpreting rank movement. It should compare standard and
+changed before interpreting rank movement. It should compare controlled medical
+concept grounding across active and baseline runs, including added, removed,
+and retained LOINC/RxNorm/MeSH/FHIR-style concepts. It should compare standard and
 query-aspect coverage diagnostics across active and baseline runs, including
 improved, regressed, added, removed, and retained coverage items. It should compare
 quality signal codes across active and baseline runs, including added, removed,

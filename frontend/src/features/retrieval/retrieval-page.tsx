@@ -113,6 +113,7 @@ type RetrievalSearchRun = {
 };
 type RetrievalRunSummary = {
   candidateCount: number;
+  conceptGrounding: ConceptGroundingSummary[];
   coverage: RetrievalCoverageSummary[];
   hitCount: number;
   qualityWarningCount: number;
@@ -138,6 +139,13 @@ type QueryAspectSummary = {
   priority: number;
   question: string;
   ruleId: string;
+};
+type ConceptGroundingSummary = {
+  code: string | null;
+  conceptId: string;
+  displayName: string;
+  evidenceCount: number;
+  standardSystem: string;
 };
 type QueryProfileSummary = {
   complexity: string;
@@ -190,6 +198,7 @@ type RetrievalRunComparison = {
   baselineSubmittedAt: string;
   baselineSummary: RetrievalRunSummary;
   candidateDelta: number;
+  conceptGroundingComparison: RetrievalConceptGroundingComparison;
   coverageComparison: RetrievalCoverageComparison;
   diagnosis: RetrievalComparisonDiagnosis[];
   facetComparisons: RetrievalFacetComparison[];
@@ -218,6 +227,11 @@ type RetrievalQueryAspectComparison = {
   added: QueryAspectSummary[];
   removed: QueryAspectSummary[];
   retained: QueryAspectSummary[];
+};
+type RetrievalConceptGroundingComparison = {
+  added: ConceptGroundingSummary[];
+  removed: ConceptGroundingSummary[];
+  retained: ConceptGroundingSummary[];
 };
 type RetrievalCoverageComparison = {
   added: RetrievalCoverageSummary[];
@@ -1315,6 +1329,9 @@ function SearchRunComparison({
       </div>
       <div className="grid gap-2">
         <RunComparisonQueryProfile comparison={comparison} />
+        <RunComparisonConceptGrounding
+          comparison={comparison.conceptGroundingComparison}
+        />
         <RunComparisonQueryAspects comparison={comparison.queryAspectComparison} />
         <RunComparisonCoverage comparison={comparison.coverageComparison} />
         <RunComparisonQualitySignals comparison={comparison.qualitySignalComparison} />
@@ -1503,6 +1520,77 @@ function QueryProfileSummaryCard({
         {humanize(profile.route)} / {humanize(profile.retrievalMode)} /{" "}
         {humanize(profile.complexity)}
       </span>
+    </div>
+  );
+}
+
+function RunComparisonConceptGrounding({
+  comparison,
+}: {
+  comparison: RetrievalConceptGroundingComparison;
+}) {
+  const changed = comparison.added.length || comparison.removed.length;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">Concept grounding</span>
+        <Badge variant={changed ? "warning" : "success"}>
+          {changed ? "changed" : "stable"}
+        </Badge>
+      </div>
+      <ConceptGroundingChangeList
+        concepts={comparison.added}
+        emptyLabel="No newly grounded concepts."
+        label="Added"
+        variant="success"
+      />
+      <ConceptGroundingChangeList
+        concepts={comparison.removed}
+        emptyLabel="No lost grounded concepts."
+        label="Removed"
+        variant="warning"
+      />
+      <ConceptGroundingChangeList
+        concepts={comparison.retained}
+        emptyLabel="No retained grounded concepts."
+        label="Retained"
+        variant="muted"
+      />
+    </div>
+  );
+}
+
+function ConceptGroundingChangeList({
+  concepts,
+  emptyLabel,
+  label,
+  variant,
+}: {
+  concepts: ConceptGroundingSummary[];
+  emptyLabel: string;
+  label: string;
+  variant: "success" | "warning" | "muted";
+}) {
+  return (
+    <div className="grid gap-1">
+      <span className="font-bold text-muted-foreground">{label}</span>
+      {concepts.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {concepts.map((concept) => (
+            <Badge
+              className="max-w-full break-words"
+              key={conceptGroundingKey(concept)}
+              variant={variant}
+            >
+              {concept.standardSystem}
+              {concept.code ? ` ${concept.code}` : ""}: {concept.displayName} (
+              {concept.evidenceCount})
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <span className="text-muted-foreground">{emptyLabel}</span>
+      )}
     </div>
   );
 }
@@ -5241,6 +5329,10 @@ function compareSearchRuns(
     activeRun,
     baselineRun,
   );
+  const conceptGroundingComparison = conceptGroundingComparisonBetweenRuns(
+    activeRun,
+    baselineRun,
+  );
   const queryAspectComparison = queryAspectComparisonBetweenRuns(activeRun, baselineRun);
   const rulePackChanged = rulePackChanges.some((change) => change.status !== "stable");
   const topSourceChanged = activeRun.summary.topSourceId !== baselineRun.summary.topSourceId;
@@ -5259,6 +5351,7 @@ function compareSearchRuns(
     baselineSummary: baselineRun.summary,
     candidateDelta:
       activeRun.summary.candidateCount - baselineRun.summary.candidateCount,
+    conceptGroundingComparison,
     coverageComparison,
     facetComparisons,
     hitDelta: activeRun.summary.hitCount - baselineRun.summary.hitCount,
@@ -5317,6 +5410,16 @@ function comparisonDiagnosisFromComparison(
     diagnosis.push({
       code: "query_aspect_plan_changed",
       message: "Search aspect coverage plan changed between runs.",
+      severity: "warning",
+    });
+  }
+  if (
+    comparison.conceptGroundingComparison.added.length ||
+    comparison.conceptGroundingComparison.removed.length
+  ) {
+    diagnosis.push({
+      code: "concept_grounding_changed",
+      message: "Controlled medical concept grounding changed between runs.",
       severity: "warning",
     });
   }
@@ -5380,7 +5483,7 @@ function comparisonDiagnosisFromComparison(
     diagnosis.push({
       code: "comparison_stable",
       message:
-        "Comparison is stable across query profile, search aspects, rules, quality, facets, evidence, and ranks.",
+        "Comparison is stable across query profile, concept grounding, search aspects, rules, quality, facets, evidence, and ranks.",
       severity: "success",
     });
   }
@@ -5430,6 +5533,11 @@ function comparisonReportFromComparison(
       added: comparison.queryAspectComparison.added,
       removed: comparison.queryAspectComparison.removed,
       retained: comparison.queryAspectComparison.retained,
+    },
+    concept_grounding: {
+      added: comparison.conceptGroundingComparison.added,
+      removed: comparison.conceptGroundingComparison.removed,
+      retained: comparison.conceptGroundingComparison.retained,
     },
     quality_signals: {
       added: comparison.qualitySignalComparison.added,
@@ -5596,6 +5704,34 @@ function queryAspectSummariesFromPackage(packageData: RetrievalPackage): QueryAs
       ruleId: aspect.ruleId,
     }))
     .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label));
+}
+
+function conceptGroundingSummariesFromPackage(
+  packageData: RetrievalPackage,
+): ConceptGroundingSummary[] {
+  const counts = new Map<string, ConceptGroundingSummary>();
+  for (const hit of packageData.hits) {
+    for (const concept of conceptMatchesFromHit(hit)) {
+      const key = conceptGroundingKey(concept);
+      const current = counts.get(key);
+      if (current) {
+        current.evidenceCount += 1;
+      } else {
+        counts.set(key, {
+          code: concept.code,
+          conceptId: concept.conceptId,
+          displayName: concept.displayName,
+          evidenceCount: 1,
+          standardSystem: concept.standardSystem,
+        });
+      }
+    }
+  }
+  return [...counts.values()].sort(
+    (left, right) =>
+      left.standardSystem.localeCompare(right.standardSystem) ||
+      left.displayName.localeCompare(right.displayName),
+  );
 }
 
 function rulePackStatusValue(value: unknown): RuntimeRetrievalRulePack["status"] {
@@ -5939,6 +6075,37 @@ function queryAspectComparisonBetweenRuns(
   };
 }
 
+function conceptGroundingComparisonBetweenRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalConceptGroundingComparison {
+  const activeConcepts = activeRun.summary.conceptGrounding;
+  const baselineConcepts = baselineRun.summary.conceptGrounding;
+  const activeByKey = new Map(
+    activeConcepts.map((concept) => [conceptGroundingKey(concept), concept]),
+  );
+  const baselineByKey = new Map(
+    baselineConcepts.map((concept) => [conceptGroundingKey(concept), concept]),
+  );
+  return {
+    added: activeConcepts.filter(
+      (concept) => !baselineByKey.has(conceptGroundingKey(concept)),
+    ),
+    removed: baselineConcepts.filter(
+      (concept) => !activeByKey.has(conceptGroundingKey(concept)),
+    ),
+    retained: activeConcepts.filter((concept) =>
+      baselineByKey.has(conceptGroundingKey(concept)),
+    ),
+  };
+}
+
+function conceptGroundingKey(
+  concept: Pick<ConceptGroundingSummary, "code" | "conceptId" | "standardSystem">,
+): string {
+  return `${concept.standardSystem}:${concept.code ?? ""}:${concept.conceptId}`;
+}
+
 function qualitySignalSummariesFromRun(
   run: RetrievalSearchRun,
 ): RetrievalQualitySignalSummary[] {
@@ -5961,6 +6128,7 @@ function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary
   const rulePacks = retrievalRulePacksFromPackage(packageData);
   return {
     candidateCount: packageData.trace.candidates_seen,
+    conceptGrounding: conceptGroundingSummariesFromPackage(packageData),
     coverage: coverageSummariesFromPackage(packageData),
     hitCount: packageData.hits.length,
     qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
