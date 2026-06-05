@@ -2805,6 +2805,7 @@ function HitCard({
   const evidence = hit.evidence;
   const aspectMatches = queryAspectMatchesFromHit(hit);
   const conceptMatches = conceptMatchesFromHit(hit);
+  const provenanceEntries = provenanceEntriesFromEvidence(evidence);
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   const scoreComponents = scoreComponentsFromHit(hit);
   return (
@@ -2838,6 +2839,8 @@ function HitCard({
       <p className="break-words text-sm leading-6 text-muted-foreground">
         {formatClaim(evidence.claim)}
       </p>
+
+      <EvidenceProvenanceSummary entries={provenanceEntries} />
 
       <RelevanceJudgmentControl judgment={judgment} onSetJudgment={onSetJudgment} />
 
@@ -2954,6 +2957,36 @@ function RelevanceJudgmentControl({
             </Button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceProvenanceSummary({
+  entries,
+}: {
+  entries: EvidenceProvenanceEntry[];
+}) {
+  if (!entries.length) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
+          <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+          <span>Evidence provenance</span>
+        </div>
+        <Badge variant="muted">{formatCount(entries.length, "field")}</Badge>
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {entries.map((entry) => (
+          <span
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-card/70 px-2 py-1 text-xs font-semibold text-muted-foreground"
+            key={`${entry.label}-${entry.value}`}
+          >
+            <span className="shrink-0 font-bold text-foreground">{entry.label}:</span>
+            <span className="min-w-0 break-words">{entry.value}</span>
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -4662,6 +4695,10 @@ type ConceptMatchSignal = {
   reason: string;
   standardSystem: string;
 };
+type EvidenceProvenanceEntry = {
+  label: string;
+  value: string;
+};
 
 function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
   const embedding = recordValue(packageData.handoff_context.embedding);
@@ -5017,6 +5054,56 @@ function conceptMatchesFromHit(hit: RetrievalHit): ConceptMatchSignal[] {
       standardSystem: stringValue(item.standard_system, "unknown"),
     }))
     .filter((item) => item.conceptId && item.standardSystem !== "unknown");
+}
+
+function provenanceEntriesFromEvidence(evidence: Evidence): EvidenceProvenanceEntry[] {
+  const locator = evidence.locator;
+  const entries: EvidenceProvenanceEntry[] = [];
+  const sourceVersion = optionalStringValue(evidence.source_version);
+  if (sourceVersion) entries.push({ label: "Version", value: sourceVersion });
+  const locatorFields: Array<[string, string]> = [
+    ["Standard", "standard"],
+    ["System", "standard_system"],
+    ["URL", "url"],
+    ["Path", "path"],
+    ["API", "api"],
+    ["PMID", "pmid"],
+    ["DOI", "doi"],
+    ["Resource", "resource"],
+    ["Table", "table"],
+    ["Document", "document_id"],
+    ["Chunk", "chunk_id"],
+  ];
+  for (const [label, key] of locatorFields) {
+    const value = locatorSummaryValue(locator[key]);
+    if (value) entries.push({ label, value });
+  }
+  return uniqueProvenanceEntries(entries).slice(0, 8);
+}
+
+function locatorSummaryValue(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (Array.isArray(value)) {
+    const items = value
+      .map(locatorSummaryValue)
+      .filter((item): item is string => Boolean(item));
+    return items.length ? items.slice(0, 3).join(", ") : null;
+  }
+  return null;
+}
+
+function uniqueProvenanceEntries(
+  entries: EvidenceProvenanceEntry[],
+): EvidenceProvenanceEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = `${entry.label}:${entry.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function rankingBoostDetailsValue(value: unknown): RankingBoostSignal[] {
