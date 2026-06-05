@@ -163,6 +163,9 @@ be safely normalized.
 Each ranked evidence card must also offer a copyable `retrieval_evidence_hit`
 report containing evidence identity, ranking scores/components, concept/aspect
 grounding, provenance summary, locators, and snippet context.
+Copy actions for evidence, comparison, evaluation, and search-hint reports must
+show transient success feedback so operators can tell the clipboard action
+completed without opening developer tools or raw browser state.
 The trace and recent-run list must show the backend
 `handoff_context.search_signature` in compact form, and copied run-comparison
 reports must include active/baseline server search signatures for offline audit

@@ -318,7 +318,9 @@ normalized.
 Each ranked evidence card can copy a `retrieval_evidence_hit` report containing
 evidence identity, score components, ranking boosts, concept/aspect grounding,
 provenance summary, raw locators, and snippet context for audit notes or
-assistant handoff.
+assistant handoff. Copyable evidence, comparison, evaluation, and search-hint
+actions show transient success feedback in the UI so operators know the
+clipboard action completed.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

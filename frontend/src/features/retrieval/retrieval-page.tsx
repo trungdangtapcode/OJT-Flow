@@ -1263,10 +1263,15 @@ function SearchRunComparison({
   comparison: RetrievalRunComparison;
   judgments: RelevanceJudgment[];
 }) {
+  const { copiedKey, markCopied } = useCopyFeedback();
+  const reportCopyKey = "comparison-report";
+  const reportCopied = copiedKey === reportCopyKey;
+
   const copyReport = async () => {
     await copyTextToClipboard(
       JSON.stringify(comparisonReportFromComparison(comparison, judgments), null, 2),
     );
+    markCopied(reportCopyKey);
   };
 
   return (
@@ -1295,8 +1300,12 @@ function SearchRunComparison({
             type="button"
             variant="outline"
           >
-            <Clipboard className="h-4 w-4" />
-            Copy report
+            {reportCopied ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : (
+              <Clipboard className="h-4 w-4" />
+            )}
+            {reportCopied ? "Copied" : "Copy report"}
           </Button>
         </div>
       </div>
@@ -2408,6 +2417,10 @@ function RelevanceJudgmentSummary({
   persistedEvaluation: RetrievalJudgmentEvaluationResult | null;
   persistedSummary: RetrievalRelevanceJudgmentSummary | null;
 }) {
+  const { copiedKey, markCopied } = useCopyFeedback();
+  const evaluationCopyKey = "judgment-evaluation-report";
+  const evaluationCopied = copiedKey === evaluationCopyKey;
+
   const copyEvaluationReport = async () => {
     if (!persistedEvaluation) return;
     await copyTextToClipboard(
@@ -2422,6 +2435,7 @@ function RelevanceJudgmentSummary({
         2,
       ),
     );
+    markCopied(evaluationCopyKey);
   };
 
   return (
@@ -2453,8 +2467,12 @@ function RelevanceJudgmentSummary({
               type="button"
               variant="outline"
             >
-              <Clipboard className="h-4 w-4" />
-              Copy eval
+              {evaluationCopied ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                <Clipboard className="h-4 w-4" />
+              )}
+              {evaluationCopied ? "Copied" : "Copy eval"}
             </Button>
           ) : null}
         </div>
@@ -2808,10 +2826,15 @@ function HitCard({
   const provenanceEntries = provenanceEntriesFromEvidence(evidence);
   const rankingBoostSignals = rankingBoostSignalsFromHit(hit);
   const scoreComponents = scoreComponentsFromHit(hit);
+  const { copiedKey, markCopied } = useCopyFeedback();
+  const evidenceCopyKey = `evidence-report-${evidence.source_id}-${index}`;
+  const evidenceCopied = copiedKey === evidenceCopyKey;
+
   const copyEvidenceReport = async () => {
     await copyTextToClipboard(
       JSON.stringify(evidenceReportFromHit(hit, provenanceEntries), null, 2),
     );
+    markCopied(evidenceCopyKey);
   };
   return (
     <article className="grid min-w-0 gap-3 rounded-md border border-border bg-card p-3 shadow-sm">
@@ -2843,8 +2866,12 @@ function HitCard({
             type="button"
             variant="outline"
           >
-            <Clipboard className="h-4 w-4" />
-            Copy evidence
+            {evidenceCopied ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : (
+              <Clipboard className="h-4 w-4" />
+            )}
+            {evidenceCopied ? "Copied" : "Copy evidence"}
           </Button>
         </div>
       </div>
@@ -3866,20 +3893,14 @@ function QueryProfileCard({
 }
 
 function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
-  const [copiedHintKey, setCopiedHintKey] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!copiedHintKey) return;
-    const timer = window.setTimeout(() => setCopiedHintKey(null), 1800);
-    return () => window.clearTimeout(timer);
-  }, [copiedHintKey]);
+  const { copiedKey, clearCopied, markCopied } = useCopyFeedback();
 
   const copyHintQuery = async (hintKey: string, query: string) => {
     try {
       await copyTextToClipboard(query);
-      setCopiedHintKey(hintKey);
+      markCopied(hintKey);
     } catch {
-      setCopiedHintKey(null);
+      clearCopied();
     }
   };
 
@@ -3894,7 +3915,7 @@ function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
       <div className="grid gap-2">
         {hints.map((hint) => {
           const hintKey = `${hint.target}-${hint.query}`;
-          const copied = copiedHintKey === hintKey;
+          const copied = copiedKey === hintKey;
           return (
             <div
               className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
@@ -5329,6 +5350,26 @@ async function copyTextToClipboard(text: string): Promise<void> {
   textarea.select();
   document.execCommand("copy");
   document.body.removeChild(textarea);
+}
+
+function useCopyFeedback(timeoutMs = 1800) {
+  const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!copiedKey) return;
+    const timer = window.setTimeout(() => setCopiedKey(null), timeoutMs);
+    return () => window.clearTimeout(timer);
+  }, [copiedKey, timeoutMs]);
+
+  const markCopied = React.useCallback((key: string) => {
+    setCopiedKey(key);
+  }, []);
+
+  const clearCopied = React.useCallback(() => {
+    setCopiedKey(null);
+  }, []);
+
+  return { clearCopied, copiedKey, markCopied };
 }
 
 function diagnosticBadgeVariant(

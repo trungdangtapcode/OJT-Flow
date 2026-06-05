@@ -237,6 +237,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "https://pubmed.ncbi.nlm.nih.gov" in retrieval_page
     assert "https://doi.org" in retrieval_page
     assert "Copy evidence" in retrieval_page
+    assert "useCopyFeedback" in retrieval_page
+    assert "markCopied" in retrieval_page
+    assert "clearCopied" in retrieval_page
+    assert "Copied" in retrieval_page
     assert "evidenceReportFromHit" in retrieval_page
     assert "retrieval_evidence_hit" in retrieval_page
     assert "RunComparisonConceptGrounding" in retrieval_page
