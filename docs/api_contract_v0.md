@@ -1305,6 +1305,163 @@ Structured unauthorized response:
 }
 ```
 
+## Retrieval Plan
+
+`POST /api/v1/retrieval/plan`
+
+Uses the same request shape as retrieval search, but returns a plan-only retrieval response:
+query planning only. It does not rank evidence, touch the vector index, or generate graph
+handoff context. Use it to preview route/profile, query aspects, rewrites,
+executable retrieval tasks, filter suggestions, and external medical search
+hints before running a full search.
+
+```json
+{
+  "query": "HbA1c lab CSV missing units FHIR Observation",
+  "top_k": 5,
+  "schema_id": "lab_result_v1",
+  "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+  "clinical_domain": "laboratory",
+  "trust_level": "approved"
+}
+```
+
+Response data is a `RetrievalPlan`:
+
+- `query`: normalized `RetrievalQuery`
+- `query_analysis`: the same deterministic analysis later used by retrieval,
+  including `query_profile`, `query_aspects`, `query_variant_details`,
+  `retrieval_tasks`, `filter_suggestions`, `diagnostics`, and `search_hints`
+- `coverage_summary`: backend-owned pre-search readiness summary for local
+  task coverage, external follow-ups, inferred standards, filters, warnings, and
+  a human-readable summary sentence plus `next_action`
+- `task_summary`: backend-owned execution summary with task counts for runnable
+  local searches, required local searches, external open/copy follow-ups,
+  blocked tasks, a `primary_action`, and a human-readable summary
+- `risk_signals[]`: prioritized backend pre-search risks, each with `code`,
+  `severity`, `message`, `suggested_action`, `source`, and `metadata`
+- `search_signature`: stable signature for the normalized request
+- `summary`: short human-readable plan summary
+
+`query_analysis.retrieval_tasks[]` is the ordered execution plan. Each task
+includes `task_id`, `target` (`local_corpus` or `external_medical_index`),
+`action_type` (`run_local_search`, `open_external_url`, or `copy_query`),
+`query`, `rationale`, `priority`, `required`, optional `aspect_id` or
+`search_hint_target`, `query_variants`, `standards`, `suggested_filters`, and
+`warnings`. This is the user-facing bridge between query planning and the
+backend tools that will run or launch the search.
+
+Example response envelope:
+
+```json
+{
+  "data": {
+    "query": {
+      "query": "HbA1c lab CSV missing units FHIR Observation",
+      "workflow_id": null,
+      "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+      "schema_id": "lab_result_v1",
+      "detected_format": null,
+      "resource_type": null,
+      "top_k": 5,
+      "filters": {
+        "clinical_domain": "laboratory",
+        "trust_level": "approved"
+      }
+    },
+    "query_analysis": {
+      "strategy": "postgres_fts_vector_rrf",
+      "query_profile": {
+        "intent": "schema_validation",
+        "clinical_domain": "laboratory",
+        "risk_level": "moderate"
+      },
+      "query_aspects": [
+        {
+          "aspect_id": "schema_fields",
+          "label": "Required lab-result fields",
+          "query": "lab result required fields date patient_id value unit",
+          "priority": 1,
+          "required": true
+        }
+      ],
+      "query_variant_details": [],
+      "retrieval_tasks": [
+        {
+          "task_id": "local_schema_fields",
+          "label": "Search trusted local corpus for required lab fields",
+          "target": "local_corpus",
+          "action_type": "run_local_search",
+          "query": "lab result required fields date patient_id value unit",
+          "rationale": "Ground validation against approved local schemas before showing evidence.",
+          "priority": 1,
+          "required": true,
+          "aspect_id": "schema_fields",
+          "search_hint_target": null,
+          "query_variants": ["lab result required fields date patient_id value unit"],
+          "standards": ["FHIR", "UCUM"],
+          "suggested_filters": {
+            "schema_id": "lab_result_v1",
+            "source_type": "schema"
+          },
+          "warnings": [],
+          "metadata": {}
+        },
+        {
+          "task_id": "external_fhir_observation",
+          "label": "Review FHIR Observation reference externally",
+          "target": "external_medical_index",
+          "action_type": "open_external_url",
+          "query": "FHIR Observation laboratory result units",
+          "rationale": "Use external standards pages as manual follow-up; do not treat them as executed local evidence.",
+          "priority": 4,
+          "required": false,
+          "aspect_id": null,
+          "search_hint_target": "FHIR Observation",
+          "query_variants": ["FHIR Observation laboratory result units"],
+          "standards": ["FHIR"],
+          "suggested_filters": {},
+          "warnings": ["External follow-up is not automatically ingested."],
+          "metadata": {
+            "url": "https://hl7.org/fhir/observation.html"
+          }
+        }
+      ],
+      "filter_suggestions": [],
+      "diagnostics": [],
+      "search_hints": []
+    },
+    "coverage_summary": {
+      "ready": true,
+      "local_task_count": 1,
+      "required_local_task_count": 1,
+      "external_task_count": 1,
+      "standard_count": 2,
+      "filter_count": 2,
+      "standards": ["FHIR", "UCUM"],
+      "warnings": [],
+      "next_action": "Run required local search tasks first, then review external follow-ups.",
+      "summary": "Plan is ready for local evidence search with 1 required local task and 1 external follow-up."
+    },
+    "task_summary": {
+      "total_task_count": 2,
+      "runnable_local_count": 1,
+      "required_runnable_local_count": 1,
+      "external_open_count": 1,
+      "external_copy_count": 0,
+      "manual_followup_count": 1,
+      "blocked_task_count": 0,
+      "primary_action": "Run required local search tasks first, then review external follow-ups.",
+      "summary": "1 local runnable task(s), 1 external/manual follow-up(s), and 0 blocked task(s)."
+    },
+    "risk_signals": [],
+    "search_signature": "sha256:example",
+    "summary": "Prepared 2 retrieval task(s) for review-grade healthcare evidence search."
+  },
+  "error": null
+}
+```
+
 ## Retrieval Search
 
 `POST /api/v1/retrieval/search`

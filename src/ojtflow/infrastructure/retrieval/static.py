@@ -10,6 +10,7 @@ from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalSource,
@@ -23,6 +24,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     sources_from_chunks,
 )
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
+from ojtflow.infrastructure.retrieval.query_analysis import build_retrieval_plan
 
 
 class StaticKnowledgeRepository:
@@ -103,6 +105,9 @@ class StaticRetrievalRepository:
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap_chars = chunk_overlap_chars
         self._chunks = default_healthcare_chunks(self.root)
+
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan:
+        return build_retrieval_plan(query)
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         chunks = self._filter_chunks(self._chunks, query)

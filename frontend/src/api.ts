@@ -14,6 +14,7 @@ import type {
   RetrievalIntegrityReport,
   RetrievalJudgmentPayload,
   RetrievalPackage,
+  RetrievalPlan,
   RetrievalRelevanceJudgment,
   RetrievalRelevanceJudgmentSummary,
   RetrievalReindexPayload,
@@ -397,6 +398,13 @@ export function listSchemas(): Promise<SchemaEntry[]> {
 
 export function searchRetrieval(payload: RetrievalSearchPayload): Promise<RetrievalPackage> {
   return request<RetrievalPackage>("/retrieval/search", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function planRetrieval(payload: RetrievalSearchPayload): Promise<RetrievalPlan> {
+  return request<RetrievalPlan>("/retrieval/plan", {
     method: "POST",
     body: JSON.stringify(payload),
   });

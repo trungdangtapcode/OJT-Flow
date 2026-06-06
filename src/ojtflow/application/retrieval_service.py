@@ -12,6 +12,7 @@ from ojtflow.application.ports import RetrievalRepository
 from ojtflow.core.contracts.data import DataProfile
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalSource,
@@ -38,6 +39,17 @@ class RetrievalService:
         package = self._attach_search_metadata(package, query)
         package = self._attach_rule_pack_metadata(package)
         return self.graph_ner.augment_package(package, query)
+
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan:
+        """Build a plan-only retrieval analysis without ranking evidence."""
+
+        plan = self.repository.plan(query)
+        request = _search_request_payload(query)
+        return plan.model_copy(
+            update={
+                "search_signature": _search_request_signature(request),
+            }
+        )
 
     def list_sources(self) -> list[RetrievalSource]:
         """List configured retrieval sources."""

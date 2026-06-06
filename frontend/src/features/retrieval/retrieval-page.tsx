@@ -1,24 +1,15 @@
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
-  BookOpen,
-  BrainCircuit,
   CheckCircle2,
   Clipboard,
-  Database,
   ExternalLink,
   FileSearch,
   Gauge,
-  GitCompareArrows,
-  History,
-  HelpCircle,
   ListFilter,
   Loader2,
-  Network,
   RefreshCw,
   Search,
-  ShieldCheck,
   X,
 } from "lucide-react";
 
@@ -35,8 +26,6 @@ import { Input, Label, Select, Textarea } from "../../components/ui/form";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
 import { PageHeader } from "../../components/layout/page-header";
 import { Notice } from "../../components/ui/notice";
-import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-strip";
-import { Table, TBody, TD, TH, THead, TR } from "../../components/ui/table";
 import {
   useRetrievalReindexMutation,
   useDeleteRetrievalJudgmentMutation,
@@ -45,6 +34,7 @@ import {
   useRetrievalJudgmentMutation,
   useRetrievalJudgmentSummaryQuery,
   useRetrievalJudgmentsQuery,
+  useRetrievalPlanQuery,
   useRetrievalPresetsQuery,
   useRetrievalSearchOptionsQuery,
   useRetrievalSearchMutation,
@@ -54,17 +44,117 @@ import {
   workflowErrorMessage,
 } from "../../lib/server-state";
 import { cn, humanize } from "../../lib/utils";
+import { ActiveFilterBar } from "./components/active-filter-bar";
+import { ConceptCandidateList } from "./components/concept-candidate-list";
+import { CoverageDiagnosticsPanel } from "./components/coverage-diagnostics-panel";
+import { EvidencePackBuckets } from "./components/evidence-pack-buckets";
+import { EvidenceInterpretationPanel } from "./components/evidence-interpretation-panel";
+import {
+  EvidenceUseGuidancePanel,
+  EvidenceUsabilitySummaryPanel,
+  HitMatchExplanationPanel,
+} from "./components/evidence-interpretation-guidance";
+import { EvidenceReadinessPanel } from "./components/evidence-readiness-panel";
+import { FilterSuggestionList } from "./components/filter-suggestion-list";
+import {
+  EvidenceProvenanceSummary,
+  SnippetBlock,
+  type EvidenceProvenanceEntryView,
+} from "./components/evidence-provenance-snippet";
+import {
+  EvidenceSupportMatrix,
+  type EvidenceSupportMatrixRowView,
+} from "./components/evidence-support-matrix";
+import { RetrievalFirstRunGuide } from "./components/first-run-guide";
+import {
+  HitEvidenceAuditStrip,
+  type HitEvidenceAuditSummary,
+} from "./components/hit-evidence-audit-strip";
+import {
+  ConceptMatchExplanation,
+  DiversitySelectionExplanation,
+  QueryAspectMatchExplanation,
+  ScoreExplanation,
+  ScoreMeter,
+} from "./components/hit-explanation-panels";
+import {
+  EvaluationReadinessPanel,
+  JudgmentMetricCard,
+} from "./components/judgment-evaluation-panels";
+import { NoResultRemediationPanel } from "./components/no-result-remediation-panel";
+import {
+  QualitySignalList,
+  qualitySignalBadgeVariant,
+} from "./components/quality-signal-list";
+import { RankedEvidenceTriage } from "./components/ranked-evidence-triage";
+import { RelevanceJudgmentControl } from "./components/relevance-judgment-control";
+import { RetrievalInlineGuide } from "./components/retrieval-inline-guide";
+import { RetrievalReviewPathPanel } from "./components/retrieval-review-path";
+import {
+  GraphPanel,
+  IntegrityPanel,
+  RetrievalRuntimeStatusStrip,
+  RuntimeDiversityBadge,
+  RuntimeRerankBadge,
+} from "./components/retrieval-runtime-status";
+import { QueryVariantList } from "./components/query-variant-list";
+import { QueryDiagnosticList } from "./components/query-diagnostic-list";
+import { QueryProfileCard } from "./components/query-profile-card";
+import {
+  RetrievalSummaryStrip,
+  type RetrievalSummaryStripViewModel,
+} from "./components/retrieval-summary-strip";
+import { RecommendedActionsPanel } from "./components/recommended-actions-panel";
+import { ResultFacets } from "./components/result-facets";
+import { SearchAnswerCard } from "./components/search-answer-card";
+import {
+  CockpitMetricCard,
+  QueryHealthPanel,
+  SearchReadinessChecklist,
+  type QueryHealthItem,
+  type SearchReadinessChecklistItem,
+} from "./components/search-cockpit-panels";
+import type {
+  FilterSuggestionStack,
+  QueryAspectStack,
+  SearchHintStack,
+} from "./components/search-plan-detail-panels";
+import {
+  SearchPlanPreview,
+  type SearchPlanPreviewView,
+} from "./components/search-plan-preview";
+import {
+  type SearchPlanCoverageSummaryView,
+} from "./components/search-plan-summary-panels";
+import { SearchPresetStrip } from "./components/search-preset-strip";
+import { SearchHintList } from "./components/search-hint-list";
+import { SearchRunHistory } from "./components/search-run-history";
+import { SectionHelpText } from "./components/section-help-text";
+import { SourceInventoryPanel } from "./components/source-inventory-panel";
+import {
+  SourceDiversityPanel,
+  type DiversitySelectionStack,
+  type DiversityStack,
+} from "./components/source-diversity-panel";
+import { SourceScopePicker } from "./components/source-scope-picker";
+import {
+  StandardSearchPlanPanel,
+  StrategyRecommendationsPanel,
+} from "./components/strategy-standard-panels";
+import { SubmittedSearchSummary } from "./components/submitted-search-summary";
+import { TokenList } from "./components/token-list";
+import { TraceFact } from "./components/trace-fact";
+import { searchRunRemediationSummary } from "./model/search-run-presentation";
 import type {
   Evidence,
   RetrievalEvidenceBucket,
-  RetrievalFacetBucket,
   RetrievalGraphContext,
   RetrievalHit,
   RetrievalInterpretation,
   RetrievalIntegrityReport,
   RetrievalPackage,
+  RetrievalPlan,
   RetrievalCoverage,
-  RetrievalFacets,
   RetrievalJudgmentEvaluationResult,
   RetrievalQualitySummary,
   RetrievalQualitySignal,
@@ -73,13 +163,13 @@ import type {
   RetrievalRelevanceJudgment,
   RetrievalRelevanceJudgmentSummary,
   RetrievalScoreComponent,
+  RetrievalPlanRiskSignal,
   RetrievalSearchPayload,
   RetrievalSearchOption,
   RetrievalSearchPreset,
+  RetrievalSearchTask,
+  RetrievalPlanTaskSummary,
   RetrievalSource,
-  RetrievalStrategyRecommendation,
-  RetrievalStandardSearchPlan,
-  RetrievalStandardSearchStep,
   RuntimeRetrievalRulePack,
   RuntimeConfig,
 } from "../../types";
@@ -101,28 +191,6 @@ type CoverageFilterAction = {
   field: SupportedFilterField;
   value: string;
 };
-type QueryHealthItem = {
-  code: string;
-  description: string;
-  label: string;
-  status: "ok" | "review" | "blocked" | "info";
-};
-type SearchReadinessChecklistItem = {
-  code: string;
-  detail: string;
-  label: string;
-  status: QueryHealthItem["status"];
-};
-type SourceInventoryReadiness = {
-  chunkCount: number;
-  domainCount: number;
-  emptySourceCount: number;
-  filteredCount: number;
-  readiness: "ready" | "review" | "blocked";
-  standardCount: number;
-  sourceCount: number;
-  sourceTypeCount: number;
-};
 type RetrievalFormState = {
   query: string;
   fields: string;
@@ -135,12 +203,6 @@ type RetrievalFormState = {
   sourceType: string;
   sourceId: string;
   topK: number;
-};
-type FacetSection = {
-  field: FacetFilterField;
-  label: string;
-  values: RetrievalFacetBucket[];
-  formatter: (value: string) => string;
 };
 type RetrievalSearchRun = {
   packageData: RetrievalPackage;
@@ -285,29 +347,8 @@ type RetrievalComparisonRecommendedAction = {
   severity: "success" | "warning" | "destructive" | "muted";
   source: string;
 };
-type EvidenceSupportSummary = {
-  aspect_count: number;
-  concept_count: number;
-  matched_term_count: number;
-  provenance_field_count: number;
-  ranking_signal_count: number;
-};
-type EvidenceSupportMatrixRow = {
-  aspectCount: number;
-  bucketLabels: string[];
-  conceptCount: number;
-  confidenceLabel: string;
-  evidenceId: string;
-  judgment: RelevanceJudgment | null;
-  matchedTermCount: number;
-  provenanceCount: number;
-  rank: number;
-  score: number;
-  sourceId: string;
-  sourceType: string;
-  standardSystem: string | null;
-  supportStatus: "strong" | "partial" | "weak";
-};
+type EvidenceSupportSummary = HitEvidenceAuditSummary;
+type EvidenceSupportMatrixRow = EvidenceSupportMatrixRowView;
 type EvidenceUseGuidance = {
   action: string;
   reasons: string[];
@@ -421,32 +462,6 @@ const facetFilterFields: FacetFilterField[] = [
   "trust_level",
 ];
 const searchRunHistoryLimit = 6;
-const relevanceJudgmentOptions: Array<{
-  activeVariant: "default" | "secondary" | "destructive";
-  description: string;
-  label: string;
-  value: RelevanceJudgmentValue;
-}> = [
-  {
-    activeVariant: "default",
-    description: "Mark this evidence as relevant for the submitted query.",
-    label: "Relevant",
-    value: "relevant",
-  },
-  {
-    activeVariant: "secondary",
-    description: "Mark this evidence as partially relevant for the submitted query.",
-    label: "Partial",
-    value: "partial",
-  },
-  {
-    activeVariant: "destructive",
-    description: "Mark this evidence as not relevant for the submitted query.",
-    label: "Not relevant",
-    value: "not_relevant",
-  },
-];
-
 export function RetrievalPage() {
   const presetsQuery = useRetrievalPresetsQuery();
   const searchOptionsQuery = useRetrievalSearchOptionsQuery();
@@ -474,6 +489,7 @@ export function RetrievalPage() {
   const [sourceId, setSourceId] = React.useState("");
   const [topK, setTopK] = React.useState(5);
   const [formError, setFormError] = React.useState<string | null>(null);
+  const [planControlNotice, setPlanControlNotice] = React.useState<string | null>(null);
   const [lastSearchSignature, setLastSearchSignature] = React.useState<string | null>(null);
   const [submittedSearchPayload, setSubmittedSearchPayload] =
     React.useState<RetrievalSearchPayload | null>(null);
@@ -485,6 +501,7 @@ export function RetrievalPage() {
     React.useState<string | null>(null);
   const [relevanceJudgments, setRelevanceJudgments] =
     React.useState<RelevanceJudgmentIndex>({});
+  const [planPayload, setPlanPayload] = React.useState<RetrievalSearchPayload | null>(null);
 
   const activeRun = React.useMemo(
     () => searchRuns.find((run) => run.runId === activeRunId) ?? null,
@@ -567,6 +584,22 @@ export function RetrievalPage() {
     ...presets.map((preset) => preset.top_k),
   ]);
   const graphContext = packageData?.handoff_context.graph_context;
+  const runtimeStatusView = packageData
+    ? (() => {
+        const ranking = rankingStackFromPackage(packageData);
+        const diversity = diversityFromPackage(packageData);
+        return {
+          graphEdgeCount: graphContext?.edges.length ?? null,
+          graphNodeCount: graphContext?.nodes.length ?? null,
+          graphTripleCount: graphContext?.triples.length ?? null,
+          integrityStatus: integrityQuery.data?.status ?? "loading",
+          rerankerEnabled: ranking.reranker.enabled,
+          retrievalMode: humanize(ranking.framework.name || packageData.trace.strategy),
+          sourceCoverageLabel: formatSourceCoverage(diversity),
+          sourceDiversityEnabled: diversity.enabled,
+        };
+      })()
+    : null;
   const activeFacetFilters: ActiveFacetFilters = {
     clinical_domain: clinicalDomain || undefined,
     standard_system: standardSystem || undefined,
@@ -591,11 +624,54 @@ export function RetrievalPage() {
   const submittedSearchSignature = submittedSearchPayload
     ? retrievalSearchSignature(submittedSearchPayload)
     : null;
+  const planQuery = useRetrievalPlanQuery(planPayload);
   const isSearchResultStale = Boolean(
     packageData &&
       submittedSearchSignature &&
       currentSearchSignature !== submittedSearchSignature,
   );
+  const isPlanForCurrentSearch = Boolean(
+    planPayload && retrievalSearchSignature(planPayload) === currentSearchSignature,
+  );
+  const currentPlanData = isPlanForCurrentSearch ? planQuery.data : undefined;
+  const currentPlanPayload = isPlanForCurrentSearch ? planPayload : null;
+  const packageDataForPlanPreview = isSearchResultStale ? undefined : packageData;
+  const planPreviewView = React.useMemo<SearchPlanPreviewView | null>(() => {
+    if (!packageDataForPlanPreview && !currentPlanData) return null;
+    const analysis = packageDataForPlanPreview
+      ? queryAnalysisFromPackage(packageDataForPlanPreview)
+      : queryAnalysisFromPlan(currentPlanData!);
+    return {
+      analysis,
+      coverageSummary: searchPlanCoverageSummary(analysis),
+      planSummary: currentPlanData?.summary ?? null,
+      profile: analysis.queryProfile,
+      qualitySummary: packageDataForPlanPreview?.quality_summary ?? null,
+      riskSignals: searchPlanRiskSignals(analysis),
+      taskSummary: searchPlanTaskSummary(analysis),
+      variants: packageDataForPlanPreview
+        ? queryVariantsFromTrace(packageDataForPlanPreview.trace)
+        : queryVariantsFromAnalysis(analysis),
+    };
+  }, [currentPlanData, packageDataForPlanPreview]);
+  const copyPlanPreview = React.useCallback(async () => {
+    await copyTextToClipboard(
+      JSON.stringify(
+        retrievalSearchPlanPreviewReport(
+          packageDataForPlanPreview,
+          packageDataForPlanPreview ? submittedSearchPayload : currentPlanPayload,
+          currentPlanData,
+        ),
+        null,
+        2,
+      ),
+    );
+  }, [
+    currentPlanData,
+    currentPlanPayload,
+    packageDataForPlanPreview,
+    submittedSearchPayload,
+  ]);
 
   const executeSearch = async (overrides: Partial<RetrievalSearchPayload> = {}) => {
     const payload = retrievalPayloadFromForm(formState, overrides);
@@ -604,6 +680,7 @@ export function RetrievalPage() {
       return;
     }
     setFormError(null);
+    setPlanControlNotice(null);
     const packageResult = await searchMutation.mutateAsync(payload);
     const signature = serverSearchSignatureFromPackage(packageResult) ?? retrievalSearchSignature(payload);
     const run = createSearchRun(payload, packageResult, signature);
@@ -621,7 +698,10 @@ export function RetrievalPage() {
     await executeSearch();
   };
 
-  const markCustomSearch = () => setActivePresetId(null);
+  const markCustomSearch = () => {
+    setActivePresetId(null);
+    setPlanControlNotice(null);
+  };
 
   const applyPreset = React.useCallback((preset: RetrievalSearchPreset) => {
     setQuery(preset.query);
@@ -635,6 +715,7 @@ export function RetrievalPage() {
     setTrustLevel(preset.trust_level ?? "");
     setTopK(preset.top_k);
     setFormError(null);
+    setPlanControlNotice(null);
     setActivePresetId(preset.preset_id);
   }, []);
 
@@ -643,6 +724,18 @@ export function RetrievalPage() {
     applyPreset(presets[0]);
     setDidApplyInitialPreset(true);
   }, [applyPreset, didApplyInitialPreset, presets]);
+
+  React.useEffect(() => {
+    const payload = retrievalPayloadFromForm(formState);
+    if (!payload.query) {
+      setPlanPayload(null);
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setPlanPayload(payload);
+    }, 400);
+    return () => window.clearTimeout(timeoutId);
+  }, [currentSearchSignature]);
 
   React.useEffect(() => {
     if (!comparisonBaselineRunId) return;
@@ -683,8 +776,10 @@ export function RetrievalPage() {
     });
   }, [activeRun, persistedJudgmentsQuery.data]);
 
-  const applySearchFilter = (field: SupportedFilterField, value: string) => {
-    markCustomSearch();
+  const applyFilterControl = (
+    field: SupportedFilterField,
+    value: string,
+  ): Partial<RetrievalSearchPayload> => {
     const overrides: Partial<RetrievalSearchPayload> = {};
     if (field === "clinical_domain") {
       setClinicalDomain(value);
@@ -701,6 +796,34 @@ export function RetrievalPage() {
     } else if (field === "source_id") {
       setSourceId(value);
       overrides.filters = { source_id: value };
+    }
+    return overrides;
+  };
+
+  const applySearchFilter = (field: SupportedFilterField, value: string) => {
+    markCustomSearch();
+    const overrides = applyFilterControl(field, value);
+    void executeSearch(overrides);
+  };
+
+  const runPlannedTask = (task: RetrievalSearchTask) => {
+    markCustomSearch();
+    const overrides = plannedTaskSearchOverrides(task);
+    setQuery(task.query);
+    if (overrides.clinical_domain !== undefined) {
+      setClinicalDomain(overrides.clinical_domain ?? "");
+    }
+    if (overrides.standard_system !== undefined) {
+      setStandardSystem(overrides.standard_system ?? "");
+    }
+    if (overrides.source_type !== undefined) {
+      setSourceType(overrides.source_type ?? "");
+    }
+    if (overrides.trust_level !== undefined) {
+      setTrustLevel(overrides.trust_level ?? "");
+    }
+    if (overrides.filters?.source_id !== undefined) {
+      setSourceId(overrides.filters.source_id ?? "");
     }
     void executeSearch(overrides);
   };
@@ -864,6 +987,19 @@ export function RetrievalPage() {
   const applyFilterSuggestion = (suggestion: FilterSuggestionStack) => {
     if (!isSupportedFilterField(suggestion.field)) return;
     applySearchFilter(suggestion.field, suggestion.value);
+  };
+
+  const applyPlanFilterSuggestion = (suggestion: FilterSuggestionStack) => {
+    if (!isSupportedFilterField(suggestion.field)) return;
+    markCustomSearch();
+    const overrides = applyFilterControl(suggestion.field, suggestion.value);
+    if (packageDataForPlanPreview) {
+      void executeSearch(overrides);
+    } else {
+      setPlanControlNotice(
+        `${filterFieldLabel(suggestion.field)} set to ${formatFilterValue(suggestion.field, suggestion.value)}. Run search to refresh evidence.`,
+      );
+    }
   };
 
   const reindex = () => {
@@ -1188,6 +1324,12 @@ export function RetrievalPage() {
                 onRemove={clearSearchFilter}
               />
 
+              {planControlNotice ? (
+                <Notice title="Plan filter applied">
+                  {planControlNotice}
+                </Notice>
+              ) : null}
+
               {isSearchResultStale ? (
                 <Notice title="Search settings changed">
                   Run search to refresh ranked evidence with the current query builder state.
@@ -1205,11 +1347,32 @@ export function RetrievalPage() {
               </form>
             </CardContent>
           </Card>
+          <SearchPlanPreview
+            copyTextToClipboard={copyTextToClipboard}
+            formatCount={formatCount}
+            formatFilterValue={formatMaybeSupportedFilterValue}
+            isSearchPending={searchMutation.isPending}
+            isPlanLoading={planQuery.isFetching}
+            isSupportedFilterField={isSupportedFilterField}
+            onApplyFilterSuggestion={applyPlanFilterSuggestion}
+            onCopyPlan={copyPlanPreview}
+            onRunTask={runPlannedTask}
+            planError={planQuery.isError ? workflowErrorMessage(planQuery.error) : null}
+            qualitySummaryBadgeVariant={qualitySummaryBadgeVariant}
+            useCopyFeedback={useCopyFeedback}
+            view={planPreviewView}
+          />
           <SearchRunHistory
             activeRunId={activeRunId}
-            comparison={activeRunComparison}
             comparisonBaselineRunId={comparisonBaselineRunId}
-            comparisonJudgments={comparisonJudgments}
+            comparisonNode={
+              activeRunComparison ? (
+                <SearchRunComparison
+                  comparison={activeRunComparison}
+                  judgments={comparisonJudgments}
+                />
+              ) : null
+            }
             isSearchPending={searchMutation.isPending}
             onClear={clearSearchRuns}
             onRestore={restoreSearchRun}
@@ -1219,6 +1382,9 @@ export function RetrievalPage() {
         </div>
 
         <div className="grid min-w-0 gap-5">
+          {runtimeStatusView ? (
+            <RetrievalRuntimeStatusStrip view={runtimeStatusView} />
+          ) : null}
           <SearchResults
             activeFilters={activeFacetFilters}
             isSearchPending={searchMutation.isPending}
@@ -1261,13 +1427,19 @@ export function RetrievalPage() {
             <GraphPanel graphContext={graphContext} />
           </div>
           <IntegrityPanel
+            checks={
+              integrityQuery.data ? prioritizedIntegrityChecks(integrityQuery.data) : []
+            }
+            formatCount={formatCount}
+            formatHash={shortHash}
             includeCorpus={includeCorpusIntegrity}
+            integrityBadgeVariant={integrityBadgeVariant}
             isFetching={integrityQuery.isFetching}
             onRefresh={() => void integrityQuery.refetch()}
             onToggleCorpus={() => setIncludeCorpusIntegrity((current) => !current)}
             report={integrityQuery.data}
           />
-          <SourcesPanel
+          <SourceInventoryPanel
             isLoading={sourcesQuery.isLoading}
             onUseSource={applySourceIdFilter}
             sources={sources}
@@ -1298,372 +1470,28 @@ function RetrievalSummary({
   );
   const embeddingProvider = packageRuntime?.embedding.provider ?? runtime?.embedding.provider;
   const rerankerProvider = packageRuntime?.reranker.provider ?? runtime?.rerank?.provider;
-  return (
-    <SummaryStrip columns={5}>
-      <SummaryStripItem
-        icon={Database}
-        label="Sources"
-        loading={sourcesLoading}
-        supporting="Trusted retrieval inventory"
-        value={sources.length}
-      />
-      <SummaryStripItem
-        icon={Gauge}
-        label="Hits"
-        supporting={packageData ? packageData.trace.strategy : "No search yet"}
-        tone="info"
-        value={packageData?.hits.length ?? 0}
-      />
-      <SummaryStripItem
-        icon={ShieldCheck}
-        label="Readiness"
-        supporting={qualitySummary?.top_action ?? "Run search to assess package quality"}
-        tone={qualitySummaryTone(qualitySummary)}
-        value={qualitySummary ? `${qualitySummary.score}/100` : "n/a"}
-      />
-      <SummaryStripItem
-        icon={Network}
-        label="Coverage"
-        supporting={
-          diversity
-            ? `${diversity.selectedSourceCount} selected unique sources`
-            : embeddingProvider
-              ? `${embeddingProvider} embeddings`
-              : "Runtime loading"
-        }
-        tone="success"
-        value={diversity ? formatSourceCoverage(diversity) : graph?.nodes.length ?? 0}
-      />
-      <SummaryStripItem
-        icon={BrainCircuit}
-        label="Reranker"
-        supporting={
-          rerankerProvider
-            ? rerankerEnabled
-              ? `${rerankerProvider} second stage`
-              : `${rerankerProvider} disabled`
-            : "Runtime loading"
-        }
-        tone={rerankerEnabled ? "success" : "neutral"}
-        value={rerankerEnabled ? "on" : "off"}
-      />
-    </SummaryStrip>
-  );
-}
-
-function RetrievalInlineGuide() {
-  return (
-    <details className="rounded-md border border-border bg-muted/25 px-4 py-3">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 text-sm font-black">
-        <HelpCircle className="h-4 w-4 text-primary" />
-        How to read Retrieval
-        <Badge variant="muted">guide</Badge>
-      </summary>
-      <div className="mt-3 grid gap-3 text-sm leading-6 md:grid-cols-4">
-        <RetrievalGuideItem title="1. Search cockpit">
-          Shows the route, provider state, filters, and next best action for the current search.
-        </RetrievalGuideItem>
-        <RetrievalGuideItem title="2. Evidence readiness">
-          Explains whether required support classes are present before trusting the package.
-        </RetrievalGuideItem>
-        <RetrievalGuideItem title="3. Strategy recommendations">
-          Explains why hybrid search, reranking, corrective filters, or more evidence may be needed.
-        </RetrievalGuideItem>
-        <RetrievalGuideItem title="4. Ranked evidence">
-          Inspect sources and match explanations. Evidence supports operations; it is not clinical advice.
-        </RetrievalGuideItem>
-      </div>
-      <div className="mt-3">
-        <Button asChild size="sm" type="button" variant="outline">
-          <Link to="/help">
-            <BookOpen className="h-4 w-4" />
-            Open full manual
-          </Link>
-        </Button>
-      </div>
-    </details>
-  );
-}
-
-function RetrievalGuideItem({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <div className="rounded-md border border-border bg-card px-3 py-2">
-      <div className="font-black">{title}</div>
-      <div className="mt-1 text-muted-foreground">{children}</div>
-    </div>
-  );
-}
-
-function SearchRunHistory({
-  activeRunId,
-  comparison,
-  comparisonBaselineRunId,
-  comparisonJudgments,
-  isSearchPending,
-  onClear,
-  onRestore,
-  onSetComparisonBaseline,
-  runs,
-}: {
-  activeRunId: string | null;
-  comparison: RetrievalRunComparison | null;
-  comparisonBaselineRunId: string | null;
-  comparisonJudgments: RelevanceJudgment[];
-  isSearchPending: boolean;
-  onClear: () => void;
-  onRestore: (run: RetrievalSearchRun) => void;
-  onSetComparisonBaseline: (runId: string | null) => void;
-  runs: RetrievalSearchRun[];
-}) {
-  if (!runs.length) return null;
-  return (
-    <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b border-border bg-card/70">
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5 text-primary" />
-            Search runs
-          </CardTitle>
-          <CardDescription>{formatCount(runs.length, "recent run")}</CardDescription>
-        </div>
-        <Button
-          aria-label="Clear recent search runs"
-          disabled={isSearchPending}
-          onClick={onClear}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Clear
-        </Button>
-      </CardHeader>
-      <CardContent className="grid gap-2 pt-4">
-        {runs.map((run) => {
-          const active = run.runId === activeRunId;
-          const baseline = run.runId === comparisonBaselineRunId;
-          const canSetBaseline = !active && !isSearchPending;
-          return (
-            <div
-              className={cn(
-                "grid min-w-0 gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-                active
-                  ? "border-primary bg-primary/10 text-foreground"
-                  : "border-border bg-card hover:bg-muted",
-              )}
-              key={run.runId}
-              title={run.payload.query}
-            >
-              <button
-                aria-label={`Restore search run ${run.payload.query}`}
-                aria-pressed={active}
-                className="grid w-full min-w-0 gap-2 text-left focus-ring disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={isSearchPending}
-                onClick={() => onRestore(run)}
-                type="button"
-              >
-                <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                  <span className="min-w-0 break-words font-black">
-                    {run.payload.query}
-                  </span>
-                  <span className="flex min-w-0 flex-wrap justify-end gap-1.5">
-                    {baseline ? <Badge variant="default">baseline</Badge> : null}
-                    <Badge variant={searchRunSummaryVariant(run.summary)}>
-                      {run.summary.qualityWarningCount
-                        ? formatCount(run.summary.qualityWarningCount, "issue")
-                        : "ready"}
-                    </Badge>
-                  </span>
-                </span>
-                <span className="flex min-w-0 flex-wrap gap-1.5">
-                  <Badge variant="muted">{formatRunTime(run.submittedAt)}</Badge>
-                  <Badge variant="muted">top {run.payload.top_k}</Badge>
-                  <Badge variant="muted">
-                    {formatCount(run.summary.hitCount, "hit")}
-                  </Badge>
-                  <Badge variant="muted">
-                    {formatCount(run.summary.candidateCount, "candidate")}
-                  </Badge>
-                  <Badge variant="muted">
-                    {formatCount(run.summary.rulePackCount, "rule pack")}
-                  </Badge>
-                  {run.summary.serverSignature ? (
-                    <Badge variant="muted">
-                      {formatShortSignature(run.summary.serverSignature)}
-                    </Badge>
-                  ) : null}
-                  {run.summary.queryProfile ? (
-                    <Badge variant="muted">
-                      {humanize(run.summary.queryProfile.route)}
-                    </Badge>
-                  ) : null}
-                  {run.summary.warningCount ? (
-                    <Badge variant="warning">
-                      {formatCount(run.summary.warningCount, "warning")}
-                    </Badge>
-                  ) : null}
-                  {run.summary.correctiveActionSummary.count ? (
-                    <Badge variant="warning">
-                      {formatCount(run.summary.correctiveActionSummary.count, "action")}
-                    </Badge>
-                  ) : null}
-                  <CorrectiveActionTypeCountChips
-                    counts={run.summary.correctiveActionSummary.actionTypeCounts}
-                  />
-                </span>
-                {run.summary.topSourceId ? (
-                  <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
-                    Top source: {run.summary.topSourceId}
-                  </span>
-                ) : null}
-                {run.summary.queryProfile ? (
-                  <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
-                    Profile: {run.summary.queryProfile.label} /{" "}
-                    {humanize(run.summary.queryProfile.retrievalMode)}
-                  </span>
-                ) : null}
-                {run.summary.correctiveActionSummary.topActionTitle ? (
-                  <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
-                    Top action: {run.summary.correctiveActionSummary.topActionTitle}
-                    {run.summary.correctiveActionSummary.highestPriority
-                      ? ` / P${run.summary.correctiveActionSummary.highestPriority}`
-                      : ""}
-                  </span>
-                ) : null}
-                <SearchRunEvidenceSummary run={run} />
-              </button>
-              <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-                <Button
-                  aria-label={
-                    baseline
-                      ? `Clear comparison baseline ${run.payload.query}`
-                      : `Use ${run.payload.query} as comparison baseline`
-                  }
-                  disabled={!canSetBaseline}
-                  onClick={() => onSetComparisonBaseline(baseline ? null : run.runId)}
-                  size="sm"
-                  type="button"
-                  variant={baseline ? "secondary" : "outline"}
-                >
-                  <GitCompareArrows className="h-4 w-4" />
-                  {baseline ? "Baseline" : "Set baseline"}
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-        {comparison ? (
-          <SearchRunComparison
-            comparison={comparison}
-            judgments={comparisonJudgments}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CorrectiveActionTypeCountChips({
-  counts,
-}: {
-  counts: Record<string, number>;
-}) {
-  const entries = correctiveActionTypeCountEntries(counts);
-  if (!entries.length) return null;
-  return (
-    <>
-      {entries.slice(0, 4).map(([actionType, count]) => (
-        <Badge key={actionType} variant="muted">
-          {humanize(actionType)} {count}
-        </Badge>
-      ))}
-      {entries.length > 4 ? (
-        <Badge variant="muted">+{entries.length - 4} action types</Badge>
-      ) : null}
-    </>
-  );
-}
-
-function correctiveActionTypeCountEntries(
-  counts: Record<string, number>,
-): Array<[string, number]> {
-  return Object.entries(counts)
-    .filter(([, count]) => Number.isFinite(count) && count > 0)
-    .sort(([leftType, leftCount], [rightType, rightCount]) => {
-      if (rightCount !== leftCount) return rightCount - leftCount;
-      return leftType.localeCompare(rightType);
-    });
-}
-
-function EvidencePackBuckets({
-  buckets,
-}: {
-  buckets: RetrievalEvidenceBucket[];
-}) {
-  if (!buckets.length) return null;
-  const availableCount = buckets.filter((bucket) => bucket.hit_count > 0).length;
-  const missingRequiredCount = buckets.filter(
-    (bucket) => bucket.required && bucket.hit_count === 0,
-  ).length;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-xs font-bold uppercase text-muted-foreground">
-            Evidence pack
-          </div>
-          <div className="mt-1 text-sm font-semibold">
-            {formatCount(availableCount, "bucket")} with selected evidence
-          </div>
-        </div>
-        <Badge variant={missingRequiredCount ? "warning" : "success"}>
-          {missingRequiredCount
-            ? formatCount(missingRequiredCount, "required gap")
-            : "complete"}
-        </Badge>
-      </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {buckets.map((bucket) => (
-          <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
-            key={bucket.bucket_id}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-bold">{bucket.label}</span>
-              <Badge variant={evidenceBucketBadgeVariant(bucket)}>
-                {formatCount(bucket.hit_count, "hit")}
-              </Badge>
-            </div>
-            <div className="break-words text-muted-foreground">
-              {bucket.description}
-            </div>
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              {bucket.required ? <Badge variant="muted">required</Badge> : null}
-              {bucket.source_ids.slice(0, 3).map((sourceId) => (
-                <Badge className="max-w-full break-words" key={sourceId} variant="muted">
-                  {sourceId}
-                </Badge>
-              ))}
-              {bucket.source_ids.length > 3 ? (
-                <Badge variant="muted">+{bucket.source_ids.length - 3}</Badge>
-              ) : null}
-              {bucket.warnings.map((warning) => (
-                <Badge className="max-w-full break-words" key={warning} variant="warning">
-                  {humanize(warning)}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function evidenceBucketBadgeVariant(
-  bucket: RetrievalEvidenceBucket,
-): "success" | "warning" | "muted" {
-  if (bucket.hit_count > 0) return "success";
-  return bucket.required ? "warning" : "muted";
+  const summary: RetrievalSummaryStripViewModel = {
+    coverageSupporting: diversity
+      ? `${diversity.selectedSourceCount} selected unique sources`
+      : embeddingProvider
+        ? `${embeddingProvider} embeddings`
+        : "Runtime loading",
+    coverageValue: diversity ? formatSourceCoverage(diversity) : graph?.nodes.length ?? 0,
+    hitSupporting: packageData ? packageData.trace.strategy : "No search yet",
+    hitValue: packageData?.hits.length ?? 0,
+    readinessSupporting: qualitySummary?.top_action ?? "Run search to assess package quality",
+    readinessTone: qualitySummaryTone(qualitySummary),
+    readinessValue: qualitySummary ? `${qualitySummary.score}/100` : "n/a",
+    rerankerEnabled,
+    rerankerSupporting: rerankerProvider
+      ? rerankerEnabled
+        ? `${rerankerProvider} second stage`
+        : `${rerankerProvider} disabled`
+      : "Runtime loading",
+    sourceCount: sources.length,
+    sourcesLoading,
+  };
+  return <RetrievalSummaryStrip summary={summary} />;
 }
 
 function qualitySummaryBadgeVariant(
@@ -1673,79 +1501,6 @@ function qualitySummaryBadgeVariant(
   if (summary.status === "blocked") return "destructive";
   if (summary.status === "review") return "warning";
   return "muted";
-}
-
-function SearchRunEvidenceSummary({ run }: { run: RetrievalSearchRun }) {
-  const scopeLabels = searchRunScopeLabels(run.payload);
-  const qualitySummary = run.summary.qualitySummary;
-  const remediationSummary =
-    run.summary.remediationSummary ?? searchRunRemediationSummary(run.summary);
-  return (
-    <span className="grid min-w-0 gap-1 rounded-md border border-border/70 bg-background/55 p-2">
-      <span className="text-xs font-bold uppercase text-muted-foreground">
-        Run scope
-      </span>
-      <span className="flex min-w-0 flex-wrap gap-1.5">
-        {qualitySummary ? (
-          <Badge variant={searchRunQualityBadgeVariant(qualitySummary)}>
-            quality {humanize(qualitySummary.status)} {qualitySummary.score}
-          </Badge>
-        ) : null}
-        <Badge variant={run.summary.coverage.length ? "warning" : "muted"}>
-          {formatCount(run.summary.coverage.length, "coverage gap")}
-        </Badge>
-        <Badge variant={run.summary.conceptGrounding.length ? "success" : "warning"}>
-          {formatCount(run.summary.conceptGrounding.length, "grounded concept")}
-        </Badge>
-        <Badge variant={run.summary.queryAspects.length ? "success" : "muted"}>
-          {formatCount(run.summary.queryAspects.length, "search aspect")}
-        </Badge>
-        {scopeLabels.map((label) => (
-          <Badge key={label} variant="muted">
-            {label}
-          </Badge>
-        ))}
-      </span>
-      {qualitySummary?.top_action ? (
-        <span className="min-w-0 break-words text-xs font-semibold text-muted-foreground">
-          Top action: {qualitySummary.top_action}
-        </span>
-      ) : null}
-      {remediationSummary ? (
-        <span className="min-w-0 break-words rounded-sm bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
-          Run remediation: {remediationSummary}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-function searchRunRemediationSummary(summary: RetrievalRunSummary): string | null {
-  const actions = summary.correctiveActionSummary;
-  if (actions.count > 0) {
-    const actionTypes = correctiveActionTypeCountEntries(actions.actionTypeCounts)
-      .slice(0, 3)
-      .map(([actionType, count]) => `${humanize(actionType)} ${count}`)
-      .join(", ");
-    const priority = actions.highestPriority ? `P${actions.highestPriority}` : "priority unreported";
-    const topAction = actions.topActionTitle ?? "inspect backend corrective actions";
-    return actionTypes
-      ? `${topAction} (${priority}; ${actionTypes})`
-      : `${topAction} (${priority})`;
-  }
-  if (summary.qualitySummary?.top_action) {
-    return summary.qualitySummary.top_action;
-  }
-  if (summary.qualityWarningCount > 0 || summary.warningCount > 0) {
-    return `inspect ${formatCount(
-      summary.qualityWarningCount + summary.warningCount,
-      "warning",
-    )} before using this evidence`;
-  }
-  if (summary.hitCount === 0) {
-    return "broaden search scope or inspect source inventory";
-  }
-  return null;
 }
 
 function SearchRunComparison({
@@ -2860,154 +2615,6 @@ function RunComparisonEvidenceChange({
   );
 }
 
-function SearchPresetStrip({
-  activePresetId,
-  isLoading,
-  onApplyPreset,
-  presets,
-}: {
-  activePresetId: string | null;
-  isLoading: boolean;
-  onApplyPreset: (preset: RetrievalSearchPreset) => void;
-  presets: RetrievalSearchPreset[];
-}) {
-  const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
-  const [presetSearch, setPresetSearch] = React.useState("");
-  const categories = uniqueValues(presets.map((preset) => preset.category));
-  const filteredPresets = presets.filter((preset) => {
-    if (categoryFilter && preset.category !== categoryFilter) return false;
-    return presetMatchesSearch(preset, presetSearch);
-  });
-
-  if (isLoading) {
-    return (
-      <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm font-semibold text-muted-foreground">
-        Loading retrieval presets
-      </div>
-    );
-  }
-
-  if (!presets.length) {
-    return (
-      <Notice title="No retrieval presets">
-        Add presets under the trusted knowledge directory to seed the query builder.
-      </Notice>
-    );
-  }
-
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-muted-foreground">
-          Search presets
-          <HelpTooltip label="Search presets help">
-            Data-driven examples loaded from trusted knowledge configuration. Applying one fills the query builder but does not run search until you submit.
-          </HelpTooltip>
-        </div>
-        <Badge variant="muted">
-          {filteredPresets.length}/{presets.length} data-driven
-        </Badge>
-      </div>
-      <div className="grid gap-2">
-        <Input
-          aria-label="Filter retrieval presets"
-          onChange={(event) => setPresetSearch(event.target.value)}
-          placeholder="Filter presets"
-          value={presetSearch}
-        />
-        {categories.length ? (
-          <div className="flex min-w-0 flex-wrap gap-2" aria-label="Preset categories">
-            <button
-              aria-pressed={!categoryFilter}
-              className={presetFilterClass(!categoryFilter)}
-              onClick={() => setCategoryFilter(null)}
-              type="button"
-            >
-              All
-            </button>
-            {categories.map((category) => {
-              const active = categoryFilter === category;
-              return (
-                <button
-                  aria-pressed={active}
-                  className={presetFilterClass(active)}
-                  key={category}
-                  onClick={() => setCategoryFilter(category)}
-                  type="button"
-                >
-                  {humanize(category)}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-      </div>
-      <div className="grid gap-2">
-        {filteredPresets.length ? null : (
-          <Notice title="No matching presets">
-            Adjust the preset filter or category to show trusted retrieval examples.
-          </Notice>
-        )}
-        {filteredPresets.map((preset) => {
-          const active = activePresetId === preset.preset_id;
-          return (
-            <button
-              aria-pressed={active}
-              className={cn(
-                "grid min-w-0 gap-1 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                active
-                  ? "border-primary bg-primary/10 text-foreground"
-                  : "border-border bg-card hover:bg-muted",
-              )}
-              key={preset.preset_id}
-              onClick={() => onApplyPreset(preset)}
-              title={preset.description}
-              type="button"
-            >
-              <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="break-words font-black">{preset.label}</span>
-                  {preset.category ? (
-                    <span className="rounded-full bg-muted px-2 py-1 text-xs font-bold text-muted-foreground">
-                      {humanize(preset.category)}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="rounded-full bg-muted px-2 py-1 text-xs font-bold text-muted-foreground">
-                  top {preset.top_k}
-                </span>
-              </span>
-              <span className="break-words text-xs leading-5 text-muted-foreground">
-                {preset.description}
-              </span>
-              {preset.target_sources.length || preset.launch_hint_targets.length ? (
-                <span className="flex min-w-0 flex-wrap gap-1 pt-1">
-                  {preset.target_sources.slice(0, 3).map((source) => (
-                    <span
-                      className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground"
-                      key={source}
-                    >
-                      {source}
-                    </span>
-                  ))}
-                  {preset.launch_hint_targets.slice(0, 2).map((target) => (
-                    <span
-                      className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground"
-                      key={target}
-                    >
-                      {humanize(target)}
-                    </span>
-                  ))}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function SearchResults({
   activeFilters,
   isSearchPending,
@@ -3060,10 +2667,16 @@ function SearchResults({
     : activeFilters;
   const resultFilterEntries = activeFilterEntries(resultFilters);
   const diversitySelections = diversitySelectionByEvidenceId(packageData);
+  const diversity = diversityFromPackage(packageData);
+  const ranking = rankingStackFromPackage(packageData);
   const runJudgments = runId
     ? judgmentsForRunHits(runId, packageData.hits, relevanceJudgments)
     : [];
   const judgmentMetrics = relevanceJudgmentMetrics(packageData.hits, runJudgments);
+  const requiredBuckets = (packageData.evidence_buckets ?? []).filter(
+    (bucket) => bucket.required,
+  );
+  const coveredRequiredBuckets = requiredBuckets.filter((bucket) => bucket.hit_count > 0);
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -3078,11 +2691,25 @@ function SearchResults({
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
           {isStale ? <Badge variant="warning">pending changes</Badge> : null}
           <Badge variant="muted">{packageData.trace.strategy}</Badge>
-          <DiversityBadge packageData={packageData} />
-          <RerankBadge packageData={packageData} />
+          <RuntimeDiversityBadge
+            enabled={diversity.enabled}
+            sourceCoverageLabel={formatSourceCoverage(diversity)}
+          />
+          <RuntimeRerankBadge enabled={ranking.reranker.enabled} />
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 pt-4">
+        <RankedEvidenceTriage
+          view={{
+            candidateCount: packageData.trace.candidates_seen,
+            coveredRequiredBucketCount: coveredRequiredBuckets.length,
+            hitCount: packageData.hits.length,
+            isStale,
+            judgedCount: judgmentMetrics.judgedCount,
+            qualitySummary: packageData.quality_summary ?? null,
+            requiredBucketCount: requiredBuckets.length,
+          }}
+        />
         <RetrievalSearchCockpit
           isSearchPending={isSearchPending}
           onClearAllFilters={onClearAllFilters}
@@ -3095,9 +2722,11 @@ function SearchResults({
           packageData={packageData}
           submittedSearchPayload={submittedSearchPayload}
         />
+        <RetrievalReviewPathPanel packageData={packageData} />
         <EvidenceInterpretationPanel packageData={packageData} />
         {submittedSearchPayload ? (
           <SubmittedSearchSummary
+            filters={activeFilterEntries(activeFacetFiltersFromPayload(submittedSearchPayload))}
             isRestoreDisabled={isSearchPending}
             isStale={isStale}
             onRestore={onRestoreSubmittedSearch}
@@ -3112,6 +2741,9 @@ function SearchResults({
           persistedSummary={persistedJudgmentSummary}
         />
         <EvidenceReadinessPanel
+          filterFieldLabel={filterFieldLabel}
+          formatFilterValue={formatFilterValue}
+          getBucketSuggestedFilter={bucketSuggestedFilter}
           isSearchPending={isSearchPending}
           onApplyBucketFilter={onApplyFacet}
           packageData={packageData}
@@ -3119,16 +2751,24 @@ function SearchResults({
         <RecommendedActionsPanel
           activeFilters={resultFilterEntries}
           actions={packageData.recommended_actions ?? []}
+          filterFieldLabel={filterFieldLabel}
+          formatFilterValue={formatFilterValue}
+          getActionFilter={recommendedActionFilter}
+          getActionSourceLabel={recommendedActionSourceLabel}
           isSearchPending={isSearchPending}
           onApplyFilter={onApplyFacet}
           onClearAllFilters={onClearAllFilters}
-          onClearFilter={onClearFilter}
+          onClearSourceScope={() => onClearFilter("source_id")}
         />
         <EvidencePackBuckets buckets={packageData.evidence_buckets ?? []} />
         <EvidenceSupportMatrix
-          packageData={packageData}
-          relevanceJudgments={relevanceJudgments}
-          runId={runId}
+          formatCount={formatCount}
+          formatScore={formatScore}
+          humanize={humanize}
+          judgmentBadgeVariant={judgmentBadgeVariant}
+          judgmentLabel={judgmentLabel}
+          rows={evidenceSupportMatrixRows(packageData, relevanceJudgments, runId)}
+          supportStatusBadgeVariant={supportStatusBadgeVariant}
         />
         <ResultFacets
           activeFilters={resultFilters}
@@ -3156,497 +2796,28 @@ function SearchResults({
         ))}
         {!packageData.hits.length ? (
           <NoResultRemediationPanel
+            candidateCount={packageData.trace.candidates_seen}
+            filterFieldLabel={filterFieldLabel}
             isSearchPending={isSearchPending}
+            missingBucketCount={(packageData.evidence_buckets ?? []).filter(
+              (bucket) => bucket.required && bucket.hit_count === 0,
+            ).length}
+            onApplyFacet={onApplyFacet}
             onClearAllFilters={onClearAllFilters}
             onClearFilter={onClearFilter}
-            onApplyFacet={onApplyFacet}
-            packageData={packageData}
-            submittedSearchPayload={submittedSearchPayload}
+            submittedFilters={
+              submittedSearchPayload
+                ? activeFilterEntries(activeFacetFiltersFromPayload(submittedSearchPayload))
+                : []
+            }
+            suggestedAction={firstSupportedRecommendedAction(
+              packageData.recommended_actions ?? [],
+            )}
           />
         ) : null}
       </CardContent>
     </Card>
   );
-}
-
-function EvidenceInterpretationPanel({ packageData }: { packageData: RetrievalPackage }) {
-  const topHit = packageData.hits[0] ?? null;
-  const topHitProvenance = topHit
-    ? provenanceEntriesFromEvidence(topHit.evidence)
-    : [];
-  const topHitSupport = topHit
-    ? evidenceSupportSummary(topHit, topHitProvenance)
-    : null;
-  const topHitExplanation = topHit
-    ? hitMatchExplanation({
-        aspectMatches: queryAspectMatchesFromHit(topHit),
-        buckets: packageData.evidence_buckets ?? [],
-        conceptMatches: conceptMatchesFromHit(topHit),
-        hit: topHit,
-        provenanceEntries: topHitProvenance,
-        rankingBoostSignals: rankingBoostSignalsFromHit(topHit),
-        scoreComponents: scoreComponentsFromHit(topHit),
-      })
-    : null;
-  const requiredBuckets = packageData.evidence_buckets?.filter((bucket) => bucket.required) ?? [];
-  const missingRequiredBuckets = requiredBuckets.filter((bucket) => bucket.hit_count === 0);
-  const primaryAction = [...(packageData.recommended_actions ?? [])].sort(
-    (left, right) => left.priority - right.priority,
-  )[0] ?? null;
-  const warnings = [
-    ...(packageData.trace.warnings ?? []),
-    ...((packageData.coverage?.warnings ?? []) as string[]),
-  ].filter((warning) => warning.trim());
-  const coverageItemCount =
-    (packageData.coverage?.standard_system.length ?? 0) +
-    (packageData.coverage?.query_aspects?.length ?? 0);
-  const backendInterpretation = packageData.interpretation ?? null;
-  const interpretation = evidenceInterpretationSummary({
-    backendInterpretation,
-    missingRequiredBuckets,
-    packageData,
-    primaryAction,
-    requiredBuckets,
-    topHit,
-    topHitExplanation,
-    topHitSupport,
-    warnings,
-  });
-
-  return (
-    <section className="grid gap-3 rounded-md border border-border bg-card p-3">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="text-xs font-black uppercase text-muted-foreground">
-              Evidence interpretation
-            </div>
-            <Badge variant={interpretation.variant}>{interpretation.status}</Badge>
-            {interpretation.supportStatus ? (
-              <Badge variant={supportStatusBadgeVariant(interpretation.supportStatus)}>
-                {interpretation.supportStatus} support
-              </Badge>
-            ) : null}
-          </div>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            {interpretation.summary}
-          </p>
-        </div>
-        <HelpTooltip label="Evidence interpretation help">
-          This panel summarizes the search package using backend trace data, evidence buckets, score drivers, matched terms, and recommended actions. It is for workflow evidence review, not clinical advice.
-        </HelpTooltip>
-      </div>
-
-      <div className="grid gap-2 lg:grid-cols-3">
-        <InterpretationCard
-          label="Why the top result matched"
-          title={interpretation.topSourceId ?? topHit?.evidence.source_id ?? "No ranked result"}
-          detail={
-            interpretation.topScoreDriver
-              ? interpretation.topScoreDriver
-              : interpretation.matchedTerms.length
-              ? `Matched terms: ${interpretation.matchedTerms.join(", ")}`
-              : "No ranked evidence was returned for this request."
-          }
-          items={[
-            interpretation.conceptLabels.length
-              ? `Concepts: ${interpretation.conceptLabels.join(", ")}`
-              : null,
-            interpretation.aspectLabels.length
-              ? `Aspects: ${interpretation.aspectLabels.join(", ")}`
-              : null,
-            topHitSupport
-              ? `${formatCount(topHitSupport.provenance_field_count, "provenance field")} / ${formatCount(topHitSupport.ranking_signal_count, "ranking signal")}`
-              : null,
-          ]}
-        />
-        <InterpretationCard
-          label="Coverage"
-          title={
-            interpretation.requiredBucketCount
-              ? `${interpretation.coveredRequiredBucketCount}/${interpretation.requiredBucketCount} required buckets`
-              : "No required bucket policy"
-          }
-          detail={
-            interpretation.missingRequiredBuckets.length
-              ? `Missing required support: ${interpretation.missingRequiredBuckets.join(", ")}`
-              : "The package has no missing required evidence buckets."
-          }
-          items={[
-            packageData.coverage
-              ? `${formatCount(coverageItemCount, "coverage item")} checked`
-              : null,
-            warnings.length ? `${formatCount(warnings.length, "warning")} raised` : null,
-          ]}
-        />
-        <InterpretationCard
-          label="Next action"
-          title={primaryAction?.title ?? interpretation.nextActionTitle}
-          detail={primaryAction?.description ?? interpretation.nextActionDetail}
-          items={[
-            primaryAction ? `Priority ${primaryAction.priority}` : null,
-            primaryAction ? humanize(primaryAction.action_type) : null,
-          ]}
-        />
-      </div>
-    </section>
-  );
-}
-
-function InterpretationCard({
-  detail,
-  items,
-  label,
-  title,
-}: {
-  detail: string;
-  items: Array<string | null>;
-  label: string;
-  title: string;
-}) {
-  const visibleItems = items.filter((item): item is string => Boolean(item));
-  return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="text-xs font-black uppercase text-muted-foreground">{label}</div>
-      <div className="break-words text-sm font-black">{title}</div>
-      <p className="break-words text-sm leading-6 text-muted-foreground">{detail}</p>
-      {visibleItems.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {visibleItems.map((item) => (
-            <Badge className="max-w-full whitespace-normal break-words leading-4" key={item} variant="muted">
-              {item}
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function evidenceInterpretationSummary({
-  backendInterpretation,
-  missingRequiredBuckets,
-  packageData,
-  primaryAction,
-  requiredBuckets,
-  topHit,
-  topHitExplanation,
-  topHitSupport,
-  warnings,
-}: {
-  backendInterpretation: RetrievalInterpretation | null;
-  missingRequiredBuckets: RetrievalEvidenceBucket[];
-  packageData: RetrievalPackage;
-  primaryAction: RetrievalRecommendedAction | null;
-  requiredBuckets: RetrievalEvidenceBucket[];
-  topHit: RetrievalHit | null;
-  topHitExplanation: HitMatchExplanation | null;
-  topHitSupport: EvidenceSupportSummary | null;
-  warnings: string[];
-}): {
-  nextActionDetail: string;
-  nextActionTitle: string;
-  supportStatus: EvidenceSupportMatrixRow["supportStatus"] | null;
-  status: string;
-  summary: string;
-  topScoreDriver: string | null;
-  topSourceId: string | null;
-  matchedTerms: string[];
-  conceptLabels: string[];
-  aspectLabels: string[];
-  requiredBucketCount: number;
-  coveredRequiredBucketCount: number;
-  missingRequiredBuckets: string[];
-  variant: React.ComponentProps<typeof Badge>["variant"];
-} {
-  if (backendInterpretation) {
-    const supportStatus = hitSupportStatusValue(backendInterpretation.support_status);
-    return {
-      nextActionDetail:
-        backendInterpretation.next_action_detail ??
-        primaryAction?.description ??
-        "Review backend interpretation and evidence details.",
-      nextActionTitle:
-        backendInterpretation.next_action_title ??
-        primaryAction?.title ??
-        "Review evidence",
-      supportStatus,
-      status: humanize(backendInterpretation.status),
-      summary: backendInterpretation.summary,
-      topScoreDriver: backendInterpretation.top_score_driver ?? null,
-      topSourceId: backendInterpretation.top_source_id ?? null,
-      matchedTerms: backendInterpretation.matched_terms ?? [],
-      conceptLabels: backendInterpretation.concept_labels ?? [],
-      aspectLabels: backendInterpretation.aspect_labels ?? [],
-      requiredBucketCount: backendInterpretation.required_bucket_count,
-      coveredRequiredBucketCount: backendInterpretation.covered_required_bucket_count,
-      missingRequiredBuckets: backendInterpretation.missing_required_buckets ?? [],
-      variant: supportStatus ? supportStatusBadgeVariant(supportStatus) : "muted",
-    };
-  }
-
-  if (!topHit) {
-    return {
-      nextActionDetail:
-        primaryAction?.description ??
-        "Broaden search terms, clear exact source filters, or reindex the trusted source inventory.",
-      nextActionTitle: primaryAction?.title ?? "Broaden or reindex",
-      supportStatus: null,
-      status: "no ranked evidence",
-      summary:
-        "No ranked evidence was returned. Treat this as a search coverage problem until filters, source inventory, and backend warnings have been reviewed.",
-      topScoreDriver: null,
-      topSourceId: null,
-      matchedTerms: [],
-      conceptLabels: [],
-      aspectLabels: [],
-      requiredBucketCount: requiredBuckets.length,
-      coveredRequiredBucketCount: requiredBuckets.length - missingRequiredBuckets.length,
-      missingRequiredBuckets: missingRequiredBuckets.map((bucket) => bucket.label),
-      variant: "warning",
-    };
-  }
-
-  if (missingRequiredBuckets.length) {
-    return {
-      nextActionDetail:
-        primaryAction?.description ??
-        "Add or broaden sources for the missing required evidence buckets before relying on the package.",
-      nextActionTitle: primaryAction?.title ?? "Resolve support gaps",
-      supportStatus: topHitExplanation?.supportStatus ?? null,
-      status: "support gaps",
-      summary: `The top result is ${topHit.evidence.source_id}, but required support is missing for ${missingRequiredBuckets.map((bucket) => bucket.label).join(", ")}.`,
-      topScoreDriver: topHitExplanation?.topScoreDriver ?? null,
-      topSourceId: topHit.evidence.source_id,
-      matchedTerms: topHitExplanation?.matchedTerms ?? [],
-      conceptLabels: topHitExplanation?.conceptLabels ?? [],
-      aspectLabels: topHitExplanation?.aspectLabels ?? [],
-      requiredBucketCount: requiredBuckets.length,
-      coveredRequiredBucketCount: requiredBuckets.length - missingRequiredBuckets.length,
-      missingRequiredBuckets: missingRequiredBuckets.map((bucket) => bucket.label),
-      variant: "warning",
-    };
-  }
-
-  if (warnings.length) {
-    return {
-      nextActionDetail:
-        primaryAction?.description ??
-        "Review warnings and compare score drivers before using the ranking order.",
-      nextActionTitle: primaryAction?.title ?? "Review warnings",
-      supportStatus: topHitExplanation?.supportStatus ?? null,
-      status: "review warnings",
-      summary: `The package returned ${formatCount(packageData.hits.length, "ranked hit")}; warnings indicate the search may need review before the result order is trusted.`,
-      topScoreDriver: topHitExplanation?.topScoreDriver ?? null,
-      topSourceId: topHit.evidence.source_id,
-      matchedTerms: topHitExplanation?.matchedTerms ?? [],
-      conceptLabels: topHitExplanation?.conceptLabels ?? [],
-      aspectLabels: topHitExplanation?.aspectLabels ?? [],
-      requiredBucketCount: requiredBuckets.length,
-      coveredRequiredBucketCount: requiredBuckets.length - missingRequiredBuckets.length,
-      missingRequiredBuckets: [],
-      variant: "warning",
-    };
-  }
-
-  const supportStatus = topHitExplanation?.supportStatus ?? "partial";
-  const supportText = topHitSupport
-    ? `${formatCount(topHitSupport.matched_term_count, "matched term")}, ${formatCount(topHitSupport.provenance_field_count, "provenance field")}, and ${formatCount(topHitSupport.ranking_signal_count, "ranking signal")}`
-    : "available support signals";
-  return {
-    nextActionDetail:
-      primaryAction?.description ??
-      "Inspect the top evidence claim and optionally record a relevance judgment for evaluation.",
-    nextActionTitle: primaryAction?.title ?? "Review top evidence",
-    supportStatus,
-    status: supportStatus === "strong" ? "ready to review" : "needs review",
-    summary: `The top result is ${topHit.evidence.source_id}. It has ${supportStatus} operational support from ${supportText}.`,
-    topScoreDriver: topHitExplanation?.topScoreDriver ?? null,
-    topSourceId: topHit.evidence.source_id,
-    matchedTerms: topHitExplanation?.matchedTerms ?? [],
-    conceptLabels: topHitExplanation?.conceptLabels ?? [],
-    aspectLabels: topHitExplanation?.aspectLabels ?? [],
-    requiredBucketCount: requiredBuckets.length,
-    coveredRequiredBucketCount: requiredBuckets.length - missingRequiredBuckets.length,
-    missingRequiredBuckets: [],
-    variant: supportStatusBadgeVariant(supportStatus),
-  };
-}
-
-function SearchAnswerCard({
-  packageData,
-  submittedSearchPayload,
-}: {
-  packageData: RetrievalPackage;
-  submittedSearchPayload: RetrievalSearchPayload | null;
-}) {
-  const { copiedKey, markCopied } = useCopyFeedback();
-  const copyKey = "retrieval-answer-report";
-  const qualitySummary = packageData.quality_summary ?? null;
-  const topHit = packageData.hits[0] ?? null;
-  const actions = packageData.recommended_actions ?? [];
-  const requiredBuckets = packageData.evidence_buckets?.filter((bucket) => bucket.required) ?? [];
-  const missingBuckets = requiredBuckets.filter((bucket) => bucket.hit_count === 0);
-  const warnings = [
-    ...(packageData.trace.warnings ?? []),
-    ...((packageData.coverage?.warnings ?? []) as string[]),
-  ].filter((warning) => warning.trim());
-  const remediation =
-    packageData.remediation_summary ??
-    optionalStringValue(packageData.handoff_context.remediation_summary) ??
-    searchAnswerFallbackRemediation(packageData);
-  const status = searchAnswerStatus(packageData);
-  const copied = copiedKey === copyKey;
-
-  const copyReport = async () => {
-    await copyTextToClipboard(
-      JSON.stringify(
-        searchAnswerReportFromPackage(packageData, submittedSearchPayload, {
-          missingBucketLabels: missingBuckets.map((bucket) => bucket.label),
-          remediation,
-          status,
-          warningCount: warnings.length,
-        }),
-        null,
-        2,
-      ),
-    );
-    markCopied(copyKey);
-  };
-
-  return (
-    <section
-      aria-label="Search answer"
-      className="grid gap-3 rounded-md border border-primary/25 bg-primary/5 p-3"
-    >
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="text-xs font-black uppercase text-muted-foreground">
-              Search answer
-            </div>
-            <Badge variant={status.variant}>{status.label}</Badge>
-            {qualitySummary ? (
-              <Badge variant={qualitySummaryBadgeVariant(qualitySummary)}>
-                readiness {qualitySummary.score}/100
-              </Badge>
-            ) : null}
-            <Badge variant="muted">{formatCount(packageData.hits.length, "hit")}</Badge>
-          </div>
-          <div className="mt-2 max-w-4xl break-words text-base font-black leading-7">
-            {remediation}
-          </div>
-          <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">
-            This is an evidence retrieval summary for workflow operations. It explains source
-            support and search quality; it is not clinical advice.
-          </p>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Button
-            aria-label="Copy retrieval answer report"
-            onClick={() => void copyReport()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {copied ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : (
-              <Clipboard className="h-4 w-4" />
-            )}
-            {copied ? "Copied" : "Copy answer JSON"}
-          </Button>
-          <HelpTooltip label="Answer JSON report help">
-            Copies the plain-language retrieval answer, readiness, warnings, top evidence, missing required buckets, and recommended backend actions.
-          </HelpTooltip>
-        </div>
-      </div>
-
-      <div className="grid gap-2 md:grid-cols-3">
-        <SearchAnswerMetric
-          label="Top evidence"
-          value={topHit?.evidence.source_id ?? "No ranked source"}
-          detail={
-            topHit
-              ? `${humanize(topHit.evidence.source_type)} / ${topHit.evidence.trust_level}`
-              : "Broaden scope or inspect inventory before treating this as evidence absence."
-          }
-        />
-        <SearchAnswerMetric
-          label="Required support"
-          value={
-            requiredBuckets.length
-              ? `${requiredBuckets.length - missingBuckets.length}/${requiredBuckets.length} covered`
-              : "No bucket policy"
-          }
-          detail={
-            missingBuckets.length
-              ? `Missing: ${missingBuckets.map((bucket) => bucket.label).join(", ")}`
-              : "Required evidence buckets are covered for this package."
-          }
-        />
-        <SearchAnswerMetric
-          label="Backend actions"
-          value={actions.length ? formatCount(actions.length, "action") : "No action"}
-          detail={
-            actions[0]
-              ? `${actions[0].title} / ${humanize(actions[0].action_type)}`
-              : "No corrective action was generated by the quality policy."
-          }
-        />
-      </div>
-
-      {warnings.length ? (
-        <div className="grid gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5">
-          <div className="font-black uppercase text-amber-800">
-            Coverage warnings
-          </div>
-          {warnings.slice(0, 3).map((warning) => (
-            <div className="break-words text-amber-900" key={warning}>
-              {warning}
-            </div>
-          ))}
-          {warnings.length > 3 ? (
-            <div className="font-semibold text-amber-900">
-              {formatCount(warnings.length - 3, "additional warning")} hidden in detailed panels.
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function SearchAnswerMetric({
-  detail,
-  label,
-  value,
-}: {
-  detail: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-md border border-border bg-card px-3 py-2">
-      <div className="text-xs font-black uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-black">{value}</div>
-      <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-        {detail}
-      </div>
-    </div>
-  );
-}
-
-function searchAnswerStatus(packageData: RetrievalPackage): {
-  label: string;
-  variant: "default" | "success" | "warning" | "destructive" | "muted";
-} {
-  if (!packageData.hits.length) return { label: "No evidence hit", variant: "destructive" };
-  const qualityStatus = packageData.quality_summary?.status;
-  if (qualityStatus === "blocked") return { label: "Blocked", variant: "destructive" };
-  if (qualityStatus === "review") return { label: "Needs review", variant: "warning" };
-  if (packageData.trace.warnings.length) return { label: "Review warnings", variant: "warning" };
-  return { label: "Evidence ready", variant: "success" };
 }
 
 function searchAnswerFallbackRemediation(packageData: RetrievalPackage): string {
@@ -3658,52 +2829,48 @@ function searchAnswerFallbackRemediation(packageData: RetrievalPackage): string 
   return "Review the top evidence hit, readiness score, and source provenance before using this package.";
 }
 
-function searchAnswerReportFromPackage(
-  packageData: RetrievalPackage,
+function retrievalSearchPlanPreviewReport(
+  packageData: RetrievalPackage | undefined,
   submittedSearchPayload: RetrievalSearchPayload | null,
-  summary: {
-    missingBucketLabels: string[];
-    remediation: string;
-    status: { label: string; variant: string };
-    warningCount: number;
-  },
+  planData: RetrievalPlan | undefined,
 ) {
-  const topHit = packageData.hits[0] ?? null;
+  const analysis = packageData
+    ? queryAnalysisFromPackage(packageData)
+    : queryAnalysisFromPlan(planData!);
   return {
-    report_type: "retrieval_search_answer",
+    report_type: "retrieval_search_plan_preview",
     version: 1,
     generated_at: new Date().toISOString(),
-    query: submittedSearchPayload?.query ?? null,
-    status: summary.status.label,
-    remediation_summary: summary.remediation,
-    interpretation: retrievalInterpretationReport(packageData),
-    standard_search_plan: retrievalStandardSearchPlanReport(packageData),
-    medical_search_hints: medicalSearchHintReport(packageData),
-    diversity: retrievalDiversityReport(packageData),
-    readiness: packageData.quality_summary,
-    warnings: {
-      count: summary.warningCount,
-      trace: packageData.trace.warnings,
-      coverage: packageData.coverage?.warnings ?? [],
+    submitted_payload: submittedSearchPayload,
+    plan_query: planData?.query ?? null,
+    search_signature:
+      packageData ? serverSearchSignatureFromPackage(packageData) : planData?.search_signature ?? null,
+    route: {
+      strategy: packageData?.trace.strategy ?? analysis.strategy,
+      profile: analysis.queryProfile,
+      quality_summary: packageData?.quality_summary ?? null,
     },
-    required_support: {
-      missing_buckets: summary.missingBucketLabels,
-      buckets: packageData.evidence_buckets ?? [],
+    query_planning: {
+      detected_concepts: analysis.detectedConcepts,
+      standards: analysis.standards,
+      rule_ids: analysis.ruleIds,
+      aspects: analysis.queryAspects,
+      retrieval_tasks: analysis.retrievalTasks,
+      coverage_summary: searchPlanCoverageSummary(analysis),
+      task_summary: searchPlanTaskSummary(analysis),
+      risk_signals: searchPlanRiskSignals(analysis),
+      diagnostics: analysis.diagnostics,
+      filter_suggestions: analysis.filterSuggestions,
+      rewrites: packageData ? queryVariantsFromTrace(packageData.trace) : queryVariantsFromAnalysis(analysis),
     },
-    top_evidence: topHit
-      ? {
-          evidence_id: topHit.evidence.evidence_id,
-          source_id: topHit.evidence.source_id,
-          source_type: topHit.evidence.source_type,
-          trust_level: topHit.evidence.trust_level,
-          claim: formatClaim(topHit.evidence.claim),
-          score: topHit.score,
-          match_explanation: topHit.match_explanation ?? null,
-        }
-      : null,
-    recommended_actions: (packageData.recommended_actions ?? [])
-      .slice(0, 6)
-      .map(correctiveActionReportItem),
+    medical_search_hints: analysis.searchHints,
+    standard_search_plan: packageData ? retrievalStandardSearchPlanReport(packageData) : null,
+    trace: {
+      candidates_seen: packageData?.trace.candidates_seen ?? null,
+      filters_applied: packageData?.trace.filters_applied ?? planData?.query.filters ?? {},
+      warnings: packageData?.trace.warnings ?? [],
+      safety_flags: packageData?.trace.safety_flags ?? [],
+    },
   };
 }
 
@@ -3748,151 +2915,6 @@ function retrievalInterpretationReport(packageData: RetrievalPackage) {
   };
 }
 
-function NoResultRemediationPanel({
-  isSearchPending,
-  onApplyFacet,
-  onClearAllFilters,
-  onClearFilter,
-  packageData,
-  submittedSearchPayload,
-}: {
-  isSearchPending: boolean;
-  onApplyFacet: (field: SupportedFilterField, value: string) => void;
-  onClearAllFilters: () => void;
-  onClearFilter: (field: SupportedFilterField) => void;
-  packageData: RetrievalPackage;
-  submittedSearchPayload: RetrievalSearchPayload | null;
-}) {
-  const submittedFilters = submittedSearchPayload
-    ? activeFilterEntries(activeFacetFiltersFromPayload(submittedSearchPayload))
-    : [];
-  const sourceFilter = submittedFilters.find((filter) => filter.field === "source_id");
-  const suggestedAction = firstSupportedRecommendedAction(packageData.recommended_actions ?? []);
-  const missingBucketCount = (packageData.evidence_buckets ?? []).filter(
-    (bucket) => bucket.required && bucket.hit_count === 0,
-  ).length;
-  const candidateCount = packageData.trace.candidates_seen;
-  return (
-    <div className="grid gap-3 rounded-md border border-amber-200 bg-amber-50 p-4">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-black">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
-            No matching evidence returned
-          </div>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-            The backend completed the search, but no ranked evidence hit is available for this exact request. Use the remediation checks below before trusting the result as evidence absence.
-          </p>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant="warning">{formatCount(candidateCount, "candidate")}</Badge>
-          {missingBucketCount ? (
-            <Badge variant="warning">{formatCount(missingBucketCount, "required gap")}</Badge>
-          ) : null}
-          {submittedFilters.length ? (
-            <Badge variant="muted">{formatCount(submittedFilters.length, "active filter")}</Badge>
-          ) : null}
-        </div>
-      </div>
-      <div className="grid gap-2 md:grid-cols-3">
-        <NoResultActionCard
-          title={submittedFilters.length ? "Loosen scope" : "Broaden query"}
-          text={
-            submittedFilters.length
-              ? "The submitted search has active filters. Remove exact source, standard, domain, or trust filters if you need broader evidence."
-              : "Try fewer exact terms, add field names, or start from a trusted preset when the query is too narrow."
-          }
-        >
-          {submittedFilters.length ? (
-            <div className="grid gap-2">
-              <div className="flex min-w-0 flex-wrap gap-1.5">
-                {submittedFilters.map((filter) => (
-                  <Badge className="max-w-full break-words" key={filter.field} variant="muted">
-                    {filter.label}: {filter.displayValue}
-                  </Badge>
-                ))}
-              </div>
-              <div className="flex min-w-0 flex-wrap gap-1.5">
-                {sourceFilter ? (
-                  <Button
-                    disabled={isSearchPending}
-                    onClick={() => onClearFilter("source_id")}
-                    size="sm"
-                    title="Clear exact source scope and rerun search"
-                    type="button"
-                    variant="outline"
-                  >
-                    <X className="h-4 w-4" />
-                    Clear source scope
-                  </Button>
-                ) : null}
-                <Button
-                  disabled={isSearchPending}
-                  onClick={onClearAllFilters}
-                  size="sm"
-                  title="Clear all active metadata filters and rerun search"
-                  type="button"
-                  variant="outline"
-                >
-                  <ListFilter className="h-4 w-4" />
-                  Clear all filters
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </NoResultActionCard>
-        <NoResultActionCard
-          title={candidateCount ? "Inspect quality gaps" : "Check source inventory"}
-          text={
-            candidateCount
-              ? "Candidates were seen, so review readiness, evidence buckets, and strategy recommendations for why none became usable hits."
-              : "No candidates were seen. Reindex the trusted corpus or confirm the source inventory contains the domain and standard you need."
-          }
-        />
-        <NoResultActionCard
-          title={suggestedAction ? "Apply backend suggestion" : "Use guided presets"}
-          text={
-            suggestedAction
-              ? "A backend corrective action has a supported filter. Apply it only if it matches the evidence class you need."
-              : "No supported corrective filter was returned. Use a preset or adjust schema, format, fields, and source scope."
-          }
-        >
-          {suggestedAction ? (
-            <Button
-              disabled={isSearchPending}
-              onClick={() => onApplyFacet(suggestedAction.field, suggestedAction.value)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <ListFilter className="h-4 w-4" />
-              Apply {filterFieldLabel(suggestedAction.field)}
-            </Button>
-          ) : null}
-        </NoResultActionCard>
-      </div>
-    </div>
-  );
-}
-
-function NoResultActionCard({
-  children,
-  text,
-  title,
-}: {
-  children?: React.ReactNode;
-  text: string;
-  title: string;
-}) {
-  return (
-    <div className="grid content-start gap-2 rounded-md border border-amber-200 bg-card px-3 py-2">
-      <div className="font-black">{title}</div>
-      <p className="text-sm leading-6 text-muted-foreground">{text}</p>
-      {children}
-    </div>
-  );
-}
-
 function firstSupportedRecommendedAction(
   actions: RetrievalRecommendedAction[],
 ): CoverageFilterAction | null {
@@ -3901,56 +2923,6 @@ function firstSupportedRecommendedAction(
     if (filterAction) return filterAction;
   }
   return null;
-}
-
-function RetrievalFirstRunGuide() {
-  return (
-    <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-black">
-            <FileSearch className="h-4 w-4 text-primary" />
-            Start with a concrete healthcare data question
-          </div>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Retrieval finds trusted schema, terminology, policy, and corpus evidence. It is best for explaining data operations, validation findings, and workflow grounding.
-          </p>
-        </div>
-        <Badge variant="muted">first search guide</Badge>
-      </div>
-      <div className="grid gap-2 md:grid-cols-3">
-        <FirstRunGuideCard
-          title="1. Pick a preset"
-          text="Use presets for common lab, FHIR-like, PHI, and standards questions. They fill the builder safely."
-        />
-        <FirstRunGuideCard
-          title="2. Add context"
-          text="Fields, schema, format, and source filters narrow evidence. Leave them blank when you need broad discovery."
-        />
-        <FirstRunGuideCard
-          title="3. Read readiness first"
-          text="After search, check readiness, strategy recommendations, and evidence buckets before individual hits."
-        />
-      </div>
-      <div className="grid gap-2 rounded-md border border-border bg-card p-3 text-sm">
-        <div className="font-black">Good starter questions</div>
-        <ul className="grid gap-1 text-muted-foreground">
-          <li>Validate lab CSV fields and explain missing unit issues.</li>
-          <li>Find trusted evidence for FHIR Observation mapping.</li>
-          <li>Which fields are sensitive patient information in this dataset?</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-function FirstRunGuideCard({ text, title }: { text: string; title: string }) {
-  return (
-    <div className="rounded-md border border-border bg-card px-3 py-2">
-      <div className="font-black">{title}</div>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{text}</p>
-    </div>
-  );
 }
 
 function RetrievalSearchCockpit({
@@ -4094,7 +3066,7 @@ function RetrievalSearchCockpit({
         isSearchPending={isSearchPending}
         items={queryHealth}
         onClearAllFilters={onClearAllFilters}
-        onClearFilter={onClearFilter}
+        onClearSourceScope={() => onClearFilter("source_id")}
       />
 
       <SearchReadinessChecklist items={readinessChecklist} />
@@ -4142,12 +3114,14 @@ function RetrievalSearchCockpit({
       </div>
 
       <StrategyRecommendationsPanel
+        getSuggestedFilterAction={suggestedFilterAction}
         isSearchPending={isSearchPending}
         onApplyFilter={onApplyFilter}
         recommendations={strategyRecommendations}
       />
 
       <StandardSearchPlanPanel
+        getSuggestedFilterAction={suggestedFilterAction}
         isSearchPending={isSearchPending}
         onApplyFilter={onApplyFilter}
         plan={standardSearchPlan}
@@ -4266,121 +3240,6 @@ function RetrievalSearchCockpit({
         </div>
       </div>
     </section>
-  );
-}
-
-function QueryHealthPanel({
-  activeFilters,
-  isSearchPending,
-  items,
-  onClearAllFilters,
-  onClearFilter,
-}: {
-  activeFilters: ActiveFilterEntry[];
-  isSearchPending: boolean;
-  items: QueryHealthItem[];
-  onClearAllFilters: () => void;
-  onClearFilter: (field: SupportedFilterField) => void;
-}) {
-  const overconstrained = items.some(
-    (item) => item.code === "diagnostic_overconstrained_metadata_filters",
-  );
-  const sourceFilter = activeFilters.find((filter) => filter.field === "source_id");
-  return (
-    <div
-      aria-label="Query health checklist"
-      className="grid gap-2 rounded-md border border-border bg-card p-3"
-    >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
-          Query health
-          <HelpTooltip label="Query health help">
-            Data-derived checklist for search scope and interpretation risk. Review warnings before trusting the ranked evidence.
-          </HelpTooltip>
-        </div>
-        <Badge variant={queryHealthOverallVariant(items)}>
-          {queryHealthOverallLabel(items)}
-        </Badge>
-      </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => (
-          <div
-            className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm"
-            key={item.code}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-black">{item.label}</span>
-              <Badge variant={queryHealthBadgeVariant(item.status)}>
-                {humanize(item.status)}
-              </Badge>
-            </div>
-            <div className="break-words text-xs leading-5 text-muted-foreground">
-              {item.description}
-            </div>
-            {item.code === "diagnostic_overconstrained_metadata_filters" ? (
-              <div className="flex min-w-0 flex-wrap gap-1.5 pt-1">
-                {sourceFilter ? (
-                  <Button
-                    disabled={isSearchPending}
-                    onClick={() => onClearFilter("source_id")}
-                    size="sm"
-                    title="Clear exact source scope and rerun search"
-                    type="button"
-                    variant="outline"
-                  >
-                    <X className="h-4 w-4" />
-                    Clear source scope
-                  </Button>
-                ) : null}
-                <Button
-                  disabled={isSearchPending || !activeFilters.length}
-                  onClick={onClearAllFilters}
-                  size="sm"
-                  title="Clear all active metadata filters and rerun search"
-                  type="button"
-                  variant="outline"
-                >
-                  <ListFilter className="h-4 w-4" />
-                  Broaden search
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-      {overconstrained ? (
-        <SectionHelpText>
-          These actions broaden the submitted search and rerun retrieval. Use them before deciding the corpus lacks evidence.
-        </SectionHelpText>
-      ) : null}
-    </div>
-  );
-}
-
-function CockpitMetricCard({
-  helpText,
-  label,
-  supporting,
-  tone,
-  value,
-}: {
-  helpText: string;
-  label: string;
-  supporting: string;
-  tone: "success" | "warning" | "info";
-  value: string;
-}) {
-  return (
-    <div className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2">
-      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-        {label}
-        <HelpTooltip label={`${label} help`}>{helpText}</HelpTooltip>
-      </span>
-      <Badge variant={tone === "info" ? "default" : tone}>{value}</Badge>
-      <span className="break-words text-xs leading-5 text-muted-foreground">
-        {supporting}
-      </span>
-    </div>
   );
 }
 
@@ -4511,54 +3370,6 @@ function queryHealthItems(
   ];
 }
 
-function SearchReadinessChecklist({
-  items,
-}: {
-  items: SearchReadinessChecklistItem[];
-}) {
-  const overallVariant = queryHealthOverallVariant(items);
-  const overallLabel = queryHealthOverallLabel(items);
-  return (
-    <section
-      aria-label="Search readiness checklist"
-      className="grid gap-2 rounded-md border border-border bg-card p-3"
-    >
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-xs font-black uppercase text-muted-foreground">
-            Search readiness checklist
-          </div>
-          <div className="mt-1 break-words text-sm font-semibold text-muted-foreground">
-            Fast review of whether this search package is ready to inspect,
-            needs human review, or should be remediated before downstream use.
-          </div>
-        </div>
-        <Badge variant={overallVariant}>{humanize(overallLabel)}</Badge>
-      </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        {items.map((item) => (
-          <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-muted/25 px-3 py-2"
-            key={item.code}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
-              <span className="break-words text-xs font-black text-muted-foreground">
-                {item.label}
-              </span>
-              <Badge variant={queryHealthBadgeVariant(item.status)}>
-                {humanize(item.status)}
-              </Badge>
-            </div>
-            <div className="break-words text-xs leading-5 text-muted-foreground">
-              {item.detail}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function searchReadinessChecklist({
   diversity,
   packageData,
@@ -4648,734 +3459,6 @@ function queryDiagnosticHealthItems(diagnostics: QueryDiagnosticStack[]): QueryH
     }));
 }
 
-function queryHealthBadgeVariant(
-  status: QueryHealthItem["status"],
-): "success" | "warning" | "destructive" | "muted" {
-  if (status === "ok") return "success";
-  if (status === "blocked") return "destructive";
-  if (status === "review") return "warning";
-  return "muted";
-}
-
-function queryHealthOverallVariant(
-  items: Array<{ status: QueryHealthItem["status"] }>,
-): "success" | "warning" | "destructive" | "muted" {
-  if (items.some((item) => item.status === "blocked")) return "destructive";
-  if (items.some((item) => item.status === "review")) return "warning";
-  if (items.some((item) => item.status === "ok")) return "success";
-  return "muted";
-}
-
-function queryHealthOverallLabel(
-  items: Array<{ status: QueryHealthItem["status"] }>,
-): string {
-  if (items.some((item) => item.status === "blocked")) return "blocked";
-  if (items.some((item) => item.status === "review")) return "review";
-  if (items.some((item) => item.status === "ok")) return "healthy";
-  return "unscored";
-}
-
-function StrategyRecommendationsPanel({
-  isSearchPending,
-  onApplyFilter,
-  recommendations,
-}: {
-  isSearchPending: boolean;
-  onApplyFilter: (field: SupportedFilterField, value: string) => void;
-  recommendations: RetrievalStrategyRecommendation[];
-}) {
-  if (!recommendations.length) {
-    return null;
-  }
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
-          Strategy recommendations
-          <HelpTooltip label="Strategy recommendations help">
-            Backend-generated search advice. Apply a recommendation only when it matches the operational question and the suggested filter is supported.
-          </HelpTooltip>
-        </div>
-        <Badge variant="muted">{formatCount(recommendations.length, "rule")}</Badge>
-      </div>
-      <div className="grid gap-2 md:grid-cols-2">
-        {recommendations.slice(0, 4).map((recommendation) => (
-          <StrategyRecommendationCard
-            isSearchPending={isSearchPending}
-            key={recommendation.recommendation_id}
-            onApplyFilter={onApplyFilter}
-            recommendation={recommendation}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StandardSearchPlanPanel({
-  isSearchPending,
-  onApplyFilter,
-  plan,
-}: {
-  isSearchPending: boolean;
-  onApplyFilter: (field: SupportedFilterField, value: string) => void;
-  plan: RetrievalStandardSearchPlan | null;
-}) {
-  if (!plan || !plan.steps.length) {
-    return null;
-  }
-  const visibleNotes = plan.governance_notes.slice(0, 3);
-  return (
-    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
-            Healthcare search plan
-            <HelpTooltip label="Healthcare search plan help">
-              Backend-selected playbook for the next standards-aware search. It maps the query to FHIR, terminology, privacy, or external medical-search routes before downstream use.
-            </HelpTooltip>
-          </div>
-          <div className="mt-1 break-words text-sm leading-6 text-muted-foreground">
-            {plan.summary}
-          </div>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant={standardRouteBadgeVariant(plan.primary_route)}>
-            {humanize(plan.primary_route)}
-          </Badge>
-          <Badge variant="muted">{formatCount(plan.steps.length, "step")}</Badge>
-          {plan.missing_routes.length ? (
-            <Badge variant="warning">
-              {formatCount(plan.missing_routes.length, "missing route")}
-            </Badge>
-          ) : null}
-        </div>
-      </div>
-      <div className="grid gap-2 lg:grid-cols-2">
-        {plan.steps.slice(0, 4).map((step) => (
-          <StandardSearchStepCard
-            isSearchPending={isSearchPending}
-            key={step.step_id}
-            onApplyFilter={onApplyFilter}
-            step={step}
-          />
-        ))}
-      </div>
-      {visibleNotes.length ? (
-        <div className="grid gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
-          <div className="font-black uppercase">Governance guardrails</div>
-          <ul className="grid gap-1">
-            {visibleNotes.map((note) => (
-              <li className="grid grid-cols-[12px_minmax(0,1fr)] gap-2" key={note}>
-                <span aria-hidden="true" className="pt-0.5 font-black">
-                  -
-                </span>
-                <span className="min-w-0 break-words">{note}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SourceDiversityPanel({
-  diversity,
-  isSearchPending,
-}: {
-  diversity: DiversityStack;
-  isSearchPending: boolean;
-}) {
-  const visibleSelections = diversity.selectedHits
-    .filter((selection) => selection.evidenceId && selection.sourceId)
-    .slice(0, 4);
-  const duplicateTone =
-    diversity.duplicateSelectedSourceCount > 0 ? "warning" : "success";
-  const modeLabel = humanize(diversity.selectionMode);
-  return (
-    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
-            Source diversity
-            <HelpTooltip label="Source diversity help">
-              Shows how the backend selected a balanced evidence set after hybrid retrieval and reranking. This helps detect over-reliance on one source before the package is used downstream.
-            </HelpTooltip>
-          </div>
-          <div className="mt-1 break-words text-sm leading-6 text-muted-foreground">
-            {diversity.enabled
-              ? "Final evidence was selected with source-aware diversity scoring so strong matches from repeated sources do not hide independent standards or policy evidence."
-              : "Source diversity selection is disabled for this retrieval run; evidence follows score order only."}
-          </div>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant={diversity.enabled ? "success" : "warning"}>
-            {diversity.enabled ? "enabled" : "disabled"}
-          </Badge>
-          <Badge variant="muted">{modeLabel}</Badge>
-          <Badge variant={duplicateTone}>
-            {formatCount(diversity.duplicateSelectedSourceCount, "duplicate")}
-          </Badge>
-        </div>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <DiversityMetricCard
-          label="Candidate sources"
-          value={diversity.candidateSourceCount}
-        />
-        <DiversityMetricCard
-          label="Selected sources"
-          value={diversity.selectedSourceCount}
-        />
-        <DiversityMetricCard
-          label="Balance weight"
-          value={diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2)}
-        />
-      </div>
-      {isSearchPending ? (
-        <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
-          Updating source-diversity trace...
-        </div>
-      ) : visibleSelections.length ? (
-        <div className="grid gap-2">
-          <div className="text-xs font-black uppercase text-muted-foreground">
-            Selected-hit rationale
-          </div>
-          {visibleSelections.map((selection) => (
-            <div
-              className="grid gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"
-              key={`${selection.selectedRank}:${selection.evidenceId}`}
-            >
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <Badge variant="muted">#{selection.selectedRank}</Badge>
-                  <span className="min-w-0 break-words font-black">
-                    {selection.sourceId}
-                  </span>
-                </div>
-                <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-                  <Badge variant="muted">original #{selection.originalRank}</Badge>
-                  <Badge variant={selection.redundancyScore > 0 ? "warning" : "success"}>
-                    redundancy {selection.redundancyScore.toFixed(2)}
-                  </Badge>
-                  <Badge variant="muted">
-                    score {selection.selectionScore.toFixed(3)}
-                  </Badge>
-                </div>
-              </div>
-              <div className="break-words leading-5 text-muted-foreground">
-                {selection.reason}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
-          No selected-hit diversity trace was returned for this run.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DiversityMetricCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-      <div className="text-xs font-black uppercase text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-1 text-xl font-black tabular-nums">{value}</div>
-    </div>
-  );
-}
-
-function StandardSearchStepCard({
-  isSearchPending,
-  onApplyFilter,
-  step,
-}: {
-  isSearchPending: boolean;
-  onApplyFilter: (field: SupportedFilterField, value: string) => void;
-  step: RetrievalStandardSearchStep;
-}) {
-  const filterAction = suggestedFilterAction(step.suggested_filters);
-  return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
-      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-        <div className="min-w-0">
-          <div className="break-words font-black">{step.label}</div>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-            <Badge variant="muted">P{step.priority}</Badge>
-            <Badge variant="success">{step.standard_system}</Badge>
-            <Badge variant={standardRouteBadgeVariant(step.route_type)}>
-              {humanize(step.route_type)}
-            </Badge>
-          </div>
-        </div>
-        {filterAction ? (
-          <Button
-            disabled={isSearchPending}
-            onClick={() => onApplyFilter(filterAction.field, filterAction.value)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <ListFilter className="h-4 w-4" />
-            Apply {filterFieldLabel(filterAction.field)}
-          </Button>
-        ) : null}
-      </div>
-      <div className="break-words text-xs leading-5 text-muted-foreground">
-        {step.rationale}
-      </div>
-      <StandardSearchMatchReasons metadata={step.metadata} />
-      <div className="break-words rounded-md border border-border bg-card px-3 py-2 font-mono text-xs leading-5 text-foreground">
-        {step.query}
-      </div>
-      <StandardSearchGovernanceNotes notes={step.governance_notes} />
-    </div>
-  );
-}
-
-function StandardSearchMatchReasons({ metadata }: { metadata: Record<string, unknown> }) {
-  const reasons = standardSearchMatchReasons(metadata);
-  if (!reasons.length) {
-    return null;
-  }
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
-      <span className="font-black uppercase text-muted-foreground">Matched by</span>
-      {reasons.map((reason) => (
-        <Badge key={`${reason.label}:${reason.value}`} variant={reason.variant}>
-          {reason.label}: {reason.value}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function standardSearchMatchReasons(metadata: Record<string, unknown>) {
-  const sources: {
-    key: string;
-    label: string;
-    variant: React.ComponentProps<typeof Badge>["variant"];
-  }[] = [
-    { key: "matched_fields", label: "field", variant: "default" },
-    { key: "matched_query_aspects", label: "aspect", variant: "muted" },
-    { key: "matched_standards", label: "standard", variant: "success" },
-    { key: "matched_concepts", label: "concept", variant: "muted" },
-    { key: "source_quality_signal_codes", label: "signal", variant: "warning" },
-  ];
-  return sources.flatMap((source) =>
-    stringArrayValue(metadata[source.key])
-      .slice(0, 3)
-      .map((value) => ({
-        label: source.label,
-        value,
-        variant: source.variant,
-      })),
-  );
-}
-
-function StandardSearchGovernanceNotes({ notes }: { notes: string[] }) {
-  const visibleNotes = notes.slice(0, 2);
-  if (!visibleNotes.length) {
-    return null;
-  }
-  return (
-    <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
-      {visibleNotes.map((note) => (
-        <div className="grid grid-cols-[14px_minmax(0,1fr)] gap-2" key={note}>
-          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
-          <span className="min-w-0 break-words">{note}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function standardRouteBadgeVariant(
-  routeType: string,
-): "default" | "success" | "warning" | "destructive" | "muted" {
-  const normalized = routeType.toLowerCase();
-  if (normalized.includes("privacy") || normalized.includes("review")) return "warning";
-  if (normalized.includes("fhir") || normalized.includes("terminology")) return "default";
-  if (normalized.includes("validation")) return "success";
-  if (normalized.includes("external")) return "muted";
-  return "muted";
-}
-
-function StrategyRecommendationCard({
-  isSearchPending,
-  onApplyFilter,
-  recommendation,
-}: {
-  isSearchPending: boolean;
-  onApplyFilter: (field: SupportedFilterField, value: string) => void;
-  recommendation: RetrievalStrategyRecommendation;
-}) {
-  const filterAction = suggestedFilterAction(recommendation.suggested_filters);
-  return (
-    <div className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <Badge variant={strategyRecommendationVariant(recommendation.status)}>
-          {humanize(recommendation.status)}
-        </Badge>
-        <span className="break-words font-black">{recommendation.title}</span>
-      </div>
-      <div className="break-words text-xs font-semibold text-muted-foreground">
-        {humanize(recommendation.technique)}
-      </div>
-      <div className="break-words text-xs leading-5 text-muted-foreground">
-        {recommendation.rationale}
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {recommendation.source_signal_codes.slice(0, 3).map((code) => (
-          <Badge key={code} variant="muted">
-            {humanize(code)}
-          </Badge>
-        ))}
-        {filterAction ? (
-          <Button
-            disabled={isSearchPending}
-            onClick={() => onApplyFilter(filterAction.field, filterAction.value)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <ListFilter className="h-4 w-4" />
-            Apply {filterFieldLabel(filterAction.field)}
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function strategyRecommendationVariant(status: string) {
-  if (status === "active") return "success";
-  if (status === "action_required" || status === "caution") return "warning";
-  return "muted";
-}
-
-function EvidenceReadinessPanel({
-  isSearchPending,
-  onApplyBucketFilter,
-  packageData,
-}: {
-  isSearchPending: boolean;
-  onApplyBucketFilter: (field: SupportedFilterField, value: string) => void;
-  packageData: RetrievalPackage;
-}) {
-  const qualitySummary = packageData.quality_summary ?? null;
-  const requiredBuckets = (packageData.evidence_buckets ?? []).filter(
-    (bucket) => bucket.required,
-  );
-  const missingBuckets = requiredBuckets.filter((bucket) => bucket.hit_count === 0);
-  const bucketSignal = (packageData.quality_signals ?? []).find(
-    (signal) => signal.code === "missing_required_evidence_buckets",
-  );
-  const ready = missingBuckets.length === 0 && qualitySummary?.status !== "blocked";
-  const interpretation = readinessInterpretation(qualitySummary, missingBuckets.length);
-  return (
-    <div
-      className={cn(
-        "grid gap-3 rounded-md border p-3",
-        ready
-          ? "border-emerald-200 bg-emerald-50"
-          : "border-amber-200 bg-amber-50",
-      )}
-    >
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-xs font-black uppercase text-muted-foreground">
-            Evidence readiness
-          </div>
-          <div className="mt-1 break-words text-sm font-black">
-            {ready
-              ? "Required evidence classes are present"
-              : "Required evidence classes need review"}
-          </div>
-        </div>
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {qualitySummary ? (
-            <Badge variant={qualitySummaryBadgeVariant(qualitySummary)}>
-              {humanize(qualitySummary.status)} {qualitySummary.score}/100
-            </Badge>
-          ) : null}
-          <Badge variant={missingBuckets.length ? "warning" : "success"}>
-            {missingBuckets.length
-              ? formatCount(missingBuckets.length, "required gap")
-              : "required buckets covered"}
-          </Badge>
-        </div>
-      </div>
-      {missingBuckets.length ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {missingBuckets.map((bucket) => {
-            const action = bucketSuggestedFilter(bucket);
-            return (
-              <div
-                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-card px-3 py-2"
-                key={bucket.bucket_id}
-              >
-                <div className="min-w-0">
-                  <div className="break-words text-sm font-black">
-                    Missing {bucket.label}
-                  </div>
-                  <div className="mt-1 break-words text-xs text-muted-foreground">
-                    {action
-                      ? `${filterFieldLabel(action.field)}: ${formatFilterValue(action.field, action.value)}`
-                      : "No supported filter is available for this bucket."}
-                  </div>
-                </div>
-                {action ? (
-                  <Button
-                    disabled={isSearchPending}
-                    onClick={() => onApplyBucketFilter(action.field, action.value)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <ListFilter className="h-4 w-4" />
-                    Apply
-                  </Button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-      <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <div className="break-words text-sm font-black">
-            {interpretation.title}
-          </div>
-          <Badge variant={interpretation.variant}>{interpretation.badge}</Badge>
-        </div>
-        <p className="break-words text-sm leading-6 text-muted-foreground">
-          {interpretation.description}
-        </p>
-        {qualitySummary ? (
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {qualitySummary.blocker_codes.slice(0, 4).map((code) => (
-              <Badge className="max-w-full break-words" key={`blocker-${code}`} variant="destructive">
-                {humanize(code)}
-              </Badge>
-            ))}
-            {qualitySummary.warning_codes.slice(0, 4).map((code) => (
-              <Badge className="max-w-full break-words" key={`warning-${code}`} variant="warning">
-                {humanize(code)}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="break-words text-sm leading-6 text-muted-foreground">
-        {bucketSignal?.suggested_action ??
-          qualitySummary?.top_action ??
-          "Review selected evidence before using it downstream."}
-      </div>
-    </div>
-  );
-}
-
-function readinessInterpretation(
-  qualitySummary: RetrievalQualitySummary | null,
-  missingRequiredBucketCount: number,
-): {
-  badge: string;
-  description: string;
-  title: string;
-  variant: "success" | "warning" | "destructive" | "muted";
-} {
-  if (!qualitySummary) {
-    return {
-      badge: "unscored",
-      description:
-        "No readiness score was returned. Treat the evidence as unreviewed until quality signals are available.",
-      title: "Readiness score unavailable",
-      variant: "muted",
-    };
-  }
-  if (qualitySummary.status === "blocked") {
-    return {
-      badge: "blocked",
-      description:
-        "Do not use this evidence package downstream yet. Resolve blocker codes or apply backend corrective actions first.",
-      title: "Blocked for governed use",
-      variant: "destructive",
-    };
-  }
-  if (qualitySummary.status === "review" || missingRequiredBucketCount > 0) {
-    return {
-      badge: "review",
-      description:
-        "Use this package only with human review. Missing required evidence, warnings, or low confidence can change the interpretation.",
-      title: "Needs human review",
-      variant: "warning",
-    };
-  }
-  if (qualitySummary.status === "ready") {
-    return {
-      badge: "ready",
-      description:
-        "Required evidence classes are present. Still inspect source provenance and limitations before operational use.",
-      title: "Ready for evidence review",
-      variant: "success",
-    };
-  }
-  return {
-    badge: humanize(qualitySummary.status),
-    description:
-      "The backend returned a non-standard readiness status. Review quality signals before using the evidence package.",
-    title: "Readiness requires inspection",
-    variant: "muted",
-  };
-}
-
-function RecommendedActionsPanel({
-  activeFilters,
-  actions,
-  isSearchPending,
-  onApplyFilter,
-  onClearAllFilters,
-  onClearFilter,
-}: {
-  activeFilters: ActiveFilterEntry[];
-  actions: RetrievalRecommendedAction[];
-  isSearchPending: boolean;
-  onApplyFilter: (field: SupportedFilterField, value: string) => void;
-  onClearAllFilters: () => void;
-  onClearFilter: (field: SupportedFilterField) => void;
-}) {
-  if (!actions.length) {
-    return <TokenList items={[]} title="Corrective actions" />;
-  }
-  const actionTypeCounts = recommendedActionTypeCounts(actions);
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-xs font-black uppercase text-muted-foreground">
-            Corrective actions
-          </div>
-          <div className="mt-1 break-words text-sm text-muted-foreground">
-            Backend-derived next steps from retrieval quality signals.
-          </div>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant="warning">{formatCount(actions.length, "action")}</Badge>
-          {Object.entries(actionTypeCounts).map(([actionType, count]) => (
-            <Badge key={actionType} variant="muted">
-              {humanize(actionType)} {count}
-            </Badge>
-          ))}
-        </div>
-      </div>
-      <div className="grid gap-2">
-        {actions.slice(0, 6).map((action) => {
-          const filterAction = recommendedActionFilter(action);
-          const isBroadeningAction = action.action_type === "broaden_query";
-          const sourceFilter = activeFilters.find((filter) => filter.field === "source_id");
-          const sourceLabel = recommendedActionSourceLabel(action);
-          return (
-            <div
-              className="grid gap-2 rounded-md border border-border bg-card p-3"
-              key={action.action_id}
-            >
-              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <Badge variant={qualitySignalBadgeVariant(action.severity)}>
-                      P{action.priority}
-                    </Badge>
-                    <Badge variant="muted">{humanize(action.action_type)}</Badge>
-                    {sourceLabel ? <Badge variant="muted">{sourceLabel}</Badge> : null}
-                    {action.source_signal_codes.slice(0, 2).map((code) => (
-                      <Badge
-                        className="max-w-full break-words"
-                        key={`${action.action_id}-${code}`}
-                        variant="muted"
-                      >
-                        {humanize(code)}
-                      </Badge>
-                    ))}
-                  </div>
-                  <div className="mt-2 break-words text-sm font-black">
-                    {action.title}
-                  </div>
-                  <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-                    {action.description}
-                  </div>
-                </div>
-                {filterAction ? (
-                  <Button
-                    disabled={isSearchPending}
-                    onClick={() => onApplyFilter(filterAction.field, filterAction.value)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <ListFilter className="h-4 w-4" />
-                    Apply
-                  </Button>
-                ) : null}
-                {isBroadeningAction ? (
-                  <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-                    {sourceFilter ? (
-                      <Button
-                        disabled={isSearchPending}
-                        onClick={() => onClearFilter("source_id")}
-                        size="sm"
-                        title="Clear exact source scope and rerun search"
-                        type="button"
-                        variant="outline"
-                      >
-                        <X className="h-4 w-4" />
-                        Clear source scope
-                      </Button>
-                    ) : null}
-                    <Button
-                      disabled={isSearchPending || !activeFilters.length}
-                      onClick={onClearAllFilters}
-                      size="sm"
-                      title="Clear all active metadata filters and rerun search"
-                      type="button"
-                      variant="outline"
-                    >
-                      <ListFilter className="h-4 w-4" />
-                      Broaden search
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-              {filterAction ? (
-                <div className="break-words rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
-                  {filterFieldLabel(filterAction.field)}:{" "}
-                  {formatFilterValue(filterAction.field, filterAction.value)}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-      {actions.length > 6 ? (
-        <div className="text-xs font-semibold text-muted-foreground">
-          Showing first 6 actions by backend priority.
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function recommendedActionTypeCounts(
   actions: RetrievalRecommendedAction[],
 ): Record<string, number> {
@@ -5413,80 +3496,6 @@ function suggestedFilterAction(value: unknown): CoverageFilterAction | null {
     }
   }
   return null;
-}
-
-function ResultFacets({
-  activeFilters,
-  facets,
-  isSearchPending,
-  onApplyFacet,
-}: {
-  activeFilters: ActiveFacetFilters;
-  facets: RetrievalFacets | null | undefined;
-  isSearchPending: boolean;
-  onApplyFacet: (field: SupportedFilterField, value: string) => void;
-}) {
-  if (!facets) return null;
-  const facetSections: FacetSection[] = [
-    { field: "source_type", label: "Source type", values: facets.source_type, formatter: humanize },
-    { field: "clinical_domain", label: "Domain", values: facets.clinical_domain, formatter: humanize },
-    { field: "standard_system", label: "Standard", values: facets.standard_system, formatter: (value: string) => value },
-    { field: "trust_level", label: "Trust", values: facets.trust_level, formatter: humanize },
-  ];
-  const sections = facetSections.filter((section) => section.values.length > 0);
-  if (!sections.length) return null;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">
-          Result facets
-        </div>
-        <Badge variant="muted">click to refine</Badge>
-      </div>
-      <div className="grid gap-2 lg:grid-cols-2">
-        {sections.map((section) => (
-          <div className="grid gap-1.5" key={section.label}>
-            <div className="text-xs font-bold text-muted-foreground">{section.label}</div>
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              {section.values.map((bucket) => {
-                const applied = activeFilters[section.field] === bucket.value;
-                return (
-                  <button
-                    aria-label={`Filter by ${section.label} ${section.formatter(bucket.value)}`}
-                    aria-pressed={applied}
-                    className={cn(
-                      "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-bold transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-70",
-                      applied
-                        ? "border-emerald-200 bg-emerald-100 text-emerald-900"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-foreground",
-                    )}
-                    disabled={applied || isSearchPending}
-                    key={`${section.label}-${bucket.value}`}
-                    onClick={() => onApplyFacet(section.field, bucket.value)}
-                    title={
-                      applied
-                        ? `${section.formatter(bucket.value)} is already applied`
-                        : `Apply ${section.label}=${section.formatter(bucket.value)}`
-                    }
-                    type="button"
-                  >
-                    {isSearchPending && !applied ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <ListFilter className="h-3 w-3" />
-                    )}
-                    <span className="break-words">{section.formatter(bucket.value)}</span>
-                    <span className="tabular-nums text-foreground">{bucket.count}</span>
-                    {applied ? <span>applied</span> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function RelevanceJudgmentSummary({
@@ -5574,7 +3583,11 @@ function RelevanceJudgmentSummary({
         Label top hits as relevant, partial, or not relevant. Coverage shows how much of the result set has labels; Precision@k and nDCG@k become meaningful only after enough judgments exist.
       </SectionHelpText>
       {persistedEvaluation ? (
-        <EvaluationReadinessPanel evaluation={persistedEvaluation} />
+        <EvaluationReadinessPanel
+          evaluation={persistedEvaluation}
+          formatCount={formatCount}
+          formatPercent={formatPercent}
+        />
       ) : null}
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <JudgmentMetricCard
@@ -5711,191 +3724,6 @@ function RelevanceJudgmentSummary({
   );
 }
 
-function EvaluationReadinessPanel({
-  evaluation,
-}: {
-  evaluation: RetrievalJudgmentEvaluationResult;
-}) {
-  const readiness = evaluation.evaluation_readiness;
-  return (
-    <div
-      aria-label="Judgment evaluation readiness"
-      className={cn(
-        "grid gap-2 rounded-md border p-3 text-sm",
-        evaluationReadinessClass(readiness.status),
-      )}
-    >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 font-black">
-          {readiness.status === "ready" ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-          ) : (
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-          )}
-          {readiness.label}
-          <HelpTooltip label="Judgment readiness help">
-            Readiness tells whether enough ranked hits have human labels for Precision@k, MAP@k, MRR@k, and nDCG@k to be useful for tuning.
-          </HelpTooltip>
-        </div>
-        <Badge variant={evaluationReadinessVariant(readiness.status)}>
-          {humanize(readiness.status)}
-        </Badge>
-      </div>
-      <p className="break-words leading-6">{readiness.message}</p>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        <Badge variant="muted">
-          min {formatCount(readiness.min_judged_count, "judged hit")}
-        </Badge>
-        <Badge variant="muted">
-          min coverage {formatPercent(readiness.min_coverage_at_k)}
-        </Badge>
-      </div>
-    </div>
-  );
-}
-
-function JudgmentMetricCard({
-  label,
-  tone,
-  value,
-}: {
-  label: string;
-  tone: "success" | "warning";
-  value: string;
-}) {
-  return (
-    <div className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2">
-      <span className="text-xs font-bold text-muted-foreground">{label}</span>
-      <Badge variant={tone}>{value}</Badge>
-    </div>
-  );
-}
-
-function SubmittedSearchSummary({
-  isRestoreDisabled,
-  isStale,
-  onRestore,
-  payload,
-}: {
-  isRestoreDisabled: boolean;
-  isStale: boolean;
-  onRestore: () => void;
-  payload: RetrievalSearchPayload;
-}) {
-  const filters = activeFilterEntries(activeFacetFiltersFromPayload(payload));
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">Submitted search</div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant={isStale ? "warning" : "success"}>
-            {isStale ? "displayed request" : "current request"}
-          </Badge>
-          {isStale ? (
-            <Button
-              disabled={isRestoreDisabled}
-              onClick={onRestore}
-              size="sm"
-              title="Restore submitted search"
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Restore
-            </Button>
-          ) : null}
-        </div>
-      </div>
-      <div className="grid gap-2 text-sm">
-        <div className="break-words font-semibold">{payload.query}</div>
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          <Badge variant="muted">top {payload.top_k}</Badge>
-          {payload.schema_id ? <Badge variant="muted">{payload.schema_id}</Badge> : null}
-          {payload.detected_format ? <Badge variant="muted">{humanize(payload.detected_format)}</Badge> : null}
-          {payload.resource_type ? <Badge variant="muted">{payload.resource_type}</Badge> : null}
-          {payload.fields.slice(0, 8).map((field) => (
-            <span
-              className="max-w-full break-words rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground"
-              key={field}
-            >
-              {field}
-            </span>
-          ))}
-          {payload.fields.length > 8 ? (
-            <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
-              +{payload.fields.length - 8} fields
-            </span>
-          ) : null}
-        </div>
-        {filters.length ? (
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {filters.map((filter) => (
-              <span
-                className="max-w-full break-words rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-bold text-foreground"
-                key={filter.field}
-              >
-                {filter.label}: {filter.displayValue}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function ActiveFilterBar({
-  filters,
-  isSearchPending,
-  onClearAll,
-  onRemove,
-}: {
-  filters: ActiveFilterEntry[];
-  isSearchPending: boolean;
-  onClearAll: () => void;
-  onRemove: (field: SupportedFilterField) => void;
-}) {
-  if (!filters.length) return null;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">Active filters</div>
-        <Button
-          disabled={isSearchPending}
-          onClick={onClearAll}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Clear all
-        </Button>
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {filters.map((filter) => (
-          <span
-            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2 py-1 text-xs font-bold text-foreground"
-            key={filter.field}
-          >
-            <span className="min-w-0 break-words">
-              {filter.label}: {filter.displayValue}
-            </span>
-            <button
-              aria-label={`Remove ${filter.label} filter`}
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-ring disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={isSearchPending}
-              onClick={() => onRemove(filter.field)}
-              title={`Remove ${filter.label} filter`}
-              type="button"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function activeFacetFiltersFromPayload(payload: RetrievalSearchPayload): ActiveFacetFilters {
   return {
     clinical_domain: payload.clinical_domain || undefined,
@@ -5932,6 +3760,10 @@ function formatFilterValue(field: SupportedFilterField, value: string): string {
   return field === "standard_system" || field === "source_id" ? value : humanize(value);
 }
 
+function formatMaybeSupportedFilterValue(field: string, value: string): string {
+  return isSupportedFilterField(field) ? formatFilterValue(field, value) : value;
+}
+
 function coverageSuggestedFilter(
   item: RetrievalCoverage["standard_system"][number],
 ): CoverageFilterAction | null {
@@ -5949,214 +3781,6 @@ function coverageSuggestedAction(item: RetrievalCoverage["standard_system"][numb
 
 function isSupportedFilterField(value: string): value is SupportedFilterField {
   return supportedSuggestionFilterFields.has(value as SupportedFilterField);
-}
-
-function EvidenceSupportMatrix({
-  packageData,
-  relevanceJudgments,
-  runId,
-}: {
-  packageData: RetrievalPackage;
-  relevanceJudgments: RelevanceJudgmentIndex;
-  runId: string | null;
-}) {
-  const rows = evidenceSupportMatrixRows(packageData, relevanceJudgments, runId);
-  if (!rows.length) return null;
-  return (
-    <section className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
-            <span>Evidence support matrix</span>
-            <HelpTooltip label="Evidence support matrix help">
-              Fast scan of whether each ranked hit has terms, provenance, concept grounding, query-aspect support, judgment state, and enough score support to trust for review.
-            </HelpTooltip>
-          </div>
-          <div className="mt-1 text-sm font-semibold text-muted-foreground">
-            Coverage, grounding, provenance, and review state for selected evidence.
-          </div>
-        </div>
-        <Badge variant={rows.some((row) => row.supportStatus === "weak") ? "warning" : "success"}>
-          {formatCount(rows.length, "evidence row")}
-        </Badge>
-      </div>
-      <SectionHelpText>
-        Weak rows need inspection before use. Missing provenance means the source locator is thin; missing concepts or aspects means the hit may match words without enough medical grounding.
-      </SectionHelpText>
-      <div className="grid gap-2 md:hidden">
-        {rows.map((row) => (
-          <EvidenceSupportMatrixCard key={row.evidenceId} row={row} />
-        ))}
-      </div>
-      <div className="hidden overflow-auto rounded-md border border-border bg-card md:block">
-        <Table>
-          <THead>
-            <TR>
-              <TH>Rank</TH>
-              <TH>Source</TH>
-              <TH>Standard</TH>
-              <TH>Evidence buckets</TH>
-              <TH>Support</TH>
-              <TH>Judgment</TH>
-              <TH>Score</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {rows.map((row) => (
-              <TR key={row.evidenceId}>
-                <TD className="font-mono text-xs font-bold">#{row.rank}</TD>
-                <TD>
-                  <div className="max-w-72 break-words font-bold">{row.sourceId}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {humanize(row.sourceType)} / {row.confidenceLabel}
-                  </div>
-                </TD>
-                <TD>
-                  {row.standardSystem ? (
-                    <Badge variant="muted">{row.standardSystem}</Badge>
-                  ) : (
-                    <span className="text-xs font-semibold text-muted-foreground">-</span>
-                  )}
-                </TD>
-                <TD>
-                  <div className="flex min-w-52 flex-wrap gap-1">
-                    {row.bucketLabels.length ? (
-                      row.bucketLabels.map((label) => (
-                        <Badge key={label} variant="muted">
-                          {label}
-                        </Badge>
-                      ))
-                    ) : (
-                      <Badge variant="warning">No bucket</Badge>
-                    )}
-                  </div>
-                </TD>
-                <TD>
-                  <div className="flex min-w-44 flex-wrap gap-1">
-                    <Badge variant={row.matchedTermCount ? "success" : "warning"}>
-                      {row.matchedTermCount} terms
-                    </Badge>
-                    <Badge variant={row.provenanceCount ? "success" : "warning"}>
-                      {row.provenanceCount} provenance
-                    </Badge>
-                    <Badge variant={row.conceptCount ? "success" : "muted"}>
-                      {row.conceptCount} concepts
-                    </Badge>
-                    <Badge variant={row.aspectCount ? "success" : "muted"}>
-                      {row.aspectCount} aspects
-                    </Badge>
-                  </div>
-                </TD>
-                <TD>
-                  {row.judgment ? (
-                    <Badge variant={judgmentBadgeVariant(row.judgment.value)}>
-                      {judgmentLabel(row.judgment.value)}
-                    </Badge>
-                  ) : (
-                    <Badge variant="muted">Unjudged</Badge>
-                  )}
-                </TD>
-                <TD>
-                  <div className="font-mono text-xs font-bold">{formatScore(row.score)}</div>
-                  <Badge variant={supportStatusBadgeVariant(row.supportStatus)}>
-                    {humanize(row.supportStatus)}
-                  </Badge>
-                </TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      </div>
-    </section>
-  );
-}
-
-function EvidenceSupportMatrixCard({ row }: { row: EvidenceSupportMatrixRow }) {
-  return (
-    <article className="grid min-w-0 gap-2 rounded-md border border-border bg-card p-3 text-sm">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-xs font-black uppercase text-muted-foreground">
-            Rank {row.rank}
-          </div>
-          <div className="mt-1 break-words font-black">{row.sourceId}</div>
-          <div className="mt-1 text-xs font-semibold text-muted-foreground">
-            {humanize(row.sourceType)} / {row.confidenceLabel}
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <Badge variant={supportStatusBadgeVariant(row.supportStatus)}>
-            {humanize(row.supportStatus)}
-          </Badge>
-          <Badge variant="muted">{formatScore(row.score)}</Badge>
-        </div>
-      </div>
-      <div className="grid gap-2">
-        <EvidenceSupportMobileField label="Standard">
-          {row.standardSystem ? (
-            <Badge variant="muted">{row.standardSystem}</Badge>
-          ) : (
-            <span className="text-xs font-semibold text-muted-foreground">Not specified</span>
-          )}
-        </EvidenceSupportMobileField>
-        <EvidenceSupportMobileField label="Evidence buckets">
-          <div className="flex min-w-0 flex-wrap gap-1">
-            {row.bucketLabels.length ? (
-              row.bucketLabels.map((label) => (
-                <Badge key={label} variant="muted">
-                  {label}
-                </Badge>
-              ))
-            ) : (
-              <Badge variant="warning">No bucket</Badge>
-            )}
-          </div>
-        </EvidenceSupportMobileField>
-        <EvidenceSupportMobileField label="Support">
-          <div className="flex min-w-0 flex-wrap gap-1">
-            <Badge variant={row.matchedTermCount ? "success" : "warning"}>
-              {row.matchedTermCount} terms
-            </Badge>
-            <Badge variant={row.provenanceCount ? "success" : "warning"}>
-              {row.provenanceCount} provenance
-            </Badge>
-            <Badge variant={row.conceptCount ? "success" : "muted"}>
-              {row.conceptCount} concepts
-            </Badge>
-            <Badge variant={row.aspectCount ? "success" : "muted"}>
-              {row.aspectCount} aspects
-            </Badge>
-          </div>
-        </EvidenceSupportMobileField>
-        <EvidenceSupportMobileField label="Judgment">
-          {row.judgment ? (
-            <Badge variant={judgmentBadgeVariant(row.judgment.value)}>
-              {judgmentLabel(row.judgment.value)}
-            </Badge>
-          ) : (
-            <Badge variant="muted">Unjudged</Badge>
-          )}
-        </EvidenceSupportMobileField>
-      </div>
-    </article>
-  );
-}
-
-function EvidenceSupportMobileField({
-  children,
-  label,
-}: {
-  children: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-md bg-muted/45 px-2 py-1.5">
-      <div className="text-[11px] font-black uppercase text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-1 min-w-0">{children}</div>
-    </div>
-  );
 }
 
 function HitCard({
@@ -6260,13 +3884,15 @@ function HitCard({
         </div>
       </div>
 
-      {hit.snippet ? <SnippetBlock snippet={hit.snippet} /> : null}
+      {hit.snippet ? (
+        <SnippetBlock formatClaim={formatClaim} snippet={hit.snippet} />
+      ) : null}
 
       <p className="break-words text-sm leading-6 text-muted-foreground">
         {formatClaim(evidence.claim)}
       </p>
 
-      <HitEvidenceAuditStrip summary={supportSummary} />
+      <HitEvidenceAuditStrip formatCount={formatCount} summary={supportSummary} />
 
       <EvidenceUsabilitySummaryPanel summary={usabilitySummary} />
 
@@ -6274,21 +3900,30 @@ function HitCard({
         guidance={evidenceUseGuidance(supportSummary, matchExplanation, judgment)}
       />
 
-      <HitMatchExplanationPanel explanation={matchExplanation} />
+      <HitMatchExplanationPanel explanation={matchExplanation} formatCount={formatCount} />
 
-      <EvidenceProvenanceSummary entries={provenanceEntries} />
+      <EvidenceProvenanceSummary
+        entries={provenanceEntries}
+        formatCount={formatCount}
+      />
 
-      <RelevanceJudgmentControl judgment={judgment} onSetJudgment={onSetJudgment} />
+      <RelevanceJudgmentControl
+        judgment={judgment}
+        onSetJudgment={onSetJudgment}
+      />
 
       <div className="grid gap-2 md:grid-cols-3">
-        <ScoreMeter label="Lexical" value={hit.lexical_score} />
-        <ScoreMeter label="Vector" value={hit.vector_score} />
-        <ScoreMeter label="Rerank" value={hit.rerank_score} />
+        <ScoreMeter formatScore={formatScore} label="Lexical" value={hit.lexical_score} />
+        <ScoreMeter formatScore={formatScore} label="Vector" value={hit.vector_score} />
+        <ScoreMeter formatScore={formatScore} label="Rerank" value={hit.rerank_score} />
       </div>
 
-      <ScoreExplanation components={scoreComponents} />
+      <ScoreExplanation components={scoreComponents} formatScore={formatScore} />
 
-      <DiversitySelectionExplanation selection={diversitySelection} />
+      <DiversitySelectionExplanation
+        formatScore={formatScore}
+        selection={diversitySelection}
+      />
 
       <ConceptMatchExplanation matches={conceptMatches} />
 
@@ -6352,514 +3987,6 @@ function HitCard({
         </pre>
       </details>
     </article>
-  );
-}
-
-function HitEvidenceAuditStrip({
-  summary,
-}: {
-  summary: EvidenceSupportSummary;
-}) {
-  return (
-    <div
-      aria-label="Evidence support summary"
-      className="flex min-w-0 flex-wrap gap-1.5 rounded-md border border-border bg-muted/20 p-2"
-    >
-      <Badge variant={summary.matched_term_count ? "success" : "warning"}>
-        {formatCount(summary.matched_term_count, "matched term")}
-      </Badge>
-      <Badge variant={summary.provenance_field_count ? "success" : "warning"}>
-        {formatCount(summary.provenance_field_count, "provenance field")}
-      </Badge>
-      <Badge variant={summary.concept_count ? "success" : "muted"}>
-        {formatCount(summary.concept_count, "grounded concept")}
-      </Badge>
-      <Badge variant={summary.aspect_count ? "success" : "muted"}>
-        {formatCount(summary.aspect_count, "aspect")}
-      </Badge>
-      <Badge variant={summary.ranking_signal_count ? "success" : "muted"}>
-        {formatCount(summary.ranking_signal_count, "ranking signal")}
-      </Badge>
-    </div>
-  );
-}
-
-function EvidenceUsabilitySummaryPanel({
-  summary,
-}: {
-  summary: EvidenceUsabilitySummary;
-}) {
-  return (
-    <section
-      aria-label="Evidence usability summary"
-      className="grid gap-2 rounded-md border border-border bg-muted/20 p-2 text-sm"
-    >
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="grid min-w-0 gap-1">
-          <div className="text-xs font-black uppercase text-muted-foreground">
-            Usability summary
-          </div>
-          <div className="break-words font-semibold">{summary.headline}</div>
-        </div>
-        <Badge variant={supportStatusBadgeVariant(summary.status)}>
-          {humanize(summary.status)}
-        </Badge>
-      </div>
-      <div className="grid gap-1.5 sm:grid-cols-2">
-        <div className="rounded-md border border-border bg-card/70 px-2 py-1.5">
-          <div className="text-[11px] font-black uppercase text-muted-foreground">
-            Recommendation
-          </div>
-          <div className="mt-1 break-words font-semibold">
-            {summary.recommendation}
-          </div>
-        </div>
-        <div className="rounded-md border border-border bg-card/70 px-2 py-1.5">
-          <div className="text-[11px] font-black uppercase text-muted-foreground">
-            Limitation
-          </div>
-          <div className="mt-1 break-words text-muted-foreground">
-            {summary.limitation}
-          </div>
-        </div>
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {summary.checks.map((check) => (
-          <Badge className="max-w-full break-words" key={check} variant="muted">
-            {check}
-          </Badge>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function EvidenceUseGuidancePanel({
-  guidance,
-}: {
-  guidance: EvidenceUseGuidance;
-}) {
-  const Icon = guidance.status === "strong" ? CheckCircle2 : AlertTriangle;
-  return (
-    <div
-      aria-label="Evidence interpretation guidance"
-      className={cn(
-        "grid gap-2 rounded-md border p-2 text-sm",
-        guidance.status === "strong"
-          ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-          : guidance.status === "partial"
-            ? "border-amber-200 bg-amber-50 text-amber-950"
-            : "border-red-200 bg-red-50 text-red-950",
-      )}
-    >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex min-w-0 items-center gap-2 font-black">
-          <Icon className="h-4 w-4 shrink-0" />
-          <span>{guidance.title}</span>
-          <HelpTooltip label="Evidence interpretation help">
-            This is a data-derived operator guide for the evidence card. It summarizes whether the hit has enough terms, provenance, medical grounding, and judgment state for review.
-          </HelpTooltip>
-        </div>
-        <Badge variant={supportStatusBadgeVariant(guidance.status)}>
-          {humanize(guidance.status)}
-        </Badge>
-      </div>
-      <div className="break-words font-semibold leading-6">{guidance.action}</div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {guidance.reasons.map((reason) => (
-          <Badge className="max-w-full break-words" key={reason} variant="muted">
-            {reason}
-          </Badge>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function HitMatchExplanationPanel({
-  explanation,
-}: {
-  explanation: HitMatchExplanation;
-}) {
-  return (
-    <div
-      aria-label="Why this evidence matched"
-      className="grid gap-2 rounded-md border border-border bg-muted/20 p-2"
-    >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-          <BrainCircuit className="h-3.5 w-3.5 shrink-0" />
-          <span>Why this matched</span>
-        </div>
-        <Badge variant={supportStatusBadgeVariant(explanation.supportStatus)}>
-          {humanize(explanation.supportStatus)}
-        </Badge>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <MatchExplanationMetric
-          label="Top driver"
-          value={explanation.topScoreDriver ?? "not reported"}
-        />
-        <MatchExplanationMetric
-          label="Evidence pack"
-          value={
-            explanation.bucketLabels.length
-              ? explanation.bucketLabels.join(", ")
-              : "unbucketed"
-          }
-        />
-        <MatchExplanationMetric
-          label="Terms"
-          value={
-            explanation.matchedTerms.length
-              ? explanation.matchedTerms.join(", ")
-              : "no exact terms"
-          }
-        />
-        <MatchExplanationMetric
-          label="Traceability"
-          value={`${formatCount(explanation.provenanceCount, "provenance field")}, ${formatCount(
-            explanation.rankingSignalCount,
-            "ranking signal",
-          )}`}
-        />
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {explanation.conceptLabels.map((label) => (
-          <Badge className="max-w-full break-words" key={`concept-${label}`} variant="muted">
-            {label}
-          </Badge>
-        ))}
-        {explanation.aspectLabels.map((label) => (
-          <Badge className="max-w-full break-words" key={`aspect-${label}`} variant="muted">
-            {label}
-          </Badge>
-        ))}
-        {!explanation.conceptLabels.length && !explanation.aspectLabels.length ? (
-          <span className="text-xs font-semibold text-muted-foreground">
-            No concept or query-aspect grounding was reported for this hit.
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function MatchExplanationMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid min-w-0 gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs">
-      <span className="font-bold text-muted-foreground">{label}</span>
-      <span className="min-w-0 break-words font-semibold">{value}</span>
-    </div>
-  );
-}
-
-function RelevanceJudgmentControl({
-  judgment,
-  onSetJudgment,
-}: {
-  judgment: RelevanceJudgment | null;
-  onSetJudgment: (value: RelevanceJudgmentValue) => void;
-}) {
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-muted-foreground">
-          Relevance judgment
-          <HelpTooltip label="Relevance judgment help">
-            Mark whether this evidence actually answers the submitted search. These labels feed judgment metrics and comparison reports.
-          </HelpTooltip>
-        </div>
-        {judgment ? (
-          <Badge variant={judgmentBadgeVariant(judgment.value)}>
-            {judgmentLabel(judgment.value)}
-          </Badge>
-        ) : (
-          <Badge variant="muted">unjudged</Badge>
-        )}
-      </div>
-      <SectionHelpText>
-        Use relevant for direct support, partial for useful but incomplete support, and not relevant when the hit does not answer the query.
-      </SectionHelpText>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {relevanceJudgmentOptions.map((option) => {
-          const active = judgment?.value === option.value;
-          return (
-            <Button
-              aria-pressed={active}
-              key={option.value}
-              onClick={() => onSetJudgment(option.value)}
-              size="sm"
-              title={active ? "Clear this relevance judgment" : option.description}
-              type="button"
-              variant={active ? option.activeVariant : "outline"}
-            >
-              {option.label}
-            </Button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function EvidenceProvenanceSummary({
-  entries,
-}: {
-  entries: EvidenceProvenanceEntry[];
-}) {
-  if (!entries.length) return null;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-          <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-          <span>Evidence provenance</span>
-        </div>
-        <Badge variant="muted">{formatCount(entries.length, "field")}</Badge>
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {entries.map((entry) => (
-          <span
-            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-card/70 px-2 py-1 text-xs font-semibold text-muted-foreground"
-            key={`${entry.label}-${entry.value}`}
-          >
-            <span className="shrink-0 font-bold text-foreground">{entry.label}:</span>
-            {entry.href ? (
-              <a
-                className="inline-flex min-w-0 items-center gap-1 break-words text-primary underline-offset-2 hover:underline"
-                href={entry.href}
-                rel="noopener noreferrer"
-                target="_blank"
-              >
-                <span className="min-w-0 break-words">{entry.value}</span>
-                <ExternalLink className="h-3 w-3 shrink-0" />
-              </a>
-            ) : (
-              <span className="min-w-0 break-words">{entry.value}</span>
-            )}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SnippetBlock({ snippet }: { snippet: NonNullable<RetrievalHit["snippet"]> }) {
-  return (
-    <div className="grid gap-2 rounded-md border border-primary/20 bg-primary/5 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-bold uppercase text-primary">Best snippet</span>
-        <span className="font-mono text-xs font-semibold text-muted-foreground">
-          {snippet.start_char}-{snippet.end_char}
-        </span>
-      </div>
-      <p className="break-words text-sm leading-6">
-        <HighlightedText terms={snippet.matched_terms} text={formatClaim(snippet.text)} />
-      </p>
-    </div>
-  );
-}
-
-function HighlightedText({ text, terms }: { text: string; terms: string[] }) {
-  const parts = highlightedParts(text, terms);
-  return (
-    <>
-      {parts.map((part, index) =>
-        part.highlight ? (
-          <mark
-            className="rounded bg-amber-100 px-0.5 font-bold text-amber-950"
-            key={`${part.text}-${index}`}
-          >
-            {part.text}
-          </mark>
-        ) : (
-          <React.Fragment key={`${part.text}-${index}`}>{part.text}</React.Fragment>
-        ),
-      )}
-    </>
-  );
-}
-
-function ScoreMeter({ label, value }: { label: string; value: number }) {
-  const normalized = Math.max(0, Math.min(100, Math.abs(value) * 100));
-  return (
-    <div className="grid gap-1 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex items-center justify-between gap-2 text-xs font-bold">
-        <span>{label}</span>
-        <span className="tabular-nums text-muted-foreground">{formatScore(value)}</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-border">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${normalized}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function ScoreExplanation({ components }: { components: RetrievalScoreComponent[] }) {
-  if (!components.length) return null;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-        <Gauge className="h-3.5 w-3.5 shrink-0" />
-        <span>Score explanation</span>
-      </div>
-      <div className="grid gap-1.5">
-        {components.map((component) => (
-          <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs md:grid-cols-[10rem_5rem_minmax(0,1fr)] md:items-center"
-            key={component.component}
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <span className="min-w-0 break-words font-bold">{component.label}</span>
-              {component.rank ? <Badge variant="muted">rank {component.rank}</Badge> : null}
-            </div>
-            <span className="font-mono font-semibold tabular-nums text-muted-foreground">
-              {formatScore(component.value)}
-            </span>
-            <span className="min-w-0 break-words font-semibold text-muted-foreground">
-              {component.description}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DiversitySelectionExplanation({
-  selection,
-}: {
-  selection: DiversitySelectionStack | null;
-}) {
-  if (!selection) return null;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-        <Network className="h-3.5 w-3.5 shrink-0" />
-        <span>Diversity selection</span>
-      </div>
-      <div className="grid gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <Badge variant="muted">selected #{selection.selectedRank}</Badge>
-          <Badge variant="muted">original #{selection.originalRank}</Badge>
-          <span className="font-mono font-semibold text-muted-foreground">
-            relevance {formatScore(selection.relevanceScore)}
-          </span>
-          <span className="font-mono font-semibold text-muted-foreground">
-            redundancy {formatScore(selection.redundancyScore)}
-          </span>
-          <span className="font-mono font-semibold text-muted-foreground">
-            MMR {formatScore(selection.selectionScore)}
-          </span>
-        </div>
-        <div className="break-words font-semibold text-muted-foreground">
-          {selection.reason}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ConceptMatchExplanation({ matches }: { matches: ConceptMatchSignal[] }) {
-  if (!matches.length) return null;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-        <Network className="h-3.5 w-3.5 shrink-0" />
-        <span>Concept grounding</span>
-      </div>
-      <div className="grid gap-1.5">
-        {matches.map((match) => (
-          <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs"
-            key={`${match.standardSystem}-${match.conceptId}`}
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <Badge className="max-w-full break-words" variant="success">
-                {match.standardSystem}
-                {match.code ? ` ${match.code}` : ""}
-              </Badge>
-              <span className="min-w-0 break-words font-bold">{match.displayName}</span>
-              <span className="font-mono font-semibold text-muted-foreground">
-                {Math.round(match.confidence * 100)}%
-              </span>
-            </div>
-            <div className="break-words font-semibold text-muted-foreground">
-              {match.reason}
-            </div>
-            <div className="flex min-w-0 flex-wrap gap-1">
-              {match.matchedFields.map((field) => (
-                <span
-                  className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
-                  key={`${match.conceptId}-${field}`}
-                >
-                  {humanize(field)}
-                </span>
-              ))}
-              {match.matchedAliases.slice(0, 3).map((alias) => (
-                <span
-                  className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
-                  key={`${match.conceptId}-${alias}`}
-                >
-                  {alias}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function QueryAspectMatchExplanation({ matches }: { matches: QueryAspectMatchSignal[] }) {
-  if (!matches.length) return null;
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
-        <ListFilter className="h-3.5 w-3.5 shrink-0" />
-        <span>Aspect support</span>
-      </div>
-      <div className="grid gap-1.5">
-        {matches.map((match) => (
-          <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs"
-            key={`${match.aspectId}-${match.ruleId}`}
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <Badge className="max-w-full break-words" variant="success">
-                {match.label}
-              </Badge>
-              <Badge variant="muted">priority {match.priority}</Badge>
-              <span className="min-w-0 break-words font-semibold text-muted-foreground">
-                {match.reason}
-              </span>
-            </div>
-            {match.matchedTerms.length || Object.keys(match.matchedFilters).length ? (
-              <div className="flex min-w-0 flex-wrap gap-1">
-                {Object.entries(match.matchedFilters).map(([field, value]) => (
-                  <span
-                    className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
-                    key={`${match.aspectId}-${field}`}
-                  >
-                    {humanize(field)}: {value}
-                  </span>
-                ))}
-                {match.matchedTerms.slice(0, 4).map((term) => (
-                  <span
-                    className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
-                    key={`${match.aspectId}-${term}`}
-                  >
-                    {term}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -6939,10 +4066,14 @@ function TracePanel({
             <RecommendedActionsPanel
               activeFilters={activeFilters}
               actions={packageData.recommended_actions ?? []}
+              filterFieldLabel={filterFieldLabel}
+              formatFilterValue={formatFilterValue}
+              getActionFilter={recommendedActionFilter}
+              getActionSourceLabel={recommendedActionSourceLabel}
               isSearchPending={isSearchPending}
               onApplyFilter={onApplyCoverageFilter}
               onClearAllFilters={onClearAllFilters}
-              onClearFilter={onClearFilter}
+              onClearSourceScope={() => onClearFilter("source_id")}
             />
             <QueryAnalysisBlock
               analysis={queryAnalysis}
@@ -6950,8 +4081,12 @@ function TracePanel({
               isSearchPending={isSearchPending}
               onApplyFilterSuggestion={onApplyFilterSuggestion}
             />
-            <CoverageDiagnosticsBlock
+            <CoverageDiagnosticsPanel
               coverage={coverage}
+              filterFieldLabel={filterFieldLabel}
+              formatFilterValue={formatFilterValue}
+              getCoverageSuggestedAction={coverageSuggestedAction}
+              getCoverageSuggestedFilter={coverageSuggestedFilter}
               isSearchPending={isSearchPending}
               onApplyCoverageFilter={onApplyCoverageFilter}
             />
@@ -6972,266 +4107,6 @@ function TracePanel({
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function QualitySignalList({ signals }: { signals: RetrievalQualitySignal[] }) {
-  if (!signals.length) {
-    return (
-      <TokenList
-        description="Backend quality checks did not return warnings or blockers."
-        items={[]}
-        title="Retrieval quality"
-      />
-    );
-  }
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">
-          Retrieval quality
-        </div>
-        <Badge variant={qualitySignalSummaryVariant(signals)}>
-          {formatCount(signals.length, "signal")}
-        </Badge>
-      </div>
-      <SectionHelpText>
-        Quality signals explain why the evidence package is ready, needs review, or is blocked.
-      </SectionHelpText>
-      <div className="grid gap-2">
-        {signals.map((signal) => {
-          const warning = signal.severity === "warning" || signal.severity === "destructive";
-          return (
-            <div
-              className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
-              key={signal.code}
-            >
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  {warning ? (
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                  ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                  )}
-                  <span className="break-words font-bold">{humanize(signal.code)}</span>
-                </span>
-                <Badge variant={qualitySignalBadgeVariant(signal.severity)}>
-                  {humanize(signal.severity)}
-                </Badge>
-              </div>
-              <div className="break-words text-muted-foreground">{signal.message}</div>
-              <div className="break-words font-semibold text-foreground">
-                {signal.suggested_action}
-              </div>
-              <QualitySignalMetadataDetails signal={signal} />
-              {signal.evidence_ids.length ? (
-                <div className="flex min-w-0 flex-wrap gap-1">
-                  {signal.evidence_ids.slice(0, 4).map((evidenceId) => (
-                    <code
-                      className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px]"
-                      key={`${signal.code}-${evidenceId}`}
-                    >
-                      {evidenceId}
-                    </code>
-                  ))}
-                  {signal.evidence_ids.length > 4 ? (
-                    <span className="rounded bg-muted px-1.5 py-1 font-bold text-muted-foreground">
-                      +{signal.evidence_ids.length - 4}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function QualitySignalMetadataDetails({ signal }: { signal: RetrievalQualitySignal }) {
-  const details = qualitySignalMetadataDetails(signal);
-  if (!details.length) return null;
-  return (
-    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 p-2">
-      <div className="text-[11px] font-bold uppercase text-muted-foreground">
-        Signal details
-      </div>
-      <div className="grid gap-1.5">
-        {details.map((detail) => (
-          <div className="grid gap-1" key={detail.label}>
-            <span className="font-bold text-muted-foreground">{detail.label}</span>
-            <div className="flex min-w-0 flex-wrap gap-1">
-              {detail.values.map((value) => (
-                <Badge
-                  className="max-w-full break-words text-left"
-                  key={`${detail.label}-${value}`}
-                  variant={detail.variant}
-                >
-                  {value}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CoverageDiagnosticsBlock({
-  coverage,
-  isSearchPending,
-  onApplyCoverageFilter,
-}: {
-  coverage: RetrievalCoverage | null | undefined;
-  isSearchPending: boolean;
-  onApplyCoverageFilter: (field: SupportedFilterField, value: string) => void;
-}) {
-  const standardItems = coverage?.standard_system ?? [];
-  const aspectItems = coverage?.query_aspects ?? [];
-  const warningCount = coverage?.warnings.length ?? 0;
-  if (!standardItems.length && !aspectItems.length) {
-    return (
-      <TokenList
-        description="No missing standard or search-aspect coverage was reported."
-        items={[]}
-        title="Coverage diagnostics"
-      />
-    );
-  }
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">
-          Coverage diagnostics
-        </div>
-        <Badge variant={warningCount ? "warning" : "success"}>
-          {warningCount ? `${warningCount} gap` : "covered"}
-        </Badge>
-      </div>
-      <SectionHelpText>
-        Coverage diagnostics show missing standards or query aspects and offer backend-supported filters when available.
-      </SectionHelpText>
-      <CoverageItemList
-        isSearchPending={isSearchPending}
-        items={standardItems}
-        label="Standard coverage"
-        onApplyCoverageFilter={onApplyCoverageFilter}
-      />
-      <CoverageItemList
-        isSearchPending={isSearchPending}
-        items={aspectItems}
-        label="Aspect coverage"
-        onApplyCoverageFilter={onApplyCoverageFilter}
-      />
-    </div>
-  );
-}
-
-function CoverageItemList({
-  isSearchPending,
-  items,
-  label,
-  onApplyCoverageFilter,
-}: {
-  isSearchPending: boolean;
-  items: RetrievalCoverage["standard_system"];
-  label: string;
-  onApplyCoverageFilter: (field: SupportedFilterField, value: string) => void;
-}) {
-  if (!items.length) return null;
-  return (
-    <div className="grid gap-2">
-      <div className="text-xs font-bold uppercase text-muted-foreground">
-        {label}
-      </div>
-      {items.map((item) => {
-        const suggestedFilter = coverageSuggestedFilter(item);
-        const actionable = item.status !== "covered" && suggestedFilter !== null;
-        return (
-          <div
-            className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs"
-            key={`${label}-${item.field}-${item.value}`}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-bold">{humanize(item.value)}</span>
-              <Badge variant={item.status === "covered" ? "success" : "warning"}>
-                {item.status} / {item.selected_count}
-              </Badge>
-            </div>
-            <div className="break-words text-muted-foreground">{item.reason}</div>
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
-              <span className="min-w-0 flex-1 break-words font-semibold text-foreground">
-                {coverageSuggestedAction(item)}
-              </span>
-              {actionable ? (
-                <Button
-                  disabled={isSearchPending}
-                  onClick={() =>
-                    onApplyCoverageFilter(suggestedFilter.field, suggestedFilter.value)
-                  }
-                  size="sm"
-                  title={`Apply ${filterFieldLabel(suggestedFilter.field)}=${formatFilterValue(
-                    suggestedFilter.field,
-                    suggestedFilter.value,
-                  )}`}
-                  type="button"
-                  variant="outline"
-                >
-                  {isSearchPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ListFilter className="h-4 w-4" />
-                  )}
-                  Apply {filterFieldLabel(suggestedFilter.field)}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function QueryVariantList({ variants }: { variants: RetrievalQueryVariant[] }) {
-  if (!variants.length) {
-    return (
-      <TokenList
-        description="No query rewrite variants were generated for this search."
-        items={[]}
-        title="Query rewrites"
-      />
-    );
-  }
-  return (
-    <div className="grid gap-1.5">
-      <div className="text-xs font-bold uppercase text-muted-foreground">
-        Query rewrites
-      </div>
-      <SectionHelpText>
-        Query rewrites are backend-generated search variants. They improve recall but do not change the submitted payload.
-      </SectionHelpText>
-      <div className="grid gap-2">
-        {variants.map((variant, index) => (
-          <div
-            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
-            key={`${variant.source}-${variant.variant}-${index}`}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <code className="min-w-0 break-words rounded bg-muted px-2 py-1 font-mono">
-                {variant.variant}
-              </code>
-              <Badge variant="muted">{humanize(variant.source)}</Badge>
-            </div>
-            <div className="break-words font-semibold text-muted-foreground">
-              {variant.reason}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -7264,7 +4139,11 @@ function QueryAnalysisBlock({
         <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
       </div>
       <QueryProfileCard
-        appliedFilters={appliedFilters}
+        filterEntries={
+          analysis.queryProfile
+            ? queryProfileFilterEntries(analysis.queryProfile, appliedFilters)
+            : []
+        }
         isSearchPending={isSearchPending}
         onApplyFilter={onApplyFilterSuggestion}
         profile={analysis.queryProfile}
@@ -7282,6 +4161,7 @@ function QueryAnalysisBlock({
       <TokenList items={analysis.standards} title="Standard cues" />
       <FilterSuggestionList
         isSearchPending={isSearchPending}
+        isSuggestionSupported={isSupportedFilterField}
         onApplySuggestion={onApplyFilterSuggestion}
         suggestions={analysis.filterSuggestions}
       />
@@ -7406,1467 +4286,11 @@ function QueryAspectPlan({
   );
 }
 
-function ConceptCandidateList({
-  candidates,
-}: {
-  candidates: ConceptCandidateStack[];
-}) {
-  if (!candidates.length) {
-    return <TokenList items={[]} title="Concept candidates" />;
-  }
-  return (
-    <div className="grid gap-1.5">
-      <div className="text-xs font-bold uppercase text-muted-foreground">
-        Concept candidates
-      </div>
-      <div className="grid gap-2">
-        {candidates.map((candidate) => (
-          <div
-            className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
-            key={`${candidate.standardSystem}-${candidate.code}-${candidate.conceptId}`}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-bold">{candidate.displayName}</span>
-              <Badge variant="success">
-                {candidate.standardSystem}
-                {candidate.code ? ` ${candidate.code}` : ""}
-              </Badge>
-            </div>
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              <span className="rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground">
-                {humanize(candidate.clinicalDomain ?? "unknown")}
-              </span>
-              <span className="rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground">
-                {Math.round(candidate.confidence * 100)}%
-              </span>
-              {candidate.matchedAliases.slice(0, 4).map((alias) => (
-                <span
-                  className="max-w-full break-words rounded-full bg-muted px-2 py-1 font-bold text-muted-foreground"
-                  key={`${candidate.conceptId}-${alias}`}
-                >
-                  {alias}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function QueryProfileCard({
-  appliedFilters,
-  isSearchPending,
-  onApplyFilter,
-  profile,
-}: {
-  appliedFilters: Record<string, unknown>;
-  isSearchPending: boolean;
-  onApplyFilter: (suggestion: FilterSuggestionStack) => void;
-  profile: QueryProfileStack | null;
-}) {
-  if (!profile) {
-    return <TokenList items={[]} title="Query profile" />;
-  }
-  const filterEntries = queryProfileFilterEntries(profile, appliedFilters);
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="break-words font-bold">{profile.label}</span>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant="default">{humanize(profile.complexity)}</Badge>
-          <Badge variant="muted">{humanize(profile.route)}</Badge>
-        </div>
-      </div>
-      <div className="break-words text-muted-foreground">{profile.description}</div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        <Badge variant="muted">{humanize(profile.retrievalMode)}</Badge>
-        {filterEntries.map((entry) => (
-          <Badge
-            key={`${entry.field}-${entry.value}`}
-            variant={entry.applied ? "success" : "muted"}
-          >
-            {entry.label}={entry.displayValue}
-          </Badge>
-        ))}
-      </div>
-      {filterEntries.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {filterEntries.map((entry) =>
-            entry.supported ? (
-              <Button
-                disabled={isSearchPending || entry.applied}
-                key={`${entry.field}-${entry.value}-apply`}
-                onClick={() =>
-                  onApplyFilter({
-                    applied: false,
-                    confidence: 1,
-                    field: entry.field,
-                    reason: `Suggested by query profile ${profile.profileId}.`,
-                    value: entry.value,
-                  })
-                }
-                size="sm"
-                title={`Apply ${entry.label}=${entry.displayValue}`}
-                type="button"
-                variant={entry.applied ? "secondary" : "outline"}
-              >
-                {entry.applied ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : isSearchPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ListFilter className="h-4 w-4" />
-                )}
-                {entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`}
-              </Button>
-            ) : (
-              <Badge key={`${entry.field}-${entry.value}-unsupported`} variant="warning">
-                unsupported {humanize(entry.field)}
-              </Badge>
-            ),
-          )}
-        </div>
-      ) : null}
-      {profile.ruleIds.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {profile.ruleIds.map((ruleId) => (
-            <code
-              className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px]"
-              key={ruleId}
-            >
-              {ruleId}
-            </code>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
-  const { copiedKey, clearCopied, markCopied } = useCopyFeedback();
-
-  const copyHintQuery = async (hintKey: string, query: string) => {
-    try {
-      await copyTextToClipboard(query);
-      markCopied(hintKey);
-    } catch {
-      clearCopied();
-    }
-  };
-
-  if (!hints.length) {
-    return <TokenList items={[]} title="Medical search hints" />;
-  }
-  return (
-    <div className="grid gap-1.5">
-      <div className="text-xs font-bold uppercase text-muted-foreground">
-        Medical search hints
-      </div>
-      <div className="grid gap-2">
-        {hints.map((hint) => {
-          const hintKey = `${hint.target}-${hint.query}`;
-          const copied = copiedKey === hintKey;
-          return (
-            <div
-              className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
-              key={hintKey}
-            >
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="break-words font-bold">{humanize(hint.target)}</span>
-                <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-                  <Badge variant={hint.url ? "success" : "muted"}>
-                    {hint.url ? "launchable hint" : "syntax hint"}
-                  </Badge>
-                  <Button
-                    onClick={() => void copyHintQuery(hintKey, hint.query)}
-                    size="sm"
-                    title="Copy medical search hint"
-                    type="button"
-                    variant="outline"
-                  >
-                    {copied ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      <Clipboard className="h-4 w-4" />
-                    )}
-                    {copied ? "Copied" : "Copy"}
-                  </Button>
-                  {hint.url ? (
-                    <Button asChild size="sm" title="Open medical search hint" variant="outline">
-                      <a href={hint.url} rel="noopener noreferrer" target="_blank">
-                        <ExternalLink className="h-4 w-4" />
-                        Open
-                      </a>
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-              <code className="block max-h-24 overflow-auto break-words rounded bg-muted px-2 py-1 font-mono text-xs">
-                {hint.query}
-              </code>
-              <SearchHintMetadata metadata={hint.metadata} />
-              <div className="break-words text-muted-foreground">{hint.rationale}</div>
-              {hint.warnings.length ? (
-                <TokenList items={hint.warnings} title="Hint warnings" tone="warning" />
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function SearchHintMetadata({ metadata }: { metadata: Record<string, unknown> }) {
-  const parameterExamples = searchHintParameterExamples(metadata.parameter_examples);
-  const lineageFollowup = searchHintLineageFollowup(metadata.lineage_followup);
-  const scopeEndpoints = stringArrayValue(metadata.scope_endpoints);
-  const selectedTerms = stringArrayValue(metadata.selected_terms);
-  const selectedUnitCandidates = stringArrayValue(metadata.selected_unit_candidates);
-  const selectedCandidates = selectedTerms.length ? selectedTerms : selectedUnitCandidates;
-  const selectedCandidateTitle = selectedTerms.length ? "Selected terminology terms" : "Selected unit candidates";
-  const capabilityWarning = optionalStringValue(metadata.capability_warning);
-  if (
-    !parameterExamples.length &&
-    !lineageFollowup.length &&
-    !scopeEndpoints.length &&
-    !selectedCandidates.length &&
-    !capabilityWarning
-  ) {
-    return null;
-  }
-  return (
-    <details className="rounded-md border border-border bg-muted/20">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 px-2 py-1.5 font-black">
-        Route details
-        {parameterExamples.length ? (
-          <Badge variant="muted">{formatCount(parameterExamples.length, "parameter")}</Badge>
-        ) : null}
-        {scopeEndpoints.length ? <Badge variant="muted">scoped API</Badge> : null}
-        {selectedCandidates.length ? (
-          <Badge variant="success">{formatCount(selectedCandidates.length, "candidate")}</Badge>
-        ) : null}
-        {lineageFollowup.length ? <Badge variant="warning">lineage</Badge> : null}
-      </summary>
-      <div className="grid gap-2 border-t border-border p-2">
-        {scopeEndpoints.length ? (
-          <div className="grid gap-1.5">
-            <div className="font-black uppercase text-muted-foreground">
-              Endpoint scope
-            </div>
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              {scopeEndpoints.slice(0, 6).map((endpoint) => (
-                <code
-                  className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[11px]"
-                  key={endpoint}
-                >
-                  {endpoint}
-                </code>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {selectedCandidates.length ? (
-          <div className="grid gap-1.5">
-            <div className="font-black uppercase text-muted-foreground">
-              {selectedCandidateTitle}
-            </div>
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              {selectedCandidates.slice(0, 8).map((candidate) => (
-                <Badge key={candidate} variant="success">
-                  {candidate}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {parameterExamples.length ? (
-          <div className="grid gap-1.5">
-            <div className="font-black uppercase text-muted-foreground">
-              Parameter examples
-            </div>
-            {parameterExamples.map((example) => (
-              <div
-                className="grid gap-1 rounded-md border border-border bg-card px-2 py-1.5"
-                key={`${example.name}:${example.example}`}
-              >
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <Badge variant={example.matchedDatasetField ? "success" : "muted"}>
-                    {example.name}
-                  </Badge>
-                  <span className="break-words text-muted-foreground">
-                    {example.targetField}
-                  </span>
-                </div>
-                <code className="break-words font-mono text-[11px]">{example.example}</code>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {lineageFollowup.length ? (
-          <div className="grid gap-1.5">
-            <div className="font-black uppercase text-muted-foreground">
-              Lineage follow-up
-            </div>
-            {lineageFollowup.map((item) => (
-              <div
-                className="grid gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-950"
-                key={item.parameter}
-              >
-                <code className="break-words font-mono text-[11px]">{item.parameter}</code>
-                <div className="break-words text-[11px] leading-5">{item.purpose}</div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {capabilityWarning ? (
-          <div className="rounded-md border border-border bg-card px-2 py-1.5 text-[11px] font-semibold leading-5 text-muted-foreground">
-            {capabilityWarning}
-          </div>
-        ) : null}
-      </div>
-    </details>
-  );
-}
-
-function QueryDiagnosticList({
-  diagnostics,
-}: {
-  diagnostics: QueryDiagnosticStack[];
-}) {
-  if (!diagnostics.length) {
-    return (
-      <TokenList
-        description="No query diagnostic warnings were emitted."
-        items={[]}
-        title="Query diagnostics"
-      />
-    );
-  }
-  return (
-    <div className="grid gap-1.5">
-      <div className="text-xs font-bold uppercase text-muted-foreground">
-        Query diagnostics
-      </div>
-      <SectionHelpText>
-        Query diagnostics explain parser, expansion, and safety issues detected before ranking.
-      </SectionHelpText>
-      <div className="grid gap-2">
-        {diagnostics.map((diagnostic) => (
-          <div
-            className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
-            key={diagnostic.code}
-          >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <span className="break-words font-bold">{humanize(diagnostic.code)}</span>
-              <Badge variant={diagnosticBadgeVariant(diagnostic.severity)}>
-                {humanize(diagnostic.severity)}
-              </Badge>
-            </div>
-            <div className="break-words text-muted-foreground">{diagnostic.message}</div>
-            <DiagnosticMetadataChips metadata={diagnostic.metadata} />
-            <div className="break-words font-semibold text-foreground">
-              {diagnostic.suggestedAction}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DiagnosticMetadataChips({ metadata }: { metadata: Record<string, unknown> }) {
-  const activeFilters = stringArrayValue(metadata.active_metadata_filters);
-  const suggestedStandards = stringArrayValue(metadata.suggested_standards);
-  const appliedStandard = optionalStringValue(metadata.applied_standard);
-  const tokenCount = numberValue(metadata.query_token_count);
-  const filterCount = numberValue(metadata.active_metadata_filter_count);
-  const chips = [
-    tokenCount !== null ? `${tokenCount} query token${tokenCount === 1 ? "" : "s"}` : "",
-    filterCount !== null ? `${filterCount} active filter${filterCount === 1 ? "" : "s"}` : "",
-    appliedStandard ? `applied ${appliedStandard}` : "",
-    suggestedStandards.length ? `suggested ${suggestedStandards.join(", ")}` : "",
-    activeFilters.length ? `filters ${activeFilters.join(", ")}` : "",
-  ].filter(Boolean);
-  if (!chips.length) return null;
-  return (
-    <div className="flex min-w-0 flex-wrap gap-1">
-      {chips.map((chip) => (
-        <Badge className="max-w-full break-words" key={chip} variant="muted">
-          {chip}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function FilterSuggestionList({
-  isSearchPending,
-  onApplySuggestion,
-  suggestions,
-}: {
-  isSearchPending: boolean;
-  onApplySuggestion: (suggestion: FilterSuggestionStack) => void;
-  suggestions: FilterSuggestionStack[];
-}) {
-  if (!suggestions.length) {
-    return <TokenList items={[]} title="Suggested filters" />;
-  }
-  return (
-    <div className="grid gap-1.5">
-      <div className="text-xs font-bold uppercase text-muted-foreground">
-        Suggested filters
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {suggestions.map((suggestion) => {
-          const actionable =
-            !suggestion.applied && isSupportedFilterField(suggestion.field);
-          return (
-            <span
-              className={cn(
-                "inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold",
-                suggestion.applied
-                  ? "bg-emerald-100 text-emerald-900"
-                  : "bg-card text-muted-foreground",
-              )}
-              key={`${suggestion.field}-${suggestion.value}`}
-              title={suggestion.reason}
-            >
-              <span className="break-words">
-                {humanize(suggestion.field)}={humanize(suggestion.value)}
-              </span>
-              <span className="tabular-nums">
-                {Math.round(suggestion.confidence * 100)}%
-              </span>
-              {suggestion.applied ? <span>applied</span> : null}
-              {actionable ? (
-                <button
-                  aria-label={`Apply ${humanize(suggestion.field)} ${humanize(suggestion.value)} filter`}
-                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2 text-[11px] font-black text-foreground hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isSearchPending}
-                  onClick={() => onApplySuggestion(suggestion)}
-                  title={`Apply ${humanize(suggestion.field)}=${humanize(suggestion.value)}`}
-                  type="button"
-                >
-                  {isSearchPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <ListFilter className="h-3 w-3" />
-                  )}
-                  Apply
-                </button>
-              ) : null}
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function QueryAnalysisCounter({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border border-border bg-card px-2 py-1.5">
       <div className="font-bold text-muted-foreground">{label}</div>
       <div className="text-base font-black tabular-nums">{value}</div>
-    </div>
-  );
-}
-
-function DiversityBadge({ packageData }: { packageData: RetrievalPackage }) {
-  const diversity = diversityFromPackage(packageData);
-  if (!diversity.enabled) {
-    return <Badge variant="muted">score order</Badge>;
-  }
-  return <Badge variant="success">{formatSourceCoverage(diversity)} sources</Badge>;
-}
-
-function RerankBadge({ packageData }: { packageData: RetrievalPackage }) {
-  const stack = rankingStackFromPackage(packageData);
-  if (!stack.reranker.enabled) {
-    return <Badge variant="muted">first stage only</Badge>;
-  }
-  return <Badge variant="success">reranked</Badge>;
-}
-
-function GraphPanel({ graphContext }: { graphContext: RetrievalGraphContext | undefined }) {
-  const summary = graphContext ? graphSummaryFromContext(graphContext) : null;
-  const recognizedEntities = graphContext ? graphRecognizedEntities(graphContext) : [];
-  const normalizedConcepts = graphContext ? graphNormalizedConcepts(graphContext) : [];
-  const fhirSearchParameters = graphContext ? graphFhirSearchParameters(graphContext) : [];
-  const relationCounts = graphContext ? graphRelationCounts(graphContext) : [];
-
-  return (
-    <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
-        <CardTitle className="flex items-center gap-2">
-          <Network className="h-5 w-5 text-primary" />
-          Graph handoff
-        </CardTitle>
-        <CardDescription>
-          Auditable entities, terminology links, and FHIR search hooks prepared for Graph-NER/RAG.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 pt-4">
-        {!graphContext ? (
-          <Notice title="Graph context unavailable">
-            Run a search to inspect graph handoff context.
-          </Notice>
-        ) : (
-          <>
-            <div className="grid gap-2 text-sm sm:grid-cols-3 xl:grid-cols-5">
-              <GraphCounter label="Nodes" value={summary?.nodeCount ?? graphContext.nodes.length} />
-              <GraphCounter label="Edges" value={summary?.edgeCount ?? graphContext.edges.length} />
-              <GraphCounter label="Triples" value={summary?.tripleCount ?? graphContext.triples.length} />
-              <GraphCounter label="NER rules" value={summary?.ruleSourceCount ?? 0} />
-              <GraphCounter label="Concepts" value={summary?.conceptRegistryCount ?? 0} />
-            </div>
-
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <Badge variant="muted">{graphContext.graph_contract}</Badge>
-              {relationCounts.slice(0, 5).map((relation) => (
-                <Badge key={relation.relation} variant="muted">
-                  {relation.count} {humanize(relation.relation)}
-                </Badge>
-              ))}
-            </div>
-
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-              <GraphSection
-                description="What the system recognized from the query and trusted evidence."
-                emptyText="No recognized entities were emitted."
-                title="Recognized entities"
-              >
-                {recognizedEntities.slice(0, 10).map((node) => (
-                  <GraphEntityRow key={node.id} node={node} />
-                ))}
-              </GraphSection>
-
-              <GraphSection
-                description="Dictionary normalizations are grounding hints, not autonomous clinical coding."
-                emptyText="No terminology normalization was emitted."
-                title="Terminology grounding"
-              >
-                {normalizedConcepts.slice(0, 6).map((node) => (
-                  <div className="rounded-md border border-border bg-muted/20 p-2" key={node.id}>
-                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="break-words text-sm font-black">{node.normalized_display ?? node.label}</div>
-                        <div className="mt-0.5 break-words font-mono text-xs text-muted-foreground">
-                          {node.normalized_code}
-                        </div>
-                      </div>
-                      <Badge variant="success">{node.normalized_system ?? "code"}</Badge>
-                    </div>
-                    <div className="mt-2 flex min-w-0 flex-wrap gap-1.5 text-xs">
-                      {node.clinical_domain ? <Badge variant="muted">{humanize(node.clinical_domain)}</Badge> : null}
-                      {node.matched_text ? <Badge variant="muted">matched {node.matched_text}</Badge> : null}
-                      <Badge variant="muted">{formatGraphConfidence(node.confidence)}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </GraphSection>
-            </div>
-
-            <GraphSection
-              description="FHIR resource search parameters exposed for downstream retrieval and MCP tools."
-              emptyText="No FHIR search parameters were emitted for this query."
-              title="FHIR search hooks"
-            >
-              {fhirSearchParameters.length ? (
-                <div className="grid gap-2 md:grid-cols-2">
-                  {fhirSearchParameters.slice(0, 8).map((node) => (
-                    <div className="rounded-md border border-border bg-muted/20 p-2 text-sm" key={node.id}>
-                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                        <div className="break-words font-black">{node.label}</div>
-                        {node.search_type ? <Badge variant="muted">{node.search_type}</Badge> : null}
-                      </div>
-                      {node.target_field ? (
-                        <div className="mt-1 break-words text-xs font-semibold text-muted-foreground">
-                          {node.target_field}
-                        </div>
-                      ) : null}
-                      {node.example ? (
-                        <div className="mt-2 break-all rounded bg-card px-2 py-1 font-mono text-xs">
-                          {node.example}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </GraphSection>
-
-            <div className="grid gap-2">
-              <div>
-                <div className="text-xs font-bold uppercase text-muted-foreground">
-                  Evidence triples
-                </div>
-                <SectionHelpText>
-                  Compact audit trail showing which trusted source supports each entity or normalization.
-                </SectionHelpText>
-              </div>
-              {graphContext.triples.slice(0, 8).map((triple, index) => (
-                <div
-                  className="grid gap-1 rounded-md border border-border bg-muted/20 p-2 text-sm"
-                  key={`${triple.subject}-${triple.object}-${index}`}
-                >
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <div className="break-words font-bold">{triple.subject}</div>
-                    <Badge variant="muted">{humanize(triple.predicate)}</Badge>
-                  </div>
-                  <div className="break-words text-sm text-muted-foreground">
-                    {triple.object}
-                  </div>
-                  {triple.evidence_id ? (
-                    <div className="break-all font-mono text-[11px] text-muted-foreground">
-                      {triple.evidence_id}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function GraphSection({
-  children,
-  description,
-  emptyText,
-  title,
-}: {
-  children: React.ReactNode;
-  description: string;
-  emptyText: string;
-  title: string;
-}) {
-  const childArray = React.Children.toArray(children);
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-card/60 p-3">
-      <div>
-        <div className="text-xs font-bold uppercase text-muted-foreground">{title}</div>
-        <SectionHelpText>{description}</SectionHelpText>
-      </div>
-      {childArray.length ? childArray : <Notice title={emptyText}>{emptyText}</Notice>}
-    </div>
-  );
-}
-
-function GraphEntityRow({ node }: { node: RetrievalGraphContext["nodes"][number] }) {
-  return (
-    <div className="rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <div className="break-words text-sm font-black">{node.label}</div>
-          <div className="mt-0.5 break-all font-mono text-[11px] text-muted-foreground">
-            {node.id}
-          </div>
-        </div>
-        <Badge variant={graphNodeBadgeVariant(node.type)}>{humanize(node.type)}</Badge>
-      </div>
-      <div className="mt-2 flex min-w-0 flex-wrap gap-1.5 text-xs">
-        {node.rule_source ? <Badge variant="muted">{humanize(node.rule_source)}</Badge> : null}
-        {node.matched_text ? <Badge variant="muted">matched {node.matched_text}</Badge> : null}
-        <Badge variant="muted">{formatGraphConfidence(node.confidence)}</Badge>
-      </div>
-    </div>
-  );
-}
-
-function graphSummaryFromContext(graphContext: RetrievalGraphContext) {
-  const summary = graphContext.summary;
-  return {
-    conceptRegistryCount: numericGraphSummaryValue(summary?.concept_registry_count),
-    edgeCount: numericGraphSummaryValue(summary?.edge_count) ?? graphContext.edges.length,
-    nodeCount: numericGraphSummaryValue(summary?.node_count) ?? graphContext.nodes.length,
-    ruleSourceCount: numericGraphSummaryValue(summary?.rule_source_count),
-    tripleCount: numericGraphSummaryValue(summary?.triple_count) ?? graphContext.triples.length,
-  };
-}
-
-function numericGraphSummaryValue(value: number | undefined): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function graphRecognizedEntities(graphContext: RetrievalGraphContext) {
-  const priority: Record<string, number> = {
-    clinical_concept: 0,
-    standard: 1,
-    fhir_resource: 2,
-    data_field: 3,
-    clinical_domain: 4,
-    standard_system: 5,
-  };
-  return graphContext.nodes
-    .filter((node) => priority[node.type] !== undefined)
-    .sort((left, right) => {
-      const priorityDelta = priority[left.type] - priority[right.type];
-      if (priorityDelta !== 0) return priorityDelta;
-      return left.label.localeCompare(right.label);
-    });
-}
-
-function graphNormalizedConcepts(graphContext: RetrievalGraphContext) {
-  return graphContext.nodes
-    .filter((node) => Boolean(node.normalized_code))
-    .sort((left, right) => left.label.localeCompare(right.label));
-}
-
-function graphFhirSearchParameters(graphContext: RetrievalGraphContext) {
-  return graphContext.nodes
-    .filter((node) => node.type === "fhir_search_parameter")
-    .sort((left, right) => left.label.localeCompare(right.label));
-}
-
-function graphRelationCounts(graphContext: RetrievalGraphContext) {
-  const counts = new Map<string, number>();
-  for (const edge of graphContext.edges) {
-    counts.set(edge.relation, (counts.get(edge.relation) ?? 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .map(([relation, count]) => ({ count, relation }))
-    .sort((left, right) => right.count - left.count || left.relation.localeCompare(right.relation));
-}
-
-function graphNodeBadgeVariant(
-  nodeType: string,
-): React.ComponentProps<typeof Badge>["variant"] {
-  if (nodeType === "clinical_concept" || nodeType === "fhir_resource") return "success";
-  if (nodeType === "standard" || nodeType === "standard_code") return "default";
-  return "muted";
-}
-
-function formatGraphConfidence(confidence: number | undefined) {
-  return typeof confidence === "number" ? `${Math.round(confidence * 100)}% confidence` : "confidence n/a";
-}
-
-function IntegrityPanel({
-  includeCorpus,
-  isFetching,
-  onRefresh,
-  onToggleCorpus,
-  report,
-}: {
-  includeCorpus: boolean;
-  isFetching: boolean;
-  onRefresh: () => void;
-  onToggleCorpus: () => void;
-  report: RetrievalIntegrityReport | undefined;
-}) {
-  const status = report?.status ?? "loading";
-  const checks = report ? prioritizedIntegrityChecks(report) : [];
-  const hasWarnings = Boolean(report?.warnings.length);
-  const StatusIcon = status === "ok" ? CheckCircle2 : AlertTriangle;
-
-  return (
-    <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border bg-card/70">
-        <div className="min-w-0">
-          <CardTitle className="flex items-center gap-2">
-            <StatusIcon
-              className={cn(
-                "h-5 w-5",
-                status === "ok" ? "text-emerald-700" : "text-amber-700",
-              )}
-            />
-            Index integrity
-          </CardTitle>
-          <CardDescription>
-            {report
-              ? `${report.repository} / ${report.checked_scope}`
-              : "Checking indexed knowledge consistency"}
-          </CardDescription>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button onClick={onToggleCorpus} size="sm" type="button" variant="outline">
-            <Database className="h-4 w-4" />
-            {includeCorpus ? "Corpus on" : "Seeded only"}
-          </Button>
-          <Button disabled={isFetching} onClick={onRefresh} size="sm" type="button" variant="outline">
-            {isFetching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Refresh
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="grid gap-4 pt-4">
-        {!report ? (
-          <Notice title="Integrity check running">
-            The app is checking trusted source hashes against the active index.
-          </Notice>
-        ) : (
-          <>
-            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
-              <IntegrityMetric
-                label="Status"
-                tone={integrityBadgeVariant(report.status)}
-                value={humanize(report.status)}
-              />
-              <IntegrityMetric label="Expected" value={report.expected_source_count} />
-              <IntegrityMetric label="Indexed" value={report.indexed_source_count} />
-              <IntegrityMetric label="OK" tone="success" value={report.ok_count} />
-              <IntegrityMetric label="Stale" tone={report.stale_count ? "warning" : "muted"} value={report.stale_count} />
-              <IntegrityMetric label="Missing" tone={report.missing_count ? "destructive" : "muted"} value={report.missing_count} />
-            </div>
-
-            {hasWarnings ? (
-              <TokenList items={report.warnings} title="Integrity warnings" tone="warning" />
-            ) : (
-              <TokenList items={[]} title="Integrity warnings" />
-            )}
-
-            <div className="grid gap-2">
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-bold uppercase text-muted-foreground">
-                  Source checks
-                </div>
-                <Badge variant={report.extra_count ? "warning" : "muted"}>
-                  {formatCount(report.extra_count, "extra source")}
-                </Badge>
-              </div>
-              <div className="grid gap-2">
-                {checks.map((check) => (
-                  <div
-                    className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm"
-                    key={check.source_id}
-                  >
-                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="break-all font-mono text-xs font-bold">
-                          {check.source_id}
-                        </div>
-                        <div className="mt-1 break-words text-xs text-muted-foreground">
-                          {check.message}
-                        </div>
-                      </div>
-                      <Badge variant={integrityBadgeVariant(check.status)}>
-                        {humanize(check.status)}
-                      </Badge>
-                    </div>
-                    <div className="grid gap-2 text-xs sm:grid-cols-4">
-                      <IntegrityFact label="Expected" value={`${check.expected_chunk_count}`} />
-                      <IntegrityFact label="Indexed" value={`${check.indexed_chunk_count}`} />
-                      <IntegrityFact label="Expected hash" value={shortHash(check.expected_hash)} />
-                      <IntegrityFact label="Indexed hash" value={shortHash(check.indexed_hash)} />
-                    </div>
-                  </div>
-                ))}
-                {!checks.length ? (
-                  <div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                    No source checks returned.
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function IntegrityMetric({
-  label,
-  tone = "muted",
-  value,
-}: {
-  label: string;
-  tone?: "default" | "success" | "warning" | "destructive" | "muted";
-  value: number | string;
-}) {
-  return (
-    <div className="rounded-md border border-border bg-muted/20 p-2">
-      <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 min-w-0">
-        {typeof value === "string" ? (
-          <Badge variant={tone}>{value}</Badge>
-        ) : (
-          <span className={cn("text-lg font-black tabular-nums", integrityMetricToneClass(tone))}>
-            {value}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function IntegrityFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-md border border-border bg-card p-2">
-      <div className="font-bold text-muted-foreground">{label}</div>
-      <div className="break-all font-mono font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function evaluationReadinessVariant(
-  status: string,
-): "success" | "warning" | "destructive" | "muted" {
-  if (status === "ready") return "success";
-  if (status === "unlabeled") return "destructive";
-  if (status === "low_confidence" || status === "usable_with_gaps") return "warning";
-  return "muted";
-}
-
-function evaluationReadinessClass(status: string): string {
-  if (status === "ready") return "border-emerald-200 bg-emerald-50 text-emerald-950";
-  if (status === "unlabeled") return "border-red-200 bg-red-50 text-red-950";
-  if (status === "low_confidence" || status === "usable_with_gaps") {
-    return "border-amber-200 bg-amber-50 text-amber-950";
-  }
-  return "border-border bg-card text-card-foreground";
-}
-
-function SourceScopePicker({
-  isSearchPending,
-  onClear,
-  onSelect,
-  selectedSource,
-  sourceId,
-  sources,
-}: {
-  isSearchPending: boolean;
-  onClear: () => void;
-  onSelect: (sourceId: string) => void;
-  selectedSource: RetrievalSource | null;
-  sourceId: string;
-  sources: RetrievalSource[];
-}) {
-  const [search, setSearch] = React.useState("");
-  const visibleSources = sources
-    .filter((source) =>
-      sourceMatchesInventoryFilters(source, {
-        domain: null,
-        search,
-        standard: null,
-        type: null,
-      }),
-    )
-    .slice(0, 8);
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-muted-foreground">
-            Exact source scope
-            <HelpTooltip label="Exact source scope help">
-              Exact source scope reruns retrieval against one source ID. Use it for audit or source-specific debugging, not broad evidence discovery.
-            </HelpTooltip>
-          </div>
-          <div className="mt-1 break-words text-sm font-semibold text-muted-foreground">
-            {sourceId
-              ? selectedSource?.title ?? sourceId
-              : `${formatCount(sources.length, "approved source")} available`}
-          </div>
-        </div>
-        {sourceId ? (
-          <Button
-            disabled={isSearchPending}
-            onClick={onClear}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <X className="h-4 w-4" />
-            Clear source
-          </Button>
-        ) : null}
-      </div>
-      <div
-        className={cn(
-          "flex min-w-0 items-start gap-2 rounded-md border px-3 py-2 text-xs leading-5",
-          sourceId
-            ? "border-amber-200 bg-amber-50 text-amber-950"
-            : "border-border bg-card text-muted-foreground",
-        )}
-      >
-        {sourceId ? (
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
-        ) : (
-          <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-        )}
-        <span className="min-w-0 break-words font-semibold">
-          {sourceId
-            ? "Search is constrained to one exact source. Clear it before judging corpus-wide evidence coverage."
-            : "Leave exact source blank for broad search. Pick a source only when you need source-specific evidence."}
-        </span>
-      </div>
-      {sourceId ? (
-        <div className="grid gap-1 rounded-md border border-primary/25 bg-primary/10 p-2 text-sm">
-          <div className="font-bold">{selectedSource?.title ?? sourceId}</div>
-          <div className="break-all font-mono text-xs text-muted-foreground">{sourceId}</div>
-          {selectedSource ? (
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              <Badge variant="muted">{humanize(selectedSource.source_type)}</Badge>
-              {selectedSource.clinical_domain ? (
-                <Badge variant="muted">{humanize(selectedSource.clinical_domain)}</Badge>
-              ) : null}
-              {selectedSource.standard_system ? (
-                <Badge variant="muted">{selectedSource.standard_system}</Badge>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      <Input
-        aria-label="Search exact source scope"
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Search source ID, title, type, domain, or standard"
-        value={search}
-      />
-      <div className="grid gap-1.5">
-        {visibleSources.map((source) => (
-          <button
-            className={cn(
-              "grid min-w-0 gap-1 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-              source.source_id === sourceId
-                ? "border-primary bg-primary/10"
-                : "border-border bg-card hover:border-primary hover:bg-primary/5",
-            )}
-            disabled={isSearchPending}
-            key={source.source_id}
-            onClick={() => onSelect(source.source_id)}
-            type="button"
-            >
-              <span className="break-words font-bold">{source.title}</span>
-              {source.source_id === sourceId ? (
-                <Badge className="w-fit" variant="success">
-                  applied exact source
-                </Badge>
-              ) : null}
-              <span className="break-all font-mono text-xs text-muted-foreground">
-                {source.source_id}
-            </span>
-            <span className="flex min-w-0 flex-wrap gap-1.5">
-              <Badge variant="muted">{humanize(source.source_type)}</Badge>
-              {source.clinical_domain ? (
-                <Badge variant="muted">{humanize(source.clinical_domain)}</Badge>
-              ) : null}
-              {source.standard_system ? (
-                <Badge variant="muted">{source.standard_system}</Badge>
-              ) : null}
-              <Badge variant="muted">{formatCount(source.chunk_count, "chunk")}</Badge>
-            </span>
-          </button>
-        ))}
-        {!visibleSources.length ? (
-          <div className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
-            {sources.length ? "No source matches this search." : "No retrieval sources loaded."}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function SourcesPanel({
-  isLoading,
-  onUseSource,
-  sources,
-}: {
-  isLoading: boolean;
-  onUseSource: (sourceId: string) => void;
-  sources: RetrievalSource[];
-}) {
-  const [sourceSearch, setSourceSearch] = React.useState("");
-  const [sourceTypeFilter, setSourceTypeFilter] = React.useState<string | null>(null);
-  const [sourceDomainFilter, setSourceDomainFilter] = React.useState<string | null>(null);
-  const [sourceStandardFilter, setSourceStandardFilter] = React.useState<string | null>(null);
-  const filteredSources = sources.filter((source) =>
-    sourceMatchesInventoryFilters(source, {
-      domain: sourceDomainFilter,
-      search: sourceSearch,
-      standard: sourceStandardFilter,
-      type: sourceTypeFilter,
-    }),
-  );
-  const sourceTypeOptions = uniqueValues(sources.map((source) => source.source_type));
-  const sourceDomainOptions = uniqueValues(sources.map((source) => source.clinical_domain));
-  const sourceStandardOptions = uniqueValues(sources.map((source) => source.standard_system));
-  const hasSourceFilters = Boolean(
-    sourceSearch.trim() ||
-      sourceTypeFilter ||
-      sourceDomainFilter ||
-      sourceStandardFilter,
-  );
-  const readiness = sourceInventoryReadiness(sources, filteredSources);
-  const clearSourceFilters = () => {
-    setSourceSearch("");
-    setSourceTypeFilter(null);
-    setSourceDomainFilter(null);
-    setSourceStandardFilter(null);
-  };
-
-  return (
-    <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border bg-card/70">
-        <div className="min-w-0">
-          <CardTitle className="flex items-center gap-2">
-            Trusted sources
-            <HelpTooltip label="Trusted sources help">
-              Source inventory shows what the retrieval system can search. The Use source action applies exact source scope to the query builder.
-            </HelpTooltip>
-          </CardTitle>
-          <CardDescription>
-            {isLoading
-              ? "Loading inventory"
-              : `${formatCount(filteredSources.length, "source")} shown from ${sources.length}`}
-          </CardDescription>
-        </div>
-        {hasSourceFilters ? (
-          <Button onClick={clearSourceFilters} size="sm" type="button" variant="outline">
-            <X className="h-4 w-4" />
-            Clear filters
-          </Button>
-        ) : null}
-      </CardHeader>
-      <CardContent className="grid gap-3 pt-4">
-        <SectionHelpText>
-          Inventory filters only inspect available sources. Use source constrains retrieval to one source ID; clear exact source scope for corpus-wide coverage.
-        </SectionHelpText>
-        <SourceInventoryReadinessPanel
-          hasSourceFilters={hasSourceFilters}
-          readiness={readiness}
-        />
-        <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-muted-foreground">
-              Source inventory filters
-              <HelpTooltip label="Source inventory filters help">
-                Inventory filters inspect available trusted sources. Use source scope only when you intentionally want evidence from one exact source.
-              </HelpTooltip>
-            </div>
-            <Badge variant="muted">
-              {filteredSources.length}/{sources.length}
-            </Badge>
-          </div>
-          <Input
-            aria-label="Filter trusted sources"
-            onChange={(event) => setSourceSearch(event.target.value)}
-            placeholder="Filter sources by title, ID, type, domain, or standard"
-            value={sourceSearch}
-          />
-          <SourceFilterChips
-            activeValue={sourceTypeFilter}
-            formatter={humanize}
-            label="Source type"
-            onSelect={setSourceTypeFilter}
-            values={sourceTypeOptions}
-          />
-          <SourceFilterChips
-            activeValue={sourceDomainFilter}
-            formatter={humanize}
-            label="Domain"
-            onSelect={setSourceDomainFilter}
-            values={sourceDomainOptions}
-          />
-          <SourceFilterChips
-            activeValue={sourceStandardFilter}
-            formatter={(value) => value}
-            label="Standard"
-            onSelect={setSourceStandardFilter}
-            values={sourceStandardOptions}
-          />
-        </div>
-        <div className="grid gap-3">
-          {filteredSources.map((source) => (
-            <SourceCard key={source.source_id} onUseSource={onUseSource} source={source} />
-          ))}
-          {!filteredSources.length ? (
-            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
-              {isLoading
-                ? "Loading sources."
-                : hasSourceFilters
-                  ? "No sources match the current filters."
-                  : "No retrieval sources indexed."}
-            </div>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SourceFilterChips({
-  activeValue,
-  formatter,
-  label,
-  onSelect,
-  values,
-}: {
-  activeValue: string | null;
-  formatter: (value: string) => string;
-  label: string;
-  onSelect: (value: string | null) => void;
-  values: string[];
-}) {
-  if (!values.length) return null;
-  return (
-    <div className="grid gap-1.5">
-      <div className="text-xs font-bold text-muted-foreground">{label}</div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        <button
-          aria-pressed={!activeValue}
-          className={sourceFilterChipClass(!activeValue)}
-          onClick={() => onSelect(null)}
-          type="button"
-        >
-          All
-        </button>
-        {values.map((value) => {
-          const active = activeValue === value;
-          return (
-            <button
-              aria-pressed={active}
-              className={sourceFilterChipClass(active)}
-              key={value}
-              onClick={() => onSelect(value)}
-              type="button"
-            >
-              {formatter(value)}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function SourceInventoryReadinessPanel({
-  hasSourceFilters,
-  readiness,
-}: {
-  hasSourceFilters: boolean;
-  readiness: SourceInventoryReadiness;
-}) {
-  const blocked = readiness.readiness === "blocked";
-  const review = readiness.readiness === "review";
-  return (
-    <div
-      aria-label="Source inventory readiness"
-      className={cn(
-        "grid gap-2 rounded-md border p-3",
-        blocked
-          ? "border-red-200 bg-red-50 text-red-950"
-          : review
-            ? "border-amber-200 bg-amber-50 text-amber-950"
-            : "border-emerald-200 bg-emerald-50 text-emerald-950",
-      )}
-    >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase">
-          Source readiness
-          <HelpTooltip label="Source readiness help">
-            Summarizes whether the trusted corpus has searchable sources, chunks, domains, and standards before you apply exact source scope.
-          </HelpTooltip>
-        </div>
-        <Badge variant={sourceInventoryReadinessVariant(readiness.readiness)}>
-          {humanize(readiness.readiness)}
-        </Badge>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <SourceReadinessMetric label="Sources" value={`${readiness.filteredCount}/${readiness.sourceCount}`} />
-        <SourceReadinessMetric label="Chunks" value={formatCount(readiness.chunkCount, "chunk")} />
-        <SourceReadinessMetric label="Domains" value={formatCount(readiness.domainCount, "domain")} />
-        <SourceReadinessMetric label="Standards" value={formatCount(readiness.standardCount, "standard")} />
-      </div>
-      <div className="break-words text-sm font-semibold leading-6">
-        {sourceInventoryReadinessMessage(readiness, hasSourceFilters)}
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        <Badge variant={readiness.sourceTypeCount ? "success" : "warning"}>
-          {formatCount(readiness.sourceTypeCount, "source type")}
-        </Badge>
-        <Badge variant={readiness.emptySourceCount ? "warning" : "success"}>
-          {readiness.emptySourceCount
-            ? formatCount(readiness.emptySourceCount, "empty source")
-            : "all shown sources have chunks"}
-        </Badge>
-        {hasSourceFilters ? <Badge variant="warning">filtered inventory</Badge> : null}
-      </div>
-    </div>
-  );
-}
-
-function SourceReadinessMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-border bg-card/80 px-3 py-2">
-      <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-black">{value}</div>
-    </div>
-  );
-}
-
-function SourceCard({
-  onUseSource,
-  source,
-}: {
-  onUseSource: (sourceId: string) => void;
-  source: RetrievalSource;
-}) {
-  return (
-    <article className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
-      <div className="min-w-0">
-        <div className="break-words font-bold">{source.title}</div>
-        <div className="break-all font-mono text-xs text-muted-foreground">
-          {source.source_id}
-        </div>
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
-          {humanize(source.source_type)}
-        </span>
-        {source.clinical_domain ? (
-          <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
-            {humanize(source.clinical_domain)}
-          </span>
-        ) : null}
-        {source.standard_system ? (
-          <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
-            {source.standard_system}
-          </span>
-        ) : null}
-        <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
-          {formatCount(source.chunk_count, "chunk")}
-        </span>
-      </div>
-      <Button
-        className="w-fit"
-        onClick={() => onUseSource(source.source_id)}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        <Search className="h-4 w-4" />
-        Use source
-      </Button>
-    </article>
-  );
-}
-
-function sourceInventoryReadiness(
-  sources: RetrievalSource[],
-  filteredSources: RetrievalSource[],
-): SourceInventoryReadiness {
-  const chunkCount = filteredSources.reduce((count, source) => count + source.chunk_count, 0);
-  const emptySourceCount = filteredSources.filter((source) => source.chunk_count <= 0).length;
-  const readiness =
-    !sources.length || !filteredSources.length || chunkCount <= 0
-      ? "blocked"
-      : emptySourceCount > 0 || filteredSources.length < sources.length
-        ? "review"
-        : "ready";
-  return {
-    chunkCount,
-    domainCount: uniqueValues(filteredSources.map((source) => source.clinical_domain)).length,
-    emptySourceCount,
-    filteredCount: filteredSources.length,
-    readiness,
-    sourceCount: sources.length,
-    sourceTypeCount: uniqueValues(filteredSources.map((source) => source.source_type)).length,
-    standardCount: uniqueValues(filteredSources.map((source) => source.standard_system)).length,
-  };
-}
-
-function sourceInventoryReadinessVariant(
-  readiness: SourceInventoryReadiness["readiness"],
-): "success" | "warning" | "destructive" {
-  if (readiness === "ready") return "success";
-  if (readiness === "review") return "warning";
-  return "destructive";
-}
-
-function sourceInventoryReadinessMessage(
-  readiness: SourceInventoryReadiness,
-  hasSourceFilters: boolean,
-): string {
-  if (!readiness.sourceCount) {
-    return "No trusted sources are loaded. Reindex the corpus before judging retrieval quality.";
-  }
-  if (!readiness.filteredCount) {
-    return "No trusted sources match the current inventory filters. Clear filters before concluding the corpus lacks coverage.";
-  }
-  if (!readiness.chunkCount) {
-    return "Matching sources have no indexed chunks. Refresh or reindex before relying on retrieval results.";
-  }
-  if (hasSourceFilters) {
-    return "Inventory is filtered. Use this view to inspect available source types, but clear filters for corpus-wide coverage checks.";
-  }
-  if (readiness.emptySourceCount) {
-    return "Some trusted sources have no indexed chunks. Review index integrity before using exact source scope.";
-  }
-  return "Trusted source inventory is searchable. Use exact source scope only for audit or source-specific debugging.";
-}
-
-function TokenList({
-  description,
-  items,
-  title,
-  tone = "neutral",
-}: {
-  description?: string;
-  items: string[];
-  title: string;
-  tone?: "neutral" | "warning";
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="text-xs font-bold uppercase text-muted-foreground">{title}</div>
-      {description ? <SectionHelpText>{description}</SectionHelpText> : null}
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {items.map((item) => (
-          <span
-            className={cn(
-              "max-w-full break-words rounded-full px-2 py-1 text-xs font-bold",
-              tone === "warning"
-                ? "bg-amber-100 text-amber-900"
-                : "bg-muted text-muted-foreground",
-            )}
-            key={item}
-          >
-            {item}
-          </span>
-        ))}
-        {!items.length ? (
-          <span className="text-xs font-semibold text-muted-foreground">none</span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function SectionHelpText({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="break-words text-xs font-semibold leading-5 text-muted-foreground">
-      {children}
-    </p>
-  );
-}
-
-function TraceFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 text-sm">
-      <span className="font-bold text-muted-foreground">{label}</span>
-      <span className="break-words">{value}</span>
-    </div>
-  );
-}
-
-function GraphCounter({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border border-border bg-muted/20 p-2">
-      <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 text-xl font-black tabular-nums">{value}</div>
     </div>
   );
 }
@@ -8895,27 +4319,6 @@ type RankingStack = {
   };
 };
 
-type DiversityStack = {
-  candidateSourceCount: number;
-  duplicateSelectedSourceCount: number;
-  enabled: boolean;
-  lambda: number | null;
-  selectedHits: DiversitySelectionStack[];
-  selectedSourceCount: number;
-  selectionMode: string;
-};
-
-type DiversitySelectionStack = {
-  evidenceId: string;
-  originalRank: number;
-  reason: string;
-  redundancyScore: number;
-  relevanceScore: number;
-  selectedRank: number;
-  selectionScore: number;
-  sourceId: string;
-};
-
 type QualityPolicyStack = {
   blockingSeverities: string[];
   conceptGroundingRequirements: {
@@ -8942,6 +4345,12 @@ type QueryAnalysisStack = {
   filterSuggestions: FilterSuggestionStack[];
   queryAspects: QueryAspectStack[];
   queryProfile: QueryProfileStack | null;
+  queryVariantTexts: string[];
+  queryVariants: RetrievalQueryVariant[];
+  planCoverageSummary: SearchPlanCoverageStack | null;
+  planRiskSignals: RetrievalPlanRiskSignal[];
+  planTaskSummary: RetrievalPlanTaskSummary | null;
+  retrievalTasks: RetrievalSearchTask[];
   ruleIds: string[];
   searchHints: SearchHintStack[];
   standards: string[];
@@ -8949,16 +4358,7 @@ type QueryAnalysisStack = {
   variantCount: number;
 };
 
-type QueryAspectStack = {
-  aspectId: string;
-  label: string;
-  priority: number;
-  question: string;
-  rationale: string;
-  ruleId: string;
-  suggestedFilters: Record<string, string>;
-  suggestedTerms: string[];
-};
+type SearchPlanCoverageStack = SearchPlanCoverageSummaryView;
 
 type QueryProfileStack = {
   complexity: string;
@@ -8990,15 +4390,6 @@ type ConceptCandidateStack = {
   standardSystem: string;
 };
 
-type SearchHintStack = {
-  metadata: Record<string, unknown>;
-  query: string;
-  rationale: string;
-  target: string;
-  url: string | null;
-  warnings: string[];
-};
-
 type SearchHintParameterExample = {
   example: string;
   matchedDatasetField: boolean;
@@ -9017,14 +4408,6 @@ type QueryDiagnosticStack = {
   message: string;
   severity: string;
   suggestedAction: string;
-};
-
-type FilterSuggestionStack = {
-  applied: boolean;
-  confidence: number;
-  field: string;
-  reason: string;
-  value: string;
 };
 
 type RankingBoostSignal = {
@@ -9056,11 +4439,7 @@ type ConceptMatchSignal = {
   reason: string;
   standardSystem: string;
 };
-type EvidenceProvenanceEntry = {
-  href: string | null;
-  label: string;
-  value: string;
-};
+type EvidenceProvenanceEntry = EvidenceProvenanceEntryView;
 type HitMatchExplanation = {
   aspectIds: string[];
   aspectLabels: string[];
@@ -9115,6 +4494,24 @@ function rankingStackFromPackage(packageData: RetrievalPackage): RankingStack {
 
 function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisStack {
   const queryAnalysis = recordValue(packageData.handoff_context.query_analysis);
+  return queryAnalysisStackFromRecord(queryAnalysis);
+}
+
+function queryAnalysisFromPlan(planData: RetrievalPlan): QueryAnalysisStack {
+  return queryAnalysisStackFromRecord(
+    recordValue(planData.query_analysis),
+    planCoverageSummaryValue(planData.coverage_summary),
+    planTaskSummaryValue(planData.task_summary),
+    planRiskSignalsValue(planData.risk_signals),
+  );
+}
+
+function queryAnalysisStackFromRecord(
+  queryAnalysis: Record<string, unknown>,
+  planCoverageSummary: SearchPlanCoverageStack | null = null,
+  planTaskSummary: RetrievalPlanTaskSummary | null = null,
+  planRiskSignals: RetrievalPlanRiskSignal[] = [],
+): QueryAnalysisStack {
   return {
     conceptCandidates: conceptCandidatesValue(queryAnalysis.concept_candidates),
     detectedConcepts: stringArrayValue(queryAnalysis.detected_concepts),
@@ -9123,12 +4520,208 @@ function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisS
     filterSuggestions: filterSuggestionsValue(queryAnalysis.filter_suggestions),
     queryAspects: queryAspectsValue(queryAnalysis.query_aspects),
     queryProfile: queryProfileValue(queryAnalysis.query_profile),
+    queryVariantTexts: stringArrayValue(queryAnalysis.query_variants),
+    queryVariants: queryVariantDetailsValue(queryAnalysis.query_variant_details),
+    planCoverageSummary,
+    planRiskSignals,
+    planTaskSummary,
+    retrievalTasks: retrievalTasksValue(queryAnalysis.retrieval_tasks),
     ruleIds: stringArrayValue(queryAnalysis.rule_ids),
     searchHints: searchHintsValue(queryAnalysis.search_hints),
     standards: stringArrayValue(queryAnalysis.standards),
     strategy: stringValue(queryAnalysis.strategy, "unknown"),
     variantCount: stringArrayValue(queryAnalysis.query_variants).length,
   };
+}
+
+function searchPlanCoverageSummary(analysis: QueryAnalysisStack): SearchPlanCoverageStack {
+  if (analysis.planCoverageSummary) return analysis.planCoverageSummary;
+  const localTasks = analysis.retrievalTasks.filter((task) => task.target === "local_corpus");
+  const externalTasks = analysis.retrievalTasks.filter(
+    (task) => task.target === "external_medical_index",
+  );
+  const standards = uniqueValues([
+    ...analysis.standards,
+    ...analysis.retrievalTasks.flatMap((task) => task.standards),
+  ]);
+  const filterKeys = new Set<string>();
+  for (const suggestion of analysis.filterSuggestions) {
+    filterKeys.add(`${suggestion.field}:${suggestion.value}`);
+  }
+  for (const task of analysis.retrievalTasks) {
+    for (const [field, value] of Object.entries(task.suggested_filters)) {
+      filterKeys.add(`${field}:${value}`);
+    }
+  }
+  const warnings = uniqueValues([
+    ...analysis.diagnostics
+      .filter((diagnostic) => diagnostic.severity !== "info")
+      .map((diagnostic) => diagnostic.code),
+    ...analysis.retrievalTasks.flatMap((task) => task.warnings),
+  ]);
+  return {
+    externalTaskCount: externalTasks.length,
+    filterCount: filterKeys.size,
+    localTaskCount: localTasks.length,
+    ready: localTasks.some((task) => task.required) && standards.length > 0,
+    requiredLocalTaskCount: localTasks.filter((task) => task.required).length,
+    standards,
+    nextAction: fallbackPlanCoverageNextAction({
+      externalTaskCount: externalTasks.length,
+      filterCount: filterKeys.size,
+      ready: localTasks.some((task) => task.required) && standards.length > 0,
+      requiredLocalTaskCount: localTasks.filter((task) => task.required).length,
+      standardCount: standards.length,
+    }),
+    summary: `${localTasks.filter((task) => task.required).length}/${localTasks.length} required local task(s), ${externalTasks.length} external follow-up(s), ${standards.length} standard(s), and ${filterKeys.size} suggested filter(s).`,
+    warnings,
+  };
+}
+
+function searchPlanTaskSummary(analysis: QueryAnalysisStack): RetrievalPlanTaskSummary {
+  if (analysis.planTaskSummary) return analysis.planTaskSummary;
+  const runnableLocal = analysis.retrievalTasks.filter(
+    (task) => task.target === "local_corpus" && task.action_type === "run_local_search",
+  );
+  const requiredRunnableLocal = runnableLocal.filter((task) => task.required);
+  const externalOpen = analysis.retrievalTasks.filter(
+    (task) => task.target === "external_medical_index" && task.action_type === "open_external_url",
+  );
+  const externalCopy = analysis.retrievalTasks.filter(
+    (task) => task.target === "external_medical_index" && task.action_type === "copy_query",
+  );
+  const blockedTasks = analysis.retrievalTasks.filter(
+    (task) => !["run_local_search", "open_external_url", "copy_query"].includes(task.action_type),
+  );
+  const manualFollowupCount = externalOpen.length + externalCopy.length;
+  return {
+    total_task_count: analysis.retrievalTasks.length,
+    runnable_local_count: runnableLocal.length,
+    required_runnable_local_count: requiredRunnableLocal.length,
+    external_open_count: externalOpen.length,
+    external_copy_count: externalCopy.length,
+    manual_followup_count: manualFollowupCount,
+    blocked_task_count: blockedTasks.length,
+    primary_action: requiredRunnableLocal.length
+      ? "Run required local search tasks first, then review external follow-ups."
+      : runnableLocal.length
+        ? "Run the local search task, then review external follow-ups."
+        : manualFollowupCount
+          ? "Review external medical search follow-ups before trusting the plan."
+          : "Add a more specific healthcare query before executing retrieval.",
+    summary: `${runnableLocal.length} local runnable task(s), ${manualFollowupCount} external/manual follow-up(s), and ${blockedTasks.length} blocked task(s).`,
+  };
+}
+
+function planTaskSummaryValue(value: unknown): RetrievalPlanTaskSummary | null {
+  const summary = recordValue(value);
+  const rawSummary = optionalStringValue(summary.summary);
+  if (!rawSummary) return null;
+  return {
+    total_task_count: numberValue(summary.total_task_count) ?? 0,
+    runnable_local_count: numberValue(summary.runnable_local_count) ?? 0,
+    required_runnable_local_count: numberValue(summary.required_runnable_local_count) ?? 0,
+    external_open_count: numberValue(summary.external_open_count) ?? 0,
+    external_copy_count: numberValue(summary.external_copy_count) ?? 0,
+    manual_followup_count: numberValue(summary.manual_followup_count) ?? 0,
+    blocked_task_count: numberValue(summary.blocked_task_count) ?? 0,
+    primary_action: stringValue(
+      summary.primary_action,
+      "Review the plan, then run local evidence search.",
+    ),
+    summary: rawSummary,
+  };
+}
+
+function planCoverageSummaryValue(value: unknown): SearchPlanCoverageStack | null {
+  const summary = recordValue(value);
+  const rawSummary = optionalStringValue(summary.summary);
+  if (!rawSummary) return null;
+  return {
+    externalTaskCount: numberValue(summary.external_task_count) ?? 0,
+    filterCount: numberValue(summary.filter_count) ?? 0,
+    localTaskCount: numberValue(summary.local_task_count) ?? 0,
+    ready: booleanValue(summary.ready),
+    requiredLocalTaskCount: numberValue(summary.required_local_task_count) ?? 0,
+    standards: stringArrayValue(summary.standards),
+    nextAction: stringValue(summary.next_action, "Review the plan, then run local evidence search."),
+    summary: rawSummary,
+    warnings: stringArrayValue(summary.warnings),
+  };
+}
+
+function fallbackPlanCoverageNextAction({
+  externalTaskCount,
+  filterCount,
+  ready,
+  requiredLocalTaskCount,
+  standardCount,
+}: {
+  externalTaskCount: number;
+  filterCount: number;
+  ready: boolean;
+  requiredLocalTaskCount: number;
+  standardCount: number;
+}): string {
+  if (!ready && standardCount === 0) {
+    return "Add a healthcare standard, schema, resource type, field list, or clinical domain.";
+  }
+  if (!ready && requiredLocalTaskCount === 0) {
+    return "Refine the query until the plan has at least one required local corpus task.";
+  }
+  if (filterCount > 0) return "Review suggested filters, then run the local evidence search.";
+  if (externalTaskCount > 0) {
+    return "Run local evidence search, then inspect external follow-up tasks if coverage is incomplete.";
+  }
+  return "Run local evidence search.";
+}
+
+function searchPlanRiskSignals(analysis: QueryAnalysisStack): RetrievalPlanRiskSignal[] {
+  if (analysis.planRiskSignals.length) return analysis.planRiskSignals;
+  const coverage = searchPlanCoverageSummary(analysis);
+  const signals: RetrievalPlanRiskSignal[] = [];
+  if (!coverage.ready) {
+    signals.push({
+      code: "coverage_not_ready",
+      message: "The plan needs more detail before review-grade search.",
+      metadata: {
+        local_task_count: coverage.localTaskCount,
+        standard_count: coverage.standards.length,
+      },
+      severity: "warning",
+      source: "frontend_compatibility_fallback",
+      suggested_action:
+        "Add a standard, field list, resource type, schema, or clinical domain before relying on the search.",
+    });
+  }
+  signals.push(
+    ...analysis.diagnostics
+      .filter((diagnostic) => diagnostic.severity !== "info")
+      .map((diagnostic) => ({
+        code: `diagnostic_${diagnostic.code}`,
+        message: diagnostic.message,
+        metadata: diagnostic.metadata,
+        severity: diagnostic.severity,
+        source: "query_diagnostic",
+        suggested_action: diagnostic.suggestedAction,
+      })),
+  );
+  return signals.slice(0, 6);
+}
+
+function planRiskSignalsValue(value: unknown): RetrievalPlanRiskSignal[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      code: stringValue(item.code, ""),
+      message: stringValue(item.message, "Plan risk signal unavailable."),
+      metadata: recordValue(item.metadata),
+      severity: stringValue(item.severity, "info"),
+      source: stringValue(item.source, "plan"),
+      suggested_action: stringValue(item.suggested_action, "Review this plan before running search."),
+    }))
+    .filter((item) => item.code);
 }
 
 function diversityFromPackage(packageData: RetrievalPackage): DiversityStack {
@@ -9290,6 +4883,17 @@ function queryVariantsFromTrace(trace: RetrievalPackage["trace"]): RetrievalQuer
   }));
 }
 
+function queryVariantsFromAnalysis(analysis: QueryAnalysisStack): RetrievalQueryVariant[] {
+  const variants = analysis.queryVariants;
+  if (variants.length) return variants;
+  return analysis.queryVariantTexts.map((variant) => ({
+    metadata: {},
+    reason: "Query variant from retrieval plan analysis.",
+    source: "query_analysis",
+    variant,
+  }));
+}
+
 function queryVariantDetailsValue(value: unknown): RetrievalQueryVariant[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -9335,6 +4939,54 @@ function queryAspectsValue(value: unknown): QueryAspectStack[] {
     }))
     .filter((item) => item.aspectId)
     .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label));
+}
+
+function retrievalTasksValue(value: unknown): RetrievalSearchTask[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => {
+      const target = stringValue(item.target, "local_corpus");
+      const metadata = recordValue(item.metadata);
+      return {
+        action_type: retrievalTaskActionTypeValue(item.action_type, target, metadata),
+        aspect_id: optionalStringValue(item.aspect_id),
+        label: stringValue(item.label, "Retrieval task"),
+        metadata,
+        priority: numberValue(item.priority) ?? 100,
+        query: stringValue(item.query, ""),
+        query_variants: stringArrayValue(item.query_variants),
+        rationale: stringValue(item.rationale, "Generated from query analysis."),
+        required: booleanValue(item.required),
+        search_hint_target: optionalStringValue(item.search_hint_target),
+        standards: stringArrayValue(item.standards),
+        suggested_filters: stringRecordValue(item.suggested_filters),
+        target: target === "external_medical_index" ? "external_medical_index" : "local_corpus",
+        task_id: stringValue(item.task_id, ""),
+        warnings: stringArrayValue(item.warnings),
+      } satisfies RetrievalSearchTask;
+    })
+    .filter((item) => item.task_id && item.query)
+    .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label));
+}
+
+function retrievalTaskActionTypeValue(
+  value: unknown,
+  target: string,
+  metadata: Record<string, unknown>,
+): RetrievalSearchTask["action_type"] {
+  const action = stringValue(value, "");
+  if (
+    action === "run_local_search" ||
+    action === "open_external_url" ||
+    action === "copy_query"
+  ) {
+    return action;
+  }
+  if (target === "external_medical_index") {
+    return optionalStringValue(metadata.url) ? "open_external_url" : "copy_query";
+  }
+  return "run_local_search";
 }
 
 function queryProfileFilterEntries(
@@ -10071,135 +5723,6 @@ function useCopyFeedback(timeoutMs = 1800) {
   return { clearCopied, copiedKey, markCopied };
 }
 
-function diagnosticBadgeVariant(
-  severity: string,
-): "default" | "success" | "warning" | "destructive" | "muted" {
-  if (severity === "warning") return "warning";
-  if (severity === "error") return "destructive";
-  if (severity === "info") return "muted";
-  return "default";
-}
-
-function qualitySignalBadgeVariant(
-  severity: string,
-): "default" | "success" | "warning" | "destructive" | "muted" {
-  if (severity === "success") return "success";
-  if (severity === "warning") return "warning";
-  if (severity === "destructive" || severity === "error") return "destructive";
-  if (severity === "info") return "muted";
-  return "default";
-}
-
-function qualitySignalSummaryVariant(
-  signals: RetrievalQualitySignal[],
-): "default" | "success" | "warning" | "destructive" | "muted" {
-  if (
-    signals.some(
-      (signal) => signal.severity === "destructive" || signal.severity === "error",
-    )
-  ) {
-    return "destructive";
-  }
-  if (signals.some((signal) => signal.severity === "warning")) return "warning";
-  if (signals.some((signal) => signal.severity === "success")) return "success";
-  return "muted";
-}
-
-function qualitySignalMetadataDetails(signal: RetrievalQualitySignal): Array<{
-  label: string;
-  values: string[];
-  variant: "success" | "warning" | "destructive" | "muted";
-}> {
-  const metadata = recordValue(signal.metadata);
-  const details: Array<{
-    label: string;
-    values: string[];
-    variant: "success" | "warning" | "destructive" | "muted";
-  }> = [];
-  const missingConcepts = conceptMetadataValues(metadata.missing_concepts);
-  if (missingConcepts.length) {
-    details.push({
-      label: "Missing concepts",
-      values: missingConcepts,
-      variant: "warning",
-    });
-  }
-  const provenanceIssues = provenanceIssueMetadataValues(metadata.issues);
-  if (provenanceIssues.length) {
-    details.push({
-      label: "Provenance issues",
-      values: provenanceIssues,
-      variant: "warning",
-    });
-  }
-  const missingStandards = stringArrayValue(metadata.missing_standards);
-  if (missingStandards.length) {
-    details.push({
-      label: "Missing standards",
-      values: missingStandards,
-      variant: "warning",
-    });
-  }
-  const missingAspects = stringArrayValue(metadata.missing_aspects).map(humanize);
-  if (missingAspects.length) {
-    details.push({
-      label: "Missing aspects",
-      values: missingAspects,
-      variant: "warning",
-    });
-  }
-  const suggestedFilters = suggestedFilterMetadataValues(metadata.suggested_filters);
-  if (suggestedFilters.length) {
-    details.push({
-      label: "Suggested filters",
-      values: suggestedFilters,
-      variant: "muted",
-    });
-  }
-  return details;
-}
-
-function conceptMetadataValues(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => recordValue(item))
-    .map((concept) => {
-      const standard = stringValue(concept.standard_system, "standard");
-      const code = optionalStringValue(concept.code);
-      const name = stringValue(concept.display_name, stringValue(concept.concept_id, "concept"));
-      const confidence = numberValue(concept.confidence);
-      const confidenceText = confidence === null ? "" : ` / ${Math.round(confidence * 100)}%`;
-      return `${standard}${code ? ` ${code}` : ""}: ${name}${confidenceText}`;
-    })
-    .filter(Boolean);
-}
-
-function provenanceIssueMetadataValues(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => recordValue(item))
-    .map((issue) => {
-      const sourceId = stringValue(issue.source_id, "source");
-      const missing = stringArrayValue(issue.missing).map(humanize);
-      return `${sourceId}: missing ${missing.length ? missing.join(", ") : "metadata"}`;
-    })
-    .filter(Boolean);
-}
-
-function suggestedFilterMetadataValues(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => recordValue(item))
-    .flatMap((filter) =>
-      Object.entries(filter)
-        .map(([field, rawValue]) => {
-          const value = stringValue(rawValue, "");
-          return value ? `${humanize(field)}=${value}` : "";
-        })
-        .filter(Boolean),
-    );
-}
-
 function integrityBadgeVariant(
   status: string,
 ): "default" | "success" | "warning" | "destructive" | "muted" {
@@ -10210,15 +5733,6 @@ function integrityBadgeVariant(
   return "default";
 }
 
-function integrityMetricToneClass(
-  tone: "default" | "success" | "warning" | "destructive" | "muted",
-) {
-  if (tone === "success") return "text-emerald-800";
-  if (tone === "warning") return "text-amber-800";
-  if (tone === "destructive") return "text-red-800";
-  return "text-foreground";
-}
-
 function prioritizedIntegrityChecks(report: RetrievalIntegrityReport) {
   const nonOk = report.checks.filter((check) => check.status !== "ok");
   const source = nonOk.length ? nonOk : report.checks;
@@ -10227,32 +5741,6 @@ function prioritizedIntegrityChecks(report: RetrievalIntegrityReport) {
 
 function shortHash(value: string | null | undefined) {
   return value ? value.slice(0, 12) : "-";
-}
-
-function highlightedParts(text: string, terms: string[]) {
-  const normalizedTerms = Array.from(
-    new Set(
-      terms
-        .map((term) => term.trim())
-        .filter((term) => term.length > 1)
-        .sort((left, right) => right.length - left.length),
-    ),
-  );
-  if (!normalizedTerms.length) {
-    return [{ text, highlight: false }];
-  }
-  const pattern = new RegExp(`(${normalizedTerms.map(escapeRegExp).join("|")})`, "gi");
-  return text
-    .split(pattern)
-    .filter(Boolean)
-    .map((part) => ({
-      text: part,
-      highlight: normalizedTerms.some((term) => part.toLowerCase() === term.toLowerCase()),
-    }));
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseFields(value: string) {
@@ -10282,6 +5770,21 @@ function retrievalPayloadFromForm(
     },
     ...overrides,
   };
+}
+
+function plannedTaskSearchOverrides(task: RetrievalSearchTask): Partial<RetrievalSearchPayload> {
+  const overrides: Partial<RetrievalSearchPayload> = {
+    query: task.query,
+  };
+  for (const [field, value] of Object.entries(task.suggested_filters)) {
+    if (!isSupportedFilterField(field)) continue;
+    if (field === "source_id") {
+      overrides.filters = { ...(overrides.filters ?? {}), source_id: value };
+    } else {
+      overrides[field] = value;
+    }
+  }
+  return overrides;
 }
 
 function retrievalSearchSignature(payload: RetrievalSearchPayload): string {
@@ -11791,29 +7294,6 @@ function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {
   return run.packageData.hits.map((hit) => hit.evidence.evidence_id);
 }
 
-function searchRunScopeLabels(payload: RetrievalSearchPayload): string[] {
-  return [
-    payload.schema_id ? `schema ${payload.schema_id}` : null,
-    payload.detected_format ? `format ${humanize(payload.detected_format)}` : null,
-    payload.resource_type ? `resource ${payload.resource_type}` : null,
-    payload.clinical_domain ? `domain ${humanize(payload.clinical_domain)}` : null,
-    payload.standard_system ? `standard ${payload.standard_system}` : null,
-    payload.source_type ? `source ${humanize(payload.source_type)}` : null,
-    payload.filters?.source_id ? `source ID ${payload.filters.source_id}` : null,
-    payload.trust_level ? `trust ${humanize(payload.trust_level)}` : null,
-    payload.fields.length ? formatCount(payload.fields.length, "field") : null,
-  ].filter((label): label is string => Boolean(label));
-}
-
-function searchRunQualityBadgeVariant(
-  summary: RetrievalQualitySummary,
-): "default" | "success" | "warning" | "destructive" | "muted" {
-  if (summary.status === "ready") return "success";
-  if (summary.status === "blocked") return "destructive";
-  if (summary.status === "review") return "warning";
-  return "muted";
-}
-
 function qualitySummaryFingerprint(summary: RetrievalQualitySummary | null): string {
   if (!summary) return "none";
   return [
@@ -11891,14 +7371,6 @@ function qualityWarningCount(signals: RetrievalQualitySignal[]): number {
   ).length;
 }
 
-function searchRunSummaryVariant(
-  summary: RetrievalRunSummary,
-): "default" | "success" | "warning" | "destructive" | "muted" {
-  if (summary.qualityWarningCount > 0 || summary.warningCount > 0) return "warning";
-  if (summary.hitCount > 0) return "success";
-  return "destructive";
-}
-
 function deltaBadgeVariant(
   delta: number,
   positiveIsGood: boolean,
@@ -11947,12 +7419,6 @@ function formatNullableDecimal(value: number | null): string {
   return value === null ? "n/a" : formatDecimal(value);
 }
 
-function formatRunTime(submittedAt: string): string {
-  const date = new Date(submittedAt);
-  if (Number.isNaN(date.getTime())) return "recent";
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
 function formatShortSignature(signature: string): string {
   const digest = signature.includes(":") ? signature.split(":").pop() ?? signature : signature;
   return `sig ${digest.slice(0, 10)}`;
@@ -11960,71 +7426,6 @@ function formatShortSignature(signature: string): string {
 
 function uniqueValues(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort();
-}
-
-function presetFilterClass(active: boolean) {
-  return cn(
-    "rounded-full border px-3 py-1 text-xs font-bold transition-colors",
-    active
-      ? "border-primary bg-primary/10 text-primary"
-      : "border-border bg-background text-muted-foreground hover:bg-muted",
-  );
-}
-
-function presetMatchesSearch(preset: RetrievalSearchPreset, search: string) {
-  const normalizedSearch = search.trim().toLowerCase();
-  if (!normalizedSearch) return true;
-
-  return [
-    preset.label,
-    preset.description,
-    preset.query,
-    preset.category,
-    preset.schema_id,
-    preset.detected_format,
-    preset.resource_type,
-    preset.clinical_domain,
-    preset.standard_system,
-    preset.source_type,
-    ...preset.fields,
-    ...preset.target_sources,
-    ...preset.launch_hint_targets,
-  ].some((value) => value?.toLowerCase().includes(normalizedSearch));
-}
-
-function sourceFilterChipClass(active: boolean) {
-  return cn(
-    "rounded-full border px-2.5 py-1 text-xs font-bold transition-colors",
-    active
-      ? "border-primary bg-primary/10 text-primary"
-      : "border-border bg-background text-muted-foreground hover:bg-muted",
-  );
-}
-
-function sourceMatchesInventoryFilters(
-  source: RetrievalSource,
-  filters: {
-    domain: string | null;
-    search: string;
-    standard: string | null;
-    type: string | null;
-  },
-) {
-  if (filters.type && source.source_type !== filters.type) return false;
-  if (filters.domain && source.clinical_domain !== filters.domain) return false;
-  if (filters.standard && source.standard_system !== filters.standard) return false;
-
-  const normalizedSearch = filters.search.trim().toLowerCase();
-  if (!normalizedSearch) return true;
-  return [
-    source.source_id,
-    source.title,
-    source.source_type,
-    source.clinical_domain,
-    source.standard_system,
-    source.source_version,
-    source.trust_level,
-  ].some((value) => value?.toLowerCase().includes(normalizedSearch));
 }
 
 function mergeSearchOptions(

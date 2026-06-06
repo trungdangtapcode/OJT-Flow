@@ -381,11 +381,13 @@ export type RetrievalQueryAnalysis = {
   standards: string[];
   rule_ids: string[];
   query_variants: string[];
+  query_variant_details?: RetrievalQueryVariant[];
   filter_suggestions: RetrievalFilterSuggestion[];
   diagnostics: RetrievalQueryDiagnostic[];
   search_hints: RetrievalSearchHint[];
   query_profile?: RetrievalQueryProfile | null;
   query_aspects?: RetrievalQueryAspect[];
+  retrieval_tasks?: RetrievalSearchTask[];
 };
 
 export type RetrievalConceptCandidate = {
@@ -448,6 +450,58 @@ export type RetrievalQueryAspect = {
   suggested_filters: Record<string, string>;
 };
 
+export type RetrievalSearchTask = {
+  task_id: string;
+  label: string;
+  target: "local_corpus" | "external_medical_index";
+  action_type: "run_local_search" | "open_external_url" | "copy_query";
+  query: string;
+  rationale: string;
+  priority: number;
+  required: boolean;
+  aspect_id?: string | null;
+  search_hint_target?: string | null;
+  query_variants: string[];
+  standards: string[];
+  suggested_filters: Record<string, string>;
+  warnings: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalPlanCoverageSummary = {
+  ready: boolean;
+  local_task_count: number;
+  required_local_task_count: number;
+  external_task_count: number;
+  standard_count: number;
+  filter_count: number;
+  standards: string[];
+  warnings: string[];
+  next_action: string;
+  summary: string;
+};
+
+export type RetrievalPlanRiskSignal = {
+  code: string;
+  severity: string;
+  message: string;
+  suggested_action: string;
+  source: string;
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalPlanTaskSummary = {
+  total_task_count: number;
+  runnable_local_count: number;
+  required_runnable_local_count: number;
+  external_open_count: number;
+  external_copy_count: number;
+  manual_followup_count: number;
+  blocked_task_count: number;
+  primary_action: string;
+  summary: string;
+};
+
 export type RetrievalPackage = {
   hits: RetrievalHit[];
   evidence: Evidence[];
@@ -485,6 +539,27 @@ export type RetrievalSearchPayload = {
   trust_level?: string | null;
   source_type?: string | null;
   filters: RetrievalSearchFilters;
+};
+
+export type RetrievalPlanQuery = {
+  query: string;
+  workflow_id?: string | null;
+  fields: string[];
+  schema_id?: string | null;
+  detected_format?: string | null;
+  resource_type?: string | null;
+  top_k: number;
+  filters: Record<string, unknown>;
+};
+
+export type RetrievalPlan = {
+  query: RetrievalPlanQuery;
+  query_analysis: RetrievalQueryAnalysis;
+  coverage_summary?: RetrievalPlanCoverageSummary | null;
+  task_summary?: RetrievalPlanTaskSummary | null;
+  risk_signals?: RetrievalPlanRiskSignal[];
+  search_signature: string;
+  summary: string;
 };
 
 export type RetrievalSearchPreset = {

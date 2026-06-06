@@ -173,7 +173,8 @@ def test_api_v1_route_handlers_use_response_envelopes() -> None:
 
 
 def test_openapi_exposes_core_request_examples() -> None:
-    schemas = create_app().openapi()["components"]["schemas"]
+    openapi = create_app().openapi()
+    schemas = openapi["components"]["schemas"]
 
     workflow_examples = schemas["StartWorkflowRequest"]["examples"]
     assert any("2026/01/02" in example["data"] for example in workflow_examples)
@@ -215,6 +216,76 @@ def test_openapi_exposes_core_request_examples() -> None:
     assistant_examples = schemas["AssistantChatRequest"]["examples"]
     assert any("HbA1c" in example["message"] for example in assistant_examples)
     assert any("data" in example["context"] for example in assistant_examples)
+
+    plan_response_schema = openapi["paths"]["/api/v1/retrieval/plan"]["post"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    search_response_schema = openapi["paths"]["/api/v1/retrieval/search"]["post"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    assert plan_response_schema["$ref"] == "#/components/schemas/RetrievalPlanEnvelope"
+    assert search_response_schema["$ref"] == "#/components/schemas/RetrievalPackageEnvelope"
+    assert schemas["RetrievalPlanEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalPlan"
+    )
+    assert schemas["RetrievalPackageEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalPackage"
+    )
+    retrieval_support_response_models = [
+        ("/api/v1/retrieval/presets", "get", "RetrievalPresetsEnvelope"),
+        ("/api/v1/retrieval/search-options", "get", "RetrievalSearchOptionsEnvelope"),
+        ("/api/v1/retrieval/sources", "get", "RetrievalSourcesEnvelope"),
+        ("/api/v1/retrieval/reindex", "post", "RetrievalReindexEnvelope"),
+        ("/api/v1/retrieval/integrity", "get", "RetrievalIntegrityEnvelope"),
+        ("/api/v1/retrieval/judgments", "get", "RetrievalJudgmentsEnvelope"),
+        (
+            "/api/v1/retrieval/judgments/summary",
+            "get",
+            "RetrievalJudgmentSummaryEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/judgments/evaluate",
+            "post",
+            "RetrievalJudgmentEvaluationEnvelope",
+        ),
+        ("/api/v1/retrieval/judgments", "put", "RetrievalJudgmentEnvelope"),
+        (
+            "/api/v1/retrieval/judgments/{judgment_id}",
+            "delete",
+            "RetrievalJudgmentDeleteEnvelope",
+        ),
+    ]
+    for path, method, schema_name in retrieval_support_response_models:
+        schema = openapi["paths"][path][method]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        assert schema["$ref"] == f"#/components/schemas/{schema_name}"
+    assert schemas["RetrievalPresetsEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/RetrievalSearchPreset"
+    )
+    assert schemas["RetrievalSearchOptionsEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalSearchOptions"
+    )
+    assert schemas["RetrievalSourcesEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/RetrievalSource"
+    )
+    assert schemas["RetrievalIntegrityEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalIntegrityReport"
+    )
+    assert "chunks_indexed" in schemas["RetrievalReindexResult"]["properties"]
+    assert schemas["RetrievalJudgmentsEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/RetrievalRelevanceJudgment"
+    )
+    assert schemas["RetrievalJudgmentSummaryEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalRelevanceJudgmentSummary"
+    )
+    assert schemas["RetrievalJudgmentEvaluationEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalJudgmentEvaluationResult"
+    )
+    assert schemas["RetrievalJudgmentEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalRelevanceJudgment"
+    )
+    assert "judgment_id" in schemas["RetrievalJudgmentDeleteResult"]["properties"]
 
 
 def test_api_contract_doc_covers_current_route_surface() -> None:
@@ -456,6 +527,10 @@ async def test_api_rejects_blank_optional_identifiers_and_filters(monkeypatch) -
                 "/api/v1/retrieval/search",
                 json={"query": "lab result schema", "clinical_domain": "   "},
             ),
+            await client.post(
+                "/api/v1/retrieval/plan",
+                json={"query": "", "top_k": 2},
+            ),
         ]
 
     for response in blank_requests:
@@ -476,6 +551,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
         def search_retrieval(self, query, owner_user_id=None):
             self.calls.append(
                 {
+                    "method": "search",
                     "query": query.model_dump(mode="json"),
                     "owner_user_id": owner_user_id,
                 }
@@ -492,6 +568,60 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                     "warnings": [],
                 },
                 "handoff_context": {},
+            }
+
+        def plan_retrieval(self, query, owner_user_id=None):
+            self.calls.append(
+                {
+                    "method": "plan",
+                    "query": query.model_dump(mode="json"),
+                    "owner_user_id": owner_user_id,
+                }
+            )
+            return {
+                "query": query.model_dump(mode="json"),
+                "query_analysis": {
+                    "strategy": "fake",
+                    "detected_concepts": [],
+                    "concept_candidates": [],
+                    "expanded_terms": [],
+                    "standards": [],
+                    "rule_ids": [],
+                    "query_variants": [query.query],
+                    "query_variant_details": [],
+                    "filter_suggestions": [],
+                    "diagnostics": [],
+                    "search_hints": [],
+                    "query_profile": None,
+                    "query_aspects": [],
+                    "retrieval_tasks": [],
+                },
+                "coverage_summary": {
+                    "ready": False,
+                    "local_task_count": 0,
+                    "required_local_task_count": 0,
+                    "external_task_count": 0,
+                    "standard_count": 0,
+                    "filter_count": 0,
+                    "standards": [],
+                    "warnings": [],
+                    "next_action": "Add a healthcare standard before running search.",
+                    "summary": "Plan needs more detail before review-grade search.",
+                },
+                "task_summary": {
+                    "total_task_count": 0,
+                    "runnable_local_count": 0,
+                    "required_runnable_local_count": 0,
+                    "external_open_count": 0,
+                    "external_copy_count": 0,
+                    "manual_followup_count": 0,
+                    "blocked_task_count": 0,
+                    "primary_action": "Add a more specific healthcare query before executing retrieval.",
+                    "summary": "0 local runnable task(s), 0 external/manual follow-up(s), and 0 blocked task(s).",
+                },
+                "risk_signals": [],
+                "search_signature": "fake_signature",
+                "summary": "Fake retrieval plan.",
             }
 
     fake_service = FakeWorkflowService()
@@ -523,10 +653,50 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 },
             },
         )
+        plan_response = await client.post(
+            "/api/v1/retrieval/plan",
+            json={
+                "query": "  lab result schema  ",
+                "workflow_id": "  wf_example  ",
+                "schema_id": "  lab_result_v1  ",
+                "fields": ["  date  ", "  unit  "],
+                "detected_format": "  csv  ",
+                "resource_type": "  Observation  ",
+                "clinical_domain": "  laboratory  ",
+                "standard_system": "  UCUM  ",
+                "trust_level": "approved",
+                "filters": {
+                    "source_id": "  terminology:ucum  ",
+                    "source_type": "terminology_system",
+                },
+            },
+        )
 
     assert response.status_code == 200
+    assert plan_response.status_code == 200
     assert fake_service.calls == [
         {
+            "method": "search",
+            "query": {
+                "query": "lab result schema",
+                "workflow_id": "wf_example",
+                "fields": ["date", "unit"],
+                "schema_id": "lab_result_v1",
+                "detected_format": "csv",
+                "resource_type": "Observation",
+                "top_k": 5,
+                "filters": {
+                    "clinical_domain": "laboratory",
+                    "source_id": "terminology:ucum",
+                    "standard_system": "UCUM",
+                    "source_type": "terminology_system",
+                    "trust_level": "approved",
+                },
+            },
+            "owner_user_id": "usr_api_test",
+        },
+        {
+            "method": "plan",
             "query": {
                 "query": "lab result schema",
                 "workflow_id": "wf_example",
@@ -546,6 +716,12 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
             "owner_user_id": "usr_api_test",
         }
     ]
+    plan_body = _assert_success_envelope(plan_response)
+    plan_data = plan_body["data"]
+    assert plan_data["coverage_summary"]["next_action"]
+    assert plan_data["task_summary"]["primary_action"]
+    assert plan_data["task_summary"]["total_task_count"] == 0
+    assert plan_data["risk_signals"] == []
 
 
 @pytest.mark.asyncio
@@ -2117,6 +2293,10 @@ async def test_public_api_success_and_error_envelope_contracts(monkeypatch) -> N
             ),
             await client.post(
                 "/api/v1/retrieval/search",
+                json={"query": "lab result schema", "top_k": 2},
+            ),
+            await client.post(
+                "/api/v1/retrieval/plan",
                 json={"query": "lab result schema", "top_k": 2},
             ),
             await client.get("/api/v1/retrieval/sources"),

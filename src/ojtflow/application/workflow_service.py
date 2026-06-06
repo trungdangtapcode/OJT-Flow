@@ -39,6 +39,7 @@ from ojtflow.core.contracts.enums import (
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalSource,
@@ -753,6 +754,19 @@ class WorkflowService:
             self._assert_workflow_owner(workflow, owner_user_id)
         self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
         return self.retrieval_service.search(query)
+
+    def plan_retrieval(
+        self,
+        query: RetrievalQuery,
+        owner_user_id: str | None = None,
+    ) -> RetrievalPlan:
+        """Build direct retrieval plan without ranking evidence."""
+
+        if query.workflow_id:
+            workflow = self.workflows.get(query.workflow_id)
+            self._assert_workflow_owner(workflow, owner_user_id)
+        self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
+        return self.retrieval_service.plan(query)
 
     def list_retrieval_sources(self) -> list[RetrievalSource]:
         """List available retrieval source inventory."""

@@ -18,6 +18,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalFacets,
     RetrievalHit,
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalScoreComponent,
@@ -52,7 +53,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     tokenize,
 )
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
-from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
+from ojtflow.infrastructure.retrieval.query_analysis import analyze_query, build_retrieval_plan
 
 
 def _base_embedding_class():
@@ -92,6 +93,9 @@ class LlamaIndexRetrievalRepository:
         self._chunk_generation = 0
         self._index_cache: _LlamaIndexCache | None = None
         self._ensure_llamaindex_core()
+
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan:
+        return build_retrieval_plan(query)
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         cache = self._index()

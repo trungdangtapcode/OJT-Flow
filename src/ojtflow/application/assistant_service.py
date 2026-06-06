@@ -61,7 +61,7 @@ class AssistantService:
         except OJTFlowError as exc:
             plan = _deterministic_plan(message, clean_context)
             planning_mode = "deterministic"
-            plan.warnings.append(f"LLM planning failed: {exc}")
+            plan.warnings.append(_planning_failure_warning(exc))
         tool_results = [
             self.tool_executor.execute(
                 tool_call,
@@ -191,10 +191,11 @@ class AssistantService:
         except OJTFlowError as exc:
             plan = _deterministic_plan(message, clean_context)
             planning_mode = "deterministic"
-            plan.warnings.append(f"LLM planning failed: {exc}")
+            plan.warnings.append(_planning_failure_warning(exc))
             yield {
                 "type": "warning",
                 "message": plan.warnings[-1],
+                "details": exc.details,
             }
         yield {
             "type": "plan_ready",
@@ -313,6 +314,22 @@ class AssistantService:
             )
         return _deterministic_plan(message, context)
 
+
+def _planning_failure_warning(exc: OJTFlowError) -> str:
+    detail_parts = [
+        str(value)
+        for key in (
+            "status_code",
+            "event_type",
+            "status",
+            "error_code",
+            "incomplete_reason",
+            "message",
+        )
+        if (value := exc.details.get(key)) not in (None, "")
+    ]
+    suffix = f" ({'; '.join(detail_parts)})" if detail_parts else ""
+    return f"LLM planning failed: {exc}{suffix}"
 
 
 def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:

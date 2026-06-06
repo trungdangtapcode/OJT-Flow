@@ -15,6 +15,10 @@ from urllib.parse import quote_plus
 from ojtflow.core.contracts.retrieval import (
     RetrievalConceptCandidate,
     RetrievalFilterSuggestion,
+    RetrievalPlan,
+    RetrievalPlanCoverageSummary,
+    RetrievalPlanRiskSignal,
+    RetrievalPlanTaskSummary,
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalQueryAspect,
@@ -22,6 +26,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQueryProfile,
     RetrievalQueryVariant,
     RetrievalSearchHint,
+    RetrievalSearchTask,
 )
 
 QUERY_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
@@ -267,6 +272,25 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         ]
     )
     variants = [detail.variant for detail in variant_details]
+    filter_suggestions = _filter_suggestions(
+        query,
+        concepts,
+        standards,
+        rule_ids,
+        concept_candidates,
+    )
+    diagnostics = _query_diagnostics(
+        query,
+        concepts=concepts,
+        standards=standards,
+        tokens=tokens,
+    )
+    search_hints = _search_hints(
+        query,
+        concepts=concepts,
+        standards=standards,
+        concept_candidates=concept_candidates,
+    )
     return RetrievalQueryAnalysis(
         detected_concepts=concepts,
         concept_candidates=concept_candidates,
@@ -275,28 +299,246 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         rule_ids=rule_ids,
         query_variants=variants,
         query_variant_details=variant_details,
-        filter_suggestions=_filter_suggestions(
-            query,
-            concepts,
-            standards,
-            rule_ids,
-            concept_candidates,
-        ),
-        diagnostics=_query_diagnostics(
-            query,
-            concepts=concepts,
-            standards=standards,
-            tokens=tokens,
-        ),
-        search_hints=_search_hints(
-            query,
-            concepts=concepts,
-            standards=standards,
-            concept_candidates=concept_candidates,
-        ),
+        filter_suggestions=filter_suggestions,
+        diagnostics=diagnostics,
+        search_hints=search_hints,
         query_profile=query_profile,
         query_aspects=query_aspects,
+        retrieval_tasks=_retrieval_tasks(
+            query,
+            aspects=query_aspects,
+            hints=search_hints,
+            variants=variant_details,
+            filter_suggestions=filter_suggestions,
+            standards=standards,
+        ),
     )
+
+
+def build_retrieval_plan(query: RetrievalQuery) -> RetrievalPlan:
+    """Build a plan-only retrieval response from deterministic query analysis."""
+
+    analysis = analyze_query(query)
+    profile_label = analysis.query_profile.label if analysis.query_profile else "standard retrieval"
+    coverage_summary = _plan_coverage_summary(analysis)
+    return RetrievalPlan(
+        query=query,
+        query_analysis=analysis,
+        coverage_summary=coverage_summary,
+        task_summary=_plan_task_summary(analysis),
+        risk_signals=_plan_risk_signals(analysis, coverage_summary),
+        search_signature="pending",
+        summary=(
+            f"Plan uses {profile_label} with {len(analysis.query_aspects)} "
+            f"search aspect(s) and {len(analysis.search_hints)} medical search hint(s)."
+        ),
+    )
+
+
+def _plan_risk_signals(
+    analysis: RetrievalQueryAnalysis,
+    coverage_summary: RetrievalPlanCoverageSummary,
+) -> list[RetrievalPlanRiskSignal]:
+    signals: list[RetrievalPlanRiskSignal] = []
+    if coverage_summary.required_local_task_count == 0:
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code="no_required_local_task",
+                severity="warning",
+                message="The retrieval plan has no required local corpus task.",
+                suggested_action=(
+                    "Add a healthcare standard, schema, resource type, field list, or clinical domain "
+                    "so the trusted corpus search has a concrete coverage target."
+                ),
+                source="coverage_summary",
+                metadata={
+                    "local_task_count": coverage_summary.local_task_count,
+                    "external_task_count": coverage_summary.external_task_count,
+                },
+            )
+        )
+    if coverage_summary.standard_count == 0:
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code="no_standard_inferred",
+                severity="warning",
+                message="No healthcare standard was inferred for this plan.",
+                suggested_action=(
+                    "Specify FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, openFDA, or a known schema "
+                    "when those standards are relevant."
+                ),
+                source="coverage_summary",
+                metadata={"detected_concepts": list(analysis.detected_concepts)},
+            )
+        )
+    if coverage_summary.filter_count == 0 and coverage_summary.ready:
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code="unscoped_ready_plan",
+                severity="info",
+                message="The plan is ready but has no suggested metadata filters.",
+                suggested_action=(
+                    "Run the broad search first, then apply evidence facets only if coverage is too noisy."
+                ),
+                source="coverage_summary",
+            )
+        )
+    for diagnostic in analysis.diagnostics:
+        if diagnostic.severity == "info":
+            continue
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code=f"diagnostic_{diagnostic.code}",
+                severity=diagnostic.severity,
+                message=diagnostic.message,
+                suggested_action=diagnostic.suggested_action,
+                source="query_diagnostic",
+                metadata=dict(diagnostic.metadata),
+            )
+        )
+    signals.sort(key=lambda signal: (_risk_severity_rank(signal.severity), signal.code))
+    return signals[:6]
+
+
+def _risk_severity_rank(severity: str) -> int:
+    if severity in {"destructive", "error"}:
+        return 0
+    if severity == "warning":
+        return 1
+    if severity == "info":
+        return 2
+    return 3
+
+
+def _plan_coverage_summary(analysis: RetrievalQueryAnalysis) -> RetrievalPlanCoverageSummary:
+    local_tasks = [task for task in analysis.retrieval_tasks if task.target == "local_corpus"]
+    external_tasks = [
+        task for task in analysis.retrieval_tasks if task.target == "external_medical_index"
+    ]
+    standards = _dedupe(
+        [
+            *analysis.standards,
+            *(standard for task in analysis.retrieval_tasks for standard in task.standards),
+        ]
+    )
+    filters = {
+        (suggestion.field, suggestion.value)
+        for suggestion in analysis.filter_suggestions
+        if not suggestion.applied
+    }
+    filters.update(
+        (field, value)
+        for task in analysis.retrieval_tasks
+        for field, value in task.suggested_filters.items()
+    )
+    warnings = _dedupe(
+        [
+            *(
+                diagnostic.code
+                for diagnostic in analysis.diagnostics
+                if diagnostic.severity != "info"
+            ),
+            *(warning for task in analysis.retrieval_tasks for warning in task.warnings),
+        ]
+    )
+    required_local_task_count = sum(1 for task in local_tasks if task.required)
+    ready = required_local_task_count > 0 and bool(standards)
+    summary = (
+        f"{required_local_task_count}/{len(local_tasks)} required local task(s), "
+        f"{len(external_tasks)} external follow-up(s), {len(standards)} standard(s), "
+        f"and {len(filters)} suggested filter(s)."
+    )
+    if not ready:
+        summary = (
+            "Plan needs more detail before review-grade search: "
+            f"{summary}"
+        )
+    next_action = _plan_coverage_next_action(
+        ready=ready,
+        required_local_task_count=required_local_task_count,
+        external_task_count=len(external_tasks),
+        standard_count=len(standards),
+        filter_count=len(filters),
+    )
+    return RetrievalPlanCoverageSummary(
+        ready=ready,
+        local_task_count=len(local_tasks),
+        required_local_task_count=required_local_task_count,
+        external_task_count=len(external_tasks),
+        standard_count=len(standards),
+        filter_count=len(filters),
+        standards=standards,
+        warnings=warnings,
+        next_action=next_action,
+        summary=summary,
+    )
+
+
+def _plan_task_summary(analysis: RetrievalQueryAnalysis) -> RetrievalPlanTaskSummary:
+    runnable_local = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.target == "local_corpus" and task.action_type == "run_local_search"
+    ]
+    required_runnable_local = [task for task in runnable_local if task.required]
+    external_open = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.target == "external_medical_index" and task.action_type == "open_external_url"
+    ]
+    external_copy = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.target == "external_medical_index" and task.action_type == "copy_query"
+    ]
+    blocked_tasks = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.action_type not in {"run_local_search", "open_external_url", "copy_query"}
+    ]
+    manual_followup_count = len(external_open) + len(external_copy)
+    if required_runnable_local:
+        primary_action = "Run required local search tasks first, then review external follow-ups."
+    elif runnable_local:
+        primary_action = "Run the local search task, then review external follow-ups."
+    elif manual_followup_count:
+        primary_action = "Review external medical search follow-ups before trusting the plan."
+    else:
+        primary_action = "Add a more specific healthcare query before executing retrieval."
+    return RetrievalPlanTaskSummary(
+        total_task_count=len(analysis.retrieval_tasks),
+        runnable_local_count=len(runnable_local),
+        required_runnable_local_count=len(required_runnable_local),
+        external_open_count=len(external_open),
+        external_copy_count=len(external_copy),
+        manual_followup_count=manual_followup_count,
+        blocked_task_count=len(blocked_tasks),
+        primary_action=primary_action,
+        summary=(
+            f"{len(runnable_local)} local runnable task(s), "
+            f"{manual_followup_count} external/manual follow-up(s), "
+            f"and {len(blocked_tasks)} blocked task(s)."
+        ),
+    )
+
+
+def _plan_coverage_next_action(
+    *,
+    ready: bool,
+    required_local_task_count: int,
+    external_task_count: int,
+    standard_count: int,
+    filter_count: int,
+) -> str:
+    if not ready and standard_count == 0:
+        return "Add a healthcare standard, schema, resource type, field list, or clinical domain."
+    if not ready and required_local_task_count == 0:
+        return "Refine the query until the plan has at least one required local corpus task."
+    if filter_count > 0:
+        return "Review suggested filters, then run the local evidence search."
+    if external_task_count > 0:
+        return "Run local evidence search, then inspect external follow-up tasks if coverage is incomplete."
+    return "Run local evidence search."
 
 
 def _concept_candidates(
@@ -1715,6 +1957,111 @@ def _query_aspect_rule_matches(
         _has_intersection(candidate_standards, match.any_candidate_standards),
     ]
     return any(checks)
+
+
+def _retrieval_tasks(
+    query: RetrievalQuery,
+    *,
+    aspects: list[RetrievalQueryAspect],
+    hints: list[RetrievalSearchHint],
+    variants: list[RetrievalQueryVariant],
+    filter_suggestions: list[RetrievalFilterSuggestion],
+    standards: list[str],
+) -> list[RetrievalSearchTask]:
+    tasks: list[RetrievalSearchTask] = []
+    variant_lookup = _aspect_variant_lookup(variants)
+    global_filters = _filter_suggestions_as_dict(filter_suggestions)
+
+    for aspect in aspects:
+        task_filters = {**global_filters, **dict(aspect.suggested_filters)}
+        aspect_variants = variant_lookup.get(aspect.aspect_id, [])
+        tasks.append(
+            RetrievalSearchTask(
+                task_id=f"local:{aspect.aspect_id}",
+                label=aspect.label,
+                target="local_corpus",
+                action_type="run_local_search",
+                query=aspect_variants[0] if aspect_variants else aspect.question,
+                rationale=aspect.rationale,
+                priority=aspect.priority,
+                required=True,
+                aspect_id=aspect.aspect_id,
+                query_variants=aspect_variants[:3],
+                standards=standards,
+                suggested_filters=task_filters,
+                metadata={"rule_id": aspect.rule_id},
+            )
+        )
+
+    if not tasks:
+        tasks.append(
+            RetrievalSearchTask(
+                task_id="local:primary",
+                label="Primary evidence search",
+                target="local_corpus",
+                action_type="run_local_search",
+                query=query.query,
+                rationale="Search the trusted local corpus with the normalized user query.",
+                priority=1,
+                required=True,
+                query_variants=[variant.variant for variant in variants[:3]],
+                standards=standards,
+                suggested_filters=global_filters,
+            )
+        )
+
+    next_priority = max((task.priority for task in tasks), default=0) + 1
+    for index, hint in enumerate(hints, start=0):
+        tasks.append(
+            RetrievalSearchTask(
+                task_id=f"external:{hint.target}:{index + 1}",
+                label=f"{_human_label(hint.target)} follow-up",
+                target="external_medical_index",
+                action_type="open_external_url" if hint.url else "copy_query",
+                query=hint.query,
+                rationale=hint.rationale,
+                priority=next_priority + index,
+                required=False,
+                search_hint_target=hint.target,
+                standards=standards,
+                suggested_filters=global_filters,
+                warnings=list(hint.warnings),
+                metadata={
+                    "url": hint.url,
+                    "target": hint.target,
+                },
+            )
+        )
+
+    tasks.sort(key=lambda task: (task.priority, task.target, task.task_id))
+    return tasks[:8]
+
+
+def _aspect_variant_lookup(
+    variants: list[RetrievalQueryVariant],
+) -> dict[str, list[str]]:
+    lookup: dict[str, list[str]] = {}
+    for variant in variants:
+        aspect_id = variant.metadata.get("aspect_id")
+        if not isinstance(aspect_id, str) or not aspect_id:
+            continue
+        lookup.setdefault(aspect_id, []).append(variant.variant)
+    return {aspect_id: _dedupe(items) for aspect_id, items in lookup.items()}
+
+
+def _filter_suggestions_as_dict(
+    suggestions: list[RetrievalFilterSuggestion],
+) -> dict[str, str]:
+    filters: dict[str, str] = {}
+    for suggestion in suggestions:
+        if suggestion.applied:
+            continue
+        filters.setdefault(suggestion.field, suggestion.value)
+    return filters
+
+
+def _human_label(value: str) -> str:
+    return " ".join(part for part in re.split(r"[_\W]+", value) if part).title()
 
 
 def _search_hints(

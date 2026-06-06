@@ -28,6 +28,7 @@ import {
   listSchemas,
   listWorkflowEvents,
   listWorkflowSummaries,
+  planRetrieval,
   reindexRetrieval,
   searchRetrieval,
   streamAssistantChat,
@@ -43,6 +44,7 @@ import type {
   AssistantStreamEvent,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentPayload,
+  RetrievalPlan,
   RetrievalReindexPayload,
   RetrievalSearchPayload,
   RuntimeAssistantSettingsPayload,
@@ -72,6 +74,7 @@ export const queryKeys = {
   retrievalJudgmentEvaluation: (params: Record<string, unknown>) =>
     ["retrieval-judgment-evaluation", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
+  retrievalPlan: (payload: RetrievalSearchPayload | null) => ["retrieval-plan", payload] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
@@ -229,6 +232,14 @@ export function useRetrievalIntegrityQuery(params: {
 export function useRetrievalSearchMutation() {
   return useMutation({
     mutationFn: (payload: RetrievalSearchPayload) => searchRetrieval(payload),
+  });
+}
+
+export function useRetrievalPlanQuery(payload: RetrievalSearchPayload | null) {
+  return useQuery<RetrievalPlan>({
+    enabled: Boolean(payload?.query.trim()),
+    queryKey: queryKeys.retrievalPlan(payload),
+    queryFn: () => planRetrieval(payload!),
   });
 }
 

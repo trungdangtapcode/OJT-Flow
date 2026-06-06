@@ -9,6 +9,7 @@ from typing import Any
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalSource,
@@ -23,6 +24,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     rank_chunks,
 )
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
+from ojtflow.infrastructure.retrieval.query_analysis import build_retrieval_plan
 from ojtflow.infrastructure.storage.postgres import PostgresBackboneStore
 
 
@@ -191,6 +193,9 @@ class PostgresRetrievalRepository:
                             (_vector_literal(embedding), chunk.chunk_id),
                         )
             connection.commit()
+
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan:
+        return build_retrieval_plan(query)
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         chunks, postgres_warnings = self._load_candidate_chunks(query)

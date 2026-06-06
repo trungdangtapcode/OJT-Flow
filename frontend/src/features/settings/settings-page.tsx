@@ -206,7 +206,7 @@ export function SettingsPage() {
                   badge={user ? "verified" : "missing"}
                 />
                 <SettingRow
-                  label="Provider"
+                  label="Embedding"
                   value={runtime?.embedding.provider ?? runtimeConfigLabel(runtimeConfigQuery)}
                 />
                 <SettingRow

@@ -15,7 +15,7 @@ export function HelpTooltip({
   return (
     <span className={cn("group/help relative inline-flex align-middle", className)}>
       <span
-        aria-label={label}
+        aria-label="Show help"
         className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full text-muted-foreground focus-ring hover:text-foreground"
         role="button"
         tabIndex={0}
