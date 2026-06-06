@@ -1,5 +1,7 @@
 import { Badge } from "../../../components/ui/badge";
+import { HelpTooltip } from "../../../components/ui/help-tooltip";
 import { humanize } from "../../../lib/utils";
+import { SectionHelpText } from "./section-help-text";
 
 type BadgeVariant = "success" | "warning" | "muted";
 
@@ -87,6 +89,20 @@ export type RetrievalFacetComparisonView = {
   label: string;
   removedValues: string[];
   retainedValues: string[];
+};
+
+export type RetrievalRankChangeView = {
+  evidenceId: string;
+  fromRank: number;
+  rankDelta: number;
+  toRank: number;
+};
+
+export type RetrievalRulePackChangeView = {
+  activeFingerprint: string;
+  baselineFingerprint: string;
+  name: string;
+  status: "added" | "removed" | "changed" | "stable";
 };
 
 export function RunComparisonQueryProfile({
@@ -524,6 +540,154 @@ export function RunComparisonFacetCoverage({
             <FacetValueChange values={facet.retainedValues} label="Retained" variant="muted" />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+export function RunComparisonRankChanges({
+  formatCount,
+  rankChanges,
+}: {
+  formatCount: (count: number, singular: string) => string;
+  rankChanges: RetrievalRankChangeView[];
+}) {
+  if (!rankChanges.length) {
+    return (
+      <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-bold text-muted-foreground">Rank movement</span>
+          <Badge variant="success">stable</Badge>
+        </div>
+        <SectionHelpText>
+          Stable rank means retained evidence kept the same ordering between baseline and active runs.
+        </SectionHelpText>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+          Rank movement
+          <HelpTooltip label="Rank movement help">
+            Rank movement only compares evidence retained in both runs. An item moving up means it ranked closer to the top in the active run.
+          </HelpTooltip>
+        </span>
+        <Badge variant="warning">{formatCount(rankChanges.length, "changed rank")}</Badge>
+      </div>
+      <SectionHelpText>
+        Use rank movement to debug relevance tuning. Large movements can come from query wording, filters, reranking, or rule-pack changes.
+      </SectionHelpText>
+      <div className="grid gap-1">
+        {rankChanges.slice(0, 4).map((change) => (
+          <div
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
+            key={change.evidenceId}
+          >
+            <span className="break-words font-bold">{change.evidenceId}</span>
+            <span className="flex min-w-0 flex-wrap gap-1.5 text-muted-foreground">
+              <Badge variant={change.rankDelta < 0 ? "success" : "warning"}>
+                {change.rankDelta < 0 ? "up" : "down"} {Math.abs(change.rankDelta)}
+              </Badge>
+              <span>
+                #{change.fromRank} to #{change.toRank}
+              </span>
+            </span>
+          </div>
+        ))}
+        {rankChanges.length > 4 ? (
+          <div className="text-xs font-semibold text-muted-foreground">
+            +{formatCount(rankChanges.length - 4, "more changed rank")}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function RunComparisonEvidenceChange({
+  evidenceIds,
+  label,
+  variant,
+}: {
+  evidenceIds: string[];
+  label: string;
+  variant: BadgeVariant;
+}) {
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-muted-foreground">{label}</span>
+        <Badge variant={variant}>{evidenceIds.length}</Badge>
+      </div>
+      {evidenceIds.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {evidenceIds.slice(0, 4).map((evidenceId) => (
+            <span
+              className="max-w-full break-words rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground"
+              key={evidenceId}
+            >
+              {evidenceId}
+            </span>
+          ))}
+          {evidenceIds.length > 4 ? (
+            <span className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground">
+              +{evidenceIds.length - 4}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function RunComparisonRulePacks({
+  formatCount,
+  rulePackChanges,
+}: {
+  formatCount: (count: number, singular: string) => string;
+  rulePackChanges: RetrievalRulePackChangeView[];
+}) {
+  const changedCount = rulePackChanges.filter((change) => change.status !== "stable").length;
+  if (!rulePackChanges.length) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <span className="text-xs font-bold text-muted-foreground">Rule packs</span>
+        <Badge variant="muted">not reported</Badge>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-muted-foreground">Rule packs</span>
+        <Badge variant={changedCount ? "warning" : "success"}>
+          {changedCount ? formatCount(changedCount, "changed pack") : "stable"}
+        </Badge>
+      </div>
+      <div className="grid gap-1">
+        {rulePackChanges.slice(0, 4).map((change) => (
+          <div
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
+            key={change.name}
+          >
+            <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words font-bold">{change.name}</span>
+              <Badge variant={change.status === "stable" ? "success" : "warning"}>
+                {change.status}
+              </Badge>
+            </span>
+            <span className="break-words text-muted-foreground">
+              {change.baselineFingerprint} to {change.activeFingerprint}
+            </span>
+          </div>
+        ))}
+        {rulePackChanges.length > 4 ? (
+          <div className="text-xs font-semibold text-muted-foreground">
+            +{formatCount(rulePackChanges.length - 4, "more rule pack")}
+          </div>
+        ) : null}
       </div>
     </div>
   );

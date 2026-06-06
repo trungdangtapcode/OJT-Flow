@@ -1773,10 +1773,16 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "addedEvidenceIds" in retrieval_page
     assert "retainedEvidenceIds" in retrieval_page
     assert "RunComparisonRankChanges" in retrieval_page
-    assert "Rank movement" in retrieval_page
-    assert "Rank movement help" in retrieval_page
-    assert "Stable rank means retained evidence kept the same ordering" in retrieval_page
-    assert "Use rank movement to debug relevance tuning" in retrieval_page
+    assert "function RunComparisonRankChanges" not in retrieval_page
+    assert "RunComparisonEvidenceChange" in retrieval_page
+    assert "function RunComparisonEvidenceChange" not in retrieval_page
+    assert "Rank movement" in retrieval_run_comparison_detail_panels
+    assert "Rank movement help" in retrieval_run_comparison_detail_panels
+    assert (
+        "Stable rank means retained evidence kept the same ordering"
+        in retrieval_run_comparison_detail_panels
+    )
+    assert "Use rank movement to debug relevance tuning" in retrieval_run_comparison_detail_panels
     assert "rankChangesBetweenRuns" in retrieval_page
     assert "rankDelta" in retrieval_page
     assert "Copy comparison JSON" in retrieval_page
@@ -1800,6 +1806,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "churn shows how much the result set changed" in retrieval_run_comparison_summary_panels
     assert "mean rank delta shows ordering instability" in retrieval_run_comparison_summary_panels
     assert "RunComparisonRulePacks" in retrieval_page
+    assert "function RunComparisonRulePacks" not in retrieval_page
+    assert "Rule packs" in retrieval_run_comparison_detail_panels
+    assert "comparisonRulePackChangeViews" in retrieval_page
     assert "rulePackChangesBetweenRuns" in retrieval_page
     assert "rulePackFingerprint" in retrieval_page
     assert "rulePackChanged" in retrieval_page
@@ -1836,20 +1845,25 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     )
     assert "judgmentsForComparison" in retrieval_page
     assert "RelevanceJudgmentSummary" in retrieval_page
-    assert "Judgment metrics" in retrieval_page
-    assert "Judgment metrics help" in retrieval_page
-    assert "Precision@k and nDCG@k become meaningful" in retrieval_page
+    assert "components/judgment-evaluation-panels" in retrieval_page
+    assert "function RelevanceJudgmentSummary" not in retrieval_page
+    assert "Judgment metrics" in retrieval_judgment_evaluation_panels
+    assert "Judgment metrics help" in retrieval_judgment_evaluation_panels
+    assert (
+        "Precision@k and nDCG@k become meaningful"
+        in retrieval_judgment_evaluation_panels
+    )
     assert "relevanceJudgmentMetrics" in retrieval_page
     assert "relevanceJudgmentRating" in retrieval_page
     assert "judgmentsForRunHits" in retrieval_page
     assert "discountedCumulativeGain" in retrieval_page
-    assert "Precision@k" in retrieval_page
-    assert "nDCG@k" in retrieval_page
-    assert "Server MAP@k" in retrieval_page
-    assert "Server HitRate@k" in retrieval_page
-    assert "Server MRR@k" in retrieval_page
-    assert "Server nDCG@k" in retrieval_page
-    assert "Evaluation recommendations" in retrieval_page
+    assert "Precision@k" in retrieval_judgment_evaluation_panels
+    assert "nDCG@k" in retrieval_judgment_evaluation_panels
+    assert "Server MAP@k" in retrieval_judgment_evaluation_panels
+    assert "Server HitRate@k" in retrieval_judgment_evaluation_panels
+    assert "Server MRR@k" in retrieval_judgment_evaluation_panels
+    assert "Server nDCG@k" in retrieval_judgment_evaluation_panels
+    assert "Evaluation recommendations" in retrieval_judgment_evaluation_panels
     assert "EvidenceReadinessPanel" in retrieval_page
     assert "components/evidence-readiness-panel" in retrieval_page
     assert "function EvidenceReadinessPanel" not in retrieval_page
@@ -2005,11 +2019,14 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Strategy recommendations" in retrieval_strategy_standard_panels
     assert "getSuggestedFilterAction(recommendation.suggested_filters)" in retrieval_strategy_standard_panels
     assert "strategy_recommendations: (packageData.strategy_recommendations ?? [])" in retrieval_page
-    assert "Copy eval" in retrieval_page
-    assert "Copy evaluation JSON" in retrieval_page
-    assert "Copy retrieval judgment evaluation report" in retrieval_page
-    assert "Judgment evaluation JSON report help" in retrieval_page
-    assert "EvaluationReadinessPanel" in retrieval_page
+    assert "Copy eval" not in retrieval_page
+    assert "Copy evaluation JSON" in retrieval_judgment_evaluation_panels
+    assert (
+        "Copy retrieval judgment evaluation report"
+        in retrieval_judgment_evaluation_panels
+    )
+    assert "Judgment evaluation JSON report help" in retrieval_judgment_evaluation_panels
+    assert "EvaluationReadinessPanel" in retrieval_judgment_evaluation_panels
     assert "components/judgment-evaluation-panels" in retrieval_page
     assert "function EvaluationReadinessPanel" not in retrieval_page
     assert "function JudgmentMetricCard" not in retrieval_page
@@ -2051,7 +2068,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "/retrieval/judgments" in frontend_architecture
     assert "/retrieval/judgments/summary" in frontend_architecture
     assert "/retrieval/judgments/evaluate" in frontend_architecture
-    assert "stored label" in retrieval_page
+    assert "stored label" in retrieval_judgment_evaluation_panels
     assert "clinical evidence pack" in frontend_architecture
     assert "operator interpretation of the" in frontend_architecture
     assert "translate support signals into operator action" in frontend_architecture

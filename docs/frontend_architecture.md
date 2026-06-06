@@ -239,8 +239,10 @@ keeps the backend-derived action-to-filter helpers and passes them as explicit
 callbacks so retrieval policy does not drift into component rendering.
 Judgment evaluation presentation should stay outside the page shell:
 `frontend/src/features/retrieval/components/judgment-evaluation-panels.tsx` owns
-readiness-status rendering and judgment metric cards. The page owns relevance
-metric calculation, server evaluation loading, and copy-report behavior.
+the relevance judgment summary, readiness-status rendering, recommendation
+rows, copy button state, and judgment metric cards. The page owns relevance
+metric calculation, server evaluation loading, and evaluation report JSON
+assembly.
 Relevance judgment controls should stay outside the page shell:
 `frontend/src/features/retrieval/components/relevance-judgment-control.tsx` owns
 the judgment label, badge rendering, option buttons, and operator help text. The
@@ -801,9 +803,9 @@ diagnosis derivation, and baseline/active run state.
 Run-comparison detail rendering should also stay outside the page shell:
 `frontend/src/features/retrieval/components/run-comparison-detail-panels.tsx`
 owns the query-profile, concept-grounding, query-aspect, coverage-diagnostic,
-quality-signal, and facet-coverage detail cards. The retrieval page owns the
-comparison models and passes formatting helpers where the presentation needs
-human-readable count labels. The comparison panel should render the
+quality-signal, facet-coverage, rule-pack, rank-movement, and evidence-ID change detail
+cards. The retrieval page owns the comparison models and passes formatting
+helpers where the presentation needs human-readable count labels. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
 query-aspect plans across active and baseline runs, including added, removed,
