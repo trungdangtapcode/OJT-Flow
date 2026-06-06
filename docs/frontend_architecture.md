@@ -796,10 +796,15 @@ Run-comparison summary rendering should stay outside the page shell:
 owns the operator summary, diagnosis, recommended-action checklist, comparison
 metrics, and reusable comparison metric cards. The retrieval page owns
 comparison selection, report-copy behavior, recommended-action derivation,
-diagnosis derivation, and baseline/active run state. The comparison panel should
-render the active-vs-baseline query-profile comparison directly, including
-profile label, route, retrieval mode, complexity, and stable/changed status. It
-should compare
+diagnosis derivation, and baseline/active run state.
+Run-comparison detail rendering should also stay outside the page shell:
+`frontend/src/features/retrieval/components/run-comparison-detail-panels.tsx`
+owns the query-profile, concept-grounding, query-aspect, coverage-diagnostic,
+quality-signal, and facet-coverage detail cards. The retrieval page owns the
+comparison models and passes formatting helpers where the presentation needs
+human-readable count labels. The comparison panel should render the
+active-vs-baseline query-profile comparison directly, including profile label,
+route, retrieval mode, complexity, and stable/changed status. It should compare
 query-aspect plans across active and baseline runs, including added, removed,
 and retained aspects, so operators can see whether decomposition coverage
 changed before interpreting rank movement. It should compare controlled medical
