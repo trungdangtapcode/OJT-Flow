@@ -854,6 +854,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "components"
         / "search-cockpit-panels.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_search_cockpit = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-search-cockpit.tsx"
+    ).read_text(encoding="utf-8")
     retrieval_search_run_evidence_summary = (
         REPO_ROOT
         / "frontend"
@@ -1114,6 +1123,33 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "retrieval"
         / "model"
         / "search-run-presentation.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_cockpit_view_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-cockpit-view-model.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_cockpit_runtime_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-cockpit-runtime.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_cockpit_signals_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-cockpit-signals.ts"
     ).read_text(encoding="utf-8")
     retrieval_search_plan_tasks_model = (
         REPO_ROOT
@@ -1568,8 +1604,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "RetrievalInterpretation" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
-    assert "StandardSearchPlanPanel" in retrieval_page
-    assert "components/strategy-standard-panels" in retrieval_page
+    assert "StandardSearchPlanPanel" in retrieval_search_cockpit
+    assert "./strategy-standard-panels" in retrieval_search_cockpit
     assert "function StandardSearchPlanPanel" not in retrieval_page
     assert "Healthcare search plan" in retrieval_strategy_standard_panels
     assert "Backend-selected playbook for the next standards-aware search" in retrieval_strategy_standard_panels
@@ -1650,10 +1686,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Index integrity" in retrieval_runtime_status
     assert "Source checks" in retrieval_runtime_status
     assert "function IntegrityPanel" not in retrieval_page
-    assert "Fusion agreement" in retrieval_page
+    assert "Fusion agreement" in retrieval_search_cockpit
     assert "fusionDiagnosticsFromPackage" in retrieval_page
     assert "fusion_diagnostics" in retrieval_page
-    assert "Whether lexical and vector retrieval agree" in retrieval_page
+    assert "Whether lexical and vector retrieval agree" in retrieval_search_cockpit
     assert "lexical/vector top overlap" in (
         REPO_ROOT / "docs/retrieval_module_v0.md"
     ).read_text(encoding="utf-8")
@@ -1672,8 +1708,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "DiversitySelectionExplanation" in retrieval_page
     assert "function DiversitySelectionExplanation" not in retrieval_page
     assert "Diversity selection" in retrieval_hit_explanation_panels
-    assert "SourceDiversityPanel" in retrieval_page
-    assert "components/source-diversity-panel" in retrieval_page
+    assert "SourceDiversityPanel" in retrieval_search_cockpit
+    assert "./source-diversity-panel" in retrieval_search_cockpit
     assert "function SourceDiversityPanel" not in retrieval_page
     assert "Source diversity" in retrieval_source_diversity_panel
     assert "Selected-hit rationale" in retrieval_source_diversity_panel
@@ -1905,21 +1941,30 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Ready for evidence review" in retrieval_evidence_readiness_panel
     assert "Readiness score unavailable" in retrieval_evidence_readiness_panel
     assert "RetrievalSearchCockpit" in retrieval_page
-    assert "Search cockpit" in retrieval_page
-    assert "SearchReadinessChecklist" in retrieval_page
-    assert "components/search-cockpit-panels" in retrieval_page
+    assert "components/retrieval-search-cockpit" in retrieval_page
+    assert "retrieval-cockpit-view-model" in retrieval_page
+    assert "function RetrievalSearchCockpit" not in retrieval_page
+    assert "function retrievalSearchCockpitView" not in retrieval_page
+    assert "function retrievalSearchCockpitView" in retrieval_cockpit_view_model
+    assert "queryHealthItems" in retrieval_cockpit_signals_model
+    assert "searchReadinessChecklist" in retrieval_cockpit_signals_model
+    assert "queryAnalysisFromPackage" in retrieval_cockpit_runtime_model
+    assert "rankingStackFromPackage" in retrieval_cockpit_runtime_model
+    assert "Search cockpit" in retrieval_search_cockpit
+    assert "SearchReadinessChecklist" in retrieval_search_cockpit
+    assert "./search-cockpit-panels" in retrieval_search_cockpit
     assert "function SearchReadinessChecklist" not in retrieval_page
     assert "Search readiness checklist" in retrieval_search_cockpit_panels
     assert "searchReadinessChecklist" in retrieval_page
     assert "readiness_checklist: readinessChecklist" in retrieval_page
-    assert "Source spread" in retrieval_page
+    assert "Evidence spread" in retrieval_search_cockpit
     assert "Governance" in retrieval_page
-    assert "Query transformation" in retrieval_page
-    assert "Next best action" in retrieval_page
+    assert "Query transformation" in retrieval_search_cockpit
+    assert "Next best action" in retrieval_search_cockpit
     assert "hybridStackValue" in retrieval_page
-    assert "Copy cockpit" in retrieval_page
-    assert "Copy cockpit JSON" in retrieval_page
-    assert "Cockpit JSON report help" in retrieval_page
+    assert "Copy cockpit" in retrieval_search_cockpit
+    assert "Copy cockpit JSON" in retrieval_search_cockpit
+    assert "Cockpit JSON report help" in retrieval_search_cockpit
     assert "retrievalCockpitReportFromPackage" in retrieval_page
     assert "retrievalCockpitEvidenceHitReports" in retrieval_page
     assert "evidence_hits" in retrieval_page
@@ -2044,12 +2089,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "strategy_recommendations?: RetrievalStrategyRecommendation[]" in (
         REPO_ROOT / "frontend/src/types.ts"
     ).read_text(encoding="utf-8")
-    assert "StrategyRecommendationsPanel" in retrieval_page
+    assert "StrategyRecommendationsPanel" in retrieval_search_cockpit
     assert "function StrategyRecommendationsPanel" not in retrieval_page
     assert "StrategyRecommendationCard" in retrieval_strategy_standard_panels
     assert "Strategy recommendations" in retrieval_strategy_standard_panels
     assert "getSuggestedFilterAction(recommendation.suggested_filters)" in retrieval_strategy_standard_panels
-    assert "strategy_recommendations: (packageData.strategy_recommendations ?? [])" in retrieval_page
+    assert "strategyRecommendations: packageData.strategy_recommendations ?? []" in retrieval_cockpit_view_model
     assert "Copy eval" not in retrieval_page
     assert "Copy evaluation JSON" in retrieval_judgment_evaluation_panels
     assert (
@@ -2115,9 +2160,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "weak evidence" in frontend_architecture
     assert "retrieval cockpit" in frontend_architecture
     assert "copyable `retrieval_cockpit` JSON report" in frontend_architecture
-    assert "QueryHealthPanel" in retrieval_page
+    assert "QueryHealthPanel" in retrieval_search_cockpit
     assert "function QueryHealthPanel" not in retrieval_page
-    assert "Query health" in retrieval_page
+    assert "Query health" in retrieval_search_cockpit_panels
     assert "Query health help" in retrieval_search_cockpit_panels
     assert "queryHealthItems" in retrieval_page
     assert "queryDiagnosticHealthItems" in retrieval_page

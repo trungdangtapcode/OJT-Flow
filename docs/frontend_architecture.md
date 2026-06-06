@@ -212,11 +212,20 @@ Reusable metric/fact tiles should use
 counts, integrity facts, and source-readiness counts are shared visual primitives;
 the page and panels remain responsible for backend data, filtering, and policy
 decisions.
-Retrieval cockpit health and readiness presentation should stay outside the
-page shell: `frontend/src/features/retrieval/components/search-cockpit-panels.tsx`
+Retrieval cockpit presentation should stay outside the page shell:
+`frontend/src/features/retrieval/components/retrieval-search-cockpit.tsx` owns
+the cockpit container, copy button state, metric composition, strategy/search
+plan panels, source-diversity panel placement, query transformation summary,
+and next-action controls. `frontend/src/features/retrieval/model/retrieval-cockpit-view-model.ts`
+owns pure cockpit view-model assembly. `frontend/src/features/retrieval/model/retrieval-cockpit-runtime.ts`
+owns backend trace parsing, ranking/fusion facts, source-diversity facts, and
+query-analysis facts needed by the cockpit. `frontend/src/features/retrieval/model/retrieval-cockpit-signals.ts`
+owns query-health derivation, readiness checklist derivation, active-filter
+shaping, and recommended filter-action shaping. `frontend/src/features/retrieval/components/search-cockpit-panels.tsx`
 owns query-health cards, readiness checklist cards, and cockpit metric cards.
-The page derives the health/readiness arrays and passes filter-clear callbacks;
-the component should not import retrieval hooks or construct backend reports.
+The page derives the cockpit view model and copied report JSON, then passes
+filter callbacks; cockpit components should not import retrieval hooks or
+construct backend reports.
 Source-diversity presentation should stay outside the page shell:
 `frontend/src/features/retrieval/components/source-diversity-panel.tsx` owns the
 source diversity explanation, metric cards, selected-hit rationale rows, and
