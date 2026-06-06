@@ -219,6 +219,27 @@ RETRIEVAL_SPLIT_FILES = [
     / "features"
     / "retrieval"
     / "components"
+    / "query-analysis-block.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "query-aspect-plan.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "query-profile-card.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
     / "search-hint-list.tsx",
     REPO_ROOT
     / "frontend"
@@ -755,6 +776,33 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "retrieval"
         / "components"
         / "query-diagnostic-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_query_analysis_block = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "query-analysis-block.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_query_aspect_plan = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "query-aspect-plan.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_query_profile_card = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "query-profile-card.tsx"
     ).read_text(encoding="utf-8")
     retrieval_search_hint_list = (
         REPO_ROOT
@@ -1295,25 +1343,37 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Task clipboard exports should use one" in frontend_architecture
     assert "coverage_summary.next_action" in frontend_architecture
     assert "RetrievalPlan.risk_signals" in frontend_architecture
-    assert "QueryProfileCard" in retrieval_page
+    assert "QueryAnalysisBlock" in retrieval_page
+    assert "components/query-analysis-block" in retrieval_page
+    assert "function QueryAnalysisBlock" not in retrieval_page
+    assert "Query analysis" in retrieval_query_analysis_block
+    assert "QueryAnalysisCounter" in retrieval_query_analysis_block
+    assert "queryAnalysisBlockView" in retrieval_page
+    assert "QueryProfileCard" in retrieval_query_analysis_block
+    assert "./query-profile-card" in retrieval_query_analysis_block
+    assert "function QueryProfileCard" not in retrieval_page
+    assert "Query profile" in retrieval_query_profile_card
+    assert "Suggested by query profile" in retrieval_query_profile_card
     assert "queryProfileValue" in retrieval_page
     assert "query_profile" in retrieval_page
-    assert "QueryAspectPlan" in retrieval_page
+    assert "QueryAspectPlan" in retrieval_query_analysis_block
     assert "queryAspectsValue" in retrieval_page
     assert "query_aspects" in retrieval_page
-    assert "Search aspect plan" in retrieval_page
-    assert "ConceptCandidateList" in retrieval_page
-    assert "components/concept-candidate-list" in retrieval_page
+    assert "./query-aspect-plan" in retrieval_query_analysis_block
+    assert "function QueryAspectPlan" not in retrieval_page
+    assert "Search aspect plan" in retrieval_query_aspect_plan
+    assert "ConceptCandidateList" in retrieval_query_analysis_block
+    assert "./concept-candidate-list" in retrieval_query_analysis_block
     assert "function ConceptCandidateList" not in retrieval_page
     assert "Concept candidates" in retrieval_concept_candidate_list
     assert "conceptCandidatesValue" in retrieval_page
     assert "concept_candidates" in retrieval_page
-    assert "QueryDiagnosticList" in retrieval_page
-    assert "components/query-diagnostic-list" in retrieval_page
+    assert "QueryDiagnosticList" in retrieval_query_analysis_block
+    assert "./query-diagnostic-list" in retrieval_query_analysis_block
     assert "function QueryDiagnosticList" not in retrieval_page
     assert "Query diagnostics explain parser" in retrieval_query_diagnostic_list
-    assert "SearchHintList" in retrieval_page
-    assert "components/search-hint-list" in retrieval_page
+    assert "SearchHintList" in retrieval_query_analysis_block
+    assert "./search-hint-list" in retrieval_query_analysis_block
     assert "function SearchHintList" not in retrieval_page
     assert "SearchHintMetadata" in retrieval_search_hint_list
     assert "Route details" in retrieval_search_hint_list
@@ -1335,8 +1395,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "queryAspectComparison" in retrieval_page
     assert "Search aspects" in retrieval_search_plan_detail_panels
     assert "queryAspectFilterEntries" in retrieval_page
-    assert "Suggested by search aspect" in retrieval_page
-    assert "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`" in retrieval_page
+    assert "filterEntries: queryAspectFilterEntries(aspect, appliedFilters)" in retrieval_page
+    assert "Suggested by search aspect" in retrieval_query_aspect_plan
+    assert (
+        "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`"
+        in retrieval_query_aspect_plan
+    )
     assert "RunComparisonCoverage" in retrieval_page
     assert "coverageComparisonBetweenRuns" in retrieval_page
     assert "coverageComparison" in retrieval_page
@@ -1498,10 +1562,13 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "suggestedFilters" in retrieval_page
     assert "queryProfileFilterEntries" in retrieval_page
     assert "appliedFilterMatches" in retrieval_page
-    assert "appliedFilters={trace.filters_applied}" in retrieval_page
-    assert "entry.applied" in retrieval_page
-    assert "Suggested by query profile" in retrieval_page
-    assert "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`" in retrieval_page
+    assert "queryAnalysisBlockView(queryAnalysis, trace.filters_applied)" in retrieval_page
+    assert "entry.applied" in retrieval_query_aspect_plan
+    assert "entry.applied" in retrieval_query_profile_card
+    assert (
+        "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`"
+        in retrieval_query_profile_card
+    )
     assert "RuntimeRerankBadge" in retrieval_page
     assert "RuntimeDiversityBadge" in retrieval_page
     assert "RetrievalRuntimeStatusStrip" in retrieval_page
@@ -2053,8 +2120,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "aria-pressed={applied}" in retrieval_result_facets
     assert "supportedSuggestionFilterFields" in retrieval_page
     assert "onApplyFilterSuggestion" in retrieval_page
-    assert "FilterSuggestionList" in retrieval_page
-    assert "components/filter-suggestion-list" in retrieval_page
+    assert "FilterSuggestionList" in retrieval_query_analysis_block
+    assert "./filter-suggestion-list" in retrieval_query_analysis_block
     assert "function FilterSuggestionList" not in retrieval_page
     assert "Suggested filters" in retrieval_filter_suggestion_list
     assert "isSuggestionSupported" in retrieval_filter_suggestion_list
