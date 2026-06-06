@@ -1811,7 +1811,9 @@ def test_retrieval_coverage_reports_missing_expected_standard() -> None:
     assert coverage_by_standard["UCUM"].suggested_filter == {"standard_system": "UCUM"}
     assert "standard_system=UCUM" in coverage_by_standard["UCUM"].suggested_action
     assert coverage_by_standard["UCUM"].reason in coverage.warnings
-    assert any("Lab identity and standards" in warning for warning in coverage.warnings)
+    aspects = {item.value: item for item in coverage.query_aspects}
+    assert aspects["unit_and_value_quality"].status == "covered"
+    assert not any("Lab identity and standards" in warning for warning in coverage.warnings)
 
 
 def test_retrieval_coverage_reports_query_aspect_gaps() -> None:
@@ -1862,10 +1864,8 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
     assert signals["missing_standard_coverage"].metadata["suggested_filters"] == [
         {"standard_system": "UCUM"}
     ]
-    assert signals["missing_query_aspect_coverage"].severity == "warning"
-    assert signals["missing_query_aspect_coverage"].metadata["missing_aspects"] == [
-        "lab_identity_standardization"
-    ]
+    assert signals["query_aspect_coverage_complete"].severity == "success"
+    assert signals["query_aspect_coverage_complete"].metadata["aspect_count"] == 1
     assert signals["query_context_clear"].severity == "success"
     assert signals["missing_required_evidence_buckets"].severity == "warning"
     assert signals["missing_required_evidence_buckets"].metadata["missing_buckets"] == [
@@ -1888,13 +1888,12 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
     ]
     assert package.quality_summary is not None
     assert package.quality_summary.status == "review"
-    assert package.quality_summary.warning_count == 3
+    assert package.quality_summary.warning_count == 2
     assert package.quality_summary.warning_codes == [
         "missing_required_evidence_buckets",
         "missing_standard_coverage",
-        "missing_query_aspect_coverage",
     ]
-    assert package.quality_summary.score == 55
+    assert package.quality_summary.score == 70
     assert [action.action_type for action in package.recommended_actions[:3]] == [
         "apply_filter",
         "apply_filter",
@@ -1912,9 +1911,9 @@ def test_retrieval_quality_signals_flag_missing_standard_coverage() -> None:
     assert package.recommended_action_summary.highest_priority == 20
     assert package.recommended_action_summary.highest_severity == "warning"
     assert package.recommended_action_summary.top_action_title == "Recover Schema evidence"
-    assert package.recommended_action_summary.apply_filter_count == 4
+    assert package.recommended_action_summary.apply_filter_count == 3
     assert package.recommended_action_summary.broaden_query_count >= 0
-    assert package.recommended_action_summary.action_type_counts["apply_filter"] == 4
+    assert package.recommended_action_summary.action_type_counts["apply_filter"] == 3
     assert package.remediation_summary is not None
     assert package.remediation_summary.startswith("Recover Schema evidence")
     assert package.handoff_context["remediation_summary"] == package.remediation_summary
@@ -2077,7 +2076,7 @@ def test_retrieval_quality_summary_uses_data_driven_policy(
     )
 
     assert package.quality_summary is not None
-    assert package.quality_summary.score == 90
+    assert package.quality_summary.score == 95
     assert package.quality_summary.status == "ready"
     assert package.handoff_context["quality_policy"]["version"] == "custom_quality_policy.v1"
     assert package.handoff_context["quality_policy"]["severity_penalties"]["warning"] == 5
