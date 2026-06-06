@@ -793,8 +793,8 @@ before metrics and detailed deltas. The copyable JSON report should include the
 same `operator_summary`, diagnosis, and actions for offline tuning notes.
 Run-comparison summary rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/run-comparison-summary-panels.tsx`
-owns the operator summary, diagnosis, recommended-action checklist, comparison
-metrics, and reusable comparison metric cards. The retrieval page owns
+owns the at-a-glance row, operator summary, diagnosis, recommended-action
+checklist, comparison metrics, and reusable comparison metric cards. The retrieval page owns
 comparison selection, report-copy behavior, recommended-action derivation,
 diagnosis derivation, and baseline/active run state.
 Run-comparison detail rendering should also stay outside the page shell:
