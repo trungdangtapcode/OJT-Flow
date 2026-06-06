@@ -77,9 +77,16 @@
       },
       "match": {
         "any_concepts": [
+          "vital_sign_observation",
           "vital_sign_blood_pressure",
+          "vital_sign_heart_rate",
+          "vital_sign_oxygen_saturation",
+          "vital_sign_body_temperature",
           "systolic_blood_pressure",
-          "diastolic_blood_pressure"
+          "diastolic_blood_pressure",
+          "heart_rate",
+          "oxygen_saturation_pulse_oximetry",
+          "body_temperature"
         ],
         "any_candidate_domains": [
           "vital_signs"
@@ -88,7 +95,11 @@
           "bp",
           "htn",
           "sbp",
-          "dbp"
+          "dbp",
+          "vitals",
+          "pulse",
+          "spo2",
+          "temperature"
         ]
       }
     },

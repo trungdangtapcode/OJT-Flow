@@ -4,7 +4,7 @@
     {
       "rule_id": "lab_observation_identity",
       "concept": "laboratory_observation_identity",
-      "triggers": ["lab", "laboratory", "lab_name", "test", "observation", "result"],
+      "triggers": ["lab", "laboratory", "lab_name", "test", "result"],
       "expanded_terms": [
         "laboratory test identifier",
         "lab name normalization",
@@ -102,9 +102,7 @@
         "sbp",
         "dbp",
         "systolic",
-        "diastolic",
-        "vital sign",
-        "vitals"
+        "diastolic"
       ],
       "expanded_terms": [
         "systolic blood pressure",
@@ -115,6 +113,58 @@
       ],
       "standards": ["LOINC", "FHIR"],
       "variant": "LOINC blood pressure systolic diastolic vital signs FHIR Observation mmHg"
+    },
+    {
+      "rule_id": "vital_sign_observation",
+      "concept": "vital_sign_observation",
+      "triggers": ["vital sign", "vital signs", "vitals"],
+      "expanded_terms": [
+        "FHIR Observation vital signs",
+        "LOINC vital sign code",
+        "vital-sign valueQuantity",
+        "vital-sign UCUM unit"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "FHIR Observation vital signs LOINC code valueQuantity UCUM unit"
+    },
+    {
+      "rule_id": "vital_sign_heart_rate",
+      "concept": "vital_sign_heart_rate",
+      "triggers": ["heart rate", "pulse", "pulse rate", "hr", "bpm"],
+      "expanded_terms": [
+        "heart rate",
+        "LOINC 8867-4",
+        "pulse rate",
+        "beats per minute"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "LOINC 8867-4 heart rate pulse FHIR Observation beats per minute"
+    },
+    {
+      "rule_id": "vital_sign_oxygen_saturation",
+      "concept": "vital_sign_oxygen_saturation",
+      "triggers": ["oxygen saturation", "spo2", "o2 sat", "pulse ox", "pulse oximetry", "sao2"],
+      "expanded_terms": [
+        "oxygen saturation",
+        "LOINC 59408-5",
+        "pulse oximetry",
+        "SpO2 percent"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "LOINC 59408-5 oxygen saturation SpO2 pulse oximetry FHIR Observation percent"
+    },
+    {
+      "rule_id": "vital_sign_body_temperature",
+      "concept": "vital_sign_body_temperature",
+      "triggers": ["body temperature", "temperature", "temp", "fever"],
+      "expanded_terms": [
+        "body temperature",
+        "LOINC 8310-5",
+        "temperature unit",
+        "Celsius Fahrenheit"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "LOINC 8310-5 body temperature FHIR Observation Celsius Fahrenheit"
     },
     {
       "rule_id": "phi_review_context",

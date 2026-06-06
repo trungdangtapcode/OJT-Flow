@@ -545,6 +545,76 @@ def test_query_analysis_expands_blood_pressure_shorthand() -> None:
     assert any("LOINC 8462-4" in variant for variant in analysis.query_variants)
 
 
+def test_query_analysis_routes_generic_vitals_without_blood_pressure_assumption() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="vitals FHIR Observation standard codes and units",
+            resource_type="Observation",
+        )
+    )
+
+    aspects = {aspect.aspect_id: aspect for aspect in analysis.query_aspects}
+    suggestions = {
+        (suggestion.field, suggestion.value): suggestion
+        for suggestion in analysis.filter_suggestions
+    }
+
+    assert "vital_sign_observation" in analysis.detected_concepts
+    assert "vital_sign_blood_pressure" not in analysis.detected_concepts
+    assert "vital_sign_bp_standardization" not in aspects
+    assert "vital_sign_observation_standardization" in aspects
+    assert {"FHIR", "LOINC", "UCUM"}.issubset(set(analysis.standards))
+    assert analysis.query_profile is not None
+    assert analysis.query_profile.profile_id == "vital_signs_standardization"
+    assert ("clinical_domain", "vital_signs") in suggestions
+    assert ("clinical_domain", "laboratory") not in suggestions
+
+
+def test_query_analysis_expands_non_bp_vital_signs() -> None:
+    cases = [
+        (
+            "heart rate pulse vitals FHIR Observation",
+            "vital_sign_heart_rate",
+            "heart_rate",
+            "LOINC 8867-4",
+        ),
+        (
+            "SpO2 oxygen saturation vital signs",
+            "vital_sign_oxygen_saturation",
+            "oxygen_saturation_pulse_oximetry",
+            "LOINC 59408-5",
+        ),
+        (
+            "body temperature fever vital signs",
+            "vital_sign_body_temperature",
+            "body_temperature",
+            "LOINC 8310-5",
+        ),
+    ]
+
+    for query, rule_concept, registry_concept, expected_variant in cases:
+        analysis = analyze_query(
+            RetrievalQuery(query=query, resource_type="Observation")
+        )
+        aspects = {aspect.aspect_id for aspect in analysis.query_aspects}
+        suggestions = {
+            (suggestion.field, suggestion.value)
+            for suggestion in analysis.filter_suggestions
+        }
+
+        assert rule_concept in analysis.detected_concepts
+        assert registry_concept in analysis.detected_concepts
+        assert "vital_sign_blood_pressure" not in analysis.detected_concepts
+        assert "vital_sign_bp_standardization" not in aspects
+        assert "vital_sign_observation_standardization" in aspects
+        assert analysis.query_profile is not None
+        assert analysis.query_profile.profile_id == "vital_signs_standardization"
+        assert {"FHIR", "LOINC", "UCUM"}.issubset(set(analysis.standards))
+        assert ("clinical_domain", "vital_signs") in suggestions
+        assert ("clinical_domain", "laboratory") not in suggestions
+        assert any(expected_variant in variant for variant in analysis.query_variants)
+
+
 def test_query_analysis_uses_data_driven_query_profile_rules(tmp_path, monkeypatch) -> None:
     registry_path = tmp_path / "query_profile_rules.json"
     registry_path.write_text(
