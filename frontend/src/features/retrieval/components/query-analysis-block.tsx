@@ -32,6 +32,7 @@ export type QueryAnalysisBlockView = {
   queryAspects: QueryAspectPlanItemView[];
   queryProfile: QueryProfileCardView | null;
   queryProfileFilterEntries: QueryProfileFilterEntryView[];
+  queryProfileRouteHelpText: string;
   ruleIds: string[];
   searchHints: SearchHintStack[];
   standards: string[];
@@ -74,6 +75,7 @@ export function QueryAnalysisBlock({
         isSearchPending={isSearchPending}
         onApplyFilter={onApplyFilterSuggestion}
         profile={analysis.queryProfile}
+        routeHelpText={analysis.queryProfileRouteHelpText}
       />
       <QueryAspectPlan
         aspects={analysis.queryAspects}

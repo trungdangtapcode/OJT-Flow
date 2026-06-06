@@ -1151,6 +1151,24 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "model"
         / "retrieval-cockpit-signals.ts"
     ).read_text(encoding="utf-8")
+    retrieval_comparison_diagnosis_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-comparison-diagnosis.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_search_payload_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-search-payload.ts"
+    ).read_text(encoding="utf-8")
     retrieval_search_plan_tasks_model = (
         REPO_ROOT
         / "frontend"
@@ -1334,6 +1352,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copy query" in retrieval_search_plan_task_preview
     assert "task-query:" in retrieval_search_plan_task_preview
     assert "plannedTaskSearchOverrides" in retrieval_page
+    assert "function plannedTaskSearchOverrides" not in retrieval_page
+    assert "function plannedTaskSearchOverrides" in retrieval_search_payload_model
     assert "runPlannedTask" in retrieval_page
     assert "SearchPlanCoverageSummaryPanel" in retrieval_search_plan_preview
     assert "./search-plan-summary-panels" in retrieval_search_plan_preview
@@ -1498,7 +1518,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Coverage diagnostics" in retrieval_run_comparison_detail_panels
     assert "coverageComparisonBetweenRuns" in retrieval_page
     assert "coverageComparison" in retrieval_page
-    assert "coverage_diagnostics_changed" in retrieval_page
+    assert "coverage_diagnostics_changed" in retrieval_comparison_diagnosis_model
     assert "QueryAspectMatchExplanation" in retrieval_page
     assert "queryAspectMatchesFromHit" in retrieval_page
     assert "function QueryAspectMatchExplanation" not in retrieval_page
@@ -1570,13 +1590,13 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Concept grounding" in retrieval_run_comparison_detail_panels
     assert "conceptGroundingComparisonBetweenRuns" in retrieval_page
     assert "conceptGroundingComparison" in retrieval_page
-    assert "concept_grounding_changed" in retrieval_page
+    assert "concept_grounding_changed" in retrieval_comparison_diagnosis_model
     assert "serverSearchSignatureFromPackage" in retrieval_page
     assert "Search signature" in retrieval_page
-    assert "search_signature: comparison.activeSummary.serverSignature" in retrieval_page
+    assert "search_signature: comparison.activeSummary.serverSignature" in retrieval_comparison_diagnosis_model
     assert "qualityPolicyFromPackage" in retrieval_page
     assert "Quality policy" in retrieval_page
-    assert "query_profiles" in retrieval_page
+    assert "query_profiles" in retrieval_comparison_diagnosis_model
     assert "queryProfileSummaryFromPackage" in retrieval_page
     assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_page
     assert "SearchRunHistory" in retrieval_page
@@ -1635,7 +1655,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "qualitySummary: packageData.quality_summary ?? null" in retrieval_page
     assert "qualitySummaryFingerprint" in retrieval_page
     assert "qualitySummaryChanged" in retrieval_page
-    assert "quality_score: comparison.qualityScoreDelta" in retrieval_page
+    assert "quality_score: comparison.qualityScoreDelta" in retrieval_comparison_diagnosis_model
     assert "searchRunQualityBadgeVariant" in retrieval_search_run_presentation_model
     assert "RunComparisonQueryProfile" in retrieval_search_run_comparison_panel
     assert "function RunComparisonQueryProfile" not in retrieval_page
@@ -1724,15 +1744,17 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "function RunComparisonOperatorSummary" not in retrieval_page
     assert "Comparison operator summary" in retrieval_run_comparison_summary_panels
     assert "comparisonOperatorSummary" in retrieval_page
-    assert "operator_summary: comparisonOperatorSummary(comparison, recommendedActions)" in retrieval_page
+    assert "function comparisonOperatorSummary" not in retrieval_page
+    assert "function comparisonOperatorSummary" in retrieval_comparison_diagnosis_model
+    assert "operator_summary: comparisonOperatorSummary(comparison, recommendedActions)" in retrieval_comparison_diagnosis_model
     assert "Review focus" in retrieval_run_comparison_summary_panels
     assert "sourceDiversityComparisonBetweenRuns" in retrieval_page
     assert "sourceDiversityComparison" in retrieval_page
-    assert "source_diversity_regressed" in retrieval_page
-    assert "source_diversity_improved" in retrieval_page
-    assert "source_diversity: {" in retrieval_page
-    assert "selected_source_delta" in retrieval_page
-    assert "duplicate_selected_source_delta" in retrieval_page
+    assert "source_diversity_regressed" in retrieval_comparison_diagnosis_model
+    assert "source_diversity_improved" in retrieval_comparison_diagnosis_model
+    assert "source_diversity: {" in retrieval_comparison_diagnosis_model
+    assert "selected_source_delta" in retrieval_comparison_diagnosis_model
+    assert "duplicate_selected_source_delta" in retrieval_comparison_diagnosis_model
     assert "selected_hits: diversity.selectedHits.map" in retrieval_page
     assert "diversitySelectionByEvidenceId" in retrieval_page
     assert "selected_hits" in retrieval_page
@@ -1763,6 +1785,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "isSearchResultStale" in retrieval_page
     assert "retrievalPayloadFromForm" in retrieval_page
     assert "retrievalSearchSignature" in retrieval_page
+    assert "function retrievalPayloadFromForm" not in retrieval_page
+    assert "function retrievalSearchSignature" not in retrieval_page
+    assert "function retrievalPayloadFromForm" in retrieval_search_payload_model
+    assert "function retrievalSearchSignature" in retrieval_search_payload_model
+    assert "function parseFields" in retrieval_search_payload_model
+    assert "isRetrievalPayloadFilterField" in retrieval_search_payload_model
     assert "Search settings changed" in retrieval_page
     assert "pending changes" in retrieval_page
     assert "submittedSearchPayload" in retrieval_page
@@ -1818,19 +1846,25 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "recommendedActions={comparisonRecommendedActions}" in retrieval_page
     assert "actions={recommendedActions}" in retrieval_search_run_comparison_panel
     assert "comparisonReportFromComparison(" in retrieval_page
+    assert "function comparisonReportFromComparison" not in retrieval_page
+    assert "function comparisonReportFromComparison" in retrieval_comparison_diagnosis_model
     assert "comparisonJudgments" in retrieval_page
     assert "RetrievalComparisonRecommendedAction" in retrieval_page
     assert "comparisonRecommendedActionSummary" in retrieval_page
-    assert "recommended_action_summary: comparisonRecommendedActionSummary" in retrieval_page
-    assert "highest_priority" in retrieval_page
-    assert "source_count" in retrieval_page
-    assert "source_counts" in retrieval_page
+    assert "function comparisonRecommendedActionSummary" not in retrieval_page
+    assert "function comparisonRecommendedActionSummary" in retrieval_comparison_diagnosis_model
+    assert "recommended_action_summary: comparisonRecommendedActionSummary" in retrieval_comparison_diagnosis_model
+    assert "highest_priority" in retrieval_comparison_diagnosis_model
+    assert "source_count" in retrieval_comparison_diagnosis_model
+    assert "source_counts" in retrieval_comparison_diagnosis_model
     assert "actionSummary.sources.map" in retrieval_run_comparison_summary_panels
     assert "actionSummary.source_counts[source]" in retrieval_run_comparison_summary_panels
-    assert "priority: comparison.activeSummary.qualitySummary?.status === \"blocked\" ? 1 : 2" in retrieval_page
-    assert "left.priority - right.priority" in retrieval_page
+    assert "priority: comparison.activeSummary.qualitySummary?.status === \"blocked\" ? 1 : 2" in retrieval_comparison_diagnosis_model
+    assert "left.priority - right.priority" in retrieval_comparison_diagnosis_model
     assert "comparisonDiagnosisFromComparison" in retrieval_page
-    assert "diagnosis: comparison.diagnosis" in retrieval_page
+    assert "function comparisonDiagnosisFromComparison" not in retrieval_page
+    assert "function comparisonDiagnosisFromComparison" in retrieval_comparison_diagnosis_model
+    assert "diagnosis: comparison.diagnosis" in retrieval_comparison_diagnosis_model
     assert "compareSearchRuns" in retrieval_page
     assert "comparisonRunForActive" in retrieval_page
     assert "comparisonBaselineRunId" in retrieval_page
@@ -1856,17 +1890,20 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copy retrieval comparison report" in retrieval_search_run_comparison_panel
     assert "Comparison JSON report help" in retrieval_search_run_comparison_panel
     assert "comparisonReportFromComparison" in retrieval_page
-    assert "comparisonReportSummary" in retrieval_page
-    assert "summary: comparisonReportSummary(comparison, judgments)" in retrieval_page
-    assert "remediationSummary ??" in retrieval_page
-    assert "remediation: {" in retrieval_page
-    assert "before: comparison.topSourceBefore" in retrieval_page
-    assert "after: comparison.topSourceAfter" in retrieval_page
+    assert "comparisonReportSummary" not in retrieval_page
+    assert "comparisonReportSummary" in retrieval_comparison_diagnosis_model
+    assert "summary: comparisonReportSummary(comparison, judgments)" in retrieval_comparison_diagnosis_model
+    assert "remediationSummary ??" in retrieval_comparison_diagnosis_model
+    assert "remediation: {" in retrieval_comparison_diagnosis_model
+    assert "before: comparison.topSourceBefore" in retrieval_comparison_diagnosis_model
+    assert "after: comparison.topSourceAfter" in retrieval_comparison_diagnosis_model
     assert "comparisonReportRecommendedActions" in retrieval_page
-    assert "recommended_actions: recommendedActions" in retrieval_page
-    assert "changed_dimensions" in retrieval_page
-    assert "judgment_count: judgments.length" in retrieval_page
-    assert "retrieval_run_comparison" in retrieval_page
+    assert "function comparisonReportRecommendedActions" not in retrieval_page
+    assert "function comparisonReportRecommendedActions" in retrieval_comparison_diagnosis_model
+    assert "recommended_actions: recommendedActions" in retrieval_comparison_diagnosis_model
+    assert "changed_dimensions" in retrieval_comparison_diagnosis_model
+    assert "judgment_count: judgments.length" in retrieval_comparison_diagnosis_model
+    assert "retrieval_run_comparison" in retrieval_comparison_diagnosis_model
     assert "RunComparisonMetrics" in retrieval_search_run_comparison_panel
     assert "function RunComparisonMetrics" not in retrieval_page
     assert "Overlap shows shared evidence" in retrieval_run_comparison_summary_panels

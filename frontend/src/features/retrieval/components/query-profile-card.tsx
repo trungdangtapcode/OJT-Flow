@@ -30,11 +30,13 @@ export function QueryProfileCard({
   isSearchPending,
   onApplyFilter,
   profile,
+  routeHelpText,
 }: {
   filterEntries: QueryProfileFilterEntryView[];
   isSearchPending: boolean;
   onApplyFilter: (suggestion: FilterSuggestionStack) => void;
   profile: QueryProfileCardView | null;
+  routeHelpText: string;
 }) {
   if (!profile) {
     return <TokenList items={[]} title="Query profile" />;
@@ -45,7 +47,9 @@ export function QueryProfileCard({
         <span className="break-words font-bold">{profile.label}</span>
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
           <Badge variant="default">{humanize(profile.complexity)}</Badge>
-          <Badge variant="muted">{humanize(profile.route)}</Badge>
+          <Badge title={routeHelpText} variant="muted">
+            {humanize(profile.route)}
+          </Badge>
         </div>
       </div>
       <div className="break-words text-muted-foreground">{profile.description}</div>
