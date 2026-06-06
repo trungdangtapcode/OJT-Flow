@@ -275,6 +275,13 @@ RETRIEVAL_SPLIT_FILES = [
     / "features"
     / "retrieval"
     / "components"
+    / "run-comparison-detail-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
     / "run-comparison-summary-panels.tsx",
     REPO_ROOT
     / "frontend"
@@ -1054,6 +1061,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "components"
         / "run-comparison-summary-panels.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_run_comparison_detail_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "run-comparison-detail-panels.tsx"
+    ).read_text(encoding="utf-8")
     retrieval_strategy_standard_panels = (
         REPO_ROOT
         / "frontend"
@@ -1407,6 +1423,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         REPO_ROOT / "frontend/src/types.ts"
     ).read_text(encoding="utf-8")
     assert "RunComparisonQueryAspects" in retrieval_page
+    assert "components/run-comparison-detail-panels" in retrieval_page
+    assert "function RunComparisonQueryAspects" not in retrieval_page
+    assert "Search aspects" in retrieval_run_comparison_detail_panels
     assert "queryAspectComparisonBetweenRuns" in retrieval_page
     assert "queryAspectComparison" in retrieval_page
     assert "Search aspects" in retrieval_search_plan_detail_panels
@@ -1418,6 +1437,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         in retrieval_query_aspect_plan
     )
     assert "RunComparisonCoverage" in retrieval_page
+    assert "function RunComparisonCoverage" not in retrieval_page
+    assert "Coverage diagnostics" in retrieval_run_comparison_detail_panels
     assert "coverageComparisonBetweenRuns" in retrieval_page
     assert "coverageComparison" in retrieval_page
     assert "coverage_diagnostics_changed" in retrieval_page
@@ -1488,6 +1509,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "evidenceReportFromHit" in retrieval_page
     assert "retrieval_evidence_hit" in retrieval_page
     assert "RunComparisonConceptGrounding" in retrieval_page
+    assert "function RunComparisonConceptGrounding" not in retrieval_page
+    assert "Concept grounding" in retrieval_run_comparison_detail_panels
     assert "conceptGroundingComparisonBetweenRuns" in retrieval_page
     assert "conceptGroundingComparison" in retrieval_page
     assert "concept_grounding_changed" in retrieval_page
@@ -1558,19 +1581,22 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "quality_score: comparison.qualityScoreDelta" in retrieval_page
     assert "searchRunQualityBadgeVariant" in retrieval_search_run_presentation_model
     assert "RunComparisonQueryProfile" in retrieval_page
-    assert "QueryProfileSummaryCard" in retrieval_page
+    assert "function RunComparisonQueryProfile" not in retrieval_page
+    assert "QueryProfileSummaryCard" in retrieval_run_comparison_detail_panels
     assert "RunComparisonQualitySignals" in retrieval_page
-    assert "QualitySignalChangeList" in retrieval_page
+    assert "function RunComparisonQualitySignals" not in retrieval_page
+    assert "QualitySignalChangeList" in retrieval_run_comparison_detail_panels
     assert "qualitySignalComparisonBetweenRuns" in retrieval_page
     assert "qualitySignalSummariesFromRun" in retrieval_page
     assert "qualitySignalComparison" in retrieval_page
-    assert "Quality signals" in retrieval_page
+    assert "Quality signals" in retrieval_run_comparison_detail_panels
     assert "RunComparisonFacetCoverage" in retrieval_page
-    assert "FacetValueChange" in retrieval_page
+    assert "function RunComparisonFacetCoverage" not in retrieval_page
+    assert "FacetValueChange" in retrieval_run_comparison_detail_panels
     assert "facetComparisonsBetweenRuns" in retrieval_page
     assert "facetValuesFromRun" in retrieval_page
     assert "facetComparisons" in retrieval_page
-    assert "Facet coverage" in retrieval_page
+    assert "Facet coverage" in retrieval_run_comparison_detail_panels
     assert "queryProfilesChanged" in retrieval_page
     assert "queryProfileChanged" in retrieval_page
     assert "profile changed" in retrieval_page
