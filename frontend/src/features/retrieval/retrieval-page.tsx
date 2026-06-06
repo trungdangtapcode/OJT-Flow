@@ -6,11 +6,9 @@ import {
   ExternalLink,
   FileSearch,
   Gauge,
-  ListFilter,
   Loader2,
   RefreshCw,
   Search,
-  X,
 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
@@ -97,6 +95,9 @@ import {
   type RetrievalSummaryStripViewModel,
 } from "./components/retrieval-summary-strip";
 import {
+  RetrievalSearchCockpit,
+} from "./components/retrieval-search-cockpit";
+import {
   RetrievalTracePanel,
   type RetrievalTracePanelView,
 } from "./components/retrieval-trace-panel";
@@ -107,9 +108,6 @@ import { RecommendedActionsPanel } from "./components/recommended-actions-panel"
 import { ResultFacets } from "./components/result-facets";
 import { SearchAnswerCard } from "./components/search-answer-card";
 import {
-  CockpitMetricCard,
-  QueryHealthPanel,
-  SearchReadinessChecklist,
   type QueryHealthItem,
   type SearchReadinessChecklistItem,
 } from "./components/search-cockpit-panels";
@@ -130,17 +128,17 @@ import { SearchRunHistory } from "./components/search-run-history";
 import { SectionHelpText } from "./components/section-help-text";
 import { SourceInventoryPanel } from "./components/source-inventory-panel";
 import {
-  SourceDiversityPanel,
   type DiversitySelectionStack,
   type DiversityStack,
 } from "./components/source-diversity-panel";
 import { SourceScopePicker } from "./components/source-scope-picker";
 import {
-  StandardSearchPlanPanel,
-  StrategyRecommendationsPanel,
+  type SearchPlanFilterAction,
+  type SearchPlanFilterField,
 } from "./components/strategy-standard-panels";
 import { SubmittedSearchSummary } from "./components/submitted-search-summary";
 import { TokenList } from "./components/token-list";
+import { retrievalSearchCockpitView } from "./model/retrieval-cockpit-view-model";
 import { searchRunRemediationSummary } from "./model/search-run-presentation";
 import type {
   Evidence,
@@ -1625,6 +1623,12 @@ function SearchResults({
     (bucket) => bucket.required,
   );
   const coveredRequiredBuckets = requiredBuckets.filter((bucket) => bucket.hit_count > 0);
+  const cockpitView = retrievalSearchCockpitView(packageData, submittedSearchPayload);
+  const cockpitReportJson = JSON.stringify(
+    retrievalCockpitReportFromPackage(packageData, submittedSearchPayload),
+    null,
+    2,
+  );
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -1659,12 +1663,15 @@ function SearchResults({
           }}
         />
         <RetrievalSearchCockpit
+          copyTextToClipboard={copyTextToClipboard}
+          filterFieldLabel={filterFieldLabel}
+          getSuggestedFilterAction={suggestedFilterAction}
           isSearchPending={isSearchPending}
-          onClearAllFilters={onClearAllFilters}
-          onClearFilter={onClearFilter}
           onApplyFilter={onApplyFacet}
-          packageData={packageData}
-          submittedSearchPayload={submittedSearchPayload}
+          onClearAllFilters={onClearAllFilters}
+          onClearSourceScope={() => onClearFilter("source_id")}
+          reportJson={cockpitReportJson}
+          view={cockpitView}
         />
         <SearchAnswerCard
           packageData={packageData}
@@ -1891,324 +1898,6 @@ function firstSupportedRecommendedAction(
     if (filterAction) return filterAction;
   }
   return null;
-}
-
-function RetrievalSearchCockpit({
-  isSearchPending,
-  onClearAllFilters,
-  onClearFilter,
-  onApplyFilter,
-  packageData,
-  submittedSearchPayload,
-}: {
-  isSearchPending: boolean;
-  onClearAllFilters: () => void;
-  onClearFilter: (field: SupportedFilterField) => void;
-  onApplyFilter: (field: SupportedFilterField, value: string) => void;
-  packageData: RetrievalPackage;
-  submittedSearchPayload: RetrievalSearchPayload | null;
-}) {
-  const { copiedKey, markCopied } = useCopyFeedback();
-  const copyKey = "retrieval-cockpit-report";
-  const analysis = queryAnalysisFromPackage(packageData);
-  const ranking = rankingStackFromPackage(packageData);
-  const fusionDiagnostics = fusionDiagnosticsFromPackage(packageData);
-  const diversity = diversityFromPackage(packageData);
-  const qualitySummary = packageData.quality_summary ?? null;
-  const correctiveSummary = packageData.recommended_action_summary ?? null;
-  const topAction = (packageData.recommended_actions ?? [])[0] ?? null;
-  const topFilterAction = topAction ? recommendedActionFilter(topAction) : null;
-  const topBroadeningAction = topAction?.action_type === "broaden_query";
-  const strategyRecommendations = packageData.strategy_recommendations ?? [];
-  const standardSearchPlan = packageData.standard_search_plan ?? null;
-  const requiredBuckets = packageData.evidence_buckets?.filter((bucket) => bucket.required) ?? [];
-  const coveredRequiredBuckets = requiredBuckets.filter((bucket) => bucket.hit_count > 0);
-  const coverageSummaries = coverageSummariesFromPackage(packageData);
-  const conceptGrounding = conceptGroundingSummariesFromPackage(packageData);
-  const queryProfile = analysis.queryProfile;
-  const strategy = packageData.trace.strategy;
-  const activeFilters = submittedSearchPayload
-    ? activeFilterEntries(activeFacetFiltersFromPayload(submittedSearchPayload))
-    : [];
-  const queryHealth = queryHealthItems(submittedSearchPayload, packageData);
-  const readinessChecklist = searchReadinessChecklist({
-    diversity,
-    packageData,
-    queryHealth,
-    requiredBuckets,
-    topAction,
-  });
-  const routeLabel = queryProfile
-    ? `${queryProfile.label} / ${humanize(queryProfile.retrievalMode)}`
-    : humanize(strategy);
-  const reportCopied = copiedKey === copyKey;
-  const copyReport = async () => {
-    await copyTextToClipboard(
-      JSON.stringify(
-        retrievalCockpitReportFromPackage(packageData, submittedSearchPayload),
-        null,
-        2,
-      ),
-    );
-    markCopied(copyKey);
-  };
-
-  return (
-    <section
-      aria-label="Retrieval cockpit"
-      className="grid gap-3 rounded-md border border-border bg-muted/20 p-3"
-    >
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs font-black uppercase text-muted-foreground">
-            Search cockpit
-          </div>
-          <div className="mt-1 break-words text-lg font-black leading-tight">
-            {routeLabel}
-          </div>
-          <div className="mt-1 flex min-w-0 flex-wrap gap-1.5">
-            <Badge variant="muted">{humanize(strategy)}</Badge>
-            <Badge variant="muted">
-              {formatCount(packageData.trace.candidates_seen, "candidate")}
-            </Badge>
-            <Badge variant="muted">{formatCount(packageData.hits.length, "hit")}</Badge>
-            {ranking.framework.bm25Enabled !== null ? (
-              <Badge variant={ranking.framework.bm25Enabled ? "success" : "muted"}>
-                BM25 {ranking.framework.bm25Enabled ? "on" : "off"}
-              </Badge>
-            ) : null}
-            <Badge variant={ranking.reranker.enabled ? "success" : "muted"}>
-              rerank {ranking.reranker.enabled ? "on" : "off"}
-            </Badge>
-            {activeFilters.map((filter) => (
-              <Badge key={filter.field} variant="muted">
-                {filter.label}: {filter.displayValue}
-              </Badge>
-            ))}
-          </div>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Button
-            aria-label="Copy retrieval cockpit report"
-            onClick={() => void copyReport()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {reportCopied ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : (
-              <Clipboard className="h-4 w-4" />
-            )}
-            {reportCopied ? "Copied" : "Copy cockpit JSON"}
-          </Button>
-          <HelpTooltip label="Cockpit JSON report help">
-            Copies the current retrieval package summary: submitted payload, route, ranking stack, readiness, evidence buckets, compact hits, actions, and rule-pack fingerprints.
-          </HelpTooltip>
-          {qualitySummary ? (
-            <Badge variant={qualitySummaryBadgeVariant(qualitySummary)}>
-              {humanize(qualitySummary.status)} {qualitySummary.score}/100
-            </Badge>
-          ) : null}
-          <Badge
-            variant={
-              requiredBuckets.length && coveredRequiredBuckets.length < requiredBuckets.length
-                ? "warning"
-                : "success"
-            }
-          >
-            {requiredBuckets.length
-              ? `${coveredRequiredBuckets.length}/${requiredBuckets.length} required buckets`
-              : "no required buckets"}
-          </Badge>
-          <Badge variant={coverageSummaries.length ? "warning" : "success"}>
-            {coverageSummaries.length
-              ? formatCount(coverageSummaries.length, "coverage gap")
-              : "coverage ok"}
-          </Badge>
-        </div>
-      </div>
-
-      <QueryHealthPanel
-        activeFilters={activeFilters}
-        isSearchPending={isSearchPending}
-        items={queryHealth}
-        onClearAllFilters={onClearAllFilters}
-        onClearSourceScope={() => onClearFilter("source_id")}
-      />
-
-      <SearchReadinessChecklist items={readinessChecklist} />
-
-      <div className="grid gap-2 lg:grid-cols-5">
-        <CockpitMetricCard
-          helpText="The backend route chosen for this query, such as broad, structured, or safety-sensitive search. Use this to confirm the search behavior matches the question."
-          label="Retrieval route"
-          supporting={queryProfile ? humanize(queryProfile.route) : analysis.strategy}
-          tone="info"
-          value={queryProfile ? humanize(queryProfile.complexity) : "standard"}
-        />
-        <CockpitMetricCard
-          helpText="The retrieval stack combines lexical search, vector search, and optional reranking. Stronger stacks usually improve recall and ordering, but still need evidence review."
-          label="Hybrid stack"
-          supporting={`${ranking.embedding.provider} / ${ranking.embedding.model}`}
-          tone="success"
-          value={hybridStackValue(ranking)}
-        />
-        <CockpitMetricCard
-          helpText="Whether lexical and vector retrieval agree on the same top candidates. Low agreement means inspect query wording, filters, and reranking before trusting order."
-          label="Fusion agreement"
-          supporting={fusionDiagnostics.interpretation}
-          tone={fusionDiagnostics.tone}
-          value={fusionDiagnostics.label}
-        />
-        <CockpitMetricCard
-          helpText="How many independent sources survived source-diversity selection. Low spread can mean the answer depends on one source family."
-          label="Evidence spread"
-          supporting={
-            diversity.enabled
-              ? `${formatCount(diversity.selectedSourceCount, "selected source")}`
-              : "source diversity disabled"
-          }
-          tone={diversity.enabled ? "success" : "warning"}
-          value={formatSourceCoverage(diversity)}
-        />
-        <CockpitMetricCard
-          helpText="Concepts and query aspects detected from the search. Good grounding means the result matched the intended medical data concept, not just similar words."
-          label="Grounding"
-          supporting={formatCount(analysis.queryAspects.length, "query aspect")}
-          tone={conceptGrounding.length ? "success" : "warning"}
-          value={formatCount(conceptGrounding.length, "concept")}
-        />
-      </div>
-
-      <StrategyRecommendationsPanel
-        getSuggestedFilterAction={suggestedFilterAction}
-        isSearchPending={isSearchPending}
-        onApplyFilter={onApplyFilter}
-        recommendations={strategyRecommendations}
-      />
-
-      <StandardSearchPlanPanel
-        getSuggestedFilterAction={suggestedFilterAction}
-        isSearchPending={isSearchPending}
-        onApplyFilter={onApplyFilter}
-        plan={standardSearchPlan}
-      />
-
-      <SourceDiversityPanel diversity={diversity} isSearchPending={isSearchPending} />
-
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.75fr)]">
-        <div className="grid gap-2 rounded-md border border-border bg-card p-3">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-black uppercase text-muted-foreground">
-              Query transformation
-            </div>
-            <Badge variant="muted">
-              {formatCount(analysis.variantCount, "variant")}
-            </Badge>
-          </div>
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {analysis.standards.slice(0, 8).map((standard) => (
-              <Badge key={standard} variant="success">
-                {standard}
-              </Badge>
-            ))}
-            {analysis.detectedConcepts.slice(0, 8).map((concept) => (
-              <Badge key={concept} variant="muted">
-                {humanize(concept)}
-              </Badge>
-            ))}
-            {analysis.expandedTerms.slice(0, 10).map((term) => (
-              <span
-                className="max-w-full break-words rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground"
-                key={term}
-              >
-                {term}
-              </span>
-            ))}
-          </div>
-          {analysis.queryAspects.length ? (
-            <div className="grid gap-1.5">
-              {analysis.queryAspects.slice(0, 3).map((aspect) => (
-                <div
-                  className="grid gap-1 rounded-md border border-border bg-muted/25 px-3 py-2 text-xs"
-                  key={aspect.aspectId}
-                >
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <Badge variant="muted">P{aspect.priority}</Badge>
-                    <span className="break-words font-black">{aspect.label}</span>
-                  </div>
-                  <div className="break-words text-muted-foreground">
-                    {aspect.question}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="grid gap-2 rounded-md border border-border bg-card p-3">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-black uppercase text-muted-foreground">
-              Next best action
-            </div>
-            {correctiveSummary ? (
-              <Badge variant={correctiveSummary.count ? "warning" : "success"}>
-                {formatCount(correctiveSummary.count, "action")}
-              </Badge>
-            ) : null}
-          </div>
-          <div className="break-words text-sm font-black">
-            {topAction?.title ?? qualitySummary?.top_action ?? "No corrective action required"}
-          </div>
-          <div className="break-words text-sm leading-6 text-muted-foreground">
-            {topAction?.description ??
-              "Review the ranked evidence, source provenance, and judgment metrics before using the package downstream."}
-          </div>
-          {topFilterAction ? (
-            <Button
-              disabled={isSearchPending}
-              onClick={() => onApplyFilter(topFilterAction.field, topFilterAction.value)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <ListFilter className="h-4 w-4" />
-              Apply {filterFieldLabel(topFilterAction.field)}
-            </Button>
-          ) : null}
-          {topBroadeningAction ? (
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              {activeFilters.some((filter) => filter.field === "source_id") ? (
-                <Button
-                  disabled={isSearchPending}
-                  onClick={() => onClearFilter("source_id")}
-                  size="sm"
-                  title="Clear exact source scope and rerun search"
-                  type="button"
-                  variant="outline"
-                >
-                  <X className="h-4 w-4" />
-                  Clear source scope
-                </Button>
-              ) : null}
-              <Button
-                disabled={isSearchPending || !activeFilters.length}
-                onClick={onClearAllFilters}
-                size="sm"
-                title="Clear all active metadata filters and rerun search"
-                type="button"
-                variant="outline"
-              >
-                <ListFilter className="h-4 w-4" />
-                Broaden search
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
 }
 
 function hybridStackValue(ranking: RankingStack): string {
