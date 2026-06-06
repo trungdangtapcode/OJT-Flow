@@ -1,25 +1,22 @@
-import { useEffect, useState } from "react";
 import { CheckCircle2, Clipboard } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { humanize } from "../../../lib/utils";
 import type { RetrievalQueryVariant } from "../../../types";
+import {
+  copyTextToClipboard,
+  useCopyFeedback,
+} from "./copy-feedback";
 import { SectionHelpText } from "./section-help-text";
 import { TokenList } from "./token-list";
 
 export function QueryVariantList({ variants }: { variants: RetrievalQueryVariant[] }) {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!copiedKey) return undefined;
-    const timeoutId = window.setTimeout(() => setCopiedKey(null), 1800);
-    return () => window.clearTimeout(timeoutId);
-  }, [copiedKey]);
+  const { copiedKey, markCopied } = useCopyFeedback();
 
   const copyVariant = async (variantKey: string, query: string) => {
     await copyTextToClipboard(query);
-    setCopiedKey(variantKey);
+    markCopied(variantKey);
   };
 
   if (!variants.length) {
@@ -93,23 +90,4 @@ function VariantRow({
       </div>
     </div>
   );
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const element = document.createElement("textarea");
-  element.value = text;
-  element.setAttribute("readonly", "true");
-  element.style.position = "fixed";
-  element.style.left = "-9999px";
-  document.body.appendChild(element);
-  element.select();
-  try {
-    document.execCommand("copy");
-  } finally {
-    document.body.removeChild(element);
-  }
 }

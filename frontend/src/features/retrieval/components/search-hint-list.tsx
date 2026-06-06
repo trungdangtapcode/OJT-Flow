@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
 import { CheckCircle2, Clipboard, ExternalLink } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { humanize } from "../../../lib/utils";
+import {
+  copyTextToClipboard,
+  useCopyFeedback,
+} from "./copy-feedback";
 import type { SearchHintStack } from "./search-plan-detail-panels";
 import { TokenList } from "./token-list";
 
@@ -20,17 +23,11 @@ type SearchHintLineageFollowup = {
 };
 
 export function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!copiedKey) return undefined;
-    const timeoutId = window.setTimeout(() => setCopiedKey(null), 1800);
-    return () => window.clearTimeout(timeoutId);
-  }, [copiedKey]);
+  const { copiedKey, markCopied } = useCopyFeedback();
 
   const copyHintQuery = async (hintKey: string, query: string) => {
     await copyTextToClipboard(query);
-    setCopiedKey(hintKey);
+    markCopied(hintKey);
   };
 
   if (!hints.length) {
@@ -247,25 +244,6 @@ function searchHintLineageFollowup(value: unknown): SearchHintLineageFollowup[] 
         return parameter && purpose ? [{ parameter, purpose }] : [];
       })
     : [];
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const element = document.createElement("textarea");
-  element.value = text;
-  element.setAttribute("readonly", "true");
-  element.style.position = "fixed";
-  element.style.left = "-9999px";
-  document.body.appendChild(element);
-  element.select();
-  try {
-    document.execCommand("copy");
-  } finally {
-    document.body.removeChild(element);
-  }
 }
 
 function formatCount(count: number, singular: string) {
