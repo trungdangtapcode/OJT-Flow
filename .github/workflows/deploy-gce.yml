@@ -39,13 +39,13 @@ jobs:
             --exclude='image.png' \
             --exclude='imge*.png' \
             -czf /tmp/ojtflow-deploy.tgz .
-          gcloud compute scp /tmp/ojtflow-deploy.tgz "${{ secrets.GCE_INSTANCE }}:/tmp/ojtflow-deploy.tgz" \
+          gcloud compute scp /tmp/ojtflow-deploy.tgz "${{ secrets.GCE_INSTANCE }}:ojtflow-deploy-${{ github.run_id }}.tgz" \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}"
           gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}" \
-            --command "sudo mkdir -p /opt/ojtflow && sudo tar --no-same-owner -xzf /tmp/ojtflow-deploy.tgz -C /opt/ojtflow && sudo chown -R \$(id -un):\$(id -gn) /opt/ojtflow"
+            --command "sudo mkdir -p /opt/ojtflow && sudo tar --no-same-owner -xzf ~/ojtflow-deploy-${{ github.run_id }}.tgz -C /opt/ojtflow && rm -f ~/ojtflow-deploy-${{ github.run_id }}.tgz && sudo chown -R \$(id -un):\$(id -gn) /opt/ojtflow"
 
       - name: Deploy stack
         run: |
