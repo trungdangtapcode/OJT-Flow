@@ -719,6 +719,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "components"
         / "hit-evidence-audit-strip.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_hit_card = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "hit-card.tsx"
+    ).read_text(encoding="utf-8")
     retrieval_hit_explanation_panels = (
         REPO_ROOT
         / "frontend"
@@ -1297,8 +1306,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "scoreComponentsFromHit" not in retrieval_page
     assert "function scoreComponentsFromHit" in retrieval_evidence_implementation
     assert "evidenceSignalsFromHit" in retrieval_page
-    assert "ScoreExplanation" in retrieval_page
-    assert "./components/hit-explanation-panels" in retrieval_page
+    assert "HitCard" in retrieval_page
+    assert "components/hit-card" in retrieval_page
+    assert "function HitCard" not in retrieval_page
+    assert "ScoreExplanation" in retrieval_hit_card
+    assert "./hit-explanation-panels" in retrieval_hit_card
     assert "function ScoreExplanation" not in retrieval_page
     assert "Score explanation" in retrieval_hit_explanation_panels
     assert "QualitySignalList" in retrieval_page
@@ -1615,19 +1627,19 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "coverageComparisonBetweenRuns" in retrieval_run_comparison_model
     assert "coverageComparison" in retrieval_run_comparison_model
     assert "coverage_diagnostics_changed" in retrieval_comparison_diagnosis_model
-    assert "QueryAspectMatchExplanation" in retrieval_page
+    assert "QueryAspectMatchExplanation" in retrieval_hit_card
     assert "queryAspectMatchesFromHit" not in retrieval_page
     assert "function queryAspectMatchesFromHit" in retrieval_evidence_implementation
     assert "function QueryAspectMatchExplanation" not in retrieval_page
     assert "Aspect support" in retrieval_hit_explanation_panels
-    assert "ConceptMatchExplanation" in retrieval_page
+    assert "ConceptMatchExplanation" in retrieval_hit_card
     assert "conceptMatchesFromHit" not in retrieval_page
     assert "function conceptMatchesFromHit" in retrieval_evidence_implementation
     assert "function ConceptMatchExplanation" not in retrieval_page
     assert "Concept grounding" in retrieval_hit_explanation_panels
     assert "concept_grounding_requirements" in retrieval_runtime_stack_model
-    assert "HitEvidenceAuditStrip" in retrieval_page
-    assert "components/hit-evidence-audit-strip" in retrieval_page
+    assert "HitEvidenceAuditStrip" in retrieval_hit_card
+    assert "./hit-evidence-audit-strip" in retrieval_hit_card
     assert "function HitEvidenceAuditStrip" not in retrieval_page
     assert "Evidence support summary" in retrieval_hit_evidence_audit_strip
     assert "EvidenceSupportSummary" in retrieval_page
@@ -1640,20 +1652,20 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         "hidden overflow-auto rounded-md border border-border bg-card md:block"
         in retrieval_evidence_support_matrix
     )
-    assert "EvidenceUseGuidancePanel" in retrieval_page
-    assert "components/evidence-interpretation-guidance" in retrieval_page
+    assert "EvidenceUseGuidancePanel" in retrieval_hit_card
+    assert "./evidence-interpretation-guidance" in retrieval_hit_card
     assert "function EvidenceUseGuidancePanel" not in retrieval_page
     assert "function EvidenceUsabilitySummaryPanel" not in retrieval_page
     assert "function HitMatchExplanationPanel" not in retrieval_page
     assert "Evidence interpretation guidance" in retrieval_evidence_interpretation_guidance
     assert "Evidence interpretation help" in retrieval_evidence_interpretation_guidance
-    assert "EvidenceUsabilitySummaryPanel" in retrieval_page
+    assert "EvidenceUsabilitySummaryPanel" in retrieval_hit_card
     assert "Evidence usability summary" in retrieval_evidence_interpretation_guidance
     assert "Usability summary" in retrieval_evidence_interpretation_guidance
-    assert "evidenceUsabilitySummary" in retrieval_page
+    assert "evidenceUsabilitySummary" in retrieval_hit_card
     assert "function evidenceUsabilitySummary" not in retrieval_page
     assert "usability_summary: usabilitySummary" in retrieval_evidence_implementation
-    assert "evidenceUseGuidance" in retrieval_page
+    assert "evidenceUseGuidance" in retrieval_hit_card
     assert "function evidenceUseGuidance" not in retrieval_page
     assert "evidenceUseGuidanceReasons" not in retrieval_page
     assert "function evidenceUseGuidanceReasons" in retrieval_evidence_implementation
@@ -1664,8 +1676,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "judged ${judgmentLabel(judgment.value)}" in retrieval_evidence_implementation
     assert "matched_term_count" in retrieval_evidence_implementation
     assert "ranking_signal_count" in retrieval_evidence_implementation
-    assert "EvidenceProvenanceSummary" in retrieval_page
-    assert "components/evidence-provenance-snippet" in retrieval_page
+    assert "EvidenceProvenanceSummary" in retrieval_hit_card
+    assert "./evidence-provenance-snippet" in retrieval_hit_card
     assert "function EvidenceProvenanceSummary" not in retrieval_page
     assert "function SnippetBlock" not in retrieval_page
     assert "Evidence provenance" in retrieval_evidence_provenance_snippet
@@ -1681,14 +1693,13 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "function provenanceHrefForLocator" in retrieval_evidence_implementation
     assert "https://pubmed.ncbi.nlm.nih.gov" in retrieval_evidence_implementation
     assert "https://doi.org" in retrieval_evidence_implementation
-    assert "Copy evidence" in retrieval_page
-    assert "Copy evidence JSON" in retrieval_page
-    assert "Evidence JSON report help" in retrieval_page
-    assert "useCopyFeedback" in retrieval_page
-    assert "markCopied" in retrieval_page
-    assert "clearCopied" in retrieval_page
-    assert "Copied" in retrieval_page
-    assert "evidenceReportFromHit" in retrieval_page
+    assert "Copy evidence" in retrieval_hit_card
+    assert "Copy evidence JSON" in retrieval_hit_card
+    assert "Evidence JSON report help" in retrieval_hit_card
+    assert "useCopyFeedback" in retrieval_hit_card
+    assert "markCopied" in retrieval_hit_card
+    assert "Copied" in retrieval_hit_card
+    assert "evidenceReportFromHit" in retrieval_hit_card
     assert "function evidenceReportFromHit" not in retrieval_page
     assert "retrieval_evidence_hit" in retrieval_evidence_implementation
     assert "RunComparisonConceptGrounding" in retrieval_search_run_comparison_panel
@@ -1857,7 +1868,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "evaluation_readiness" in (
         REPO_ROOT / "docs/api_contract_v0.md"
     ).read_text(encoding="utf-8")
-    assert "DiversitySelectionExplanation" in retrieval_page
+    assert "DiversitySelectionExplanation" in retrieval_hit_card
     assert "function DiversitySelectionExplanation" not in retrieval_page
     assert "Diversity selection" in retrieval_hit_explanation_panels
     assert "SourceDiversityPanel" in retrieval_search_cockpit
@@ -1904,7 +1915,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "ranking_boosts" in retrieval_evidence_implementation
     assert "ranking_boost_rules" in retrieval_evidence_implementation
     assert "Ranking boost rule applied." in retrieval_evidence_implementation
-    assert "Ranking signals" in retrieval_page
+    assert "Ranking signals" in retrieval_hit_card
     assert "applyFilterSuggestion" in retrieval_page
     assert "applySearchFilter" in retrieval_page
     assert "clearSearchFilter" in retrieval_page
@@ -2077,8 +2088,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "overlapRatio" in retrieval_run_comparison_model
     assert "churnRate" in retrieval_run_comparison_model
     assert "meanAbsoluteRankDelta" in retrieval_run_comparison_model
-    assert "RelevanceJudgmentControl" in retrieval_page
-    assert "components/relevance-judgment-control" in retrieval_page
+    assert "RelevanceJudgmentControl" in retrieval_hit_card
+    assert "./relevance-judgment-control" in retrieval_hit_card
     assert "function RelevanceJudgmentControl" not in retrieval_page
     assert "Relevance judgment" in retrieval_relevance_judgment_control
     assert "Relevance judgment help" in retrieval_relevance_judgment_control
@@ -2211,7 +2222,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Evidence support matrix help" in retrieval_evidence_support_matrix
     assert "Weak rows need inspection before use" in retrieval_evidence_support_matrix
     assert "evidenceSupportMatrixRows" in retrieval_page
-    assert "HitMatchExplanationPanel" in retrieval_page
+    assert "HitMatchExplanationPanel" in retrieval_hit_card
     assert "Why this matched" in retrieval_evidence_interpretation_guidance
     assert "hitMatchExplanation" in retrieval_page
     assert "match_explanation" in retrieval_page
@@ -2226,8 +2237,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "provenanceFields" in retrieval_evidence_implementation
     assert "rankingSignalRuleIds" in retrieval_evidence_implementation
     assert "topScoreComponent" in retrieval_evidence_implementation
-    assert "evidenceReportFromHit(" in retrieval_page
-    assert "judgment," in retrieval_page
+    assert "evidenceReportFromHit(" in retrieval_hit_card
+    assert "judgment," in retrieval_hit_card
     assert "Top driver" in retrieval_evidence_interpretation_guidance
     assert "Evidence pack" in retrieval_evidence_pack_buckets
     assert "evidenceBucketLabelsByEvidenceId" not in retrieval_page
