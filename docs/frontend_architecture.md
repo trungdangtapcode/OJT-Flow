@@ -595,6 +595,13 @@ runtime stack normalization and labels for ranking framework, embedding,
 reranker, source diversity, fusion diagnostics, and quality-policy traces. The
 page should consume those model helpers for trace facts, cockpit reports, and
 run summaries instead of parsing `handoff_context` runtime metadata inline.
+`frontend/src/features/retrieval/model/retrieval-run-summary.ts` owns run
+summary derivation from backend retrieval packages, including rule-pack
+normalization, search signature extraction, coverage summaries, query-profile
+summaries, query-aspect summaries, concept-grounding counts, quality-summary
+fingerprints, corrective-action summaries, and evidence ID lists. The page may
+compare summaries and compose reports, but it should not rebuild package-level
+run summaries inline.
 The ranked-result panel should also render a compact package-level `Search
 answer` section before detailed readiness, facets, matrices, and hit cards.
 This section must derive from the backend retrieval package and show the

@@ -178,6 +178,27 @@ import {
   rankingStackFromPackage,
   type RetrievalRankingStack,
 } from "./model/retrieval-runtime-stack";
+import {
+  conceptGroundingKey,
+  conceptGroundingSummariesFromPackage,
+  correctiveActionSummaryFromPackage,
+  coverageSummariesFromPackage,
+  evidenceIdsFromRun,
+  qualitySummaryFingerprint,
+  queryAspectSummariesFromPackage,
+  queryProfileSummaryFromPackage,
+  retrievalRulePacksFromPackage,
+  retrievalRunSummary,
+  rulePackFingerprint,
+  serverSearchSignatureFromPackage,
+  type ConceptGroundingSummary,
+  type CorrectiveActionSummary,
+  type QueryAspectSummary,
+  type QueryProfileSummary,
+  type RetrievalCoverageSummary,
+  type RetrievalRunSummary,
+  type RetrievalSearchRun,
+} from "./model/retrieval-run-summary";
 import { searchRunRemediationSummary } from "./model/search-run-presentation";
 import type {
   Evidence,
@@ -191,7 +212,6 @@ import type {
   RetrievalCoverage,
   RetrievalJudgmentEvaluationResult,
   RetrievalQualitySummary,
-  RetrievalQualitySignal,
   RetrievalRecommendedAction,
   RetrievalRelevanceJudgment,
   RetrievalRelevanceJudgmentSummary,
@@ -221,70 +241,6 @@ type ActiveFilterEntry = {
 type CoverageFilterAction = {
   field: SupportedFilterField;
   value: string;
-};
-type RetrievalSearchRun = {
-  packageData: RetrievalPackage;
-  payload: RetrievalSearchPayload;
-  runId: string;
-  signature: string;
-  submittedAt: string;
-  summary: RetrievalRunSummary;
-};
-type RetrievalRunSummary = {
-  candidateCount: number;
-  conceptGrounding: ConceptGroundingSummary[];
-  correctiveActionSummary: CorrectiveActionSummary;
-  coverage: RetrievalCoverageSummary[];
-  diversity: DiversityStack;
-  hitCount: number;
-  qualitySummary: RetrievalQualitySummary | null;
-  qualityWarningCount: number;
-  queryAspects: QueryAspectSummary[];
-  queryProfile: QueryProfileSummary | null;
-  rulePackCount: number;
-  rulePackFingerprint: string;
-  serverSignature: string | null;
-  remediationSummary: string | null;
-  topSourceId: string | null;
-  warningCount: number;
-};
-type CorrectiveActionSummary = {
-  count: number;
-  highestPriority: number | null;
-  highestSeverity: string | null;
-  topActionTitle: string | null;
-  applyFilterCount: number;
-  broadenQueryCount: number;
-  actionTypeCounts: Record<string, number>;
-};
-type RetrievalCoverageSummary = {
-  field: string;
-  label: string;
-  selectedCount: number;
-  status: string;
-  suggestedFilter: Record<string, string>;
-  value: string;
-};
-type QueryAspectSummary = {
-  aspectId: string;
-  label: string;
-  priority: number;
-  question: string;
-  ruleId: string;
-};
-type ConceptGroundingSummary = {
-  code: string | null;
-  conceptId: string;
-  displayName: string;
-  evidenceCount: number;
-  standardSystem: string;
-};
-type QueryProfileSummary = {
-  complexity: string;
-  label: string;
-  profileId: string;
-  retrievalMode: string;
-  route: string;
 };
 type RetrievalRulePackChange = {
   active?: RuntimeRetrievalRulePack;
@@ -2084,15 +2040,6 @@ function queryDiagnosticHealthItems(diagnostics: QueryDiagnosticStack[]): QueryH
     }));
 }
 
-function recommendedActionTypeCounts(
-  actions: RetrievalRecommendedAction[],
-): Record<string, number> {
-  return actions.reduce<Record<string, number>>((counts, action) => {
-    counts[action.action_type] = (counts[action.action_type] ?? 0) + 1;
-    return counts;
-  }, {});
-}
-
 function recommendedActionFilter(
   action: RetrievalRecommendedAction,
 ): CoverageFilterAction | null {
@@ -3213,10 +3160,6 @@ function shortHash(value: string | null | undefined) {
   return value ? value.slice(0, 12) : "-";
 }
 
-function serverSearchSignatureFromPackage(packageData: RetrievalPackage): string | null {
-  return optionalStringValue(packageData.handoff_context.search_signature);
-}
-
 function createSearchRun(
   payload: RetrievalSearchPayload,
   packageData: RetrievalPackage,
@@ -3624,106 +3567,6 @@ function evaluationReportFromJudgmentSummary(
   };
 }
 
-function retrievalRulePacksFromPackage(packageData: RetrievalPackage): RuntimeRetrievalRulePack[] {
-  const rawPacks = packageData.handoff_context.retrieval_rule_packs;
-  if (!Array.isArray(rawPacks)) return [];
-  return rawPacks
-    .map((rawPack) => recordValue(rawPack))
-    .map((pack) => ({
-      name: stringValue(pack.name, ""),
-      status: rulePackStatusValue(pack.status),
-      source: stringValue(pack.source, "unknown"),
-      env_var: stringValue(pack.env_var, ""),
-      configured: booleanValue(pack.configured),
-      rule_count: numberValue(pack.rule_count) ?? 0,
-      version: optionalStringValue(pack.version),
-      content_hash: optionalStringValue(pack.content_hash),
-      error: optionalStringValue(pack.error) ?? undefined,
-    }))
-    .filter((pack) => pack.name && pack.env_var);
-}
-
-function queryProfileSummaryFromPackage(packageData: RetrievalPackage): QueryProfileSummary | null {
-  const queryProfile = queryAnalysisFromPackage(packageData).queryProfile;
-  if (!queryProfile) return null;
-  return {
-    complexity: queryProfile.complexity,
-    label: queryProfile.label,
-    profileId: queryProfile.profileId,
-    retrievalMode: queryProfile.retrievalMode,
-    route: queryProfile.route,
-  };
-}
-
-function coverageSummariesFromPackage(packageData: RetrievalPackage): RetrievalCoverageSummary[] {
-  const coverage = packageData.coverage;
-  const standardItems = coverage?.standard_system ?? [];
-  const aspectItems = coverage?.query_aspects ?? [];
-  return [
-    ...standardItems.map((item) => coverageSummaryFromItem(item, "standard")),
-    ...aspectItems.map((item) => coverageSummaryFromItem(item, "aspect")),
-  ].sort((left, right) => coverageComparisonKey(left).localeCompare(coverageComparisonKey(right)));
-}
-
-function coverageSummaryFromItem(
-  item: RetrievalCoverage["standard_system"][number],
-  group: "aspect" | "standard",
-): RetrievalCoverageSummary {
-  return {
-    field: item.field,
-    label: group === "standard" ? item.value : humanize(item.value),
-    selectedCount: item.selected_count,
-    status: item.status,
-    suggestedFilter: stringRecordValue(item.suggested_filter),
-    value: item.value,
-  };
-}
-
-function queryAspectSummariesFromPackage(packageData: RetrievalPackage): QueryAspectSummary[] {
-  return queryAnalysisFromPackage(packageData)
-    .queryAspects.map((aspect) => ({
-      aspectId: aspect.aspectId,
-      label: aspect.label,
-      priority: aspect.priority,
-      question: aspect.question,
-      ruleId: aspect.ruleId,
-    }))
-    .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label));
-}
-
-function conceptGroundingSummariesFromPackage(
-  packageData: RetrievalPackage,
-): ConceptGroundingSummary[] {
-  const counts = new Map<string, ConceptGroundingSummary>();
-  for (const hit of packageData.hits) {
-    for (const concept of conceptMatchesFromHit(hit)) {
-      const key = conceptGroundingKey(concept);
-      const current = counts.get(key);
-      if (current) {
-        current.evidenceCount += 1;
-      } else {
-        counts.set(key, {
-          code: concept.code,
-          conceptId: concept.conceptId,
-          displayName: concept.displayName,
-          evidenceCount: 1,
-          standardSystem: concept.standardSystem,
-        });
-      }
-    }
-  }
-  return [...counts.values()].sort(
-    (left, right) =>
-      left.standardSystem.localeCompare(right.standardSystem) ||
-      left.displayName.localeCompare(right.displayName),
-  );
-}
-
-function rulePackStatusValue(value: unknown): RuntimeRetrievalRulePack["status"] {
-  if (value === "ok" || value === "missing" || value === "error") return value;
-  return "error";
-}
-
 function judgmentsForComparison(
   comparison: RetrievalRunComparison,
   judgments: RelevanceJudgmentIndex,
@@ -3983,13 +3826,6 @@ function rulePackChangesBetweenRuns(
   });
 }
 
-function rulePackFingerprint(pack?: RuntimeRetrievalRulePack): string {
-  if (!pack) return "missing";
-  if (pack.content_hash) return pack.content_hash;
-  if (pack.version) return pack.version;
-  return `${pack.status}:${pack.rule_count}`;
-}
-
 function queryProfilesChanged(
   active: QueryProfileSummary | null,
   baseline: QueryProfileSummary | null,
@@ -4131,12 +3967,6 @@ function conceptGroundingComparisonBetweenRuns(
   };
 }
 
-function conceptGroundingKey(
-  concept: Pick<ConceptGroundingSummary, "code" | "conceptId" | "standardSystem">,
-): string {
-  return `${concept.standardSystem}:${concept.code ?? ""}:${concept.conceptId}`;
-}
-
 function qualitySignalSummariesFromRun(
   run: RetrievalSearchRun,
 ): RetrievalQualitySignalSummary[] {
@@ -4149,87 +3979,6 @@ function qualitySignalSummariesFromRun(
     }))
     .filter((signal) => signal.code)
     .sort((left, right) => left.code.localeCompare(right.code));
-}
-
-function evidenceIdsFromRun(run: RetrievalSearchRun): string[] {
-  return run.packageData.hits.map((hit) => hit.evidence.evidence_id);
-}
-
-function qualitySummaryFingerprint(summary: RetrievalQualitySummary | null): string {
-  if (!summary) return "none";
-  return [
-    summary.status,
-    summary.score,
-    summary.top_action,
-    summary.blocker_codes.join(","),
-    summary.warning_codes.join(","),
-  ].join("|");
-}
-
-function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary {
-  const rulePacks = retrievalRulePacksFromPackage(packageData);
-  return {
-    candidateCount: packageData.trace.candidates_seen,
-    conceptGrounding: conceptGroundingSummariesFromPackage(packageData),
-    correctiveActionSummary: correctiveActionSummaryFromPackage(packageData),
-    coverage: coverageSummariesFromPackage(packageData),
-    diversity: diversityFromPackage(packageData),
-    hitCount: packageData.hits.length,
-    qualitySummary: packageData.quality_summary ?? null,
-    qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),
-    queryAspects: queryAspectSummariesFromPackage(packageData),
-    queryProfile: queryProfileSummaryFromPackage(packageData),
-    rulePackCount: rulePacks.length,
-    rulePackFingerprint: rulePacks
-      .map((pack) => `${pack.name}:${rulePackFingerprint(pack)}`)
-      .join("|"),
-    serverSignature: serverSearchSignatureFromPackage(packageData),
-    remediationSummary:
-      packageData.remediation_summary ??
-      optionalStringValue(packageData.handoff_context.remediation_summary) ??
-      null,
-    topSourceId: packageData.hits[0]?.evidence.source_id ?? null,
-    warningCount: packageData.trace.warnings.length,
-  };
-}
-
-function correctiveActionSummaryFromPackage(
-  packageData: RetrievalPackage,
-): CorrectiveActionSummary {
-  const backendSummary = packageData.recommended_action_summary;
-  if (backendSummary) {
-    const actionTypeCounts = backendSummary.action_type_counts ?? {
-      apply_filter: backendSummary.apply_filter_count,
-      broaden_query: backendSummary.broaden_query_count ?? 0,
-    };
-    return {
-      count: backendSummary.count,
-      highestPriority: backendSummary.highest_priority ?? null,
-      highestSeverity: backendSummary.highest_severity ?? null,
-      topActionTitle: backendSummary.top_action_title ?? null,
-      applyFilterCount: backendSummary.apply_filter_count,
-      broadenQueryCount: backendSummary.broaden_query_count ?? actionTypeCounts.broaden_query ?? 0,
-      actionTypeCounts,
-    };
-  }
-  const actions = packageData.recommended_actions ?? [];
-  const topAction = actions[0] ?? null;
-  const actionTypeCounts = recommendedActionTypeCounts(actions);
-  return {
-    count: actions.length,
-    highestPriority: topAction?.priority ?? null,
-    highestSeverity: topAction?.severity ?? null,
-    topActionTitle: topAction?.title ?? null,
-    applyFilterCount: actionTypeCounts.apply_filter ?? 0,
-    broadenQueryCount: actionTypeCounts.broaden_query ?? 0,
-    actionTypeCounts,
-  };
-}
-
-function qualityWarningCount(signals: RetrievalQualitySignal[]): number {
-  return signals.filter((signal) =>
-    ["destructive", "error", "warning"].includes(signal.severity),
-  ).length;
 }
 
 function deltaBadgeVariant(
