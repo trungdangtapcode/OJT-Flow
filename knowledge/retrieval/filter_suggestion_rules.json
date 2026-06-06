@@ -10,12 +10,31 @@
       "match": {
         "any_concepts": [
           "laboratory_observation_identity",
-          "hba1c_laboratory_test",
-          "unit_normalization",
-          "fhir_observation_profile"
+          "hba1c_laboratory_test"
         ],
-        "any_standards": ["FHIR", "LOINC", "UCUM"],
         "any_candidate_domains": ["laboratory"]
+      }
+    },
+    {
+      "rule_id": "suggest_vital_signs_domain",
+      "field": "clinical_domain",
+      "value": "vital_signs",
+      "reason": "Detected vital-sign Observation context.",
+      "confidence": 0.88,
+      "match": {
+        "any_concepts": [
+          "vital_sign_observation",
+          "vital_sign_blood_pressure",
+          "vital_sign_heart_rate",
+          "vital_sign_oxygen_saturation",
+          "vital_sign_body_temperature",
+          "systolic_blood_pressure",
+          "diastolic_blood_pressure",
+          "heart_rate",
+          "oxygen_saturation_pulse_oximetry",
+          "body_temperature"
+        ],
+        "any_candidate_domains": ["vital_signs"]
       }
     },
     {

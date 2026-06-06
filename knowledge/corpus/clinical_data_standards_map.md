@@ -64,11 +64,17 @@ Common seed concepts:
 
 - Systolic blood pressure: LOINC `8480-6`.
 - Diastolic blood pressure: LOINC `8462-4`.
+- Heart rate: LOINC `8867-4`.
+- Oxygen saturation by pulse oximetry: LOINC `59408-5`.
+- Body temperature: LOINC `8310-5`.
 
 Retrieval behavior:
 
 - Expand common clinical shorthand such as `BP`, `SBP`, `DBP`, and `HTN` into
   explicit blood-pressure evidence queries before ranking.
+- Expand generic `vitals` separately from blood-pressure shorthand so heart
+  rate, oxygen saturation, and body-temperature queries are not forced into a
+  systolic/diastolic interpretation.
 - Prefer separate systolic and diastolic evidence over a combined free-text
   blood-pressure label when validating or explaining structured records.
 - Preserve raw readings and units while surfacing candidate LOINC/UCUM

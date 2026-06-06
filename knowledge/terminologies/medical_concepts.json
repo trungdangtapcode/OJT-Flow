@@ -107,6 +107,52 @@
       }
     },
     {
+      "concept_id": "heart_rate",
+      "display_name": "Heart rate",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8867-4",
+      "source": "https://loinc.org/8867-4",
+      "aliases": ["heart rate", "pulse", "pulse rate", "hr", "bpm"],
+      "metadata": {
+        "loinc_long_common_name": "Heart rate",
+        "preferred_units": ["/min", "beats/min"]
+      }
+    },
+    {
+      "concept_id": "oxygen_saturation_pulse_oximetry",
+      "display_name": "Oxygen saturation by pulse oximetry",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "59408-5",
+      "source": "https://loinc.org/59408-5",
+      "aliases": [
+        "oxygen saturation",
+        "spo2",
+        "o2 sat",
+        "pulse ox",
+        "pulse oximetry",
+        "sao2"
+      ],
+      "metadata": {
+        "loinc_long_common_name": "Oxygen saturation in Arterial blood by Pulse oximetry",
+        "preferred_units": ["%"]
+      }
+    },
+    {
+      "concept_id": "body_temperature",
+      "display_name": "Body temperature",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8310-5",
+      "source": "https://loinc.org/8310-5",
+      "aliases": ["body temperature", "temperature", "temp", "fever"],
+      "metadata": {
+        "loinc_long_common_name": "Body temperature",
+        "preferred_units": ["Cel", "[degF]"]
+      }
+    },
+    {
       "concept_id": "metformin_medication",
       "display_name": "Metformin",
       "clinical_domain": "medication",

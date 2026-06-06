@@ -19,12 +19,7 @@
       "match": {
         "any_concepts": [
           "laboratory_observation_identity",
-          "hba1c_laboratory_test",
-          "fhir_observation_profile"
-        ],
-        "any_standards": [
-          "LOINC",
-          "FHIR"
+          "hba1c_laboratory_test"
         ],
         "any_candidate_domains": [
           "laboratory"
@@ -106,14 +101,49 @@
           "systolic_blood_pressure",
           "diastolic_blood_pressure"
         ],
-        "any_candidate_domains": [
-          "vital_signs"
-        ],
         "any_tokens": [
           "bp",
           "htn",
           "sbp",
           "dbp"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_vital_sign_observation_standardization",
+      "aspect_id": "vital_sign_observation_standardization",
+      "label": "Vital-sign observation grounding",
+      "question": "Which LOINC vital-sign concepts, FHIR Observation fields, and UCUM units should ground the measurement?",
+      "rationale": "Generic vitals, heart rate, oxygen saturation, and body-temperature queries need vital-sign evidence without forcing blood-pressure assumptions.",
+      "priority": 36,
+      "suggested_terms": [
+        "FHIR Observation vital signs",
+        "LOINC 8867-4 heart rate",
+        "LOINC 59408-5 oxygen saturation",
+        "LOINC 8310-5 body temperature",
+        "UCUM vital-sign units"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "vital_signs"
+      },
+      "match": {
+        "any_concepts": [
+          "vital_sign_observation",
+          "vital_sign_heart_rate",
+          "vital_sign_oxygen_saturation",
+          "vital_sign_body_temperature",
+          "heart_rate",
+          "oxygen_saturation_pulse_oximetry",
+          "body_temperature"
+        ],
+        "any_candidate_domains": [
+          "vital_signs"
+        ],
+        "any_tokens": [
+          "vitals",
+          "pulse",
+          "spo2",
+          "temperature"
         ]
       }
     },

@@ -75,6 +75,23 @@
       }
     },
     {
+      "rule_id": "boost_loinc_vital_sign_concepts",
+      "weight": 0.095,
+      "reason": "Prefer LOINC evidence when non-BP vital-sign concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["LOINC"],
+        "any_concepts": [
+          "vital_sign_observation",
+          "vital_sign_heart_rate",
+          "vital_sign_oxygen_saturation",
+          "vital_sign_body_temperature",
+          "heart_rate",
+          "oxygen_saturation_pulse_oximetry",
+          "body_temperature"
+        ]
+      }
+    },
+    {
       "rule_id": "boost_governance_for_sensitive_identifiers",
       "weight": 0.09,
       "reason": "Prefer governance policy evidence when sensitive identifier review is detected.",
