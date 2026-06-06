@@ -1070,6 +1070,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "components"
         / "run-comparison-detail-panels.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_search_run_comparison_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-run-comparison-panel.tsx"
+    ).read_text(encoding="utf-8")
     retrieval_strategy_standard_panels = (
         REPO_ROOT
         / "frontend"
@@ -1422,8 +1431,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "metadata?: Record<string, unknown>" in (
         REPO_ROOT / "frontend/src/types.ts"
     ).read_text(encoding="utf-8")
-    assert "RunComparisonQueryAspects" in retrieval_page
-    assert "components/run-comparison-detail-panels" in retrieval_page
+    assert "RunComparisonQueryAspects" in retrieval_search_run_comparison_panel
+    assert "./run-comparison-detail-panels" in retrieval_search_run_comparison_panel
     assert "function RunComparisonQueryAspects" not in retrieval_page
     assert "Search aspects" in retrieval_run_comparison_detail_panels
     assert "queryAspectComparisonBetweenRuns" in retrieval_page
@@ -1436,7 +1445,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`"
         in retrieval_query_aspect_plan
     )
-    assert "RunComparisonCoverage" in retrieval_page
+    assert "RunComparisonCoverage" in retrieval_search_run_comparison_panel
     assert "function RunComparisonCoverage" not in retrieval_page
     assert "Coverage diagnostics" in retrieval_run_comparison_detail_panels
     assert "coverageComparisonBetweenRuns" in retrieval_page
@@ -1508,7 +1517,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copied" in retrieval_page
     assert "evidenceReportFromHit" in retrieval_page
     assert "retrieval_evidence_hit" in retrieval_page
-    assert "RunComparisonConceptGrounding" in retrieval_page
+    assert "RunComparisonConceptGrounding" in retrieval_search_run_comparison_panel
     assert "function RunComparisonConceptGrounding" not in retrieval_page
     assert "Concept grounding" in retrieval_run_comparison_detail_panels
     assert "conceptGroundingComparisonBetweenRuns" in retrieval_page
@@ -1580,17 +1589,17 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "qualitySummaryChanged" in retrieval_page
     assert "quality_score: comparison.qualityScoreDelta" in retrieval_page
     assert "searchRunQualityBadgeVariant" in retrieval_search_run_presentation_model
-    assert "RunComparisonQueryProfile" in retrieval_page
+    assert "RunComparisonQueryProfile" in retrieval_search_run_comparison_panel
     assert "function RunComparisonQueryProfile" not in retrieval_page
     assert "QueryProfileSummaryCard" in retrieval_run_comparison_detail_panels
-    assert "RunComparisonQualitySignals" in retrieval_page
+    assert "RunComparisonQualitySignals" in retrieval_search_run_comparison_panel
     assert "function RunComparisonQualitySignals" not in retrieval_page
     assert "QualitySignalChangeList" in retrieval_run_comparison_detail_panels
     assert "qualitySignalComparisonBetweenRuns" in retrieval_page
     assert "qualitySignalSummariesFromRun" in retrieval_page
     assert "qualitySignalComparison" in retrieval_page
     assert "Quality signals" in retrieval_run_comparison_detail_panels
-    assert "RunComparisonFacetCoverage" in retrieval_page
+    assert "RunComparisonFacetCoverage" in retrieval_search_run_comparison_panel
     assert "function RunComparisonFacetCoverage" not in retrieval_page
     assert "FacetValueChange" in retrieval_run_comparison_detail_panels
     assert "facetComparisonsBetweenRuns" in retrieval_page
@@ -1599,7 +1608,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Facet coverage" in retrieval_run_comparison_detail_panels
     assert "queryProfilesChanged" in retrieval_page
     assert "queryProfileChanged" in retrieval_page
-    assert "profile changed" in retrieval_page
+    assert "profile changed" in retrieval_search_run_comparison_panel
     assert "retrievalMode" in retrieval_page
     assert "suggestedFilters" in retrieval_page
     assert "queryProfileFilterEntries" in retrieval_page
@@ -1658,12 +1667,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Selected-hit rationale" in retrieval_source_diversity_panel
     assert "DiversityMetricCard" in retrieval_source_diversity_panel
     assert "function DiversityMetricCard" not in retrieval_page
-    assert "RunComparisonSourceDiversity" in retrieval_page
+    assert "RunComparisonSourceDiversity" in retrieval_search_run_comparison_panel
     assert "function RunComparisonSourceDiversity" not in retrieval_page
     assert "Source diversity comparison" in retrieval_source_diversity_panel
     assert "SourceListDelta" in retrieval_source_diversity_panel
-    assert "RunComparisonOperatorSummary" in retrieval_page
-    assert "components/run-comparison-summary-panels" in retrieval_page
+    assert "RunComparisonOperatorSummary" in retrieval_search_run_comparison_panel
+    assert "./run-comparison-summary-panels" in retrieval_search_run_comparison_panel
     assert "function RunComparisonOperatorSummary" not in retrieval_page
     assert "Comparison operator summary" in retrieval_run_comparison_summary_panels
     assert "comparisonOperatorSummary" in retrieval_page
@@ -1727,13 +1736,21 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "createSearchRun" in retrieval_page
     assert "restoreSearchRun" in retrieval_page
     assert "retrievalRunSummary" in retrieval_page
-    assert "SearchRunComparison" in retrieval_page
-    assert "Run comparison" in retrieval_page
-    assert "Run comparison help" in retrieval_page
-    assert "Baseline is the older comparison run" in retrieval_page
-    assert "warning deltas, quality changes, and rank movement" in retrieval_page
-    assert "Baseline query" in retrieval_page
-    assert "RunComparisonAtAGlance" in retrieval_page
+    assert "SearchRunComparisonPanel" in retrieval_page
+    assert "components/search-run-comparison-panel" in retrieval_page
+    assert "function SearchRunComparisonPanel" not in retrieval_page
+    assert "Run comparison" in retrieval_search_run_comparison_panel
+    assert "Run comparison help" in retrieval_search_run_comparison_panel
+    assert (
+        "Baseline is the older comparison run"
+        in retrieval_search_run_comparison_panel
+    )
+    assert (
+        "warning deltas, quality changes, and rank movement"
+        in retrieval_search_run_comparison_panel
+    )
+    assert "Baseline query" in retrieval_search_run_comparison_panel
+    assert "RunComparisonAtAGlance" in retrieval_search_run_comparison_panel
     assert "function RunComparisonAtAGlance" not in retrieval_page
     assert "Comparison at a glance" in retrieval_run_comparison_summary_panels
     assert "readinessGlanceLabel" in retrieval_page
@@ -1743,15 +1760,17 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Evidence overlap" in retrieval_run_comparison_summary_panels
     assert "label=\"Top source\"" in retrieval_run_comparison_summary_panels
     assert "comparison.topSourceChanged ? \"changed\" : \"stable\"" in retrieval_run_comparison_summary_panels
-    assert "RunComparisonDiagnosis" in retrieval_page
+    assert "RunComparisonDiagnosis" in retrieval_search_run_comparison_panel
     assert "function RunComparisonDiagnosis" not in retrieval_page
     assert "Comparison diagnosis" in retrieval_run_comparison_summary_panels
-    assert "RunComparisonRecommendedActions" in retrieval_page
+    assert "RunComparisonRecommendedActions" in retrieval_search_run_comparison_panel
     assert "function RunComparisonRecommendedActions" not in retrieval_page
     assert "Recommended actions" in retrieval_run_comparison_summary_panels
-    assert "const recommendedActions = React.useMemo" in retrieval_page
-    assert "actions={recommendedActions}" in retrieval_page
-    assert "comparisonReportFromComparison(comparison, judgments, recommendedActions)" in retrieval_page
+    assert "const comparisonRecommendedActions = React.useMemo" in retrieval_page
+    assert "recommendedActions={comparisonRecommendedActions}" in retrieval_page
+    assert "actions={recommendedActions}" in retrieval_search_run_comparison_panel
+    assert "comparisonReportFromComparison(" in retrieval_page
+    assert "comparisonJudgments" in retrieval_page
     assert "RetrievalComparisonRecommendedAction" in retrieval_page
     assert "comparisonRecommendedActionSummary" in retrieval_page
     assert "recommended_action_summary: comparisonRecommendedActionSummary" in retrieval_page
@@ -1772,9 +1791,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "GitCompareArrows" in retrieval_search_run_history
     assert "addedEvidenceIds" in retrieval_page
     assert "retainedEvidenceIds" in retrieval_page
-    assert "RunComparisonRankChanges" in retrieval_page
+    assert "RunComparisonRankChanges" in retrieval_search_run_comparison_panel
     assert "function RunComparisonRankChanges" not in retrieval_page
-    assert "RunComparisonEvidenceChange" in retrieval_page
+    assert "RunComparisonEvidenceChange" in retrieval_search_run_comparison_panel
     assert "function RunComparisonEvidenceChange" not in retrieval_page
     assert "Rank movement" in retrieval_run_comparison_detail_panels
     assert "Rank movement help" in retrieval_run_comparison_detail_panels
@@ -1785,9 +1804,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Use rank movement to debug relevance tuning" in retrieval_run_comparison_detail_panels
     assert "rankChangesBetweenRuns" in retrieval_page
     assert "rankDelta" in retrieval_page
-    assert "Copy comparison JSON" in retrieval_page
-    assert "Copy retrieval comparison report" in retrieval_page
-    assert "Comparison JSON report help" in retrieval_page
+    assert "Copy comparison JSON" in retrieval_search_run_comparison_panel
+    assert "Copy retrieval comparison report" in retrieval_search_run_comparison_panel
+    assert "Comparison JSON report help" in retrieval_search_run_comparison_panel
     assert "comparisonReportFromComparison" in retrieval_page
     assert "comparisonReportSummary" in retrieval_page
     assert "summary: comparisonReportSummary(comparison, judgments)" in retrieval_page
@@ -1800,12 +1819,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "changed_dimensions" in retrieval_page
     assert "judgment_count: judgments.length" in retrieval_page
     assert "retrieval_run_comparison" in retrieval_page
-    assert "RunComparisonMetrics" in retrieval_page
+    assert "RunComparisonMetrics" in retrieval_search_run_comparison_panel
     assert "function RunComparisonMetrics" not in retrieval_page
     assert "Overlap shows shared evidence" in retrieval_run_comparison_summary_panels
     assert "churn shows how much the result set changed" in retrieval_run_comparison_summary_panels
     assert "mean rank delta shows ordering instability" in retrieval_run_comparison_summary_panels
-    assert "RunComparisonRulePacks" in retrieval_page
+    assert "RunComparisonRulePacks" in retrieval_search_run_comparison_panel
     assert "function RunComparisonRulePacks" not in retrieval_page
     assert "Rule packs" in retrieval_run_comparison_detail_panels
     assert "comparisonRulePackChangeViews" in retrieval_page
