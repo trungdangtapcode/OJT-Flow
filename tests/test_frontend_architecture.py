@@ -1732,14 +1732,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "warning deltas, quality changes, and rank movement" in retrieval_page
     assert "Baseline query" in retrieval_page
     assert "RunComparisonAtAGlance" in retrieval_page
-    assert "Comparison at a glance" in retrieval_page
+    assert "function RunComparisonAtAGlance" not in retrieval_page
+    assert "Comparison at a glance" in retrieval_run_comparison_summary_panels
     assert "readinessGlanceLabel" in retrieval_page
     assert "baselineSummary.qualitySummary?.status" in retrieval_page
     assert "activeSummary.qualitySummary?.status" in retrieval_page
-    assert "Action priority" in retrieval_page
-    assert "Evidence overlap" in retrieval_page
-    assert "label=\"Top source\"" in retrieval_page
-    assert "comparison.topSourceChanged ? \"changed\" : \"stable\"" in retrieval_page
+    assert "Action priority" in retrieval_run_comparison_summary_panels
+    assert "Evidence overlap" in retrieval_run_comparison_summary_panels
+    assert "label=\"Top source\"" in retrieval_run_comparison_summary_panels
+    assert "comparison.topSourceChanged ? \"changed\" : \"stable\"" in retrieval_run_comparison_summary_panels
     assert "RunComparisonDiagnosis" in retrieval_page
     assert "function RunComparisonDiagnosis" not in retrieval_page
     assert "Comparison diagnosis" in retrieval_run_comparison_summary_panels
