@@ -1178,6 +1178,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "model"
         / "retrieval-query-analysis.ts"
     ).read_text(encoding="utf-8")
+    retrieval_runtime_stack_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-runtime-stack.ts"
+    ).read_text(encoding="utf-8")
     retrieval_search_plan_tasks_model = (
         REPO_ROOT
         / "frontend"
@@ -1225,6 +1234,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     ).read_text(encoding="utf-8")
 
     assert "rankingStackFromPackage" in retrieval_page
+    assert "function rankingStackFromPackage" not in retrieval_page
+    assert "function rankingStackFromPackage" in retrieval_runtime_stack_model
     assert "diversityFromPackage" in retrieval_page
     assert "scoreComponentsFromHit" in retrieval_page
     assert "ScoreExplanation" in retrieval_page
@@ -1549,7 +1560,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "conceptMatchesFromHit" in retrieval_page
     assert "function ConceptMatchExplanation" not in retrieval_page
     assert "Concept grounding" in retrieval_hit_explanation_panels
-    assert "concept_grounding_requirements" in retrieval_page
+    assert "concept_grounding_requirements" in retrieval_runtime_stack_model
     assert "HitEvidenceAuditStrip" in retrieval_page
     assert "components/hit-evidence-audit-strip" in retrieval_page
     assert "function HitEvidenceAuditStrip" not in retrieval_page
@@ -1617,6 +1628,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Search signature" in retrieval_page
     assert "search_signature: comparison.activeSummary.serverSignature" in retrieval_comparison_diagnosis_model
     assert "qualityPolicyFromPackage" in retrieval_page
+    assert "function qualityPolicyFromPackage" not in retrieval_page
+    assert "function qualityPolicyFromPackage" in retrieval_runtime_stack_model
+    assert "function qualityPolicyFromPackage" not in retrieval_page
+    assert "function qualityPolicyFromPackage" in retrieval_runtime_stack_model
     assert "Quality policy" in retrieval_page
     assert "query_profiles" in retrieval_comparison_diagnosis_model
     assert "queryProfileSummaryFromPackage" in retrieval_page
@@ -1730,6 +1745,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "function IntegrityPanel" not in retrieval_page
     assert "Fusion agreement" in retrieval_search_cockpit
     assert "fusionDiagnosticsFromPackage" in retrieval_page
+    assert "function fusionDiagnosticsFromPackage" not in retrieval_page
+    assert "function fusionDiagnosticsFromPackage" in retrieval_runtime_stack_model
     assert "fusion_diagnostics" in retrieval_page
     assert "Whether lexical and vector retrieval agree" in retrieval_search_cockpit
     assert "lexical/vector top overlap" in (
@@ -1781,9 +1798,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "diversitySelectionByEvidenceId" in retrieval_page
     assert "selected_hits" in retrieval_page
     assert "Diversity selection" in retrieval_hit_explanation_panels
-    assert "packageData.diversity ?? packageData.handoff_context.diversity" in retrieval_page
-    assert "packageData.handoff_context.reranker" in retrieval_page
-    assert "packageData.handoff_context.diversity" in retrieval_page
+    assert (
+        "packageData.diversity ?? packageData.handoff_context.diversity"
+        in retrieval_runtime_stack_model
+    )
+    assert "packageData.handoff_context.reranker" in retrieval_runtime_stack_model
+    assert "packageData.handoff_context.diversity" in retrieval_runtime_stack_model
     assert "runtime?.rerank?.enabled" in retrieval_page
     assert "rankingBoostSignalsFromHit" in retrieval_page
     assert "ranking_boosts" in retrieval_page
@@ -2021,6 +2041,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Query transformation" in retrieval_search_cockpit
     assert "Next best action" in retrieval_search_cockpit
     assert "hybridStackValue" in retrieval_page
+    assert "function hybridStackValue" not in retrieval_page
+    assert "function hybridStackValue" in retrieval_runtime_stack_model
     assert "Copy cockpit" in retrieval_search_cockpit
     assert "Copy cockpit JSON" in retrieval_search_cockpit
     assert "Cockpit JSON report help" in retrieval_search_cockpit
