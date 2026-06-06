@@ -182,6 +182,19 @@ def _clinical_domain_for(path: Path, text: str) -> str:
     if any(
         term in inspected
         for term in [
+            "condition",
+            "diagnosis",
+            "diagnoses",
+            "problem list",
+            "problem-list",
+            "icd-10",
+            "snomed",
+        ]
+    ):
+        return "problem_list"
+    if any(
+        term in inspected
+        for term in [
             "lab",
             "laboratory",
             "observation",

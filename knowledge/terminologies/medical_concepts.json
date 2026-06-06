@@ -190,6 +190,43 @@
       }
     },
     {
+      "concept_id": "type_2_diabetes_icd10cm_seed",
+      "display_name": "Type 2 diabetes mellitus diagnosis",
+      "clinical_domain": "problem_list",
+      "standard_system": "ICD-10-CM",
+      "code": "E11.9",
+      "source": "https://www.cdc.gov/nchs/icd/icd-10-cm/index.html",
+      "aliases": [
+        "type 2 diabetes",
+        "type ii diabetes",
+        "t2dm",
+        "diabetes diagnosis",
+        "diabetes problem"
+      ],
+      "metadata": {
+        "coding_system_scope": "diagnosis coding seed",
+        "review_note": "Use as retrieval grounding only; final ICD-10-CM assignment requires coder or clinician review."
+      }
+    },
+    {
+      "concept_id": "essential_hypertension_icd10cm_seed",
+      "display_name": "Essential hypertension diagnosis",
+      "clinical_domain": "problem_list",
+      "standard_system": "ICD-10-CM",
+      "code": "I10",
+      "source": "https://www.cdc.gov/nchs/icd/icd-10-cm/index.html",
+      "aliases": [
+        "essential hypertension",
+        "primary hypertension",
+        "hypertension diagnosis",
+        "hypertension problem"
+      ],
+      "metadata": {
+        "coding_system_scope": "diagnosis coding seed",
+        "review_note": "Use as retrieval grounding only; final ICD-10-CM assignment requires coder or clinician review."
+      }
+    },
+    {
       "concept_id": "kidney_failure_chronic_subject",
       "display_name": "Kidney Failure, Chronic",
       "clinical_domain": "literature",

@@ -148,6 +148,47 @@
       }
     },
     {
+      "rule_id": "aspect_condition_problem_list_grounding",
+      "aspect_id": "condition_problem_list_grounding",
+      "label": "Condition and diagnosis grounding",
+      "question": "Which FHIR Condition fields and diagnosis terminology systems should ground the problem-list record?",
+      "rationale": "Diagnosis and problem-list data need explicit Condition.code, clinical status, verification status, and terminology evidence before coding or transformation.",
+      "priority": 38,
+      "suggested_terms": [
+        "FHIR Condition",
+        "Condition.code",
+        "Condition.clinicalStatus",
+        "Condition.verificationStatus",
+        "ICD-10-CM diagnosis code",
+        "SNOMED CT clinical finding"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "problem_list"
+      },
+      "match": {
+        "any_concepts": [
+          "fhir_condition_profile",
+          "condition_terminology_coding",
+          "type_2_diabetes_icd10cm_seed",
+          "essential_hypertension_icd10cm_seed"
+        ],
+        "any_standards": [
+          "ICD-10-CM",
+          "SNOMED CT"
+        ],
+        "any_candidate_domains": [
+          "problem_list"
+        ],
+        "any_tokens": [
+          "diagnosis",
+          "diagnoses",
+          "condition",
+          "icd",
+          "snomed"
+        ]
+      }
+    },
+    {
       "rule_id": "aspect_medication_terminology_safety",
       "aspect_id": "medication_terminology_safety",
       "label": "Medication terminology and safety",

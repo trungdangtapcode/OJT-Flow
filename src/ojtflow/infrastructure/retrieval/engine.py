@@ -106,6 +106,7 @@ class RankingBoostCondition:
     filter_clinical_domain_matches_chunk: bool = False
     chunk_trust_levels: tuple[str, ...] = ()
     chunk_source_types: tuple[str, ...] = ()
+    chunk_clinical_domains: tuple[str, ...] = ()
     chunk_standard_systems: tuple[str, ...] = ()
     any_matched_terms: tuple[str, ...] = ()
     any_concepts: tuple[str, ...] = ()
@@ -3446,6 +3447,23 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             locator={"standard": "HL7 FHIR R4 Observation"},
         ),
         KnowledgeChunk(
+            chunk_id="chunk_standard_fhir_condition_v0",
+            source_id="standard:fhir_condition_r4",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="FHIR Condition R4",
+            source_version="R4",
+            content=(
+                "FHIR Condition represents detailed information about conditions, "
+                "problems, and diagnoses. A FHIR-like Condition profile should "
+                "preserve resourceType, code, subject, clinicalStatus, "
+                "verificationStatus, onset or recorded date, source evidence, and "
+                "review limitations."
+            ),
+            clinical_domain="problem_list",
+            standard_system="FHIR",
+            locator={"standard": "HL7 FHIR R4 Condition"},
+        ),
+        KnowledgeChunk(
             chunk_id="chunk_terminology_loinc_lab_codes_v0",
             source_id="terminology:loinc",
             source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
@@ -3486,6 +3504,36 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             clinical_domain="medication",
             standard_system="RxNorm",
             locator={"standard": "RxNorm"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_terminology_snomed_ct_conditions_v0",
+            source_id="terminology:snomed_ct",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="SNOMED CT Clinical Findings",
+            content=(
+                "SNOMED CT is a clinical terminology direction for problem-list "
+                "and diagnosis concepts. OJTFlow should use SNOMED CT lookup as "
+                "grounding evidence only and preserve uncertainty before any "
+                "FHIR Condition or analytics mapping."
+            ),
+            clinical_domain="problem_list",
+            standard_system="SNOMED CT",
+            locator={"standard": "SNOMED CT"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_terminology_icd10cm_diagnoses_v0",
+            source_id="terminology:icd10cm",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="ICD-10-CM Diagnosis Coding",
+            content=(
+                "ICD-10-CM is the U.S. clinical modification used to code and "
+                "classify medical diagnoses. OJTFlow retrieval can surface "
+                "ICD-10-CM evidence for review, but final diagnosis-code "
+                "assignment must remain coder or clinician reviewed."
+            ),
+            clinical_domain="problem_list",
+            standard_system="ICD-10-CM",
+            locator={"standard": "CDC/NCHS ICD-10-CM"},
         ),
         KnowledgeChunk(
             chunk_id="chunk_standard_omop_analytics_v0",
@@ -4280,6 +4328,8 @@ def _ranking_boost_condition_matches(
         return False
     if condition.chunk_source_types and chunk.source_type.value not in condition.chunk_source_types:
         return False
+    if condition.chunk_clinical_domains and chunk.clinical_domain not in condition.chunk_clinical_domains:
+        return False
     if condition.chunk_standard_systems and chunk.standard_system not in condition.chunk_standard_systems:
         return False
     if condition.any_matched_terms and not _has_intersection(matched_terms, condition.any_matched_terms):
@@ -4367,6 +4417,11 @@ def _ranking_boost_condition(record: Any, *, path: Path) -> RankingBoostConditio
             field="chunk_source_types",
             path=path,
             enum_type=EvidenceSourceType,
+        ),
+        chunk_clinical_domains=_optional_text_tuple(
+            record.get("chunk_clinical_domains"),
+            field="chunk_clinical_domains",
+            path=path,
         ),
         chunk_standard_systems=_optional_text_tuple(
             record.get("chunk_standard_systems"),

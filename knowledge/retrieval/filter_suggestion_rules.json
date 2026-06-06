@@ -53,6 +53,23 @@
       }
     },
     {
+      "rule_id": "suggest_problem_list_domain",
+      "field": "clinical_domain",
+      "value": "problem_list",
+      "reason": "Detected diagnosis, problem-list, or FHIR Condition context.",
+      "confidence": 0.88,
+      "match": {
+        "any_concepts": [
+          "fhir_condition_profile",
+          "condition_terminology_coding",
+          "type_2_diabetes_icd10cm_seed",
+          "essential_hypertension_icd10cm_seed"
+        ],
+        "any_candidate_domains": ["problem_list"],
+        "any_standards": ["ICD-10-CM", "SNOMED CT"]
+      }
+    },
+    {
       "rule_id": "suggest_literature_domain",
       "field": "clinical_domain",
       "value": "literature",
@@ -165,6 +182,28 @@
       "match": {
         "any_standards": ["openFDA"],
         "any_candidate_standards": ["openFDA"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_icd10cm",
+      "field": "standard_system",
+      "value": "ICD-10-CM",
+      "reason": "Detected ICD-10-CM diagnosis-coding context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["ICD-10-CM"],
+        "any_candidate_standards": ["ICD-10-CM"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_snomed_ct",
+      "field": "standard_system",
+      "value": "SNOMED CT",
+      "reason": "Detected SNOMED CT clinical-finding terminology context.",
+      "confidence": 0.86,
+      "match": {
+        "any_standards": ["SNOMED CT"],
+        "any_candidate_standards": ["SNOMED CT"]
       }
     },
     {
