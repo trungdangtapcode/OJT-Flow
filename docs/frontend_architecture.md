@@ -113,6 +113,12 @@ before detailed trace panels so non-expert operators can orient themselves
 without reading raw trace JSON. The retrieval page owns package/ranking/diversity
 derivation, prioritized integrity check selection, hash formatting, and
 refresh/toggle callbacks.
+Retrieval trace rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/retrieval-trace-panel.tsx` owns
+the trace card, trace facts, query-analysis block composition, corrective
+actions, coverage diagnostics, query rewrites, safety flags, and warnings. The
+retrieval page owns conversion from `RetrievalPackage` into trace view data,
+filter support rules, and action callbacks.
 The workflow detail implementation keeps this split visible in code:
 `workflow-detail.tsx` is the query and tab-routing shell,
 `workflow-detail-chrome.tsx` owns loading/failure/fact-strip chrome,

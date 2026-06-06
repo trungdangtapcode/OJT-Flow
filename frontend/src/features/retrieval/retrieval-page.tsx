@@ -45,7 +45,6 @@ import {
 } from "../../lib/server-state";
 import { cn, humanize } from "../../lib/utils";
 import { ActiveFilterBar } from "./components/active-filter-bar";
-import { CoverageDiagnosticsPanel } from "./components/coverage-diagnostics-panel";
 import { EvidencePackBuckets } from "./components/evidence-pack-buckets";
 import { EvidenceInterpretationPanel } from "./components/evidence-interpretation-panel";
 import {
@@ -92,15 +91,15 @@ import {
   RuntimeDiversityBadge,
   RuntimeRerankBadge,
 } from "./components/retrieval-runtime-status";
-import {
-  QueryAnalysisBlock,
-  type QueryAnalysisBlockView,
-} from "./components/query-analysis-block";
-import { QueryVariantList } from "./components/query-variant-list";
+import type { QueryAnalysisBlockView } from "./components/query-analysis-block";
 import {
   RetrievalSummaryStrip,
   type RetrievalSummaryStripViewModel,
 } from "./components/retrieval-summary-strip";
+import {
+  RetrievalTracePanel,
+  type RetrievalTracePanelView,
+} from "./components/retrieval-trace-panel";
 import {
   SearchRunComparisonPanel,
 } from "./components/search-run-comparison-panel";
@@ -142,7 +141,6 @@ import {
 } from "./components/strategy-standard-panels";
 import { SubmittedSearchSummary } from "./components/submitted-search-summary";
 import { TokenList } from "./components/token-list";
-import { TraceFact } from "./components/trace-fact";
 import { searchRunRemediationSummary } from "./model/search-run-presentation";
 import type {
   Evidence,
@@ -584,6 +582,10 @@ export function RetrievalPage() {
     [activeRunComparison],
   );
   const packageData = activeRun?.packageData ?? searchMutation.data;
+  const tracePanelView = React.useMemo(
+    () => retrievalTracePanelView(packageData),
+    [packageData],
+  );
   const isJudgmentSyncing = Boolean(
     activeRun &&
       (persistedJudgmentsQuery.isFetching ||
@@ -1461,18 +1463,26 @@ export function RetrievalPage() {
             submittedSearchPayload={submittedSearchPayload}
           />
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
-            <TracePanel
+            <RetrievalTracePanel
               activeFilters={
                 submittedSearchPayload
                   ? activeFilterEntries(activeFacetFiltersFromPayload(submittedSearchPayload))
                   : activeFilterEntries(activeFacetFilters)
               }
+              filterFieldLabel={filterFieldLabel}
+              formatCount={formatCount}
+              formatFilterValue={formatFilterValue}
+              getActionFilter={recommendedActionFilter}
+              getActionSourceLabel={recommendedActionSourceLabel}
+              getCoverageSuggestedAction={coverageSuggestedAction}
+              getCoverageSuggestedFilter={coverageSuggestedFilter}
               isSearchPending={searchMutation.isPending}
+              isSuggestionSupported={isSupportedFilterField}
               onApplyCoverageFilter={applySearchFilter}
               onClearAllFilters={clearAllSearchFilters}
-              onClearFilter={clearSearchFilter}
+              onClearSourceScope={() => clearSearchFilter("source_id")}
               onApplyFilterSuggestion={applyFilterSuggestion}
-              packageData={packageData}
+              view={tracePanelView}
             />
             <GraphPanel graphContext={graphContext} />
           </div>
@@ -2722,125 +2732,39 @@ function HitCard({
   );
 }
 
-function TracePanel({
-  activeFilters,
-  isSearchPending,
-  onApplyCoverageFilter,
-  onClearAllFilters,
-  onClearFilter,
-  onApplyFilterSuggestion,
-  packageData,
-}: {
-  activeFilters: ActiveFilterEntry[];
-  isSearchPending: boolean;
-  onApplyCoverageFilter: (field: SupportedFilterField, value: string) => void;
-  onClearAllFilters: () => void;
-  onClearFilter: (field: SupportedFilterField) => void;
-  onApplyFilterSuggestion: (suggestion: FilterSuggestionStack) => void;
-  packageData: RetrievalPackage | undefined;
-}) {
-  const trace = packageData?.trace;
-  const stack = packageData ? rankingStackFromPackage(packageData) : null;
-  const diversity = packageData ? diversityFromPackage(packageData) : null;
-  const qualityPolicy = packageData ? qualityPolicyFromPackage(packageData) : null;
-  const queryAnalysis = packageData ? queryAnalysisFromPackage(packageData) : null;
-  const searchSignature = packageData ? serverSearchSignatureFromPackage(packageData) : null;
-  const coverage = packageData?.coverage;
-  const qualitySignals = packageData?.quality_signals ?? [];
-  return (
-    <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
-        <CardTitle className="flex items-center gap-2">
-          <ListFilter className="h-5 w-5 text-primary" />
-          Retrieval trace
-          <HelpTooltip label="Retrieval trace help">
-            Trace shows how the backend transformed the query, which filters were applied, and which quality or safety issues affected the evidence package.
-          </HelpTooltip>
-        </CardTitle>
-        <CardDescription>Query route, rewrites, filters, warnings, and quality diagnostics.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 pt-4">
-        {!trace ? (
-          <Notice title="Trace unavailable">Run a search to inspect the trace.</Notice>
-        ) : (
-          <>
-            <TraceFact label="Strategy" value={trace.strategy} />
-            <TraceFact label="Candidates" value={String(trace.candidates_seen)} />
-            <TraceFact
-              label="Framework"
-              value={stack ? formatFrameworkStack(stack) : "unknown"}
-            />
-            <TraceFact
-              label="Embedding"
-              value={stack ? formatEmbeddingStack(stack) : "unknown"}
-            />
-            <TraceFact
-              label="Reranker"
-              value={stack ? formatRerankerStack(stack) : "unknown"}
-            />
-            <TraceFact
-              label="Diversity"
-              value={diversity ? formatDiversityTrace(diversity) : "unknown"}
-            />
-            <TraceFact
-              label="Quality policy"
-              value={qualityPolicy ? formatQualityPolicyTrace(qualityPolicy) : "unknown"}
-            />
-            <TraceFact
-              label="Search signature"
-              value={searchSignature ? formatShortSignature(searchSignature) : "unknown"}
-            />
-            <TraceFact
-              label="Filters"
-              value={Object.keys(trace.filters_applied).length ? JSON.stringify(trace.filters_applied) : "none"}
-            />
-            <QualitySignalList signals={qualitySignals} />
-            <RecommendedActionsPanel
-              activeFilters={activeFilters}
-              actions={packageData.recommended_actions ?? []}
-              filterFieldLabel={filterFieldLabel}
-              formatFilterValue={formatFilterValue}
-              getActionFilter={recommendedActionFilter}
-              getActionSourceLabel={recommendedActionSourceLabel}
-              isSearchPending={isSearchPending}
-              onApplyFilter={onApplyCoverageFilter}
-              onClearAllFilters={onClearAllFilters}
-              onClearSourceScope={() => onClearFilter("source_id")}
-            />
-            <QueryAnalysisBlock
-              analysis={queryAnalysisBlockView(queryAnalysis, trace.filters_applied)}
-              formatCount={formatCount}
-              isSearchPending={isSearchPending}
-              isSuggestionSupported={isSupportedFilterField}
-              onApplyFilterSuggestion={onApplyFilterSuggestion}
-            />
-            <CoverageDiagnosticsPanel
-              coverage={coverage}
-              filterFieldLabel={filterFieldLabel}
-              formatFilterValue={formatFilterValue}
-              getCoverageSuggestedAction={coverageSuggestedAction}
-              getCoverageSuggestedFilter={coverageSuggestedFilter}
-              isSearchPending={isSearchPending}
-              onApplyCoverageFilter={onApplyCoverageFilter}
-            />
-            <QueryVariantList variants={queryVariantsFromTrace(trace)} />
-            <TokenList
-              description="Safety-sensitive context detected in the retrieval request. Treat query text as untrusted data."
-              items={trace.safety_flags.map(humanize)}
-              title="Safety flags"
-              tone="warning"
-            />
-            <TokenList
-              description="Backend warnings about search coverage, fallbacks, or risky context."
-              items={trace.warnings}
-              title="Warnings"
-              tone="warning"
-            />
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
+function retrievalTracePanelView(
+  packageData: RetrievalPackage | undefined,
+): RetrievalTracePanelView | null {
+  if (!packageData) return null;
+  const trace = packageData.trace;
+  const stack = rankingStackFromPackage(packageData);
+  const diversity = diversityFromPackage(packageData);
+  const qualityPolicy = qualityPolicyFromPackage(packageData);
+  const queryAnalysis = queryAnalysisFromPackage(packageData);
+  const searchSignature = serverSearchSignatureFromPackage(packageData);
+  return {
+    coverage: packageData.coverage,
+    facts: [
+      { label: "Strategy", value: trace.strategy },
+      { label: "Candidates", value: String(trace.candidates_seen) },
+      { label: "Framework", value: formatFrameworkStack(stack) },
+      { label: "Embedding", value: formatEmbeddingStack(stack) },
+      { label: "Reranker", value: formatRerankerStack(stack) },
+      { label: "Diversity", value: formatDiversityTrace(diversity) },
+      { label: "Quality policy", value: formatQualityPolicyTrace(qualityPolicy) },
+      {
+        label: "Search signature",
+        value: searchSignature ? formatShortSignature(searchSignature) : "unknown",
+      },
+    ],
+    filtersApplied: trace.filters_applied,
+    qualitySignals: packageData.quality_signals ?? [],
+    queryAnalysis: queryAnalysisBlockView(queryAnalysis, trace.filters_applied),
+    queryVariants: queryVariantsFromTrace(trace),
+    recommendedActions: packageData.recommended_actions ?? [],
+    safetyFlags: trace.safety_flags.map(humanize),
+    warnings: trace.warnings,
+  };
 }
 
 function queryAnalysisBlockView(

@@ -755,6 +755,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "components"
         / "retrieval-runtime-status.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_trace_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-trace-panel.tsx"
+    ).read_text(encoding="utf-8")
     retrieval_search_hint_list = (
         REPO_ROOT
         / "frontend"
@@ -1173,8 +1182,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "components/token-list" in retrieval_page
     assert "function TokenList" not in retrieval_page
     assert "bg-amber-100 text-amber-900" in retrieval_token_list
-    assert "TraceFact" in retrieval_page
-    assert "components/trace-fact" in retrieval_page
+    assert "RetrievalTracePanel" in retrieval_page
+    assert "components/retrieval-trace-panel" in retrieval_page
+    assert "function RetrievalTracePanel" not in retrieval_page
+    assert "TraceFact" in retrieval_trace_panel
+    assert "./trace-fact" in retrieval_trace_panel
     assert "function TraceFact" not in retrieval_page
     assert "grid-cols-[7rem_minmax(0,1fr)]" in retrieval_trace_fact
     assert "GraphCounter" in retrieval_runtime_status
@@ -1194,8 +1206,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Signal details" in retrieval_quality_signal_list
     assert "qualitySignalMetadataDetails" in retrieval_quality_signal_list
     assert "Retrieval quality" in retrieval_quality_signal_list
-    assert "Safety-sensitive context detected" in retrieval_page
-    assert "Backend warnings about search coverage" in retrieval_page
+    assert "Safety-sensitive context detected" in retrieval_trace_panel
+    assert "Backend warnings about search coverage" in retrieval_trace_panel
     assert "quality_signals" in retrieval_page
     assert "quality_summary" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
@@ -1208,8 +1220,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "qualitySummaryTone" in retrieval_page
     assert "qualitySignalBadgeVariant" in retrieval_page
     assert "queryVariantsFromTrace" in retrieval_page
-    assert "QueryVariantList" in retrieval_page
-    assert "components/query-variant-list" in retrieval_page
+    assert "QueryVariantList" in retrieval_trace_panel
+    assert "./query-variant-list" in retrieval_trace_panel
     assert "function QueryVariantList" not in retrieval_page
     assert "Query rewrites" in retrieval_query_variant_list
     assert "Query rewrites are backend-generated search variants" in retrieval_query_variant_list
@@ -1384,8 +1396,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Task clipboard exports should use one" in frontend_architecture
     assert "coverage_summary.next_action" in frontend_architecture
     assert "RetrievalPlan.risk_signals" in frontend_architecture
-    assert "QueryAnalysisBlock" in retrieval_page
-    assert "components/query-analysis-block" in retrieval_page
+    assert "QueryAnalysisBlock" in retrieval_trace_panel
+    assert "./query-analysis-block" in retrieval_trace_panel
     assert "function QueryAnalysisBlock" not in retrieval_page
     assert "Query analysis" in retrieval_query_analysis_block
     assert "QueryAnalysisCounter" in retrieval_query_analysis_block
@@ -2214,8 +2226,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Apply" in retrieval_filter_suggestion_list
     assert "coverageSuggestedFilter" in retrieval_page
     assert "coverageSuggestedAction" in retrieval_page
-    assert "CoverageDiagnosticsPanel" in retrieval_page
-    assert "components/coverage-diagnostics-panel" in retrieval_page
+    assert "CoverageDiagnosticsPanel" in retrieval_trace_panel
+    assert "./coverage-diagnostics-panel" in retrieval_trace_panel
     assert "function CoverageDiagnosticsBlock" not in retrieval_page
     assert "CoverageItemList" not in retrieval_page
     assert "CoverageItemList" in retrieval_coverage_diagnostics_panel
