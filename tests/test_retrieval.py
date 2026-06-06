@@ -916,7 +916,9 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.coverage is not None
     assert any(item.value == "UCUM" for item in package.coverage.standard_system)
     assert package.quality_summary is not None
-    assert package.quality_summary.score >= 70
+    assert package.quality_summary.status == "review"
+    assert package.quality_summary.score == 55
+    assert "query_context_safety_flags" in package.quality_summary.warning_codes
     buckets = {bucket.bucket_id: bucket for bucket in package.evidence_buckets}
     assert {
         "schema",

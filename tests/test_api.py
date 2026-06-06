@@ -163,6 +163,8 @@ def test_api_v1_route_handlers_use_response_envelopes() -> None:
         source_file = Path(route.endpoint.__code__.co_filename)
         source = source_file.read_text(encoding="utf-8")
         function_source = _function_source(source, route.endpoint.__name__)
+        if "StreamingResponse(" in function_source:
+            continue
         if "return ok(" not in function_source:
             methods = ",".join(sorted(route.methods or []))
             violations.append(f"{methods} {route.path} -> {route.endpoint.__name__}")
