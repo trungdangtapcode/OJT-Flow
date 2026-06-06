@@ -590,6 +590,11 @@ plan coverage summaries, task summaries, risk signals, query variants, profile
 records, concept candidates, diagnostics, and retrieval task coercion. The page
 may map those normalized objects into display-specific filter labels, but should
 not parse backend query-analysis payloads directly.
+`frontend/src/features/retrieval/model/retrieval-runtime-stack.ts` owns
+runtime stack normalization and labels for ranking framework, embedding,
+reranker, source diversity, fusion diagnostics, and quality-policy traces. The
+page should consume those model helpers for trace facts, cockpit reports, and
+run summaries instead of parsing `handoff_context` runtime metadata inline.
 The ranked-result panel should also render a compact package-level `Search
 answer` section before detailed readiness, facets, matrices, and hit cards.
 This section must derive from the backend retrieval package and show the
