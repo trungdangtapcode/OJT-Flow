@@ -275,6 +275,13 @@ RETRIEVAL_SPLIT_FILES = [
     / "features"
     / "retrieval"
     / "components"
+    / "run-comparison-summary-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
     / "result-facets.tsx",
     REPO_ROOT
     / "frontend"
@@ -1038,6 +1045,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "components"
         / "source-diversity-panel.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_run_comparison_summary_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "run-comparison-summary-panels.tsx"
+    ).read_text(encoding="utf-8")
     retrieval_strategy_standard_panels = (
         REPO_ROOT
         / "frontend"
@@ -1619,10 +1635,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "RunComparisonSourceDiversity" in retrieval_page
     assert "Source diversity comparison" in retrieval_page
     assert "RunComparisonOperatorSummary" in retrieval_page
-    assert "Comparison operator summary" in retrieval_page
+    assert "components/run-comparison-summary-panels" in retrieval_page
+    assert "function RunComparisonOperatorSummary" not in retrieval_page
+    assert "Comparison operator summary" in retrieval_run_comparison_summary_panels
     assert "comparisonOperatorSummary" in retrieval_page
     assert "operator_summary: comparisonOperatorSummary(comparison, recommendedActions)" in retrieval_page
-    assert "Review focus" in retrieval_page
+    assert "Review focus" in retrieval_run_comparison_summary_panels
     assert "sourceDiversityComparisonBetweenRuns" in retrieval_page
     assert "sourceDiversityComparison" in retrieval_page
     assert "source_diversity_regressed" in retrieval_page
@@ -1697,9 +1715,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "label=\"Top source\"" in retrieval_page
     assert "comparison.topSourceChanged ? \"changed\" : \"stable\"" in retrieval_page
     assert "RunComparisonDiagnosis" in retrieval_page
-    assert "Comparison diagnosis" in retrieval_page
+    assert "function RunComparisonDiagnosis" not in retrieval_page
+    assert "Comparison diagnosis" in retrieval_run_comparison_summary_panels
     assert "RunComparisonRecommendedActions" in retrieval_page
-    assert "Recommended actions" in retrieval_page
+    assert "function RunComparisonRecommendedActions" not in retrieval_page
+    assert "Recommended actions" in retrieval_run_comparison_summary_panels
     assert "const recommendedActions = React.useMemo" in retrieval_page
     assert "actions={recommendedActions}" in retrieval_page
     assert "comparisonReportFromComparison(comparison, judgments, recommendedActions)" in retrieval_page
@@ -1709,8 +1729,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "highest_priority" in retrieval_page
     assert "source_count" in retrieval_page
     assert "source_counts" in retrieval_page
-    assert "actionSummary.sources.map" in retrieval_page
-    assert "actionSummary.source_counts[source]" in retrieval_page
+    assert "actionSummary.sources.map" in retrieval_run_comparison_summary_panels
+    assert "actionSummary.source_counts[source]" in retrieval_run_comparison_summary_panels
     assert "priority: comparison.activeSummary.qualitySummary?.status === \"blocked\" ? 1 : 2" in retrieval_page
     assert "left.priority - right.priority" in retrieval_page
     assert "comparisonDiagnosisFromComparison" in retrieval_page
@@ -1746,9 +1766,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "judgment_count: judgments.length" in retrieval_page
     assert "retrieval_run_comparison" in retrieval_page
     assert "RunComparisonMetrics" in retrieval_page
-    assert "Overlap shows shared evidence" in retrieval_page
-    assert "churn shows how much the result set changed" in retrieval_page
-    assert "mean rank delta shows ordering instability" in retrieval_page
+    assert "function RunComparisonMetrics" not in retrieval_page
+    assert "Overlap shows shared evidence" in retrieval_run_comparison_summary_panels
+    assert "churn shows how much the result set changed" in retrieval_run_comparison_summary_panels
+    assert "mean rank delta shows ordering instability" in retrieval_run_comparison_summary_panels
     assert "RunComparisonRulePacks" in retrieval_page
     assert "rulePackChangesBetweenRuns" in retrieval_page
     assert "rulePackFingerprint" in retrieval_page
@@ -1757,7 +1778,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "retrievalRulePacksFromPackage" in retrieval_page
     assert "configured" in retrieval_page
     assert "content_hash" in retrieval_page
-    assert "Search comparison metrics" in retrieval_page
+    assert "Search comparison metrics" in retrieval_run_comparison_summary_panels
     assert "comparisonMetrics" in retrieval_page
     assert "overlapRatio" in retrieval_page
     assert "churnRate" in retrieval_page
