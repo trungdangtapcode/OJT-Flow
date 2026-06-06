@@ -81,6 +81,32 @@
       }
     },
     {
+      "concept_id": "systolic_blood_pressure",
+      "display_name": "Systolic blood pressure",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8480-6",
+      "source": "https://loinc.org/8480-6",
+      "aliases": ["systolic blood pressure", "sbp", "bp systolic", "sys bp", "bp sys"],
+      "metadata": {
+        "loinc_long_common_name": "Systolic blood pressure",
+        "preferred_units": ["mm[Hg]"]
+      }
+    },
+    {
+      "concept_id": "diastolic_blood_pressure",
+      "display_name": "Diastolic blood pressure",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8462-4",
+      "source": "https://loinc.org/8462-4",
+      "aliases": ["diastolic blood pressure", "dbp", "bp diastolic", "dia bp", "bp dia"],
+      "metadata": {
+        "loinc_long_common_name": "Diastolic blood pressure",
+        "preferred_units": ["mm[Hg]"]
+      }
+    },
+    {
       "concept_id": "metformin_medication",
       "display_name": "Metformin",
       "clinical_domain": "medication",
@@ -112,7 +138,7 @@
       "standard_system": "MeSH",
       "code": "D006973",
       "source": "https://www.ncbi.nlm.nih.gov/mesh?Cmd=DetailsSearch&Db=mesh&Term=%22Hypertension%22%5BMeSH+Terms%5D",
-      "aliases": ["hypertension", "high blood pressure", "blood pressure high"],
+      "aliases": ["hypertension", "high blood pressure", "blood pressure high", "htn", "bp"],
       "metadata": {
         "identifier_type": "MeSH Descriptor UI"
       }

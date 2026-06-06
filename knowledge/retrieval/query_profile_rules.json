@@ -64,6 +64,35 @@
       }
     },
     {
+      "rule_id": "profile_vital_signs_standardization",
+      "profile_id": "vital_signs_standardization",
+      "label": "Vital signs standardization",
+      "route": "clinical_vitals_grounding",
+      "complexity": "moderate",
+      "retrieval_mode": "hybrid_with_standard_coverage",
+      "description": "Use when the query is about blood pressure, vital signs, or LOINC/FHIR Observation grounding for vitals.",
+      "priority": 8,
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "vital_sign_blood_pressure",
+          "systolic_blood_pressure",
+          "diastolic_blood_pressure"
+        ],
+        "any_candidate_domains": [
+          "vital_signs"
+        ],
+        "any_tokens": [
+          "bp",
+          "htn",
+          "sbp",
+          "dbp"
+        ]
+      }
+    },
+    {
       "rule_id": "profile_literature_evidence",
       "profile_id": "literature_evidence",
       "label": "Literature evidence",

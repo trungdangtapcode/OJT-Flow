@@ -93,6 +93,30 @@
       "variant": "CSV malformed rows extra cells missing cells parse report conversion data quality"
     },
     {
+      "rule_id": "vital_sign_blood_pressure",
+      "concept": "vital_sign_blood_pressure",
+      "triggers": [
+        "blood pressure",
+        "bp",
+        "htn",
+        "sbp",
+        "dbp",
+        "systolic",
+        "diastolic",
+        "vital sign",
+        "vitals"
+      ],
+      "expanded_terms": [
+        "systolic blood pressure",
+        "diastolic blood pressure",
+        "LOINC blood pressure",
+        "FHIR Observation vital signs",
+        "mmHg"
+      ],
+      "standards": ["LOINC", "FHIR"],
+      "variant": "LOINC blood pressure systolic diastolic vital signs FHIR Observation mmHg"
+    },
+    {
       "rule_id": "phi_review_context",
       "concept": "sensitive_identifier_review",
       "triggers": ["patient_id", "patient identifier", "mrn", "dob", "ssn", "identifier"],

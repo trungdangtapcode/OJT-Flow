@@ -509,6 +509,42 @@ def test_query_analysis_detects_medication_and_analytics_routes() -> None:
     assert analytics.query_profile.profile_id == "observational_analytics"
 
 
+def test_query_analysis_expands_blood_pressure_shorthand() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="BP HTN readings need standard code and units",
+            fields=["sbp", "dbp", "unit"],
+            resource_type="Observation",
+        )
+    )
+
+    aspects = {aspect.aspect_id: aspect for aspect in analysis.query_aspects}
+    suggestions = {
+        (suggestion.field, suggestion.value): suggestion
+        for suggestion in analysis.filter_suggestions
+    }
+
+    assert "vital_sign_blood_pressure" in analysis.detected_concepts
+    assert "hypertension_subject" in analysis.detected_concepts
+    assert "systolic_blood_pressure" in analysis.detected_concepts
+    assert "diastolic_blood_pressure" in analysis.detected_concepts
+    assert {"FHIR", "LOINC", "MeSH"}.issubset(set(analysis.standards))
+    assert analysis.query_profile is not None
+    assert analysis.query_profile.profile_id == "vital_signs_standardization"
+    assert "vital_sign_bp_standardization" in aspects
+    assert aspects["vital_sign_bp_standardization"].suggested_filters == {
+        "standard_system": "LOINC"
+    }
+    assert ("standard_system", "LOINC") in suggestions
+    assert any(
+        detail.source == "query_expansion_rule"
+        and detail.metadata["rule_id"] == "vital_sign_blood_pressure"
+        for detail in analysis.query_variant_details
+    )
+    assert any("LOINC 8480-6" in variant for variant in analysis.query_variants)
+    assert any("LOINC 8462-4" in variant for variant in analysis.query_variants)
+
+
 def test_query_analysis_uses_data_driven_query_profile_rules(tmp_path, monkeypatch) -> None:
     registry_path = tmp_path / "query_profile_rules.json"
     registry_path.write_text(
@@ -1427,8 +1463,10 @@ def test_default_ranking_policy_protects_canonical_healthcare_sources() -> None:
     assert rules["boost_schema_source_match"]["weight"] >= 0.13
     assert rules["boost_loinc_hba1c_concept"]["weight"] >= 0.115
     assert rules["boost_fhir_observation_concept"]["weight"] >= 0.09
+    assert rules["boost_loinc_blood_pressure_concept"]["weight"] >= 0.105
     assert "schema" in rules["boost_schema_source_match"]["reason"].lower()
     assert "loinc" in rules["boost_loinc_hba1c_concept"]["reason"].lower()
+    assert "blood-pressure" in rules["boost_loinc_blood_pressure_concept"]["reason"].lower()
     assert "fhir" in rules["boost_fhir_observation_concept"]["reason"].lower()
 
 

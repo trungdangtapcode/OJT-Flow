@@ -62,6 +62,19 @@
       }
     },
     {
+      "rule_id": "boost_loinc_blood_pressure_concept",
+      "weight": 0.105,
+      "reason": "Prefer LOINC evidence when blood-pressure vital-sign concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["LOINC"],
+        "any_concepts": [
+          "vital_sign_blood_pressure",
+          "systolic_blood_pressure",
+          "diastolic_blood_pressure"
+        ]
+      }
+    },
+    {
       "rule_id": "boost_governance_for_sensitive_identifiers",
       "weight": 0.09,
       "reason": "Prefer governance policy evidence when sensitive identifier review is detected.",
