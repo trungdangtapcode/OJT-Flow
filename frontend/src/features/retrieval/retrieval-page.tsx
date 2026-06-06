@@ -75,10 +75,7 @@ import {
   ScoreExplanation,
   ScoreMeter,
 } from "./components/hit-explanation-panels";
-import {
-  EvaluationReadinessPanel,
-  JudgmentMetricCard,
-} from "./components/judgment-evaluation-panels";
+import { RelevanceJudgmentSummary } from "./components/judgment-evaluation-panels";
 import { NoResultRemediationPanel } from "./components/no-result-remediation-panel";
 import {
   QualitySignalList,
@@ -107,10 +104,13 @@ import {
 import {
   RunComparisonConceptGrounding,
   RunComparisonCoverage,
+  RunComparisonEvidenceChange,
   RunComparisonFacetCoverage,
   RunComparisonQualitySignals,
   RunComparisonQueryAspects,
   RunComparisonQueryProfile,
+  RunComparisonRankChanges,
+  RunComparisonRulePacks,
 } from "./components/run-comparison-detail-panels";
 import {
   RunComparisonAtAGlance,
@@ -1678,8 +1678,14 @@ function SearchRunComparison({
           facetComparisons={comparison.facetComparisons}
           formatCount={formatCount}
         />
-        <RunComparisonRulePacks rulePackChanges={comparison.rulePackChanges} />
-        <RunComparisonRankChanges rankChanges={comparison.rankChanges} />
+        <RunComparisonRulePacks
+          formatCount={formatCount}
+          rulePackChanges={comparisonRulePackChangeViews(comparison.rulePackChanges)}
+        />
+        <RunComparisonRankChanges
+          formatCount={formatCount}
+          rankChanges={comparison.rankChanges}
+        />
         <RunComparisonEvidenceChange
           evidenceIds={comparison.addedEvidenceIds}
           label="Added evidence"
@@ -1700,154 +1706,6 @@ function SearchRunComparison({
         Top source: {comparison.topSourceBefore ?? "none"} to{" "}
         {comparison.topSourceAfter ?? "none"}
       </div>
-    </div>
-  );
-}
-
-function RunComparisonRulePacks({
-  rulePackChanges,
-}: {
-  rulePackChanges: RetrievalRulePackChange[];
-}) {
-  const changedCount = rulePackChanges.filter((change) => change.status !== "stable").length;
-  if (!rulePackChanges.length) {
-    return (
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
-        <span className="text-xs font-bold text-muted-foreground">Rule packs</span>
-        <Badge variant="muted">not reported</Badge>
-      </div>
-    );
-  }
-  return (
-    <div className="grid gap-1">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-bold text-muted-foreground">Rule packs</span>
-        <Badge variant={changedCount ? "warning" : "success"}>
-          {changedCount ? formatCount(changedCount, "changed pack") : "stable"}
-        </Badge>
-      </div>
-      <div className="grid gap-1">
-        {rulePackChanges.slice(0, 4).map((change) => {
-          const activeFingerprint = rulePackFingerprint(change.active);
-          const baselineFingerprint = rulePackFingerprint(change.baseline);
-          return (
-            <div
-              className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
-              key={change.name}
-            >
-              <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="break-words font-bold">{change.name}</span>
-                <Badge variant={change.status === "stable" ? "success" : "warning"}>
-                  {change.status}
-                </Badge>
-              </span>
-              <span className="break-words text-muted-foreground">
-                {baselineFingerprint} to {activeFingerprint}
-              </span>
-            </div>
-          );
-        })}
-        {rulePackChanges.length > 4 ? (
-          <div className="text-xs font-semibold text-muted-foreground">
-            +{formatCount(rulePackChanges.length - 4, "more rule pack")}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function RunComparisonRankChanges({
-  rankChanges,
-}: {
-  rankChanges: RetrievalRankChange[];
-}) {
-  if (!rankChanges.length) {
-    return (
-      <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-bold text-muted-foreground">Rank movement</span>
-          <Badge variant="success">stable</Badge>
-        </div>
-        <SectionHelpText>
-          Stable rank means retained evidence kept the same ordering between baseline and active runs.
-        </SectionHelpText>
-      </div>
-    );
-  }
-  return (
-    <div className="grid gap-1">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-          Rank movement
-          <HelpTooltip label="Rank movement help">
-            Rank movement only compares evidence retained in both runs. An item moving up means it ranked closer to the top in the active run.
-          </HelpTooltip>
-        </span>
-        <Badge variant="warning">{formatCount(rankChanges.length, "changed rank")}</Badge>
-      </div>
-      <SectionHelpText>
-        Use rank movement to debug relevance tuning. Large movements can come from query wording, filters, reranking, or rule-pack changes.
-      </SectionHelpText>
-      <div className="grid gap-1">
-        {rankChanges.slice(0, 4).map((change) => (
-          <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
-            key={change.evidenceId}
-          >
-            <span className="break-words font-bold">{change.evidenceId}</span>
-            <span className="flex min-w-0 flex-wrap gap-1.5 text-muted-foreground">
-              <Badge variant={change.rankDelta < 0 ? "success" : "warning"}>
-                {change.rankDelta < 0 ? "up" : "down"} {Math.abs(change.rankDelta)}
-              </Badge>
-              <span>
-                #{change.fromRank} to #{change.toRank}
-              </span>
-            </span>
-          </div>
-        ))}
-        {rankChanges.length > 4 ? (
-          <div className="text-xs font-semibold text-muted-foreground">
-            +{formatCount(rankChanges.length - 4, "more changed rank")}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function RunComparisonEvidenceChange({
-  evidenceIds,
-  label,
-  variant,
-}: {
-  evidenceIds: string[];
-  label: string;
-  variant: "success" | "warning" | "muted";
-}) {
-  return (
-    <div className="grid gap-1">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-bold text-muted-foreground">{label}</span>
-        <Badge variant={variant}>{evidenceIds.length}</Badge>
-      </div>
-      {evidenceIds.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {evidenceIds.slice(0, 4).map((evidenceId) => (
-            <span
-              className="max-w-full break-words rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground"
-              key={evidenceId}
-            >
-              {evidenceId}
-            </span>
-          ))}
-          {evidenceIds.length > 4 ? (
-            <span className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground">
-              +{evidenceIds.length - 4}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1971,11 +1829,31 @@ function SearchResults({
           />
         ) : null}
         <RelevanceJudgmentSummary
+          copyTextToClipboard={copyTextToClipboard}
+          evaluationReportJson={
+            persistedJudgmentEvaluation
+              ? JSON.stringify(
+                  evaluationReportFromJudgmentSummary(
+                    persistedJudgmentEvaluation,
+                    judgmentMetrics,
+                    persistedJudgmentSummary,
+                    packageData,
+                  ),
+                  null,
+                  2,
+                )
+              : null
+          }
+          formatCount={formatCount}
+          formatDecimal={formatDecimal}
+          formatNullableDecimal={formatNullableDecimal}
+          formatNullablePercent={formatNullablePercent}
+          formatPercent={formatPercent}
           isSyncing={isJudgmentSyncing}
           metrics={judgmentMetrics}
-          packageData={packageData}
           persistedEvaluation={persistedJudgmentEvaluation}
           persistedSummary={persistedJudgmentSummary}
+          qualitySignalBadgeVariant={qualitySignalBadgeVariant}
         />
         <EvidenceReadinessPanel
           filterFieldLabel={filterFieldLabel}
@@ -2733,232 +2611,6 @@ function suggestedFilterAction(value: unknown): CoverageFilterAction | null {
     }
   }
   return null;
-}
-
-function RelevanceJudgmentSummary({
-  isSyncing,
-  metrics,
-  packageData,
-  persistedEvaluation,
-  persistedSummary,
-}: {
-  isSyncing: boolean;
-  metrics: RelevanceJudgmentMetrics;
-  packageData: RetrievalPackage;
-  persistedEvaluation: RetrievalJudgmentEvaluationResult | null;
-  persistedSummary: RetrievalRelevanceJudgmentSummary | null;
-}) {
-  const { copiedKey, markCopied } = useCopyFeedback();
-  const evaluationCopyKey = "judgment-evaluation-report";
-  const evaluationCopied = copiedKey === evaluationCopyKey;
-
-  const copyEvaluationReport = async () => {
-    if (!persistedEvaluation) return;
-    await copyTextToClipboard(
-      JSON.stringify(
-        evaluationReportFromJudgmentSummary(
-          persistedEvaluation,
-          metrics,
-          persistedSummary,
-          packageData,
-        ),
-        null,
-        2,
-      ),
-    );
-    markCopied(evaluationCopyKey);
-  };
-
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-muted-foreground">
-          Judgment metrics
-          <HelpTooltip label="Judgment metrics help">
-            Metrics summarize how many ranked hits have human relevance labels and how useful the current ranking looks for this query.
-          </HelpTooltip>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant={metrics.judgedCount ? "success" : "muted"}>
-            {formatCount(metrics.judgedCount, "judged hit")}
-          </Badge>
-          {persistedSummary ? (
-            <Badge variant={persistedSummary.total_count ? "success" : "muted"}>
-              {formatCount(persistedSummary.total_count, "stored label")}
-            </Badge>
-          ) : null}
-          {persistedEvaluation ? (
-            <Badge variant={persistedEvaluation.judged_count ? "success" : "warning"}>
-              server eval {formatCount(persistedEvaluation.judged_count, "judged")}
-            </Badge>
-          ) : null}
-          {isSyncing ? <Badge variant="warning">syncing</Badge> : null}
-          {persistedEvaluation ? (
-            <>
-              <Button
-                aria-label="Copy retrieval judgment evaluation report"
-                onClick={() => void copyEvaluationReport()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {evaluationCopied ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : (
-                  <Clipboard className="h-4 w-4" />
-                )}
-                {evaluationCopied ? "Copied" : "Copy evaluation JSON"}
-              </Button>
-              <HelpTooltip label="Judgment evaluation JSON report help">
-                Copies server relevance metrics, local judgment coverage, stored-label summary, recommendations, and query-profile context for retrieval tuning notes.
-              </HelpTooltip>
-            </>
-          ) : null}
-        </div>
-      </div>
-      <SectionHelpText>
-        Label top hits as relevant, partial, or not relevant. Coverage shows how much of the result set has labels; Precision@k and nDCG@k become meaningful only after enough judgments exist.
-      </SectionHelpText>
-      {persistedEvaluation ? (
-        <EvaluationReadinessPanel
-          evaluation={persistedEvaluation}
-          formatCount={formatCount}
-          formatPercent={formatPercent}
-        />
-      ) : null}
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <JudgmentMetricCard
-          label="Coverage"
-          tone={metrics.judgmentCoverage >= 0.5 ? "success" : "warning"}
-          value={formatPercent(metrics.judgmentCoverage)}
-        />
-        <JudgmentMetricCard
-          label="Precision@k"
-          tone={metrics.precisionAtK >= 0.5 ? "success" : "warning"}
-          value={formatPercent(metrics.precisionAtK)}
-        />
-        <JudgmentMetricCard
-          label="Judged precision"
-          tone={(metrics.judgedPrecision ?? 0) >= 0.5 ? "success" : "warning"}
-          value={formatNullablePercent(metrics.judgedPrecision)}
-        />
-        <JudgmentMetricCard
-          label="nDCG@k"
-          tone={(metrics.ndcgAtK ?? 0) >= 0.5 ? "success" : "warning"}
-          value={formatNullableDecimal(metrics.ndcgAtK)}
-        />
-      </div>
-      {persistedEvaluation ? (
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          <JudgmentMetricCard
-            label="Server coverage"
-            tone={persistedEvaluation.coverage_at_k >= 0.5 ? "success" : "warning"}
-            value={formatPercent(persistedEvaluation.coverage_at_k)}
-          />
-          <JudgmentMetricCard
-            label="Server HitRate@k"
-            tone={persistedEvaluation.hit_rate_at_k >= 1 ? "success" : "warning"}
-            value={formatPercent(persistedEvaluation.hit_rate_at_k)}
-          />
-          <JudgmentMetricCard
-            label="Server MAP@k"
-            tone={persistedEvaluation.average_precision_at_k >= 0.5 ? "success" : "warning"}
-            value={formatDecimal(persistedEvaluation.average_precision_at_k)}
-          />
-          <JudgmentMetricCard
-            label="Server MRR@k"
-            tone={persistedEvaluation.mrr_at_k >= 0.5 ? "success" : "warning"}
-            value={formatDecimal(persistedEvaluation.mrr_at_k)}
-          />
-          <JudgmentMetricCard
-            label="Server nDCG@k"
-            tone={(persistedEvaluation.ndcg_at_k ?? 0) >= 0.5 ? "success" : "warning"}
-            value={formatNullableDecimal(persistedEvaluation.ndcg_at_k ?? null)}
-          />
-          <JudgmentMetricCard
-            label="Server unjudged"
-            tone={persistedEvaluation.unjudged_count ? "warning" : "success"}
-            value={formatCount(persistedEvaluation.unjudged_count, "hit")}
-          />
-        </div>
-      ) : null}
-      {persistedEvaluation?.recommendations.length ? (
-        <div className="grid gap-2">
-          <div className="text-xs font-bold uppercase text-muted-foreground">
-            Evaluation recommendations
-          </div>
-          {persistedEvaluation.recommendations.map((recommendation) => {
-            const warning =
-              recommendation.severity === "warning" ||
-              recommendation.severity === "destructive" ||
-              recommendation.severity === "error";
-            return (
-              <div
-                className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
-                key={recommendation.rule_id}
-              >
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    {warning ? (
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                    ) : (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                    )}
-                    <span className="break-words font-bold">
-                      {humanize(recommendation.rule_id)}
-                    </span>
-                  </span>
-                  <Badge variant={qualitySignalBadgeVariant(recommendation.severity)}>
-                    {recommendation.metric}
-                  </Badge>
-                </div>
-                <div className="break-words text-muted-foreground">
-                  {recommendation.message}
-                </div>
-                <div className="break-words font-semibold text-foreground">
-                  {recommendation.suggested_action}
-                </div>
-                {recommendation.evidence_ids.length ? (
-                  <div className="flex min-w-0 flex-wrap gap-1">
-                    {recommendation.evidence_ids.slice(0, 4).map((evidenceId) => (
-                      <code
-                        className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px]"
-                        key={`${recommendation.rule_id}-${evidenceId}`}
-                      >
-                        {evidenceId}
-                      </code>
-                    ))}
-                    {recommendation.evidence_ids.length > 4 ? (
-                      <span className="text-xs font-semibold text-muted-foreground">
-                        +{recommendation.evidence_ids.length - 4} more
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-      {metrics.judgedCount ? (
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          <Badge variant="success">{formatCount(metrics.relevantCount, "relevant")}</Badge>
-          <Badge variant="warning">{formatCount(metrics.partialCount, "partial")}</Badge>
-          <Badge variant="destructive">
-            {formatCount(metrics.notRelevantCount, "not relevant")}
-          </Badge>
-          <Badge variant="muted">
-            average rating {formatNullableDecimal(metrics.averageRating)}
-          </Badge>
-          {persistedSummary?.latest_updated_at ? (
-            <Badge variant="muted">
-              stored avg {formatNullableDecimal(persistedSummary.average_rating ?? null)}
-            </Badge>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function activeFacetFiltersFromPayload(payload: RetrievalSearchPayload): ActiveFacetFilters {
@@ -4911,6 +4563,15 @@ function comparisonRunForActive(
     runs.find((run) => run.runId !== activeRunId) ??
     null
   );
+}
+
+function comparisonRulePackChangeViews(rulePackChanges: RetrievalRulePackChange[]) {
+  return rulePackChanges.map((change) => ({
+    activeFingerprint: rulePackFingerprint(change.active),
+    baselineFingerprint: rulePackFingerprint(change.baseline),
+    name: change.name,
+    status: change.status,
+  }));
 }
 
 function compareSearchRuns(
