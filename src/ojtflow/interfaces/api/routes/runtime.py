@@ -12,7 +12,6 @@ from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import (
     Settings,
     clear_settings_cache,
-    get_settings,
     runtime_assistant_settings,
     runtime_retrieval_settings,
     save_runtime_assistant_settings,
@@ -150,7 +149,7 @@ async def update_runtime_retrieval_settings(
 
     clear_settings_cache()
     clear_workflow_service_cache()
-    fresh_settings = get_settings()
+    fresh_settings = await get_api_settings()
     return ok(
         {
             "settings": runtime_retrieval_settings(fresh_settings),
@@ -179,7 +178,7 @@ async def update_runtime_assistant_settings(
 
     clear_settings_cache()
     clear_workflow_service_cache()
-    fresh_settings = get_settings()
+    fresh_settings = await get_api_settings()
     return ok(
         {
             "settings": runtime_assistant_settings(fresh_settings),

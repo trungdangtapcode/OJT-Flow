@@ -240,8 +240,5 @@ function localPythonExecutable(): string {
   const configuredPython = process.env.OJT_E2E_PYTHON?.trim();
   if (configuredPython) return configuredPython;
 
-  const workspaceVenvPython = path.resolve(repoRoot, "../.ostwin/.venv/bin/python");
-  if (fs.existsSync(workspaceVenvPython)) return workspaceVenvPython;
-
   return "python";
 }
