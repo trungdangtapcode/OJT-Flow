@@ -7,8 +7,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-gce
+  group: deploy-production
   cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+  REGISTRY: ghcr.io
+  PUBLIC_URL: ${{ vars.OJT_PUBLIC_URL }}
 
 jobs:
   backend:
@@ -21,7 +27,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
       - name: Install backend dependencies
@@ -50,7 +56,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -63,37 +69,81 @@ jobs:
         run: npm run build
 
   docker:
-    name: Docker build
+    name: Build and publish images
     runs-on: ubuntu-latest
     needs:
       - backend
       - frontend
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api_image: ${{ steps.images.outputs.api_image }}
+      frontend_image: ${{ steps.images.outputs.frontend_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build API image
-        run: docker build --build-arg OJT_PYTHON_EXTRAS=parsing -t ojtflow-api:ci .
+      - name: Prepare image names
+        id: images
+        run: |
+          repo="${GITHUB_REPOSITORY,,}"
+          tag="${GITHUB_SHA}"
+          {
+            echo "api_image=${REGISTRY}/${repo}/api:${tag}"
+            echo "frontend_image=${REGISTRY}/${repo}/frontend:${tag}"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Build frontend image
-        run: docker build -t ojtflow-frontend:ci ./frontend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.images.outputs.api_image }}
+          build-args: |
+            OJT_PYTHON_EXTRAS=parsing
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.images.outputs.frontend_image }}
+          build-args: |
+            VITE_API_BASE_URL=/api/v1
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
   deploy:
-    name: Deploy Docker Compose stack to GCE
+    name: Deploy to GCE
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: http://35.223.66.36:5173
+      url: ${{ env.PUBLIC_URL }}
     needs:
-      - backend
-      - frontend
       - docker
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        run: |
+          test -n "${PUBLIC_URL}" || {
+            echo "Set repository variable OJT_PUBLIC_URL before deploying." >&2
+            exit 1
+          }
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -104,30 +154,153 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Copy source to instance
+      - name: Write production compose file
+        env:
+          API_IMAGE: ${{ needs.docker.outputs.api_image }}
+          FRONTEND_IMAGE: ${{ needs.docker.outputs.frontend_image }}
         run: |
-          tar \
-            --exclude='.git' \
-            --exclude='frontend/node_modules' \
-            --exclude='frontend/dist' \
-            --exclude='node_modules' \
-            --exclude='var' \
-            --exclude='plan' \
-            --exclude='todo.txt' \
-            --exclude='image.png' \
-            --exclude='imge*.png' \
-            -czf /tmp/ojtflow-deploy.tgz .
-          gcloud compute scp /tmp/ojtflow-deploy.tgz "${{ secrets.GCE_INSTANCE }}:ojtflow-deploy-${{ github.run_id }}.tgz" \
+          cat > docker-compose.production.yml <<'COMPOSE'
+          services:
+            postgres:
+              image: pgvector/pgvector:pg16
+              environment:
+                POSTGRES_DB: ${OJT_POSTGRES_DB:-ojtflow}
+                POSTGRES_USER: ${OJT_POSTGRES_USER:-ojtflow}
+                POSTGRES_PASSWORD: ${OJT_POSTGRES_PASSWORD:-ojtflow}
+              ports:
+                - "${OJT_POSTGRES_PORT:-5432}:5432"
+              volumes:
+                - postgres_data:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+                interval: 5s
+                timeout: 5s
+                retries: 10
+
+            redis:
+              image: redis:7-alpine
+              ports:
+                - "${OJT_REDIS_PORT:-6379}:6379"
+              healthcheck:
+                test: ["CMD", "redis-cli", "ping"]
+                interval: 5s
+                timeout: 5s
+                retries: 10
+
+            api:
+              image: __API_IMAGE__
+              environment:
+                OJT_STORAGE_BACKEND: postgres
+                OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+                OJT_REDIS_URL: redis://redis:6379/0
+                OJT_DATA_DIR: /app/var
+                OJT_RUNTIME_SETTINGS_PATH: ${OJT_RUNTIME_SETTINGS_PATH:-/app/var/runtime_settings.json}
+                OJT_KNOWLEDGE_DIR: /app/knowledge
+                OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+                OJT_GOOGLE_CLIENT_ID: ${OJT_GOOGLE_CLIENT_ID:-}
+                OJT_GOOGLE_CLIENT_SECRET: ${OJT_GOOGLE_CLIENT_SECRET:-}
+                OJT_GOOGLE_REDIRECT_URI: ${OJT_GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/auth/google/callback}
+                OJT_GOOGLE_FRONTEND_REDIRECT_URI: ${OJT_GOOGLE_FRONTEND_REDIRECT_URI:-http://localhost:5173/auth/callback}
+                OJT_ALLOWED_AUTH_REDIRECT_URIS: ${OJT_ALLOWED_AUTH_REDIRECT_URIS:-}
+                OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS: ${OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS:-}
+                OJT_AUTH_COOKIE_SECURE: ${OJT_AUTH_COOKIE_SECURE:-false}
+                OJT_AUTH_COOKIE_SAMESITE: ${OJT_AUTH_COOKIE_SAMESITE:-lax}
+                OJT_AUTH_COOKIE_DOMAIN: ${OJT_AUTH_COOKIE_DOMAIN:-}
+                OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+                OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-deterministic}
+                OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-deterministic-hash-v0}
+                OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-64}
+                OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-disabled}
+                OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}
+                OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}
+                OJT_RETRIEVAL_CORPUS_DIRS: ${OJT_RETRIEVAL_CORPUS_DIRS:-/app/knowledge/corpus}
+              ports:
+                - "${OJT_API_PORT:-8000}:8000"
+              volumes:
+                - app_data:/app/var
+              depends_on:
+                postgres:
+                  condition: service_healthy
+                redis:
+                  condition: service_healthy
+              healthcheck:
+                test:
+                  [
+                    "CMD",
+                    "python",
+                    "-c",
+                    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()",
+                  ]
+                interval: 10s
+                timeout: 5s
+                retries: 12
+                start_period: 10s
+
+            frontend:
+              image: __FRONTEND_IMAGE__
+              ports:
+                - "${OJT_FRONTEND_PORT:-5173}:5173"
+              depends_on:
+                api:
+                  condition: service_healthy
+              healthcheck:
+                test:
+                  [
+                    "CMD",
+                    "wget",
+                    "-q",
+                    "-O",
+                    "/dev/null",
+                    "http://127.0.0.1:5173/",
+                  ]
+                interval: 10s
+                timeout: 5s
+                retries: 12
+                start_period: 10s
+
+          volumes:
+            postgres_data:
+            app_data:
+          COMPOSE
+          sed -i \
+            -e "s#__API_IMAGE__#${API_IMAGE}#g" \
+            -e "s#__FRONTEND_IMAGE__#${FRONTEND_IMAGE}#g" \
+            docker-compose.production.yml
+
+      - name: Copy compose file to instance
+        run: |
+          gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --zone "${{ secrets.GCE_ZONE }}" \
+            --command "sudo mkdir -p /opt/ojtflow && sudo chown -R \$(id -un):\$(id -gn) /opt/ojtflow"
+          gcloud compute scp docker-compose.production.yml "${{ secrets.GCE_INSTANCE }}:/opt/ojtflow/docker-compose.yml" \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}"
-          gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
-            --project "${{ secrets.GCP_PROJECT_ID }}" \
-            --zone "${{ secrets.GCE_ZONE }}" \
-            --command "sudo mkdir -p /opt/ojtflow && sudo tar --no-same-owner -xzf ~/ojtflow-deploy-${{ github.run_id }}.tgz -C /opt/ojtflow && rm -f ~/ojtflow-deploy-${{ github.run_id }}.tgz && sudo chown -R \$(id -un):\$(id -gn) /opt/ojtflow"
 
       - name: Deploy stack
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}" \
-            --command "cd /opt/ojtflow && sudo docker compose up -d --build --remove-orphans"
+            --command "cd /opt/ojtflow && echo '${GHCR_TOKEN}' | sudo docker login ghcr.io -u '${{ github.actor }}' --password-stdin && sudo docker compose pull && sudo docker compose up -d --remove-orphans"
+
+      - name: Verify deployment health
+        run: |
+          gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --zone "${{ secrets.GCE_ZONE }}" \
+            --command "cd /opt/ojtflow && sudo docker compose ps && curl -fsS http://127.0.0.1:\${OJT_FRONTEND_PORT:-5173}/health"
+          curl -fsS "${PUBLIC_URL}/health"
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "## Deployment"
+            echo
+            echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- API image: \`${{ needs.docker.outputs.api_image }}\`"
+            echo "- Frontend image: \`${{ needs.docker.outputs.frontend_image }}\`"
+            echo "- Public URL: ${PUBLIC_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
