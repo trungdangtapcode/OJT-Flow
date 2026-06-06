@@ -1205,6 +1205,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "model"
         / "retrieval-run-comparison.ts"
     ).read_text(encoding="utf-8")
+    retrieval_report_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-report-model.ts"
+    ).read_text(encoding="utf-8")
     retrieval_search_plan_tasks_model = (
         REPO_ROOT
         / "frontend"
@@ -1353,7 +1362,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "function queryAnalysisFromPlan" not in retrieval_page
     assert "function queryAnalysisFromPlan" in retrieval_query_analysis_model
     assert "retrievalSearchPlanPreviewReport" in retrieval_page
-    assert "retrieval_search_plan_preview" in retrieval_page
+    assert "function retrievalSearchPlanPreviewReport" not in retrieval_page
+    assert "function retrievalSearchPlanPreviewReport" in retrieval_report_model
+    assert "retrieval_search_plan_preview" in retrieval_report_model
     assert "SearchPlanTaskPreview" in retrieval_search_plan_preview
     assert "./search-plan-task-preview" in retrieval_search_plan_preview
     assert "function SearchPlanTaskPreview" not in retrieval_page
@@ -1695,17 +1706,23 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "matched_fields" in retrieval_strategy_standard_panels
     assert "matched_query_aspects" in retrieval_strategy_standard_panels
     assert "retrievalStandardSearchPlanReport" in retrieval_page
-    assert "standard_search_plan" in retrieval_page
+    assert "function retrievalStandardSearchPlanReport" not in retrieval_page
+    assert "function retrievalStandardSearchPlanReport" in retrieval_report_model
+    assert "standard_search_plan" in retrieval_report_model
     assert "RetrievalStandardSearchPlan" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
     assert "searchAnswerReportFromPackage" in retrieval_search_answer_model
     assert "retrieval_search_answer" in retrieval_search_answer_model
     assert "medical_search_hints" in retrieval_search_answer_model
-    assert "route_details" in retrieval_page
+    assert "route_details" in retrieval_report_model
     assert "retrievalDiversityReport" in retrieval_page
+    assert "function retrievalDiversityReport" not in retrieval_page
+    assert "function retrievalDiversityReport" in retrieval_report_model
     assert "diversity: retrievalDiversityReport(packageData)" in retrieval_page
     assert "retrievalInterpretationReport" in retrieval_page
+    assert "function retrievalInterpretationReport" not in retrieval_page
+    assert "function retrievalInterpretationReport" in retrieval_report_model
     assert "Copy answer JSON" in retrieval_search_answer
     assert "This is an evidence retrieval summary for workflow operations" in retrieval_search_answer
     assert "it is not clinical advice" in retrieval_inline_guide
@@ -1829,9 +1846,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "source_diversity: {" in retrieval_comparison_diagnosis_model
     assert "selected_source_delta" in retrieval_comparison_diagnosis_model
     assert "duplicate_selected_source_delta" in retrieval_comparison_diagnosis_model
-    assert "selected_hits: diversity.selectedHits.map" in retrieval_page
+    assert "selected_hits: diversity.selectedHits.map" in retrieval_report_model
     assert "diversitySelectionByEvidenceId" in retrieval_page
-    assert "selected_hits" in retrieval_page
+    assert "selected_hits" in retrieval_report_model
     assert "Diversity selection" in retrieval_hit_explanation_panels
     assert (
         "packageData.diversity ?? packageData.handoff_context.diversity"

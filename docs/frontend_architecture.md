@@ -608,6 +608,12 @@ summaries, query-aspect summaries, concept-grounding counts, quality-summary
 fingerprints, corrective-action summaries, and evidence ID lists. The page may
 compare summaries and compose reports, but it should not rebuild package-level
 run summaries inline.
+`frontend/src/features/retrieval/model/retrieval-report-model.ts` owns copied
+retrieval report JSON builders that are not React concerns, including search
+plan preview exports, fallback interpretation reports, standard-search-plan
+exports, source-diversity report payloads, and medical-search-hint route
+details. The page may pass current package/plan state into these builders, but
+should not assemble those report schemas inline.
 The ranked-result panel should also render a compact package-level `Search
 answer` section before detailed readiness, facets, matrices, and hit cards.
 This section must derive from the backend retrieval package and show the
@@ -929,7 +935,8 @@ Medical search hint rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/search-hint-list.tsx` owns hint
 copy/open actions, hint warnings, and route-detail metadata for endpoint scope,
 parameter examples, selected terminology/unit candidates, and lineage follow-up.
-The retrieval page owns only query-analysis extraction and report generation.
+The retrieval page owns only current package/plan state and passes it into the
+query-analysis and report-model helpers.
 The assistant route is the operator shortcut over those same backend contracts.
 The chat UI should call `/assistant/chat/stream` through the server-state
 boundary, render planning and tool-call events as they arrive, and stream OpenAI
