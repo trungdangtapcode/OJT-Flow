@@ -45,7 +45,6 @@ import {
 } from "../../lib/server-state";
 import { cn, humanize } from "../../lib/utils";
 import { ActiveFilterBar } from "./components/active-filter-bar";
-import { ConceptCandidateList } from "./components/concept-candidate-list";
 import { CoverageDiagnosticsPanel } from "./components/coverage-diagnostics-panel";
 import { EvidencePackBuckets } from "./components/evidence-pack-buckets";
 import { EvidenceInterpretationPanel } from "./components/evidence-interpretation-panel";
@@ -55,7 +54,6 @@ import {
   HitMatchExplanationPanel,
 } from "./components/evidence-interpretation-guidance";
 import { EvidenceReadinessPanel } from "./components/evidence-readiness-panel";
-import { FilterSuggestionList } from "./components/filter-suggestion-list";
 import {
   EvidenceProvenanceSummary,
   SnippetBlock,
@@ -97,9 +95,11 @@ import {
   RuntimeDiversityBadge,
   RuntimeRerankBadge,
 } from "./components/retrieval-runtime-status";
+import {
+  QueryAnalysisBlock,
+  type QueryAnalysisBlockView,
+} from "./components/query-analysis-block";
 import { QueryVariantList } from "./components/query-variant-list";
-import { QueryDiagnosticList } from "./components/query-diagnostic-list";
-import { QueryProfileCard } from "./components/query-profile-card";
 import {
   RetrievalSummaryStrip,
   type RetrievalSummaryStripViewModel,
@@ -127,7 +127,6 @@ import {
   type SearchPlanCoverageSummaryView,
 } from "./components/search-plan-summary-panels";
 import { SearchPresetStrip } from "./components/search-preset-strip";
-import { SearchHintList } from "./components/search-hint-list";
 import { SearchRunHistory } from "./components/search-run-history";
 import { SectionHelpText } from "./components/section-help-text";
 import { SourceInventoryPanel } from "./components/source-inventory-panel";
@@ -4076,9 +4075,10 @@ function TracePanel({
               onClearSourceScope={() => onClearFilter("source_id")}
             />
             <QueryAnalysisBlock
-              analysis={queryAnalysis}
-              appliedFilters={trace.filters_applied}
+              analysis={queryAnalysisBlockView(queryAnalysis, trace.filters_applied)}
+              formatCount={formatCount}
               isSearchPending={isSearchPending}
+              isSuggestionSupported={isSupportedFilterField}
               onApplyFilterSuggestion={onApplyFilterSuggestion}
             />
             <CoverageDiagnosticsPanel
@@ -4110,189 +4110,23 @@ function TracePanel({
   );
 }
 
-function QueryAnalysisBlock({
-  analysis,
-  appliedFilters,
-  isSearchPending,
-  onApplyFilterSuggestion,
-}: {
-  analysis: QueryAnalysisStack | null;
-  appliedFilters: Record<string, unknown>;
-  isSearchPending: boolean;
-  onApplyFilterSuggestion: (suggestion: FilterSuggestionStack) => void;
-}) {
+function queryAnalysisBlockView(
+  analysis: QueryAnalysisStack | null,
+  appliedFilters: Record<string, unknown>,
+): QueryAnalysisBlockView | null {
   if (!analysis) {
-    return <TraceFact label="Query analysis" value="unavailable" />;
+    return null;
   }
-  return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">
-          Query analysis
-        </div>
-        <Badge variant="muted">{analysis.strategy}</Badge>
-      </div>
-      <div className="grid gap-2 text-xs sm:grid-cols-4">
-        <QueryAnalysisCounter label="Concepts" value={analysis.detectedConcepts.length} />
-        <QueryAnalysisCounter label="Standards" value={analysis.standards.length} />
-        <QueryAnalysisCounter label="Rules" value={analysis.ruleIds.length} />
-        <QueryAnalysisCounter label="Variants" value={analysis.variantCount} />
-      </div>
-      <QueryProfileCard
-        filterEntries={
-          analysis.queryProfile
-            ? queryProfileFilterEntries(analysis.queryProfile, appliedFilters)
-            : []
-        }
-        isSearchPending={isSearchPending}
-        onApplyFilter={onApplyFilterSuggestion}
-        profile={analysis.queryProfile}
-      />
-      <QueryAspectPlan
-        appliedFilters={appliedFilters}
-        aspects={analysis.queryAspects}
-        isSearchPending={isSearchPending}
-        onApplyFilter={onApplyFilterSuggestion}
-      />
-      <QueryDiagnosticList diagnostics={analysis.diagnostics} />
-      <ConceptCandidateList candidates={analysis.conceptCandidates} />
-      <SearchHintList hints={analysis.searchHints} />
-      <TokenList items={analysis.detectedConcepts.map(humanize)} title="Detected concepts" />
-      <TokenList items={analysis.standards} title="Standard cues" />
-      <FilterSuggestionList
-        isSearchPending={isSearchPending}
-        isSuggestionSupported={isSupportedFilterField}
-        onApplySuggestion={onApplyFilterSuggestion}
-        suggestions={analysis.filterSuggestions}
-      />
-      <TokenList items={analysis.expandedTerms} title="Expanded terms" />
-    </div>
-  );
-}
-
-function QueryAspectPlan({
-  appliedFilters,
-  aspects,
-  isSearchPending,
-  onApplyFilter,
-}: {
-  appliedFilters: Record<string, unknown>;
-  aspects: QueryAspectStack[];
-  isSearchPending: boolean;
-  onApplyFilter: (suggestion: FilterSuggestionStack) => void;
-}) {
-  if (!aspects.length) {
-    return <TokenList items={[]} title="Search aspect plan" />;
-  }
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">
-          Search aspect plan
-        </div>
-        <Badge variant="muted">{formatCount(aspects.length, "aspect")}</Badge>
-      </div>
-      <div className="grid gap-2">
-        {aspects.map((aspect) => {
-          const filterEntries = queryAspectFilterEntries(aspect, appliedFilters);
-          return (
-            <div
-              className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
-              key={aspect.aspectId}
-            >
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="break-words font-bold">{aspect.label}</span>
-                <Badge variant="muted">priority {aspect.priority}</Badge>
-              </div>
-              <div className="break-words font-semibold text-foreground">
-                {aspect.question}
-              </div>
-              <div className="break-words text-muted-foreground">
-                {aspect.rationale}
-              </div>
-              {aspect.suggestedTerms.length ? (
-                <div className="flex min-w-0 flex-wrap gap-1">
-                  {aspect.suggestedTerms.slice(0, 5).map((term) => (
-                    <Badge key={`${aspect.aspectId}-${term}`} variant="muted">
-                      {term}
-                    </Badge>
-                  ))}
-                  {aspect.suggestedTerms.length > 5 ? (
-                    <Badge variant="muted">+{aspect.suggestedTerms.length - 5}</Badge>
-                  ) : null}
-                </div>
-              ) : null}
-              {filterEntries.length ? (
-                <div className="flex min-w-0 flex-wrap gap-1">
-                  {filterEntries.map((entry) => (
-                    <Badge
-                      key={`${aspect.aspectId}-${entry.field}`}
-                      variant={entry.applied ? "success" : "muted"}
-                    >
-                      {entry.label}={entry.displayValue}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
-              {filterEntries.length ? (
-                <div className="flex min-w-0 flex-wrap gap-1.5">
-                  {filterEntries.map((entry) =>
-                    entry.supported ? (
-                      <Button
-                        disabled={isSearchPending || entry.applied}
-                        key={`${aspect.aspectId}-${entry.field}-${entry.value}-apply`}
-                        onClick={() =>
-                          onApplyFilter({
-                            applied: false,
-                            confidence: 1,
-                            field: entry.field,
-                            reason: `Suggested by search aspect ${aspect.aspectId}.`,
-                            value: entry.value,
-                          })
-                        }
-                        size="sm"
-                        title={`Apply ${entry.label}=${entry.displayValue}`}
-                        type="button"
-                        variant={entry.applied ? "secondary" : "outline"}
-                      >
-                        {entry.applied ? (
-                          <CheckCircle2 className="h-4 w-4" />
-                        ) : isSearchPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ListFilter className="h-4 w-4" />
-                        )}
-                        {entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`}
-                      </Button>
-                    ) : (
-                      <Badge
-                        key={`${aspect.aspectId}-${entry.field}-${entry.value}-unsupported`}
-                        variant="warning"
-                      >
-                        unsupported {humanize(entry.field)}
-                      </Badge>
-                    ),
-                  )}
-                </div>
-              ) : null}
-              <code className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px] text-muted-foreground">
-                {aspect.ruleId}
-              </code>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function QueryAnalysisCounter({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border border-border bg-card px-2 py-1.5">
-      <div className="font-bold text-muted-foreground">{label}</div>
-      <div className="text-base font-black tabular-nums">{value}</div>
-    </div>
-  );
+  return {
+    ...analysis,
+    queryAspects: analysis.queryAspects.map((aspect) => ({
+      ...aspect,
+      filterEntries: queryAspectFilterEntries(aspect, appliedFilters),
+    })),
+    queryProfileFilterEntries: analysis.queryProfile
+      ? queryProfileFilterEntries(analysis.queryProfile, appliedFilters)
+      : [],
+  };
 }
 
 type RankingStack = {

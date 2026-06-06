@@ -676,6 +676,16 @@ filter suggestions; unsupported profile fields should remain visible but not
 actionable. Profile filter controls must compare against the submitted
 `trace.filters_applied` payload, not the live query-builder draft, so displayed
 applied state remains tied to the visible result package.
+Query-analysis composition should stay outside the page shell:
+`frontend/src/features/retrieval/components/query-analysis-block.tsx` owns the
+query-analysis card layout, counters, and child panel ordering. The retrieval
+page owns `queryAnalysisBlockView`, query-analysis parsing, submitted-filter
+applied-state derivation, supported-field policy, and callback wiring.
+Query profile rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/query-profile-card.tsx` owns the
+profile layout, badges, rule IDs, unsupported-field messaging, and explicit
+apply buttons. The retrieval page owns `queryProfileFilterEntries`, submitted
+filter applied-state derivation, and the apply callback.
 The same query-analysis panel should render `query_aspects` as a compact search
 aspect plan, including aspect label, review question, rationale, priority,
 suggested terms, suggested filters, and contributing rule ID. These aspects are
@@ -683,6 +693,12 @@ operator-visible decomposition guidance and must not silently run hidden
 subqueries or mutate filters. Supported aspect-suggested filters should use the
 same explicit apply path and submitted-filter applied-state checks as profile
 and query-analysis filter suggestions.
+Query aspect rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/query-aspect-plan.tsx` owns aspect
+cards, term chips, unsupported-field messaging, rule display, and explicit
+apply buttons. The retrieval page owns `queryAspectFilterEntries`, submitted
+filter applied-state derivation, supported-field policy, and the apply
+callback.
 Concept candidate rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/concept-candidate-list.tsx` owns the
 candidate card layout, clinical-domain chip, confidence chip, and matched-alias
