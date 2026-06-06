@@ -1659,7 +1659,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "DiversityMetricCard" in retrieval_source_diversity_panel
     assert "function DiversityMetricCard" not in retrieval_page
     assert "RunComparisonSourceDiversity" in retrieval_page
-    assert "Source diversity comparison" in retrieval_page
+    assert "function RunComparisonSourceDiversity" not in retrieval_page
+    assert "Source diversity comparison" in retrieval_source_diversity_panel
+    assert "SourceListDelta" in retrieval_source_diversity_panel
     assert "RunComparisonOperatorSummary" in retrieval_page
     assert "components/run-comparison-summary-panels" in retrieval_page
     assert "function RunComparisonOperatorSummary" not in retrieval_page
