@@ -154,6 +154,24 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Verify GCE project access
+        run: |
+          set +e
+          output="$(gcloud compute project-info describe \
+            --quiet \
+            --project "${{ secrets.GCP_PROJECT_ID }}" 2>&1)"
+          status=$?
+          set -e
+          if [ "${status}" -ne 0 ]; then
+            echo "${output}" >&2
+            if printf '%s' "${output}" | grep -qi "requires billing to be enabled"; then
+              echo "::error title=GCP billing disabled::Enable billing for the configured GCP project, wait for propagation, then rerun the deploy workflow."
+            else
+              echo "::error title=GCE access preflight failed::Check GCP_PROJECT_ID, Compute Engine API, service-account IAM, and the Workload Identity configuration."
+            fi
+            exit "${status}"
+          fi
+
       - name: Write production compose file
         env:
           API_IMAGE: ${{ needs.docker.outputs.api_image }}
@@ -270,10 +288,12 @@ jobs:
       - name: Copy compose file to instance
         run: |
           gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
+            --quiet \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}" \
             --command "sudo mkdir -p /opt/ojtflow && sudo chown -R \$(id -un):\$(id -gn) /opt/ojtflow"
           gcloud compute scp docker-compose.production.yml "${{ secrets.GCE_INSTANCE }}:/opt/ojtflow/docker-compose.yml" \
+            --quiet \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}"
 
@@ -282,6 +302,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
+            --quiet \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}" \
             --command "cd /opt/ojtflow && echo '${GHCR_TOKEN}' | sudo docker login ghcr.io -u '${{ github.actor }}' --password-stdin && sudo docker compose pull && sudo docker compose up -d --remove-orphans"
@@ -289,6 +310,7 @@ jobs:
       - name: Verify deployment health
         run: |
           gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
+            --quiet \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}" \
             --command "cd /opt/ojtflow && sudo docker compose ps && curl -fsS http://127.0.0.1:\${OJT_FRONTEND_PORT:-5173}/health"
