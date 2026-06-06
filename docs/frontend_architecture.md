@@ -556,6 +556,12 @@ Recent-run history rendering should stay outside the page shell:
 history cards, baseline buttons, profile badges, and embedded run-scope
 summaries. The page owns run list state, restore behavior, and comparison
 selection state.
+Search-run comparison container rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/search-run-comparison-panel.tsx`
+owns the comparison card, copy button state, baseline query row, summary/detail
+panel composition, and top-source footer. The page owns baseline selection,
+comparison model derivation, recommended-action policy, operator-summary
+derivation, rule-pack view derivation, and comparison report JSON assembly.
 The ranked-result panel should also render a compact package-level `Search
 answer` section before detailed readiness, facets, matrices, and hit cards.
 This section must derive from the backend retrieval package and show the
@@ -798,8 +804,8 @@ Run-comparison summary rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/run-comparison-summary-panels.tsx`
 owns the at-a-glance row, operator summary, diagnosis, recommended-action
 checklist, comparison metrics, and reusable comparison metric cards. The retrieval page owns
-comparison selection, report-copy behavior, recommended-action derivation,
-diagnosis derivation, and baseline/active run state.
+comparison selection, recommended-action derivation, diagnosis derivation,
+copied-report content, and baseline/active run state.
 Run-comparison detail rendering should also stay outside the page shell:
 `frontend/src/features/retrieval/components/run-comparison-detail-panels.tsx`
 owns the query-profile, concept-grounding, query-aspect, coverage-diagnostic,
