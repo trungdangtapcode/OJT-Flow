@@ -575,8 +575,15 @@ Search-run comparison container rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/search-run-comparison-panel.tsx`
 owns the comparison card, copy button state, baseline query row, summary/detail
 panel composition, and top-source footer. The page owns baseline selection,
-comparison model derivation, recommended-action policy, operator-summary
-derivation, rule-pack view derivation, and comparison report JSON assembly.
+comparison model derivation, and rule-pack view derivation.
+`frontend/src/features/retrieval/model/retrieval-comparison-diagnosis.ts`
+owns pure comparison diagnosis policy, recommended-action policy,
+recommended-action summary derivation, operator-summary derivation, and copied
+comparison report JSON assembly.
+`frontend/src/features/retrieval/model/retrieval-search-payload.ts` owns
+retrieval form serialization, planned-task search overrides, field parsing, and
+search signature construction. The retrieval page should import those helpers
+and keep React state/effects, not duplicate request payload policy.
 The ranked-result panel should also render a compact package-level `Search
 answer` section before detailed readiness, facets, matrices, and hit cards.
 This section must derive from the backend retrieval package and show the
@@ -819,8 +826,8 @@ Run-comparison summary rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/run-comparison-summary-panels.tsx`
 owns the at-a-glance row, operator summary, diagnosis, recommended-action
 checklist, comparison metrics, and reusable comparison metric cards. The retrieval page owns
-comparison selection, recommended-action derivation, diagnosis derivation,
-copied-report content, and baseline/active run state.
+comparison selection and baseline/active run state; comparison policy rules and
+copied-report content should stay in `retrieval-comparison-diagnosis.ts`.
 Run-comparison detail rendering should also stay outside the page shell:
 `frontend/src/features/retrieval/components/run-comparison-detail-panels.tsx`
 owns the query-profile, concept-grounding, query-aspect, coverage-diagnostic,
