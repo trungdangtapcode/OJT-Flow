@@ -182,6 +182,19 @@ def _clinical_domain_for(path: Path, text: str) -> str:
     if any(
         term in inspected
         for term in [
+            "allergy",
+            "allergies",
+            "intolerance",
+            "allergyintolerance",
+            "adverse reaction",
+            "reaction manifestation",
+            "latex sensitivity",
+        ]
+    ):
+        return "allergy"
+    if any(
+        term in inspected
+        for term in [
             "condition",
             "diagnosis",
             "diagnoses",

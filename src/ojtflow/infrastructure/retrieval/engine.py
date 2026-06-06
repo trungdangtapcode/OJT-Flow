@@ -3464,6 +3464,23 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             locator={"standard": "HL7 FHIR R4 Condition"},
         ),
         KnowledgeChunk(
+            chunk_id="chunk_standard_fhir_allergyintolerance_v0",
+            source_id="standard:fhir_allergyintolerance_r4",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="FHIR AllergyIntolerance R4",
+            source_version="R4",
+            content=(
+                "FHIR AllergyIntolerance represents allergy, intolerance, and risk "
+                "of adverse reaction to a substance. A FHIR-like AllergyIntolerance "
+                "profile should preserve resourceType, code, patient, clinicalStatus, "
+                "verificationStatus, reaction manifestation, reaction substance, "
+                "recorder/source, and uncertainty before safety use."
+            ),
+            clinical_domain="allergy",
+            standard_system="FHIR",
+            locator={"standard": "HL7 FHIR R4 AllergyIntolerance"},
+        ),
+        KnowledgeChunk(
             chunk_id="chunk_terminology_loinc_lab_codes_v0",
             source_id="terminology:loinc",
             source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
@@ -3506,6 +3523,21 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             locator={"standard": "RxNorm"},
         ),
         KnowledgeChunk(
+            chunk_id="chunk_terminology_rxnorm_allergy_substances_v0",
+            source_id="terminology:rxnorm_allergy_substances",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="RxNorm Allergy Substance Grounding",
+            content=(
+                "RxNorm can ground medication ingredient or product identity in "
+                "allergy and intolerance records. OJTFlow should preserve the "
+                "original substance text, mapping confidence, and verification "
+                "status before using ingredient-level evidence in safety workflows."
+            ),
+            clinical_domain="allergy",
+            standard_system="RxNorm",
+            locator={"standard": "RxNorm"},
+        ),
+        KnowledgeChunk(
             chunk_id="chunk_terminology_snomed_ct_conditions_v0",
             source_id="terminology:snomed_ct",
             source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
@@ -3517,6 +3549,21 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
                 "FHIR Condition or analytics mapping."
             ),
             clinical_domain="problem_list",
+            standard_system="SNOMED CT",
+            locator={"standard": "SNOMED CT"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_terminology_snomed_ct_allergy_findings_v0",
+            source_id="terminology:snomed_ct_allergy",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="SNOMED CT Allergy Findings",
+            content=(
+                "SNOMED CT can ground allergy, sensitivity, intolerance, and reaction "
+                "manifestation concepts. Retrieval should treat SNOMED CT allergy "
+                "matches as review evidence and keep clinicalStatus, verificationStatus, "
+                "severity, and source provenance explicit."
+            ),
+            clinical_domain="allergy",
             standard_system="SNOMED CT",
             locator={"standard": "SNOMED CT"},
         ),

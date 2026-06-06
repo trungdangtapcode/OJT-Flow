@@ -2086,9 +2086,12 @@ def _search_hints(
         hints.append(_clinicaltrials_search_hint(query, concept_candidates=concept_candidates))
     if "regulatory_drug_safety_search" in concept_set or "openFDA" in standard_set:
         hints.extend(_openfda_search_hints(query, concept_candidates=concept_candidates))
+    if "fhir_allergyintolerance_profile" in concept_set:
+        hints.append(_allergyintolerance_search_hint(query))
     if (
         "fhir_observation_profile" in concept_set
         or "fhir_condition_profile" in concept_set
+        or "fhir_allergyintolerance_profile" in concept_set
         or query.resource_type
     ):
         hints.append(_fhir_search_hint(query))
@@ -2215,6 +2218,35 @@ def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
                     "purpose": "Return access/use audit events tied to the matched entity when supported by the concrete server.",
                 },
             ],
+            "capability_warning": (
+                "Verify the concrete FHIR server CapabilityStatement before execution."
+            ),
+        },
+    )
+
+
+def _allergyintolerance_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
+    resource_seed = _fhir_search_resource("AllergyIntolerance")
+    parameter_examples = _fhir_parameter_examples(
+        resource_seed,
+        query_fields=query.fields,
+    )
+    template = (
+        " ; ".join(example["example"] for example in parameter_examples[:4])
+        if parameter_examples
+        else "AllergyIntolerance?patient=<patient-id>&code=<substance-or-finding-code>"
+    )
+    target = _search_hint_target("allergyintolerance")
+    return RetrievalSearchHint(
+        target=target.target,
+        query=template,
+        rationale=target.rationale,
+        warnings=list(target.warnings),
+        metadata={
+            "resource_type": "AllergyIntolerance",
+            "registry_version": _fhir_search_registry_version(),
+            "clinical_domain": resource_seed.clinical_domain if resource_seed else "allergy",
+            "parameter_examples": parameter_examples,
             "capability_warning": (
                 "Verify the concrete FHIR server CapabilityStatement before execution."
             ),

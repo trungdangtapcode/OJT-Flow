@@ -187,9 +187,7 @@
         "diagnosis",
         "diagnoses",
         "problem list",
-        "problem-list",
-        "clinicalstatus",
-        "verificationstatus"
+        "problem-list"
       ],
       "expanded_terms": [
         "FHIR Condition",
@@ -198,7 +196,7 @@
         "clinicalStatus",
         "verificationStatus"
       ],
-      "standards": ["FHIR"],
+      "standards": ["FHIR", "SNOMED CT"],
       "variant": "FHIR Condition code subject clinicalStatus verificationStatus problem list diagnosis"
     },
     {
@@ -208,8 +206,6 @@
         "icd",
         "icd-10",
         "icd-10-cm",
-        "snomed",
-        "snomed ct",
         "diagnosis code",
         "diagnosis coding",
         "condition code",
@@ -225,9 +221,34 @@
       "variant": "ICD-10-CM diagnosis code SNOMED CT clinical finding FHIR Condition code"
     },
     {
+      "rule_id": "fhir_allergyintolerance_profile",
+      "concept": "fhir_allergyintolerance_profile",
+      "triggers": [
+        "allergy",
+        "allergies",
+        "intolerance",
+        "intolerances",
+        "allergyintolerance",
+        "adverse reaction",
+        "adverse reactions",
+        "reaction substance",
+        "manifestation"
+      ],
+      "expanded_terms": [
+        "FHIR AllergyIntolerance",
+        "AllergyIntolerance.code",
+        "AllergyIntolerance.patient",
+        "clinicalStatus",
+        "verificationStatus",
+        "reaction.manifestation"
+      ],
+      "standards": ["FHIR", "SNOMED CT", "RxNorm"],
+      "variant": "FHIR AllergyIntolerance code patient clinicalStatus verificationStatus reaction manifestation substance"
+    },
+    {
       "rule_id": "medication_normalization",
       "concept": "medication_normalization",
-      "triggers": ["medication", "medications", "drug", "drugs", "rxnorm", "ndc", "dose"],
+      "triggers": ["medication", "medications", "drug", "drugs", "ndc", "dose"],
       "expanded_terms": [
         "RxNorm normalized medication concept",
         "drug code mapping",

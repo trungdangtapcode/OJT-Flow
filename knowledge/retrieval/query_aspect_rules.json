@@ -173,8 +173,7 @@
           "essential_hypertension_icd10cm_seed"
         ],
         "any_standards": [
-          "ICD-10-CM",
-          "SNOMED CT"
+          "ICD-10-CM"
         ],
         "any_candidate_domains": [
           "problem_list"
@@ -183,8 +182,44 @@
           "diagnosis",
           "diagnoses",
           "condition",
-          "icd",
-          "snomed"
+          "icd"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_allergy_intolerance_grounding",
+      "aspect_id": "allergy_intolerance_grounding",
+      "label": "Allergy and intolerance grounding",
+      "question": "Which FHIR AllergyIntolerance fields, reaction evidence, and substance terminology should ground the allergy record?",
+      "rationale": "Allergy and intolerance records need patient, substance/code, clinical status, verification status, reaction manifestation, and uncertainty preserved before safety use.",
+      "priority": 37,
+      "suggested_terms": [
+        "FHIR AllergyIntolerance",
+        "AllergyIntolerance.code",
+        "AllergyIntolerance.clinicalStatus",
+        "AllergyIntolerance.verificationStatus",
+        "reaction.manifestation",
+        "SNOMED CT allergy finding",
+        "RxNorm ingredient"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "allergy"
+      },
+      "match": {
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed",
+          "latex_allergy_seed"
+        ],
+        "any_candidate_domains": [
+          "allergy"
+        ],
+        "any_tokens": [
+          "allergy",
+          "allergies",
+          "intolerance",
+          "reaction",
+          "manifestation"
         ]
       }
     },
@@ -207,10 +242,6 @@
         "any_concepts": [
           "medication_normalization",
           "regulatory_drug_safety_search"
-        ],
-        "any_standards": [
-          "RxNorm",
-          "openFDA"
         ],
         "any_candidate_domains": [
           "medication"

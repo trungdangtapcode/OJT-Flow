@@ -227,6 +227,43 @@
       }
     },
     {
+      "concept_id": "penicillin_allergy_seed",
+      "display_name": "Penicillin allergy",
+      "clinical_domain": "allergy",
+      "standard_system": "RxNorm",
+      "code": "70618",
+      "source": "https://rxnav.nlm.nih.gov/REST/rxcui/70618/allrelated",
+      "aliases": [
+        "penicillin allergy",
+        "pcn allergy",
+        "penicillin reaction",
+        "penicillin intolerance",
+        "allergy to penicillin"
+      ],
+      "metadata": {
+        "coding_system_scope": "ingredient-level allergy substance seed",
+        "review_note": "Use as retrieval grounding only; final allergy status and severity require clinician review."
+      }
+    },
+    {
+      "concept_id": "latex_allergy_seed",
+      "display_name": "Latex allergy",
+      "clinical_domain": "allergy",
+      "standard_system": "SNOMED CT",
+      "code": "300916003",
+      "source": "https://browser.ihtsdotools.org/",
+      "aliases": [
+        "latex allergy",
+        "latex reaction",
+        "allergy to latex",
+        "latex sensitivity"
+      ],
+      "metadata": {
+        "coding_system_scope": "clinical finding seed",
+        "review_note": "Use as retrieval grounding only; final allergy status and severity require clinician review."
+      }
+    },
+    {
       "concept_id": "kidney_failure_chronic_subject",
       "display_name": "Kidney Failure, Chronic",
       "clinical_domain": "literature",
