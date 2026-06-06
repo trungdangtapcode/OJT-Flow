@@ -52,6 +52,28 @@ Retrieval behavior:
   evidence rather than local schema evidence alone.
 - Keep dose, route, frequency, and status as separate evidence dimensions.
 
+## Vital Signs
+
+Primary standards:
+
+- FHIR Observation for vital-sign resource structure.
+- LOINC for vital-sign observation identity.
+- UCUM for computable vital-sign units.
+
+Common seed concepts:
+
+- Systolic blood pressure: LOINC `8480-6`.
+- Diastolic blood pressure: LOINC `8462-4`.
+
+Retrieval behavior:
+
+- Expand common clinical shorthand such as `BP`, `SBP`, `DBP`, and `HTN` into
+  explicit blood-pressure evidence queries before ranking.
+- Prefer separate systolic and diastolic evidence over a combined free-text
+  blood-pressure label when validating or explaining structured records.
+- Preserve raw readings and units while surfacing candidate LOINC/UCUM
+  grounding for review.
+
 ## Literature And Evidence Search
 
 Primary standards and datasets:
