@@ -46,6 +46,15 @@ serves `/usr/share/nginx/html` through NGINX. NGINX owns SPA fallback, immutable
 asset caching, no-store HTML caching, security headers, and same-origin proxying
 for `/api/` and `/health`.
 
+Feature routes are lazy-loaded at the TanStack Router boundary. The app shell,
+auth gate, and providers stay eager, but assistant, retrieval, workflows,
+workbench, reviews, schemas, audit, settings, and help pages must be imported
+with `React.lazy`/`Suspense` so the initial operations route does not download
+heavy search or assistant UI code until the user visits those routes.
+Primary app-shell navigation uses TanStack Router `preload="intent"` so lazy
+route chunks start loading on hover/focus, preserving fast navigation without
+returning to eager feature imports.
+
 The frontend Docker build context should contain only files required by the
 Dockerfile: package manifests, Vite/TypeScript config, `index.html`, `src`, and
 `nginx.conf`. Local Playwright tests, screenshots, auth state, generated build
@@ -95,6 +104,15 @@ the Evidence tab so operators can distinguish trusted evidence from
 safety-sensitive query context. Graph handoff summary must also be visible in
 the Evidence tab whenever the backend emits `graph_context`, because evidence
 without entity/triple visibility is too weak for regulated review.
+Retrieval runtime status rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/retrieval-runtime-status.tsx` owns
+the compact runtime status strip, graph-handoff display, rerank/diversity
+badges, and index-integrity report layout. The status strip should show
+retrieval mode, reranker state, graph handoff readiness, and index integrity
+before detailed trace panels so non-expert operators can orient themselves
+without reading raw trace JSON. The retrieval page owns package/ranking/diversity
+derivation, prioritized integrity check selection, hash formatting, and
+refresh/toggle callbacks.
 The workflow detail implementation keeps this split visible in code:
 `workflow-detail.tsx` is the query and tab-routing shell,
 `workflow-detail-chrome.tsx` owns loading/failure/fact-strip chrome,
@@ -143,11 +161,182 @@ because exact source scope can over-constrain evidence. Exact source scope
 controls must explain that the search is constrained to one source, show when a
 source is applied, and tell operators to clear it before judging corpus-wide
 coverage.
+Exact source scope selection should stay outside the page shell:
+`frontend/src/features/retrieval/components/source-scope-picker.tsx` owns the
+source picker UI and local source-search display behavior. The page owns only
+the selected source ID state and search rerun behavior.
+Trusted source inventory should also stay outside the page shell:
+`frontend/src/features/retrieval/components/source-inventory-panel.tsx` owns
+inventory search/filter state, source-readiness presentation, source cards, and
+the Use source action surface. The retrieval page should pass loaded sources and
+the exact-source callback only; it should not own inventory filtering details.
+Active search constraints should also stay outside the page shell:
+`frontend/src/features/retrieval/components/active-filter-bar.tsx` owns the
+selected metadata filter chips and clear actions. The page owns only supported
+filter state, formatting, and rerun behavior.
+Submitted-search display should stay outside the result shell:
+`frontend/src/features/retrieval/components/submitted-search-summary.tsx` owns
+the submitted request card and restore control. The page/result shell passes the
+submitted payload plus already-derived filter chips so filter derivation remains
+centralized.
+The first-run empty-state guide is a standalone presentation concern:
+`frontend/src/features/retrieval/components/first-run-guide.tsx` owns the guide
+content and the page shell should only compose `RetrievalFirstRunGuide`.
+The always-visible retrieval orientation guide is also standalone:
+`frontend/src/features/retrieval/components/retrieval-inline-guide.tsx` owns
+the compact "how to read Retrieval" walkthrough and manual link. It must stay
+presentation-only and should not import retrieval service hooks or derive search
+state.
+The top-level retrieval summary strip is presentation-only:
+`frontend/src/features/retrieval/components/retrieval-summary-strip.tsx` owns
+the five summary facts layout. The page computes the runtime/search/readiness
+view model from backend contracts and passes display-ready values into the strip.
+Retrieval presets should also stay outside the page shell:
+`frontend/src/features/retrieval/components/search-preset-strip.tsx` owns preset
+search, category filtering, loading/empty states, and preset rows. The page owns
+only loading presets from the server and applying a selected preset to the query
+builder state.
+Small retrieval trace and graph facts should also stay outside the page shell:
+`frontend/src/features/retrieval/components/trace-fact.tsx` owns trace label/value
+rows and `frontend/src/features/retrieval/components/graph-counter.tsx` owns the
+Graph-NER handoff count tiles. These are leaf display primitives; they should
+not import retrieval hooks, mutate query state, or derive backend policy.
+Reusable metric/fact tiles should use
+`frontend/src/features/retrieval/components/metric-primitives.tsx`. Integrity
+counts, integrity facts, and source-readiness counts are shared visual primitives;
+the page and panels remain responsible for backend data, filtering, and policy
+decisions.
+Retrieval cockpit health and readiness presentation should stay outside the
+page shell: `frontend/src/features/retrieval/components/search-cockpit-panels.tsx`
+owns query-health cards, readiness checklist cards, and cockpit metric cards.
+The page derives the health/readiness arrays and passes filter-clear callbacks;
+the component should not import retrieval hooks or construct backend reports.
+Source-diversity presentation should stay outside the page shell:
+`frontend/src/features/retrieval/components/source-diversity-panel.tsx` owns the
+source diversity explanation, metric cards, and selected-hit rationale rows. The
+page derives the diversity stack from backend trace metadata and uses the
+exported view-model type where needed.
+Strategy and standards-aware search-plan presentation should stay outside the
+page shell: `frontend/src/features/retrieval/components/strategy-standard-panels.tsx`
+owns strategy recommendation cards, healthcare search-plan cards, route badges,
+match-reason chips, and governance notes. The page passes the backend plan,
+recommendations, and supported-filter action callback without duplicating row
+rendering.
+Evidence-readiness presentation should stay outside the page shell:
+`frontend/src/features/retrieval/components/evidence-readiness-panel.tsx` owns
+required-bucket readiness, missing-bucket rows, readiness interpretation, and
+quality summary badges. The page passes backend package data plus supported
+filter helpers so the component does not parse metadata or own retrieval policy.
+Result facet refinement should stay outside the page shell:
+`frontend/src/features/retrieval/components/result-facets.tsx` owns facet section
+layout and facet button presentation. The page owns active filter state and
+rerun behavior.
+Corrective-action presentation should stay outside the page shell:
+`frontend/src/features/retrieval/components/recommended-actions-panel.tsx` owns
+recommended-action rows, action badges, and apply/broaden controls. The page
+keeps the backend-derived action-to-filter helpers and passes them as explicit
+callbacks so retrieval policy does not drift into component rendering.
+Judgment evaluation presentation should stay outside the page shell:
+`frontend/src/features/retrieval/components/judgment-evaluation-panels.tsx` owns
+readiness-status rendering and judgment metric cards. The page owns relevance
+metric calculation, server evaluation loading, and copy-report behavior.
+Relevance judgment controls should stay outside the page shell:
+`frontend/src/features/retrieval/components/relevance-judgment-control.tsx` owns
+the judgment label, badge rendering, option buttons, and operator help text. The
+page owns persisted judgment state, mutation hooks, and relevance metric
+calculation so judgment policy stays explicit and testable.
+After a search, the left rail should show a compact search-plan preview before
+run history. It should be derived from `RetrievalPackage` and the submitted
+search payload, not from local heuristics. The preview should show the backend
+route/profile, query aspects, query rewrites, external medical search hints, and
+execution tasks plus filter suggestions so non-expert users can understand what
+the system searched for before reading ranked evidence or trace internals.
+Search-plan preview rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/search-plan-preview.tsx` owns the
+route decision card, copy-plan button, task/coverage/risk composition, and
+suggested-filter rows. The retrieval page owns query-analysis derivation,
+plan/result freshness, and the exported report object passed into the copy
+callback.
+Execution-task rows should be actionable with target-aware behavior: local
+corpus tasks run through the normal retrieval mutation/history path and update
+visible query/filter controls. external medical-index tasks open their backend-provided follow-up URL
+when available instead of pretending to be local retrieval. Every task row must
+also expose a copy-query action so syntax-only external tasks remain usable.
+Search-plan task rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/search-plan-task-preview.tsx` owns
+task grouping, row actions, copy-query controls, and remaining-task disclosure.
+`frontend/src/features/retrieval/model/search-plan-tasks.ts` owns deterministic
+task ordering, clipboard text, action labels, action descriptions, and external
+URL extraction. The retrieval page should pass callbacks and should not duplicate
+task row presentation logic.
+Search-plan summary panel rendering should also stay outside the page shell:
+`frontend/src/features/retrieval/components/search-plan-summary-panels.tsx` owns
+plan coverage, execution summary, and risk signal presentation. The retrieval
+page derives coverage/task/risk view models from backend contracts, then passes
+display-ready values into those panels.
+Search-plan detail panel rendering should stay in
+`frontend/src/features/retrieval/components/search-plan-detail-panels.tsx`.
+That file owns aspect rows, query rewrite rows, medical search hints, and filter
+suggestion rows. The page remains responsible for backend plan loading,
+normalizing query-analysis records, and applying supported filters.
+Supported filter suggestions in the same preview should also be actionable
+before full search. Applying one must reuse the normal filter/query-builder path:
+plan-only previews update visible controls without immediately running search,
+while fresh completed-package previews may refresh ranked evidence with the new
+filter. The action should disable itself while the suggestion is already applied
+or search is pending. Plan-only filter application should show an inline confirmation near the active filter controls
+telling the operator to run search to refresh evidence.
+The same preview must include a plan coverage summary before task details:
+required local tasks, optional external follow-ups, inferred standards, filter
+count, and any plan warnings. This is a pre-search readiness view over backend
+plan fields, not a second frontend retrieval policy. Prefer
+`RetrievalPlan.coverage_summary`; a frontend-derived summary is only a
+compatibility fallback for completed packages or older plan payloads. The
+coverage card should show `coverage_summary.next_action` as the primary operator
+instruction before task details.
+The preview should also show `RetrievalPlan.task_summary` as the execution
+summary before individual task rows. This summary is the backend source of truth
+for runnable local tasks, required first actions, manual external follow-ups,
+blocked tasks, and the operator-facing `primary_action`; the frontend may derive
+the same shape only as a compatibility fallback. The summary panel should expose
+guided actions for running the first required local task and copying external
+medical follow-up queries so the plan can be acted on without scanning all task
+rows.
+The same summary panel must include a plain-language run order for non-expert
+operators: run required local corpus tasks first, apply supported filters when
+needed, then review external medical-index follow-ups as manual context. Each
+task row should also include a compact "What happens" explanation derived from
+`target` and `action_type` so users can distinguish governed OJTFlow evidence searches
+from external links or copied manual queries before clicking an action.
+Task rows should be grouped by target: local OJTFlow searches first, then
+external follow-ups. This prevents a long list of manual medical-index links
+from hiding the actions that can actually refresh governed evidence inside the
+app, and it makes empty states explicit when one class of task is absent. Each
+group should keep the first tasks visible and expose overflow through an inline
+"Show remaining" disclosure so no backend-generated task is lost behind a copy
+JSON escape hatch. Each group should also show required and optional task counts
+using the backend `required` flag so non-expert operators can prioritize before
+opening individual task rows. Within each group, required tasks should render
+before optional tasks, then by backend priority and label; the backend task plan
+remains unchanged, but the grouped UI reflects the operator priority model.
+Each group should provide a copy action for all queries in that group
+so operators can export only local OJTFlow searches or only external follow-ups
+without copying the full search-plan JSON. Task clipboard exports should use one
+shared formatter and include required/optional status, priority, target, action,
+query text, and URL when an external follow-up has one.
+The preview should also show `RetrievalPlan.risk_signals[]` as a compact
+pre-search risk panel. Frontend fallback signals may only adapt existing
+diagnostics/coverage for compatibility; new risk policy belongs in the backend.
 When a completed search returns zero ranked hits, the result panel must render
 operator remediation instead of a generic empty state: candidate count, active
 submitted filters, missing required evidence buckets, source-inventory guidance,
 direct controls to clear exact source scope or all active metadata filters, and
 any supported backend corrective filter.
+Zero-hit remediation presentation should stay outside the page shell:
+`frontend/src/features/retrieval/components/no-result-remediation-panel.tsx`
+owns the operator guidance cards and filter-clear/apply controls. The page owns
+submitted-filter derivation, missing-bucket counts, candidate counts, and
+backend corrective-action selection.
 The route
 loads search presets from `/retrieval/presets` so healthcare examples and
 default query-builder state are managed as trusted knowledge data rather than
@@ -169,6 +358,14 @@ the final score contributions without opening raw JSON. The trace must render
 `trace.query_variant_details` as query rewrite cards with source and reason,
 including `query_aspect_rule` variants from the deterministic aspect plan, and
 falling back to `trace.query_variants` for older payloads. It must also surface
+Query rewrite rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/query-variant-list.tsx` owns the
+rewrite empty state, explanatory copy, source badge, copy-query action, and
+variant card layout. Query rewrites should be actionable: operators must be
+able to copy backend-generated rewrites to rerun manually, compare them with the
+submitted query, or use them during external medical search follow-up. The
+retrieval page owns trace/query-analysis variant derivation and fallback
+compatibility.
 per-hit ranking boost signals from `source_locator.ranking_boosts`, including
 the applied rule ID, reason, and weight, with
 `source_locator.ranking_boost_rules` kept as the compatibility fallback for
@@ -185,9 +382,45 @@ matched terms, and reason.
 Result cards must also render `source_locator.concept_matches[]` as per-hit
 concept grounding, including standard system, optional code, display name,
 confidence, matched fields, aliases, and reason.
+Per-hit explanation rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/hit-explanation-panels.tsx` owns
+score meters, score-component rows, diversity-selection details, concept
+grounding cards, and query-aspect support cards. The page owns hit-derived
+score components, diversity selection lookup, concept matches, and aspect
+matches.
 Result cards must render a compact evidence support summary above the detailed
 sections, using data-derived counts for matched terms, provenance fields,
 grounded concepts, supported aspects, and ranking signals.
+Ranked evidence triage should stay outside the page shell:
+`frontend/src/features/retrieval/components/ranked-evidence-triage.tsx` owns
+the "Inspect first" guidance, decision-state badge, and compact facts for hits,
+required evidence buckets, judgments, and readiness. The page derives the
+triage view from backend package state and relevance metrics. The triage must
+warn before use when results are stale, no hits were returned, required buckets
+are missing, or no relevance labels exist.
+Evidence support matrix rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/evidence-support-matrix.tsx` owns
+the responsive table, mobile evidence cards, and matrix help copy. The retrieval
+page owns `evidenceSupportMatrixRows`, judgment lookup, and support-status
+derivation so evidence policy remains centralized.
+Corrective-action type chips should stay outside the page shell:
+`frontend/src/features/retrieval/components/corrective-action-type-count-chips.tsx`
+owns the compact count chip rendering, while
+`frontend/src/features/retrieval/model/corrective-actions.ts` owns deterministic
+action-type count sorting shared by search-run summaries and chip display.
+Section help copy should use the local primitive
+`frontend/src/features/retrieval/components/section-help-text.tsx` instead of
+inline paragraph classes. This keeps explanatory copy visually consistent while
+larger panels continue to own their data and actions.
+Token-list empty states and warning chips should use
+`frontend/src/features/retrieval/components/token-list.tsx`. This keeps the
+common "none"/warning chip treatment consistent across quality, coverage,
+integrity, and query-analysis panels without moving those panels' data logic.
+Retrieval quality-signal cards should stay in
+`frontend/src/features/retrieval/components/quality-signal-list.tsx`. That module
+owns severity badges, evidence-id chips, and metadata detail formatting for
+backend-provided quality signals. Other page panels may reuse the exported
+severity-to-badge mapping, but signal policy stays in backend contracts.
 Result cards must also render a compact `Why this matched` explanation using
 existing retrieval package data: top score driver, evidence-pack bucket
 membership, exact matched terms, concept/aspect grounding, provenance count,
@@ -204,11 +437,23 @@ adjustment or a not-relevant judgment. This guidance must be derived from
 matched terms, provenance, concept/aspect grounding, ranking signals, evidence
 buckets, and persisted relevance judgment state. It must not create new medical
 claims or hide the raw evidence details.
+Per-hit interpretation guidance should stay outside the page shell:
+`frontend/src/features/retrieval/components/evidence-interpretation-guidance.tsx`
+owns the usability summary layout, evidence-use guidance presentation, and
+`Why this matched` metric cards. The retrieval page owns support-summary,
+match-explanation, usability, and guidance derivation from backend package data.
 Result cards must render a compact evidence provenance summary with source
 version and key locator fields such as standard, URL, path, PMID, DOI, API,
 resource, table, document, and chunk identifiers before the raw JSON details.
 URL/API values, PubMed IDs, and DOIs must render as external links when they can
 be safely normalized.
+Evidence provenance and snippet rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/evidence-provenance-snippet.tsx`
+owns provenance field badges, external-link rendering, snippet highlighting, and
+snippet range display. Snippets must expose backend-provided matched terms as
+visible chips so operators can see why a passage ranked without opening raw
+JSON. The retrieval page owns provenance entry derivation, locator
+normalization, copied evidence reports, and claim formatting.
 Each ranked evidence card must also offer a copyable `retrieval_evidence_hit`
 report containing evidence identity, support-summary counts, `match_explanation`,
 ranking scores/components, concept/aspect grounding, provenance summary,
@@ -243,6 +488,15 @@ hits, `evidence_buckets[]`, `source_locator` metadata, and persisted judgments;
 it must not create hidden clinical claims or browser-only relevance scores. The
 matrix must explain how to interpret weak rows, missing provenance, and missing
 concept/aspect support before users inspect long evidence cards.
+Per-hit evidence support chips should stay outside the page shell:
+`frontend/src/features/retrieval/components/hit-evidence-audit-strip.tsx`
+owns the compact matched-term, provenance, concept, aspect, and ranking-signal
+badges. The retrieval page owns the support-summary derivation from hits,
+provenance, match explanation, and ranking metadata.
+Per-hit relevance judgment controls should also stay outside the page shell:
+`frontend/src/features/retrieval/components/relevance-judgment-control.tsx`
+owns the judgment label, help copy, and option buttons. The retrieval page owns
+loaded judgment state, mutation calls, and relevance metric calculations.
 Each ranked evidence card must also render a compact usability summary derived
 from the same support status, match explanation, provenance, bucket membership,
 and persisted judgment state. It should state whether the hit is strong,
@@ -287,6 +541,18 @@ comparison JSON reports as `remediation_summary` so audit notes match what the
 operator saw in the run history. New packages should use backend
 `RetrievalPackage.remediation_summary`; local derivation is only a compatibility
 fallback for older payloads.
+Recent-run evidence scope display should stay outside the page shell:
+`frontend/src/features/retrieval/components/search-run-evidence-summary.tsx`
+owns the compact Run scope and Run remediation card, while
+`frontend/src/features/retrieval/model/search-run-presentation.ts` owns shared
+scope-label, quality-badge, and remediation-summary derivation. The retrieval
+page should compose that card and may reuse the shared derivation for reports,
+but it should not duplicate the row-level presentation logic.
+Recent-run history rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/search-run-history.tsx` owns run
+history cards, baseline buttons, profile badges, and embedded run-scope
+summaries. The page owns run list state, restore behavior, and comparison
+selection state.
 The ranked-result panel should also render a compact package-level `Search
 answer` section before detailed readiness, facets, matrices, and hit cards.
 This section must derive from the backend retrieval package and show the
@@ -298,7 +564,29 @@ including backend `interpretation` so operators can share the plain-language
 result without copying raw trace state. That report should also include bounded
 `medical_search_hints` with route details for FHIR, LOINC, UCUM, and external
 medical search targets plus the source-diversity report when present.
-Immediately after `Search answer`, the ranked-result panel should render an
+`Search answer` should stay outside the page shell:
+`frontend/src/features/retrieval/components/search-answer-card.tsx` owns the
+UI and `frontend/src/features/retrieval/model/search-answer.ts` owns the
+deterministic summary/report model. The page shell should only compose
+`SearchAnswerCard` into the ranked-result panel.
+Evidence-pack bucket rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/evidence-pack-buckets.tsx` owns the
+bucket cards, required-gap badge, source chips, and warning chips. The page
+passes backend `evidence_buckets[]` without deriving additional bucket policy.
+Immediately after `Search answer`, the ranked-result panel should render a
+guided `Review path` section. It should be a plain-language checklist derived
+from backend `quality_summary`, `interpretation`, `recommended_actions[]`,
+`evidence_buckets[]`, package warnings, candidate counts, and the top ranked
+hit. The section must tell non-expert operators whether the package is ready,
+needs review, or is blocked, then show the next operator action without making
+new clinical claims. It must use the same package data as downstream panels so
+there is no browser-only decision model hidden from audit.
+The implementation should keep this concern outside the page shell:
+`frontend/src/features/retrieval/components/retrieval-review-path.tsx` owns
+the UI and `frontend/src/features/retrieval/model/retrieval-review-path.ts`
+owns the pure deterministic review-path derivation. The page shell should only
+compose `RetrievalReviewPathPanel` into the result column.
+Immediately after `Review path`, the ranked-result panel should render an
 `Evidence interpretation` section that translates the same package into
 operational review language: why the top result matched, required bucket
 coverage, warnings, and the next backend-recommended action. This panel must be
@@ -306,6 +594,10 @@ derived from `hits[]`, `evidence_buckets[]`, `recommended_actions[]`,
 `coverage`, and `trace` data. It must not hardcode medical conclusions or
 clinical advice; it explains retrieval support quality for the operator before
 they inspect individual evidence cards.
+Like the other top result summaries, the implementation should stay outside the
+page shell: `frontend/src/features/retrieval/components/evidence-interpretation-panel.tsx`
+owns the UI and `frontend/src/features/retrieval/model/evidence-interpretation.ts`
+owns the deterministic interpretation model.
 When the backend action is `broaden_query`, the ranked-result panel should
 expose explicit broadening controls using the same submitted-search filter
 handlers as Query Health: clear exact source scope when active, or clear all
@@ -391,10 +683,25 @@ operator-visible decomposition guidance and must not silently run hidden
 subqueries or mutate filters. Supported aspect-suggested filters should use the
 same explicit apply path and submitted-filter applied-state checks as profile
 and query-analysis filter suggestions.
+Concept candidate rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/concept-candidate-list.tsx` owns the
+candidate card layout, clinical-domain chip, confidence chip, and matched-alias
+chips. The retrieval page owns query-analysis parsing and concept candidate
+normalization from backend contracts.
+Query diagnostic rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/query-diagnostic-list.tsx` owns
+diagnostic cards, severity badges, display metadata chips, and empty-state copy.
+The retrieval page owns backend diagnostic normalization and query-health
+derivation.
 Query-analysis filter suggestions
 should be actionable from the trace view only through explicit operator apply
 controls; the UI must not silently apply suggested filters before users can see
 the reason, confidence, and existing applied state. Result facets should also be
+Filter suggestion rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/filter-suggestion-list.tsx` owns
+suggestion chips, confidence display, applied state, and the visible Apply
+button. The retrieval page owns the supported-field predicate and apply
+callback, so unsupported fields remain data-driven and explicit.
 actionable refinements: applying a visible facet bucket must update the query
 builder filter state and rerun the typed retrieval search instead of mutating
 results locally. Standard coverage gaps should use
@@ -408,6 +715,11 @@ refinements should remain visible as removable chips with a clear-all action so
 operators can audit and undo the active search constraints. If the query builder
 changes after a search, the results panel
 must show that ranked evidence has pending changes until the current request
+Coverage diagnostics rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/coverage-diagnostics-panel.tsx`
+owns the missing-standard/aspect rows and apply buttons. The retrieval page owns
+the supported-filter checks, suggested action derivation, field labels, and
+value formatting so backend-driven remediation policy stays explicit.
 state is submitted again. The ranked-results panel should also render the last
 submitted request summary and use that submitted payload to mark result facets
 as applied, so displayed evidence remains auditable even while the builder is
@@ -530,6 +842,11 @@ before a source-scoped search is run.
 Medical search hints in the trace should be copyable and launchable when the
 backend provides a vetted URL, so PubMed, ClinicalTrials.gov, and openFDA
 workflows remain backend-owned and data-driven instead of hardcoded in React.
+Medical search hint rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/search-hint-list.tsx` owns hint
+copy/open actions, hint warnings, and route-detail metadata for endpoint scope,
+parameter examples, selected terminology/unit candidates, and lineage follow-up.
+The retrieval page owns only query-analysis extraction and report generation.
 The assistant route is the operator shortcut over those same backend contracts.
 The chat UI should call `/assistant/chat/stream` through the server-state
 boundary, render planning and tool-call events as they arrive, and stream OpenAI

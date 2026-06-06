@@ -302,7 +302,7 @@ function OperationsSummary({
       <SummaryStripItem
         icon={Activity}
         label="Workflows"
-        loading={statsLoading}
+        loading={statsLoading || queueLoading}
         supporting="Total persisted runs"
         value={formatRunCount(stats?.total ?? 0)}
       />

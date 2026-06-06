@@ -100,6 +100,7 @@ export function AppShell() {
                       active && "bg-white/12 text-white ring-1 ring-white/12 shadow-[inset_3px_0_0_#5eead4] max-lg:shadow-none",
                     )}
                     key={item.to}
+                    preload="intent"
                     title={item.label}
                     to={item.to}
                   >
@@ -140,7 +141,7 @@ export function AppShell() {
                 type="button"
                 variant="outline"
               >
-                <Link aria-label="Open assistant" to="/assistant">
+                <Link aria-label="Open assistant" preload="intent" to="/assistant">
                   <Bot className="h-4 w-4" />
                   <span className="max-sm:hidden">Assistant</span>
                 </Link>

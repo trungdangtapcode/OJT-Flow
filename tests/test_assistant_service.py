@@ -6,7 +6,13 @@ from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_tools import ASSISTANT_TOOL_SPECS, OJTFlowToolExecutor
 from ojtflow.core.contracts.assistant import AssistantPlan, AssistantToolPlan
 from ojtflow.core.errors import ToolExecutionError
-from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
+from ojtflow.infrastructure.llm.openai import (
+    OpenAIResponsesPlanner,
+    _stream_delta_from_line,
+    _stream_event_from_line,
+    _stream_failure_from_event,
+    _stream_final_text_from_event,
+)
 
 
 class _FakeToolExecutor:
@@ -93,7 +99,10 @@ class _FailingPlanner:
 
     async def plan(self, *, message, context, tools, max_tool_calls):
         del message, context, tools, max_tool_calls
-        raise ToolExecutionError("Planner unavailable.")
+        raise ToolExecutionError(
+            "Planner unavailable.",
+            details={"status_code": 429, "message": "quota exceeded"},
+        )
 
 
 class _FailingSynthesizer(_FakePlanner):
@@ -466,7 +475,9 @@ async def test_assistant_service_falls_back_when_llm_planning_fails() -> None:
 
     assert response.mode == "deterministic"
     assert response.tool_calls[0].status == "completed"
-    assert response.warnings == ["LLM planning failed: Planner unavailable."]
+    assert response.warnings == [
+        "LLM planning failed: Planner unavailable. (429; quota exceeded)"
+    ]
 
 
 @pytest.mark.asyncio
@@ -614,6 +625,38 @@ async def test_openai_responses_planner_builds_structured_plan_request(monkeypat
     assert "arguments_json" in tool_call_schema["properties"]
     assert "arguments" not in tool_call_schema["properties"]
     assert tool_call_schema["additionalProperties"] is False
+
+
+def test_openai_responses_stream_parser_handles_current_events() -> None:
+    delta_line = 'data: {"type":"response.output_text.delta","delta":"{\\"message\\""}'
+    done_line = 'data: {"type":"response.output_text.done","text":"{\\"message\\":\\"ok\\"}"}'
+    failed_line = (
+        'data: {"type":"response.failed","response":{"status":"failed",'
+        '"error":{"code":"server_error","message":"The model failed."}}}'
+    )
+    incomplete_line = (
+        'data: {"type":"response.incomplete","response":{"status":"incomplete",'
+        '"incomplete_details":{"reason":"max_output_tokens"}}}'
+    )
+
+    assert _stream_delta_from_line(delta_line) == '{"message"'
+    done_event = _stream_event_from_line(done_line)
+    assert done_event is not None
+    assert _stream_final_text_from_event(done_event) == '{"message":"ok"}'
+
+    failed = _stream_failure_from_event(_stream_event_from_line(failed_line) or {})
+    assert failed == {
+        "event_type": "response.failed",
+        "status": "failed",
+        "error_code": "server_error",
+        "message": "The model failed.",
+    }
+    incomplete = _stream_failure_from_event(_stream_event_from_line(incomplete_line) or {})
+    assert incomplete == {
+        "event_type": "response.incomplete",
+        "status": "incomplete",
+        "incomplete_reason": "max_output_tokens",
+    }
 
 
 @pytest.mark.asyncio

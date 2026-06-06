@@ -429,6 +429,57 @@ expanded terms, ranking stack, reranker state, diversity/source spread,
 `quality_summary`, `evidence_buckets[]`, coverage gaps, concept grounding, and
 `recommended_actions[]`. It is intentionally presentation-only; remediation
 buttons are shown only when the backend provides a supported `suggested_filter`.
+The left rail also renders a compact search-plan preview before and after full
+retrieval. Before search, the UI calls `POST /api/v1/retrieval/plan`, which
+returns a `RetrievalPlan` from the same adapter-owned query analysis used by
+ranked retrieval. After search, the preview switches to the completed
+`RetrievalPackage`. In both states it shows the selected route, matched query
+profile, decomposed search aspects, query rewrites, external medical-search
+hints, execution tasks, and filter suggestions before an operator opens the full
+trace. `query_analysis.retrieval_tasks[]` is the ordered task plan that bridges
+planning to tool execution: local corpus searches are required coverage tasks,
+while external medical-index tasks remain optional follow-ups with explicit
+target/action/rationale/warnings. Operators can run local corpus tasks directly
+from the preview when `action_type="run_local_search"`; the UI applies supported
+task filters to the query builder and uses the same retrieval mutation/history
+path as a normal evidence search. External medical-index tasks open
+backend-provided follow-up URLs when `action_type="open_external_url"` and fall
+back to copying syntax when `action_type="copy_query"`. Every task row can copy
+its exact planned query so syntax-only follow-ups remain usable outside the app. The preview also
+lets operators apply supported query-analysis filter suggestions before full
+search through the same typed filter path used by trace remediation. In
+plan-only mode this updates the query builder without running retrieval; after a
+completed package it can refresh ranked evidence with the new filter. Plan-only
+filter application shows an inline confirmation so the operator knows the query
+builder changed and search still needs to run. The preview
+also shows plan coverage before task details: required local tasks, optional external
+follow-ups, inferred standards, suggested filter count, and plan warnings. Its
+source of truth is backend `RetrievalPlan.coverage_summary`; the frontend may
+derive the same shape only as a compatibility fallback for older plan payloads.
+`coverage_summary.next_action` is the backend-owned operator instruction for the
+next search step.
+`task_summary` is the backend-owned execution summary that separates local
+OJTFlow-runnable search tasks from external medical index follow-ups. The UI
+uses it to show which work can run immediately, which tasks are required first,
+and which follow-ups require opening or copying external search syntax. The
+summary panel should expose direct actions for the first runnable local task and
+for copying external follow-up syntax so operators do not need to hunt through
+every task row before starting.
+The summary panel also presents a stable run order for end users: execute
+required local corpus tasks first, apply supported filters when the plan narrows
+source/standard/trust scope, then review external medical-index follow-ups as
+manual context. Each execution-task row includes a "What happens" explanation
+derived from the backend task `target` and `action_type`: local tasks refresh
+the governed OJTFlow evidence package, external URL tasks open a source outside
+the app, and copy-query tasks prepare syntax for manual review. This keeps the
+planning UI usable for operators who do not already know the retrieval
+architecture.
+The backend also returns `RetrievalPlan.risk_signals[]` so the preview can show
+prioritized pre-search risks before task execution; these signals are derived
+from backend coverage and query diagnostics, not from frontend heuristics.
+Its copy action exports a
+`retrieval_search_plan_preview` report so review notes and demos can preserve
+the exact plan that produced the ranked evidence.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable

@@ -18,6 +18,7 @@ from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalRelevanceJudgment,
@@ -154,6 +155,8 @@ class SessionCache(Protocol):
     def consume_oauth_state(self, state: str) -> dict | None: ...
 
 class RetrievalRepository(Protocol):
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan: ...
+
     def search(self, query: RetrievalQuery) -> RetrievalPackage: ...
 
     def list_sources(self) -> list[RetrievalSource]: ...

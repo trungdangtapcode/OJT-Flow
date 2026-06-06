@@ -381,8 +381,8 @@ export function AssistantPage() {
                       onRemove={() => setSelectedFile(null)}
                     />
                   ) : null}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                       <input
                         accept={acceptedUploadExtensions}
                         className="hidden"
@@ -425,7 +425,7 @@ export function AssistantPage() {
                         tools={toolsQuery.data ?? []}
                       />
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
                       {assistantMutation.isPending ? (
                         <Button
                           className="min-h-10"
@@ -616,16 +616,16 @@ function ChatEmptyState({
           </div>
         ) : null}
         {!error && !isLoading && examples.length ? (
-          <div className="grid gap-3 text-left sm:grid-cols-3">
+          <div className="grid min-w-0 gap-3 text-left sm:grid-cols-3">
             {examples.map((example) => (
               <button
-                className="grid min-h-28 gap-2 rounded-md border border-border bg-card p-3 text-left transition hover:border-primary hover:bg-primary/5"
+                className="grid min-h-28 min-w-0 gap-2 rounded-md border border-border bg-card p-3 text-left transition hover:border-primary hover:bg-primary/5"
                 key={example.example_id}
                 onClick={() => onSelect(example)}
                 type="button"
               >
-                <div className="text-sm font-black">{example.label}</div>
-                <div className="text-sm leading-5 text-muted-foreground">
+                <div className="min-w-0 break-words text-sm font-black">{example.label}</div>
+                <div className="min-w-0 break-words text-sm leading-5 text-muted-foreground">
                   {example.description}
                 </div>
               </button>
@@ -728,7 +728,7 @@ function AssistantControlsPanel({
         <Settings2 className="h-4 w-4 text-primary" />
         Advanced context
       </summary>
-      <div className="absolute bottom-12 left-0 z-20 grid w-[min(620px,calc(100vw-2rem))] gap-4 rounded-md border border-border bg-card p-4 shadow-lg">
+      <div className="absolute bottom-12 right-0 z-20 hidden w-[min(620px,calc(100vw-2rem))] gap-4 rounded-md border border-border bg-card p-4 shadow-lg group-open:grid">
         <div>
           <div className="text-sm font-black">Advanced context</div>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">

@@ -37,9 +37,11 @@ from ojtflow.infrastructure.retrieval.engine import (
     snippet_from_chunk,
 )
 from ojtflow.infrastructure.retrieval.llamaindex_adapter import (
+    LlamaIndexRetrievalRepository,
     _framework_fusion_diagnostics,
 )
-from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
+from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
+from ojtflow.infrastructure.retrieval.query_analysis import analyze_query, build_retrieval_plan
 from ojtflow.infrastructure.retrieval.reranking import HuggingFaceCrossEncoderReranker
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 from ojtflow.infrastructure.storage.in_memory import InMemoryRetrievalJudgmentRepository
@@ -51,6 +53,75 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_retrieval_query_rejects_blank_query() -> None:
     with pytest.raises(ValidationError):
         RetrievalQuery(query=" \n\t ")
+
+
+def test_retrieval_adapters_expose_plan_contract() -> None:
+    query = RetrievalQuery(query="HbA1c missing unit", fields=["lab_name", "unit"])
+    static_plan = StaticRetrievalRepository(ROOT / "knowledge").plan(query)
+    assert static_plan.query_analysis.query_variants
+    assert static_plan.search_signature == "pending"
+
+    postgres = object.__new__(PostgresRetrievalRepository)
+    postgres_plan = postgres.plan(query)
+    assert postgres_plan.query_analysis.query_variants
+    assert postgres_plan.search_signature == "pending"
+
+    llamaindex = object.__new__(LlamaIndexRetrievalRepository)
+    llamaindex_plan = llamaindex.plan(query)
+    assert llamaindex_plan.query_analysis.query_variants
+    assert llamaindex_plan.search_signature == "pending"
+
+
+def test_retrieval_plan_builder_uses_query_analysis() -> None:
+    plan = build_retrieval_plan(
+        RetrievalQuery(
+            query="HbA1c lab CSV missing units FHIR Observation",
+            fields=["lab_name", "unit"],
+            schema_id="lab_result_v1",
+        )
+    )
+
+    assert plan.query_analysis.query_profile is not None
+    assert plan.query_analysis.query_aspects
+    assert plan.query_analysis.retrieval_tasks
+    assert plan.query_analysis.retrieval_tasks[0].target == "local_corpus"
+    assert plan.query_analysis.retrieval_tasks[0].action_type == "run_local_search"
+    assert any(task.required for task in plan.query_analysis.retrieval_tasks)
+    assert any(
+        task.target == "external_medical_index"
+        for task in plan.query_analysis.retrieval_tasks
+    )
+    assert any(
+        task.action_type in {"open_external_url", "copy_query"}
+        for task in plan.query_analysis.retrieval_tasks
+        if task.target == "external_medical_index"
+    )
+    assert plan.coverage_summary.ready is True
+    assert plan.coverage_summary.required_local_task_count >= 1
+    assert plan.coverage_summary.external_task_count >= 1
+    assert plan.coverage_summary.standard_count >= 1
+    assert plan.coverage_summary.next_action
+    assert "required local task" in plan.coverage_summary.summary
+    assert plan.task_summary.total_task_count == len(plan.query_analysis.retrieval_tasks)
+    assert plan.task_summary.runnable_local_count >= 1
+    assert plan.task_summary.required_runnable_local_count >= 1
+    assert plan.task_summary.manual_followup_count >= 1
+    assert plan.task_summary.primary_action
+    assert "local runnable task" in plan.task_summary.summary
+    assert plan.risk_signals == []
+    assert plan.query_analysis.query_variants
+    assert "search aspect" in plan.summary
+    assert plan.search_signature == "pending"
+
+    weak_plan = build_retrieval_plan(RetrievalQuery(query="status"))
+    assert weak_plan.coverage_summary.ready is False
+    assert "Add a healthcare standard" in weak_plan.coverage_summary.next_action
+    assert weak_plan.task_summary.runnable_local_count >= 1
+    assert weak_plan.task_summary.total_task_count == len(weak_plan.query_analysis.retrieval_tasks)
+    assert weak_plan.risk_signals
+    assert any(signal.code == "no_standard_inferred" for signal in weak_plan.risk_signals)
+    assert all(signal.code for signal in weak_plan.risk_signals)
+    assert all(signal.suggested_action for signal in weak_plan.risk_signals)
 
 
 def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None:

@@ -423,6 +423,30 @@ class RetrievalQueryAspect(ContractModel):
     suggested_filters: dict[str, str] = Field(default_factory=dict)
 
 
+RetrievalTaskTarget = Literal["local_corpus", "external_medical_index"]
+RetrievalTaskActionType = Literal["run_local_search", "open_external_url", "copy_query"]
+
+
+class RetrievalSearchTask(ContractModel):
+    """Executable retrieval task derived from query analysis before ranking."""
+
+    task_id: NonBlankStr
+    label: NonBlankStr
+    target: RetrievalTaskTarget
+    action_type: RetrievalTaskActionType
+    query: NonBlankStr
+    rationale: NonBlankStr
+    priority: int = Field(ge=1)
+    required: bool = False
+    aspect_id: NonBlankStr | None = None
+    search_hint_target: NonBlankStr | None = None
+    query_variants: list[NonBlankStr] = Field(default_factory=list)
+    standards: list[NonBlankStr] = Field(default_factory=list)
+    suggested_filters: dict[str, str] = Field(default_factory=dict)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalSearchPreset(ContractModel):
     """Operator-facing retrieval query preset loaded from trusted knowledge data."""
 
@@ -490,6 +514,59 @@ class RetrievalQueryAnalysis(ContractModel):
     search_hints: list[RetrievalSearchHint] = Field(default_factory=list)
     query_profile: RetrievalQueryProfile | None = None
     query_aspects: list[RetrievalQueryAspect] = Field(default_factory=list)
+    retrieval_tasks: list[RetrievalSearchTask] = Field(default_factory=list)
+
+
+class RetrievalPlanCoverageSummary(ContractModel):
+    """Backend-owned pre-search coverage summary for a retrieval plan."""
+
+    ready: bool
+    local_task_count: int = Field(ge=0)
+    required_local_task_count: int = Field(ge=0)
+    external_task_count: int = Field(ge=0)
+    standard_count: int = Field(ge=0)
+    filter_count: int = Field(ge=0)
+    standards: list[NonBlankStr] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    next_action: NonBlankStr
+    summary: NonBlankStr
+
+
+class RetrievalPlanTaskSummary(ContractModel):
+    """Backend-owned operator summary for pre-search task execution."""
+
+    total_task_count: int = Field(ge=0)
+    runnable_local_count: int = Field(ge=0)
+    required_runnable_local_count: int = Field(ge=0)
+    external_open_count: int = Field(ge=0)
+    external_copy_count: int = Field(ge=0)
+    manual_followup_count: int = Field(ge=0)
+    blocked_task_count: int = Field(ge=0)
+    primary_action: NonBlankStr
+    summary: NonBlankStr
+
+
+class RetrievalPlanRiskSignal(ContractModel):
+    """Prioritized risk signal for pre-search retrieval planning."""
+
+    code: NonBlankStr
+    severity: NonBlankStr
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+    source: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalPlan(ContractModel):
+    """Plan-only retrieval response before ranked evidence is generated."""
+
+    query: RetrievalQuery
+    query_analysis: RetrievalQueryAnalysis
+    coverage_summary: RetrievalPlanCoverageSummary
+    task_summary: RetrievalPlanTaskSummary
+    risk_signals: list[RetrievalPlanRiskSignal] = Field(default_factory=list)
+    search_signature: NonBlankStr
+    summary: NonBlankStr
 
 
 class RetrievalInterpretation(ContractModel):

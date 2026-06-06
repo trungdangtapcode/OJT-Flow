@@ -162,7 +162,18 @@ class OpenAIResponsesPlanner:
                             },
                         )
                     async for line in response.aiter_lines():
-                        delta = _stream_delta_from_line(line)
+                        event = _stream_event_from_line(line)
+                        if not event:
+                            continue
+                        failure = _stream_failure_from_event(event)
+                        if failure:
+                            raise ToolExecutionError(
+                                "OpenAI LLM planner stream failed.",
+                                details=failure,
+                            )
+                        delta = _stream_delta_from_event(event)
+                        if not delta and not raw_chunks:
+                            delta = _stream_final_text_from_event(event)
                         if not delta:
                             continue
                         raw_chunks.append(delta)
@@ -321,9 +332,22 @@ class OpenAIResponsesPlanner:
                                 "response": body[:1000],
                             },
                         )
+                    emitted_delta = False
                     async for line in response.aiter_lines():
-                        delta = _stream_delta_from_line(line)
+                        event = _stream_event_from_line(line)
+                        if not event:
+                            continue
+                        failure = _stream_failure_from_event(event)
+                        if failure:
+                            raise ToolExecutionError(
+                                "OpenAI LLM synthesis stream failed.",
+                                details=failure,
+                            )
+                        delta = _stream_delta_from_event(event)
+                        if not delta and not emitted_delta:
+                            delta = _stream_final_text_from_event(event)
                         if delta:
+                            emitted_delta = True
                             yield delta
         except httpx.HTTPError as exc:
             raise ToolExecutionError(
@@ -465,18 +489,60 @@ def _response_text(payload: dict[str, Any]) -> str:
     return ""
 
 
-def _stream_delta_from_line(line: str) -> str:
+def _stream_event_from_line(line: str) -> dict[str, Any] | None:
     stripped = line.strip()
     if not stripped.startswith("data:"):
-        return ""
+        return None
     raw = stripped.removeprefix("data:").strip()
     if not raw or raw == "[DONE]":
-        return ""
+        return None
     try:
         event = json.loads(raw)
     except json.JSONDecodeError:
+        return None
+    return event if isinstance(event, dict) else None
+
+
+def _stream_delta_from_event(event: dict[str, Any]) -> str:
+    if event.get("type") == "response.output_text.delta":
+        delta = event.get("delta")
+        return delta if isinstance(delta, str) else ""
+    return ""
+
+
+def _stream_final_text_from_event(event: dict[str, Any]) -> str:
+    if event.get("type") == "response.output_text.done":
+        text = event.get("text")
+        return text if isinstance(text, str) else ""
+    if event.get("type") == "response.completed":
+        response = event.get("response")
+        return _response_text(response) if isinstance(response, dict) else ""
+    return ""
+
+
+def _stream_delta_from_line(line: str) -> str:
+    event = _stream_event_from_line(line)
+    if not event:
         return ""
-    if event.get("type") != "response.output_text.delta":
-        return ""
-    delta = event.get("delta")
-    return delta if isinstance(delta, str) else ""
+    return _stream_delta_from_event(event)
+
+
+def _stream_failure_from_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    event_type = event.get("type")
+    if event_type not in {"response.failed", "response.incomplete"}:
+        return None
+    response = event.get("response")
+    if not isinstance(response, dict):
+        return {"event_type": event_type}
+    error = response.get("error")
+    details: dict[str, Any] = {
+        "event_type": event_type,
+        "status": response.get("status"),
+    }
+    if isinstance(error, dict):
+        details["error_code"] = error.get("code")
+        details["message"] = error.get("message")
+    incomplete = response.get("incomplete_details")
+    if isinstance(incomplete, dict):
+        details["incomplete_reason"] = incomplete.get("reason")
+    return {key: value for key, value in details.items() if value is not None}

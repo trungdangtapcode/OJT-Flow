@@ -58,6 +58,372 @@ GUIDE_PANEL = REPO_ROOT / "frontend" / "src" / "components" / "ui" / "guide-pane
 RETRIEVAL_PAGE = (
     REPO_ROOT / "frontend" / "src" / "features" / "retrieval" / "retrieval-page.tsx"
 )
+RETRIEVAL_SPLIT_FILES = [
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "active-filter-bar.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "concept-candidate-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "coverage-diagnostics-panel.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "corrective-action-type-count-chips.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "evidence-pack-buckets.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "evidence-provenance-snippet.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "evidence-interpretation-panel.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "evidence-interpretation-guidance.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "evidence-readiness-panel.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "evidence-support-matrix.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "filter-suggestion-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-hint-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "first-run-guide.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "graph-counter.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "judgment-evaluation-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "metric-primitives.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "no-result-remediation-panel.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "quality-signal-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "retrieval-inline-guide.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "recommended-actions-panel.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "query-variant-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "query-diagnostic-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-hint-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "ranked-evidence-triage.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "relevance-judgment-control.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "retrieval-runtime-status.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "retrieval-summary-strip.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "result-facets.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "source-inventory-panel.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "source-diversity-panel.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "source-scope-picker.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "hit-evidence-audit-strip.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "hit-explanation-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "strategy-standard-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "submitted-search-summary.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "token-list.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "trace-fact.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-answer-card.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-cockpit-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-plan-detail-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-plan-summary-panels.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-plan-task-preview.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-plan-preview.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-preset-strip.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-run-evidence-summary.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "search-run-history.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "section-help-text.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
+    / "retrieval-review-path.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "model"
+    / "corrective-actions.ts",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "model"
+    / "evidence-interpretation.ts",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "model"
+    / "search-answer.ts",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "model"
+    / "retrieval-review-path.ts",
+]
 SETTINGS_PAGE = (
     REPO_ROOT / "frontend" / "src" / "features" / "settings" / "settings-page.tsx"
 )
@@ -180,38 +546,755 @@ def test_workbench_shell_stays_split_by_responsibility() -> None:
         assert split_file.name in frontend_architecture
 
 
-def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
-    retrieval_page = RETRIEVAL_PAGE.read_text(encoding="utf-8")
+def test_feature_routes_are_lazy_loaded() -> None:
+    app = (FRONTEND_SRC / "App.tsx").read_text(encoding="utf-8")
+    app_shell = APP_SHELL.read_text(encoding="utf-8")
     frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
         encoding="utf-8"
     )
+
+    assert "lazy" in app
+    assert "Suspense" in app
+    assert "RouteSuspense" in app
+    assert 'import("./features/retrieval/retrieval-page")' in app
+    assert 'import("./features/assistant/assistant-page")' in app
+    assert 'import("./features/workflows/workflows-page")' in app
+    assert 'from "./features/retrieval/retrieval-page"' not in app
+    assert 'from "./features/assistant/assistant-page"' not in app
+    assert 'from "./features/workflows/workflows-page"' not in app
+    assert 'preload="intent"' in app_shell
+    assert "Feature routes are lazy-loaded" in frontend_architecture
+    assert 'preload="intent"' in frontend_architecture
+
+
+def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
+    retrieval_page = RETRIEVAL_PAGE.read_text(encoding="utf-8")
+    server_state = (FRONTEND_SRC / "lib" / "server-state.ts").read_text(encoding="utf-8")
+    api_module = API_MODULE.read_text(encoding="utf-8")
+    types_module = FRONTEND_TYPES.read_text(encoding="utf-8")
+    frontend_architecture = (REPO_ROOT / "docs" / "frontend_architecture.md").read_text(
+        encoding="utf-8"
+    )
+    api_contract = (REPO_ROOT / "docs" / "api_contract_v0.md").read_text(encoding="utf-8")
+    retrieval_evidence_interpretation = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "evidence-interpretation-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_evidence_readiness_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "evidence-readiness-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_evidence_pack_buckets = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "evidence-pack-buckets.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_evidence_provenance_snippet = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "evidence-provenance-snippet.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_evidence_support_matrix = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "evidence-support-matrix.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_coverage_diagnostics_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "coverage-diagnostics-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_concept_candidate_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "concept-candidate-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_filter_suggestion_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "filter-suggestion-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_corrective_action_chips = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "corrective-action-type-count-chips.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_corrective_action_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "corrective-actions.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_evidence_interpretation_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "evidence-interpretation.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_hit_evidence_audit_strip = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "hit-evidence-audit-strip.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_hit_explanation_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "hit-explanation-panels.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_evidence_interpretation_guidance = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "evidence-interpretation-guidance.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_relevance_judgment_control = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "relevance-judgment-control.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_runtime_status = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-runtime-status.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_hint_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-hint-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_ranked_evidence_triage = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "ranked-evidence-triage.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_query_variant_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "query-variant-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_query_diagnostic_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "query-diagnostic-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_hint_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-hint-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_answer = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-answer-card.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_cockpit_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-cockpit-panels.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_run_evidence_summary = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-run-evidence-summary.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_run_history = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-run-history.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_plan_task_preview = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-plan-task-preview.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_plan_preview = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-plan-preview.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_plan_detail_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-plan-detail-panels.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_plan_summary_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-plan-summary-panels.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_preset_strip = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-preset-strip.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_source_scope_picker = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "source-scope-picker.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_active_filter_bar = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "active-filter-bar.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_submitted_search_summary = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "submitted-search-summary.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_inline_guide = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-inline-guide.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_summary_strip = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-summary-strip.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_section_help_text = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "section-help-text.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_token_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "token-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_trace_fact = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "trace-fact.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_graph_counter = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "graph-counter.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_metric_primitives = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "metric-primitives.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_no_result_remediation_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "no-result-remediation-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_judgment_evaluation_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "judgment-evaluation-panels.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_quality_signal_list = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "quality-signal-list.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_source_inventory_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "source-inventory-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_strategy_standard_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "strategy-standard-panels.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_source_diversity_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "source-diversity-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_strategy_standard_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "strategy-standard-panels.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_answer_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "search-answer.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_search_run_presentation_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "search-run-presentation.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_search_plan_tasks_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "search-plan-tasks.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_review_path = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-review-path.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_review_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-review-path.ts"
+    ).read_text(encoding="utf-8")
+    retrieval_recommended_actions_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "recommended-actions-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_result_facets = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "result-facets.tsx"
+    ).read_text(encoding="utf-8")
 
     assert "rankingStackFromPackage" in retrieval_page
     assert "diversityFromPackage" in retrieval_page
     assert "scoreComponentsFromHit" in retrieval_page
     assert "ScoreExplanation" in retrieval_page
-    assert "Score explanation" in retrieval_page
+    assert "./components/hit-explanation-panels" in retrieval_page
+    assert "function ScoreExplanation" not in retrieval_page
+    assert "Score explanation" in retrieval_hit_explanation_panels
     assert "QualitySignalList" in retrieval_page
-    assert "QualitySignalMetadataDetails" in retrieval_page
+    assert "components/quality-signal-list" in retrieval_page
+    assert "function QualitySignalList" not in retrieval_page
+    assert "QualitySignalMetadataDetails" in retrieval_quality_signal_list
+    assert "function qualitySignalMetadataDetails" in retrieval_quality_signal_list
+    assert "Quality signals explain why the evidence package" in retrieval_quality_signal_list
     assert "SectionHelpText" in retrieval_page
-    assert "Quality signals explain why the evidence package" in retrieval_page
-    assert "Signal details" in retrieval_page
-    assert "qualitySignalMetadataDetails" in retrieval_page
-    assert "Retrieval quality" in retrieval_page
+    assert "components/section-help-text" in retrieval_page
+    assert "function SectionHelpText" not in retrieval_page
+    assert "leading-5 text-muted-foreground" in retrieval_section_help_text
+    assert "TokenList" in retrieval_page
+    assert "components/token-list" in retrieval_page
+    assert "function TokenList" not in retrieval_page
+    assert "bg-amber-100 text-amber-900" in retrieval_token_list
+    assert "TraceFact" in retrieval_page
+    assert "components/trace-fact" in retrieval_page
+    assert "function TraceFact" not in retrieval_page
+    assert "grid-cols-[7rem_minmax(0,1fr)]" in retrieval_trace_fact
+    assert "GraphCounter" in retrieval_runtime_status
+    assert "./graph-counter" in retrieval_runtime_status
+    assert "function GraphCounter" not in retrieval_page
+    assert "tabular-nums" in retrieval_graph_counter
+    assert "IntegrityMetric" in retrieval_runtime_status
+    assert "IntegrityFact" in retrieval_runtime_status
+    assert "SourceReadinessMetric" in retrieval_source_inventory_panel
+    assert "./metric-primitives" in retrieval_runtime_status
+    assert "function IntegrityMetric" not in retrieval_page
+    assert "function IntegrityFact" not in retrieval_page
+    assert "function SourceReadinessMetric" not in retrieval_page
+    assert "function metricToneClass" in retrieval_metric_primitives
+    assert "bg-card/80 px-3 py-2" in retrieval_metric_primitives
+    assert "Quality signals explain why the evidence package" in retrieval_quality_signal_list
+    assert "Signal details" in retrieval_quality_signal_list
+    assert "qualitySignalMetadataDetails" in retrieval_quality_signal_list
+    assert "Retrieval quality" in retrieval_quality_signal_list
     assert "Safety-sensitive context detected" in retrieval_page
     assert "Backend warnings about search coverage" in retrieval_page
     assert "quality_signals" in retrieval_page
     assert "quality_summary" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
-    assert "Readiness" in retrieval_page
+    assert "RetrievalSummaryStrip" in retrieval_page
+    assert "components/retrieval-summary-strip" in retrieval_page
+    assert "RetrievalSummaryStripViewModel" in retrieval_page
+    assert "Readiness" in retrieval_summary_strip
+    assert "Reranker" in retrieval_summary_strip
     assert "qualitySummaryTone" in retrieval_page
     assert "qualitySignalBadgeVariant" in retrieval_page
     assert "queryVariantsFromTrace" in retrieval_page
     assert "QueryVariantList" in retrieval_page
-    assert "Query rewrites" in retrieval_page
-    assert "Query rewrites are backend-generated search variants" in retrieval_page
+    assert "components/query-variant-list" in retrieval_page
+    assert "function QueryVariantList" not in retrieval_page
+    assert "Query rewrites" in retrieval_query_variant_list
+    assert "Query rewrites are backend-generated search variants" in retrieval_query_variant_list
+    assert "Copy query rewrite" in retrieval_query_variant_list
+    assert "copyTextToClipboard" in retrieval_query_variant_list
+    assert "document.execCommand" in retrieval_query_variant_list
     assert "query_variant_details" in retrieval_page
+    assert "SearchPlanPreview" in retrieval_page
+    assert "components/search-plan-preview" in retrieval_page
+    assert "function SearchPlanPreview" not in retrieval_page
+    assert "Search plan" in retrieval_search_plan_preview
+    assert "useRetrievalPlanQuery" in retrieval_page
+    assert "onApplyFilterSuggestion" in retrieval_page
+    assert "applyPlanFilterSuggestion" in retrieval_page
+    assert "applyFilterControl" in retrieval_page
+    assert "planControlNotice" in retrieval_page
+    assert "Plan filter applied" in retrieval_page
+    assert "SearchPlanFilterSuggestionPreview" in retrieval_search_plan_preview
+    assert "./search-plan-detail-panels" in retrieval_search_plan_preview
+    assert "function SearchPlanFilterSuggestionPreview" not in retrieval_page
+    assert "Apply" in retrieval_search_plan_detail_panels
+    assert "SearchPlanAspectPreview" in retrieval_search_plan_preview
+    assert "function SearchPlanAspectPreview" not in retrieval_page
+    assert "Search aspects" in retrieval_search_plan_detail_panels
+    assert "SearchPlanRewritePreview" in retrieval_search_plan_preview
+    assert "function SearchPlanRewritePreview" not in retrieval_page
+    assert "Query rewrites" in retrieval_search_plan_detail_panels
+    assert "SearchPlanHintPreview" in retrieval_search_plan_preview
+    assert "function SearchPlanHintPreview" not in retrieval_page
+    assert "Medical search hints" in retrieval_search_plan_detail_panels
+    assert "planPayload" in retrieval_page
+    assert "packageDataForPlanPreview = isSearchResultStale ? undefined : packageData" in retrieval_page
+    assert "currentPlanData" in retrieval_page
+    assert "queryAnalysisFromPlan" in retrieval_page
+    assert "retrievalSearchPlanPreviewReport" in retrieval_page
+    assert "retrieval_search_plan_preview" in retrieval_page
+    assert "SearchPlanTaskPreview" in retrieval_search_plan_preview
+    assert "./search-plan-task-preview" in retrieval_search_plan_preview
+    assert "function SearchPlanTaskPreview" not in retrieval_page
+    assert "SearchPlanTaskGroup" in retrieval_search_plan_task_preview
+    assert "Execution tasks" in retrieval_search_plan_task_preview
+    assert "Local OJTFlow searches" in retrieval_search_plan_task_preview
+    assert "External follow-ups" in retrieval_search_plan_task_preview
+    assert "Show remaining" in retrieval_search_plan_task_preview
+    assert "remainingTasks" in retrieval_search_plan_task_preview
+    assert "ChevronDown" in retrieval_search_plan_task_preview
+    assert "group-open:rotate-180" in retrieval_search_plan_task_preview
+    assert "requiredTaskCount" in retrieval_search_plan_task_preview
+    assert "optionalTaskCount" in retrieval_search_plan_task_preview
+    assert 'formatCount(requiredTaskCount, "required task")' in retrieval_search_plan_task_preview
+    assert 'formatCount(optionalTaskCount, "optional task")' in retrieval_search_plan_task_preview
+    assert "copyGroupQueries" in retrieval_search_plan_task_preview
+    assert "retrievalTaskClipboardText" in retrieval_search_plan_tasks_model
+    assert "target: ${humanize(task.target)}" in retrieval_search_plan_tasks_model
+    assert "action: ${humanize(task.action_type)}" in retrieval_search_plan_tasks_model
+    assert "task-group:" in retrieval_search_plan_task_preview
+    assert "Copy group queries" in retrieval_search_plan_task_preview
+    assert "Copied group" in retrieval_search_plan_task_preview
+    assert "Prioritize required tasks before optional follow-ups" in retrieval_search_plan_task_preview
+    assert "No local OJTFlow search task was generated" in retrieval_search_plan_task_preview
+    assert "No external medical-index follow-up was generated" in retrieval_search_plan_task_preview
+    assert "Run order" in retrieval_search_plan_summary_panels
+    assert "What happens" in retrieval_search_plan_task_preview
+    assert "retrievalTaskActionDescription" in retrieval_search_plan_tasks_model
+    assert "Runs in OJTFlow" in retrieval_search_plan_tasks_model
+    assert "Opens external source" in retrieval_search_plan_tasks_model
+    assert "Copies external query" in retrieval_search_plan_tasks_model
+    assert "Run task" in retrieval_search_plan_task_preview
+    assert "SearchPlanTaskRow" in retrieval_search_plan_task_preview
+    assert "retrievalTaskExternalUrl" in retrieval_search_plan_tasks_model
+    assert "retrievalTaskActionTypeValue" in retrieval_page
+    assert "Open follow-up" in retrieval_search_plan_task_preview
+    assert "syntax only" in retrieval_search_plan_task_preview
+    assert "Copy query" in retrieval_search_plan_task_preview
+    assert "task-query:" in retrieval_search_plan_task_preview
+    assert "plannedTaskSearchOverrides" in retrieval_page
+    assert "runPlannedTask" in retrieval_page
+    assert "SearchPlanCoverageSummaryPanel" in retrieval_search_plan_preview
+    assert "./search-plan-summary-panels" in retrieval_search_plan_preview
+    assert "function SearchPlanCoverageSummaryPanel" not in retrieval_page
+    assert "SearchPlanTaskSummaryPanel" in retrieval_search_plan_preview
+    assert "function SearchPlanTaskSummaryPanel" not in retrieval_page
+    assert "Execution summary" in retrieval_search_plan_summary_panels
+    assert "Run first local task" in retrieval_search_plan_summary_panels
+    assert "Copy external follow-ups" in retrieval_search_plan_summary_panels
+    assert "plan-external-followups" in retrieval_search_plan_summary_panels
+    assert "searchPlanTaskSummary" in retrieval_page
+    assert "planTaskSummaryValue" in retrieval_page
+    assert "Plan coverage" in retrieval_search_plan_summary_panels
+    assert "Next action" in retrieval_search_plan_summary_panels
+    assert "nextAction" in retrieval_page
+    assert "searchPlanCoverageSummary" in retrieval_page
+    assert "planCoverageSummaryValue" in retrieval_page
+    assert "planCoverageSummary" in retrieval_page
+    assert "coverage_summary" in retrieval_page
+    assert "task_summary" in retrieval_page
+    assert "SearchPlanRiskSignalsPanel" in retrieval_search_plan_preview
+    assert "function SearchPlanRiskSignalsPanel" not in retrieval_page
+    assert "Plan risks" in retrieval_search_plan_summary_panels
+    assert "searchPlanRiskSignals" in retrieval_page
+    assert "planRiskSignalsValue" in retrieval_page
+    assert "riskSignalListBadgeVariant" in retrieval_search_plan_summary_panels
+    assert "risk_signals" in retrieval_page
+    assert "SearchAnswerCard" in retrieval_page
+    assert "components/search-answer-card" in retrieval_page
+    assert "function SearchAnswerCard" not in retrieval_page
+    assert "Search answer" in retrieval_search_answer
+    assert "buildSearchAnswerViewModel" in retrieval_search_answer
+    assert "buildSearchAnswerViewModel" in retrieval_search_answer_model
+    assert "searchAnswerReportFromPackage" in retrieval_search_answer_model
+    assert "retrieval_search_answer" in retrieval_search_answer_model
+    assert "RetrievalReviewPathPanel" in retrieval_page
+    assert "components/retrieval-review-path" in retrieval_page
+    assert "function RetrievalReviewPathPanel" not in retrieval_page
+    assert "retrievalReviewGuidance" not in retrieval_page
+    for split_file in RETRIEVAL_SPLIT_FILES:
+        assert split_file.exists()
+    assert "Review path" in retrieval_review_path
+    assert "Guided retrieval review path" in retrieval_review_path
+    assert "buildRetrievalReviewPath" in retrieval_review_path
+    assert "retrievalReviewChecklist" in retrieval_review_model
+    assert "retrievalReviewGuidance" in retrieval_review_model
+    assert "retrievalPackageWarnings" in retrieval_review_model
+    assert "Next operator action" in retrieval_review_path
+    assert "A plain-language checklist built from backend retrieval quality" in retrieval_review_path
+    assert "retrievalTasksValue" in retrieval_page
+    assert "retrieval_tasks" in retrieval_page
+    assert "plan only" in retrieval_search_plan_preview
+    assert "Planning search" in retrieval_search_plan_preview
+    assert 'request<RetrievalPlan>("/retrieval/plan"' in api_module
+    assert "useRetrievalPlanQuery" in server_state
+    plan_hook = server_state.split("export function useRetrievalPlanQuery", 1)[1].split(
+        "export function useRetrievalJudgmentsQuery",
+        1,
+    )[0]
+    assert "placeholderData" not in plan_hook
+    assert "RetrievalPlan" in types_module
+    assert "RetrievalPlanQuery" in types_module
+    assert "RetrievalPlanCoverageSummary" in types_module
+    assert "RetrievalPlanTaskSummary" in types_module
+    assert "RetrievalPlanRiskSignal" in types_module
+    assert "RetrievalSearchTask" in types_module
+    assert "action_type" in types_module
+    assert "POST /api/v1/retrieval/plan" in api_contract
+    assert "plan-only retrieval response" in api_contract
+    assert "retrieval_tasks" in api_contract
+    assert "action_type" in api_contract
+    assert "coverage_summary" in api_contract
+    assert "task_summary" in api_contract
+    assert '"runnable_local_count": 1' in api_contract
+    assert '"external_open_count": 1' in api_contract
+    assert '"target": "local_corpus"' in api_contract
+    assert '"target": "external_medical_index"' in api_contract
+    assert "next_action" in api_contract
+    assert "risk_signals" in api_contract
+    assert "search-plan preview" in frontend_architecture
+    assert "execution tasks" in frontend_architecture
+    assert "Execution-task rows should be actionable with target-aware behavior" in frontend_architecture
+    assert "external medical-index tasks open their backend-provided follow-up URL" in frontend_architecture
+    assert "copy-query action" in frontend_architecture
+    assert "Supported filter suggestions in the same preview should also be actionable" in frontend_architecture
+    assert "plan-only previews update visible controls without immediately running search" in frontend_architecture
+    assert "inline confirmation near the active filter controls" in frontend_architecture
+    assert "plan coverage summary" in frontend_architecture
+    assert "RetrievalPlan.coverage_summary" in frontend_architecture
+    assert "RetrievalPlan.task_summary" in frontend_architecture
+    assert "plain-language run order" in frontend_architecture
+    assert "What happens" in frontend_architecture
+    assert "governed OJTFlow evidence searches" in frontend_architecture
+    assert "required and optional task counts" in frontend_architecture
+    assert "copy action for all queries in that group" in frontend_architecture
+    assert "Task clipboard exports should use one" in frontend_architecture
+    assert "coverage_summary.next_action" in frontend_architecture
+    assert "RetrievalPlan.risk_signals" in frontend_architecture
     assert "QueryProfileCard" in retrieval_page
     assert "queryProfileValue" in retrieval_page
     assert "query_profile" in retrieval_page
@@ -219,26 +1302,38 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "queryAspectsValue" in retrieval_page
     assert "query_aspects" in retrieval_page
     assert "Search aspect plan" in retrieval_page
-    assert "Query diagnostics explain parser" in retrieval_page
-    assert "SearchHintMetadata" in retrieval_page
-    assert "Route details" in retrieval_page
-    assert "Parameter examples" in retrieval_page
-    assert "Lineage follow-up" in retrieval_page
-    assert "Endpoint scope" in retrieval_page
-    assert "Selected terminology terms" in retrieval_page
-    assert "Selected unit candidates" in retrieval_page
-    assert "selected_terms" in retrieval_page
-    assert "selected_unit_candidates" in retrieval_page
-    assert "capability_warning" in retrieval_page
-    assert "searchHintParameterExamples" in retrieval_page
-    assert "searchHintLineageFollowup" in retrieval_page
+    assert "ConceptCandidateList" in retrieval_page
+    assert "components/concept-candidate-list" in retrieval_page
+    assert "function ConceptCandidateList" not in retrieval_page
+    assert "Concept candidates" in retrieval_concept_candidate_list
+    assert "conceptCandidatesValue" in retrieval_page
+    assert "concept_candidates" in retrieval_page
+    assert "QueryDiagnosticList" in retrieval_page
+    assert "components/query-diagnostic-list" in retrieval_page
+    assert "function QueryDiagnosticList" not in retrieval_page
+    assert "Query diagnostics explain parser" in retrieval_query_diagnostic_list
+    assert "SearchHintList" in retrieval_page
+    assert "components/search-hint-list" in retrieval_page
+    assert "function SearchHintList" not in retrieval_page
+    assert "SearchHintMetadata" in retrieval_search_hint_list
+    assert "Route details" in retrieval_search_hint_list
+    assert "Parameter examples" in retrieval_search_hint_list
+    assert "Lineage follow-up" in retrieval_search_hint_list
+    assert "Endpoint scope" in retrieval_search_hint_list
+    assert "Selected terminology terms" in retrieval_search_hint_list
+    assert "Selected unit candidates" in retrieval_search_hint_list
+    assert "selected_terms" in retrieval_search_hint_list
+    assert "selected_unit_candidates" in retrieval_search_hint_list
+    assert "capability_warning" in retrieval_search_hint_list
+    assert "searchHintParameterExamples" in retrieval_search_hint_list
+    assert "searchHintLineageFollowup" in retrieval_search_hint_list
     assert "metadata?: Record<string, unknown>" in (
         REPO_ROOT / "frontend/src/types.ts"
     ).read_text(encoding="utf-8")
     assert "RunComparisonQueryAspects" in retrieval_page
     assert "queryAspectComparisonBetweenRuns" in retrieval_page
     assert "queryAspectComparison" in retrieval_page
-    assert "Search aspects" in retrieval_page
+    assert "Search aspects" in retrieval_search_plan_detail_panels
     assert "queryAspectFilterEntries" in retrieval_page
     assert "Suggested by search aspect" in retrieval_page
     assert "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`" in retrieval_page
@@ -248,25 +1343,36 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "coverage_diagnostics_changed" in retrieval_page
     assert "QueryAspectMatchExplanation" in retrieval_page
     assert "queryAspectMatchesFromHit" in retrieval_page
-    assert "Aspect support" in retrieval_page
+    assert "function QueryAspectMatchExplanation" not in retrieval_page
+    assert "Aspect support" in retrieval_hit_explanation_panels
     assert "ConceptMatchExplanation" in retrieval_page
     assert "conceptMatchesFromHit" in retrieval_page
-    assert "Concept grounding" in retrieval_page
+    assert "function ConceptMatchExplanation" not in retrieval_page
+    assert "Concept grounding" in retrieval_hit_explanation_panels
     assert "concept_grounding_requirements" in retrieval_page
     assert "HitEvidenceAuditStrip" in retrieval_page
-    assert "Evidence support summary" in retrieval_page
+    assert "components/hit-evidence-audit-strip" in retrieval_page
+    assert "function HitEvidenceAuditStrip" not in retrieval_page
+    assert "Evidence support summary" in retrieval_hit_evidence_audit_strip
     assert "EvidenceSupportSummary" in retrieval_page
     assert "support_summary: evidenceSupportSummary(hit, provenanceEntries)" in retrieval_page
-    assert "EvidenceSupportMatrixCard" in retrieval_page
-    assert "EvidenceSupportMobileField" in retrieval_page
-    assert "md:hidden" in retrieval_page
-    assert "hidden overflow-auto rounded-md border border-border bg-card md:block" in retrieval_page
+    assert "EvidenceSupportMatrixCard" in retrieval_evidence_support_matrix
+    assert "EvidenceSupportMobileField" in retrieval_evidence_support_matrix
+    assert "md:hidden" in retrieval_evidence_support_matrix
+    assert (
+        "hidden overflow-auto rounded-md border border-border bg-card md:block"
+        in retrieval_evidence_support_matrix
+    )
     assert "EvidenceUseGuidancePanel" in retrieval_page
-    assert "Evidence interpretation guidance" in retrieval_page
-    assert "Evidence interpretation help" in retrieval_page
+    assert "components/evidence-interpretation-guidance" in retrieval_page
+    assert "function EvidenceUseGuidancePanel" not in retrieval_page
+    assert "function EvidenceUsabilitySummaryPanel" not in retrieval_page
+    assert "function HitMatchExplanationPanel" not in retrieval_page
+    assert "Evidence interpretation guidance" in retrieval_evidence_interpretation_guidance
+    assert "Evidence interpretation help" in retrieval_evidence_interpretation_guidance
     assert "EvidenceUsabilitySummaryPanel" in retrieval_page
-    assert "Evidence usability summary" in retrieval_page
-    assert "Usability summary" in retrieval_page
+    assert "Evidence usability summary" in retrieval_evidence_interpretation_guidance
+    assert "Usability summary" in retrieval_evidence_interpretation_guidance
     assert "evidenceUsabilitySummary" in retrieval_page
     assert "usability_summary: evidenceUsabilitySummary" in retrieval_page
     assert "evidenceUseGuidance" in retrieval_page
@@ -279,7 +1385,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "matched_term_count" in retrieval_page
     assert "ranking_signal_count" in retrieval_page
     assert "EvidenceProvenanceSummary" in retrieval_page
-    assert "Evidence provenance" in retrieval_page
+    assert "components/evidence-provenance-snippet" in retrieval_page
+    assert "function EvidenceProvenanceSummary" not in retrieval_page
+    assert "function SnippetBlock" not in retrieval_page
+    assert "Evidence provenance" in retrieval_evidence_provenance_snippet
+    assert "Best snippet" in retrieval_evidence_provenance_snippet
+    assert "HighlightedText" in retrieval_evidence_provenance_snippet
+    assert "matched terms" in retrieval_evidence_provenance_snippet
+    assert "chars {snippet.start_char}-{snippet.end_char}" in retrieval_evidence_provenance_snippet
+    assert "uniqueMatchedTerms" in retrieval_evidence_provenance_snippet
     assert "provenanceEntriesFromEvidence" in retrieval_page
     assert "provenanceHrefForLocator" in retrieval_page
     assert "https://pubmed.ncbi.nlm.nih.gov" in retrieval_page
@@ -305,55 +1419,64 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "query_profiles" in retrieval_page
     assert "queryProfileSummaryFromPackage" in retrieval_page
     assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_page
-    assert "Profile: {run.summary.queryProfile.label}" in retrieval_page
-    assert "SearchRunEvidenceSummary" in retrieval_page
-    assert "searchRunRemediationSummary" in retrieval_page
-    assert "searchRunScopeLabels" in retrieval_page
-    assert "Run scope" in retrieval_page
-    assert "Run remediation:" in retrieval_page
+    assert "SearchRunHistory" in retrieval_page
+    assert "components/search-run-history" in retrieval_page
+    assert "function SearchRunHistory" not in retrieval_page
+    assert "Profile: {run.summary.queryProfile.label}" in retrieval_search_run_history
+    assert "SearchRunEvidenceSummary" in retrieval_search_run_history
+    assert "./search-run-evidence-summary" in retrieval_search_run_history
+    assert "function SearchRunEvidenceSummary" not in retrieval_page
+    assert "searchRunRemediationSummary" in retrieval_search_run_presentation_model
+    assert "searchRunScopeLabels" in retrieval_search_run_presentation_model
+    assert "Run scope" in retrieval_search_run_evidence_summary
+    assert "Run remediation:" in retrieval_search_run_evidence_summary
     assert "SearchAnswerCard" in retrieval_page
-    assert "Search answer" in retrieval_page
+    assert "Search answer" in retrieval_search_answer
     assert "EvidenceInterpretationPanel" in retrieval_page
-    assert "Evidence interpretation" in retrieval_page
-    assert "Why the top result matched" in retrieval_page
-    assert "evidenceInterpretationSummary" in retrieval_page
-    assert "InterpretationCard" in retrieval_page
-    assert "packageData.interpretation" in retrieval_page
+    assert "components/evidence-interpretation-panel" in retrieval_page
+    assert "function EvidenceInterpretationPanel" not in retrieval_page
+    assert "Evidence interpretation" in retrieval_evidence_interpretation
+    assert "Why the top result matched" in retrieval_evidence_interpretation_model
+    assert "buildEvidenceInterpretationViewModel" in retrieval_evidence_interpretation
+    assert "buildEvidenceInterpretationViewModel" in retrieval_evidence_interpretation_model
+    assert "InterpretationCard" in retrieval_evidence_interpretation
+    assert "packageData.interpretation" in retrieval_evidence_interpretation_model
     assert "RetrievalInterpretation" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
     assert "StandardSearchPlanPanel" in retrieval_page
-    assert "Healthcare search plan" in retrieval_page
-    assert "Backend-selected playbook for the next standards-aware search" in retrieval_page
-    assert "StandardSearchMatchReasons" in retrieval_page
-    assert "Matched by" in retrieval_page
-    assert "matched_fields" in retrieval_page
-    assert "matched_query_aspects" in retrieval_page
+    assert "components/strategy-standard-panels" in retrieval_page
+    assert "function StandardSearchPlanPanel" not in retrieval_page
+    assert "Healthcare search plan" in retrieval_strategy_standard_panels
+    assert "Backend-selected playbook for the next standards-aware search" in retrieval_strategy_standard_panels
+    assert "StandardSearchMatchReasons" in retrieval_strategy_standard_panels
+    assert "Matched by" in retrieval_strategy_standard_panels
+    assert "matched_fields" in retrieval_strategy_standard_panels
+    assert "matched_query_aspects" in retrieval_strategy_standard_panels
     assert "retrievalStandardSearchPlanReport" in retrieval_page
     assert "standard_search_plan" in retrieval_page
     assert "RetrievalStandardSearchPlan" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
-    assert "searchAnswerReportFromPackage" in retrieval_page
-    assert "retrieval_search_answer" in retrieval_page
-    assert "medicalSearchHintReport" in retrieval_page
-    assert "medical_search_hints" in retrieval_page
+    assert "searchAnswerReportFromPackage" in retrieval_search_answer_model
+    assert "retrieval_search_answer" in retrieval_search_answer_model
+    assert "medical_search_hints" in retrieval_search_answer_model
     assert "route_details" in retrieval_page
     assert "retrievalDiversityReport" in retrieval_page
     assert "diversity: retrievalDiversityReport(packageData)" in retrieval_page
     assert "retrievalInterpretationReport" in retrieval_page
-    assert "Copy answer JSON" in retrieval_page
-    assert "This is an evidence retrieval summary for workflow operations" in retrieval_page
-    assert "it is not clinical advice" in retrieval_page
+    assert "Copy answer JSON" in retrieval_search_answer
+    assert "This is an evidence retrieval summary for workflow operations" in retrieval_search_answer
+    assert "it is not clinical advice" in retrieval_inline_guide
     assert "remediationSummary: string | null" in retrieval_page
     assert "packageData.remediation_summary" in retrieval_page
     assert "handoff_context.remediation_summary" in retrieval_page
-    assert "Top action" in retrieval_page
+    assert "Top action" in retrieval_search_run_history
     assert "qualitySummary: packageData.quality_summary ?? null" in retrieval_page
     assert "qualitySummaryFingerprint" in retrieval_page
     assert "qualitySummaryChanged" in retrieval_page
     assert "quality_score: comparison.qualityScoreDelta" in retrieval_page
-    assert "searchRunQualityBadgeVariant" in retrieval_page
+    assert "searchRunQualityBadgeVariant" in retrieval_search_run_presentation_model
     assert "RunComparisonQueryProfile" in retrieval_page
     assert "QueryProfileSummaryCard" in retrieval_page
     assert "RunComparisonQualitySignals" in retrieval_page
@@ -379,8 +1502,24 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "entry.applied" in retrieval_page
     assert "Suggested by query profile" in retrieval_page
     assert "entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`" in retrieval_page
-    assert "RerankBadge" in retrieval_page
-    assert "DiversityBadge" in retrieval_page
+    assert "RuntimeRerankBadge" in retrieval_page
+    assert "RuntimeDiversityBadge" in retrieval_page
+    assert "RetrievalRuntimeStatusStrip" in retrieval_page
+    assert "components/retrieval-runtime-status" in retrieval_page
+    assert "function RerankBadge" not in retrieval_page
+    assert "function DiversityBadge" not in retrieval_page
+    assert "function RetrievalRuntimeStatusStrip" not in retrieval_page
+    assert "Retrieval runtime status" in retrieval_runtime_status
+    assert "RuntimeStatusFact" in retrieval_runtime_status
+    assert "Retrieval mode" in retrieval_runtime_status
+    assert "first stage only" in retrieval_runtime_status
+    assert "score order" in retrieval_runtime_status
+    assert "GraphPanel" in retrieval_page
+    assert "function GraphPanel" not in retrieval_page
+    assert "Graph handoff" in retrieval_runtime_status
+    assert "Index integrity" in retrieval_runtime_status
+    assert "Source checks" in retrieval_runtime_status
+    assert "function IntegrityPanel" not in retrieval_page
     assert "Fusion agreement" in retrieval_page
     assert "fusionDiagnosticsFromPackage" in retrieval_page
     assert "fusion_diagnostics" in retrieval_page
@@ -401,10 +1540,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         REPO_ROOT / "docs/api_contract_v0.md"
     ).read_text(encoding="utf-8")
     assert "DiversitySelectionExplanation" in retrieval_page
+    assert "function DiversitySelectionExplanation" not in retrieval_page
+    assert "Diversity selection" in retrieval_hit_explanation_panels
     assert "SourceDiversityPanel" in retrieval_page
-    assert "Source diversity" in retrieval_page
-    assert "Selected-hit rationale" in retrieval_page
-    assert "DiversityMetricCard" in retrieval_page
+    assert "components/source-diversity-panel" in retrieval_page
+    assert "function SourceDiversityPanel" not in retrieval_page
+    assert "Source diversity" in retrieval_source_diversity_panel
+    assert "Selected-hit rationale" in retrieval_source_diversity_panel
+    assert "DiversityMetricCard" in retrieval_source_diversity_panel
+    assert "function DiversityMetricCard" not in retrieval_page
     assert "RunComparisonSourceDiversity" in retrieval_page
     assert "Source diversity comparison" in retrieval_page
     assert "RunComparisonOperatorSummary" in retrieval_page
@@ -422,7 +1566,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "selected_hits: diversity.selectedHits.map" in retrieval_page
     assert "diversitySelectionByEvidenceId" in retrieval_page
     assert "selected_hits" in retrieval_page
-    assert "Diversity selection" in retrieval_page
+    assert "Diversity selection" in retrieval_hit_explanation_panels
     assert "packageData.diversity ?? packageData.handoff_context.diversity" in retrieval_page
     assert "packageData.handoff_context.reranker" in retrieval_page
     assert "packageData.handoff_context.diversity" in retrieval_page
@@ -437,8 +1581,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "clearSearchFilter" in retrieval_page
     assert "clearAllSearchFilters" in retrieval_page
     assert "ActiveFilterBar" in retrieval_page
+    assert "components/active-filter-bar" in retrieval_page
+    assert "function ActiveFilterBar" not in retrieval_page
     assert "activeFilterEntries" in retrieval_page
-    assert "Active filters" in retrieval_page
+    assert "Active filters" in retrieval_active_filter_bar
+    assert "Clear all" in retrieval_active_filter_bar
     assert "lastSearchSignature" in retrieval_page
     assert "currentSearchSignature" in retrieval_page
     assert "submittedSearchSignature" in retrieval_page
@@ -450,9 +1597,19 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "pending changes" in retrieval_page
     assert "submittedSearchPayload" in retrieval_page
     assert "SubmittedSearchSummary" in retrieval_page
-    assert "Submitted search" in retrieval_page
+    assert "components/submitted-search-summary" in retrieval_page
+    assert "function SubmittedSearchSummary" not in retrieval_page
+    assert "Submitted search" in retrieval_submitted_search_summary
+    assert "Restore submitted search" in retrieval_submitted_search_summary
+    assert "RankedEvidenceTriage" in retrieval_page
+    assert "components/ranked-evidence-triage" in retrieval_page
+    assert "function RankedEvidenceTriage" not in retrieval_page
+    assert "Ranked evidence triage" in retrieval_ranked_evidence_triage
+    assert "Inspect first" in retrieval_ranked_evidence_triage
+    assert "Refresh search before using these rankings" in retrieval_ranked_evidence_triage
+    assert "Start by judging the first ranked hit" in retrieval_ranked_evidence_triage
     assert "SearchRunHistory" in retrieval_page
-    assert "Search runs" in retrieval_page
+    assert "Search runs" in retrieval_search_run_history
     assert "searchRuns" in retrieval_page
     assert "createSearchRun" in retrieval_page
     assert "restoreSearchRun" in retrieval_page
@@ -494,9 +1651,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "compareSearchRuns" in retrieval_page
     assert "comparisonRunForActive" in retrieval_page
     assert "comparisonBaselineRunId" in retrieval_page
-    assert "Set baseline" in retrieval_page
-    assert "as comparison baseline" in retrieval_page
-    assert "GitCompareArrows" in retrieval_page
+    assert "Set baseline" in retrieval_search_run_history
+    assert "as comparison baseline" in retrieval_search_run_history
+    assert "GitCompareArrows" in retrieval_search_run_history
     assert "addedEvidenceIds" in retrieval_page
     assert "retainedEvidenceIds" in retrieval_page
     assert "RunComparisonRankChanges" in retrieval_page
@@ -539,9 +1696,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "churnRate" in retrieval_page
     assert "meanAbsoluteRankDelta" in retrieval_page
     assert "RelevanceJudgmentControl" in retrieval_page
-    assert "Relevance judgment" in retrieval_page
-    assert "Relevance judgment help" in retrieval_page
-    assert "Use relevant for direct support" in retrieval_page
+    assert "components/relevance-judgment-control" in retrieval_page
+    assert "function RelevanceJudgmentControl" not in retrieval_page
+    assert "Relevance judgment" in retrieval_relevance_judgment_control
+    assert "Relevance judgment help" in retrieval_relevance_judgment_control
+    assert "Use relevant for direct support" in retrieval_relevance_judgment_control
     assert "relevanceJudgments" in retrieval_page
     assert "useRetrievalJudgmentsQuery" in retrieval_page
     assert "useRetrievalJudgmentMutation" in retrieval_page
@@ -575,16 +1734,20 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Server nDCG@k" in retrieval_page
     assert "Evaluation recommendations" in retrieval_page
     assert "EvidenceReadinessPanel" in retrieval_page
-    assert "Evidence readiness" in retrieval_page
-    assert "readinessInterpretation" in retrieval_page
-    assert "Blocked for governed use" in retrieval_page
-    assert "Needs human review" in retrieval_page
-    assert "Ready for evidence review" in retrieval_page
-    assert "Readiness score unavailable" in retrieval_page
+    assert "components/evidence-readiness-panel" in retrieval_page
+    assert "function EvidenceReadinessPanel" not in retrieval_page
+    assert "Evidence readiness" in retrieval_evidence_readiness_panel
+    assert "readinessInterpretation" in retrieval_evidence_readiness_panel
+    assert "Blocked for governed use" in retrieval_evidence_readiness_panel
+    assert "Needs human review" in retrieval_evidence_readiness_panel
+    assert "Ready for evidence review" in retrieval_evidence_readiness_panel
+    assert "Readiness score unavailable" in retrieval_evidence_readiness_panel
     assert "RetrievalSearchCockpit" in retrieval_page
     assert "Search cockpit" in retrieval_page
     assert "SearchReadinessChecklist" in retrieval_page
-    assert "Search readiness checklist" in retrieval_page
+    assert "components/search-cockpit-panels" in retrieval_page
+    assert "function SearchReadinessChecklist" not in retrieval_page
+    assert "Search readiness checklist" in retrieval_search_cockpit_panels
     assert "searchReadinessChecklist" in retrieval_page
     assert "readiness_checklist: readinessChecklist" in retrieval_page
     assert "Source spread" in retrieval_page
@@ -601,42 +1764,56 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert 'report_type: "retrieval_cockpit"' in retrieval_page
     assert "interpretation: retrievalInterpretationReport(packageData)" in retrieval_page
     assert "RecommendedActionsPanel" in retrieval_page
-    assert "Corrective actions" in retrieval_page
+    assert "components/recommended-actions-panel" in retrieval_page
+    assert "function RecommendedActionsPanel" not in retrieval_page
+    assert "Corrective actions" in retrieval_recommended_actions_panel
+    assert "Backend-derived next steps" in retrieval_recommended_actions_panel
     assert "packageData.recommended_actions ?? []" in retrieval_page
     assert "recommendedActionFilter" in retrieval_page
     assert "recommendedActionSourceLabel" in retrieval_page
     assert "corrective_rule_source" in retrieval_page
     assert "query diagnostic" in retrieval_page
-    assert 'action.action_type === "broaden_query"' in retrieval_page
+    assert 'action.action_type === "broaden_query"' in retrieval_recommended_actions_panel
     assert "correctiveActionSummaryFromPackage" in retrieval_page
     assert "packageData.recommended_action_summary" in retrieval_page
     assert "correctiveActionSummary: CorrectiveActionSummary" in retrieval_page
     assert "recommendedActionTypeCounts" in retrieval_page
-    assert "CorrectiveActionTypeCountChips" in retrieval_page
-    assert "correctiveActionTypeCountEntries" in retrieval_page
-    assert "counts={run.summary.correctiveActionSummary.actionTypeCounts}" in retrieval_page
+    assert "CorrectiveActionTypeCountChips" in retrieval_search_run_history
+    assert "./corrective-action-type-count-chips" in retrieval_search_run_history
+    assert "function CorrectiveActionTypeCountChips" not in retrieval_page
+    assert "correctiveActionTypeCountEntries" in retrieval_search_run_presentation_model
+    assert "correctiveActionTypeCountEntries" in retrieval_corrective_action_model
+    assert "action types" in retrieval_corrective_action_chips
+    assert (
+        "counts={run.summary.correctiveActionSummary.actionTypeCounts}"
+        in retrieval_search_run_history
+    )
     assert "action_type_counts" in retrieval_page
     assert "broaden_query_count" in retrieval_page
     assert "actionTypeCounts" in retrieval_page
     assert "broadenQueryCount" in retrieval_page
-    assert "Top action:" in retrieval_page
-    assert "missing_required_evidence_buckets" in retrieval_page
+    assert "Top action:" in retrieval_search_run_history
+    assert "missing_required_evidence_buckets" in retrieval_evidence_readiness_panel
     assert "qualitySummaryBadgeVariant" in retrieval_page
     assert "bucketSuggestedFilter" in retrieval_page
     assert "onApplyBucketFilter" in retrieval_page
     assert "bucket.suggested_filter" in retrieval_page
     assert "EvidencePackBuckets" in retrieval_page
-    assert "Evidence pack" in retrieval_page
+    assert "components/evidence-pack-buckets" in retrieval_page
+    assert "function EvidencePackBuckets" not in retrieval_page
+    assert "Evidence pack" in retrieval_evidence_pack_buckets
     assert "packageData.evidence_buckets ?? []" in retrieval_page
-    assert "missingRequiredCount" in retrieval_page
-    assert "required gap" in retrieval_page
+    assert "missingRequiredCount" in retrieval_evidence_pack_buckets
+    assert "required gap" in retrieval_evidence_pack_buckets
     assert "EvidenceSupportMatrix" in retrieval_page
-    assert "Evidence support matrix" in retrieval_page
-    assert "Evidence support matrix help" in retrieval_page
-    assert "Weak rows need inspection before use" in retrieval_page
+    assert "components/evidence-support-matrix" in retrieval_page
+    assert "function EvidenceSupportMatrix" not in retrieval_page
+    assert "Evidence support matrix" in retrieval_evidence_support_matrix
+    assert "Evidence support matrix help" in retrieval_evidence_support_matrix
+    assert "Weak rows need inspection before use" in retrieval_evidence_support_matrix
     assert "evidenceSupportMatrixRows" in retrieval_page
     assert "HitMatchExplanationPanel" in retrieval_page
-    assert "Why this matched" in retrieval_page
+    assert "Why this matched" in retrieval_evidence_interpretation_guidance
     assert "hitMatchExplanation" in retrieval_page
     assert "match_explanation" in retrieval_page
     assert "match_explanation?: Record<string, unknown>" in (REPO_ROOT / "frontend/src/types.ts").read_text(
@@ -651,18 +1828,20 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "topScoreComponent" in retrieval_page
     assert "evidenceReportFromHit(" in retrieval_page
     assert "judgment," in retrieval_page
-    assert "Top driver" in retrieval_page
-    assert "Evidence pack" in retrieval_page
+    assert "Top driver" in retrieval_evidence_interpretation_guidance
+    assert "Evidence pack" in retrieval_evidence_pack_buckets
     assert "evidenceBucketLabelsByEvidenceId" in retrieval_page
     assert "evidenceSupportStatus" in retrieval_page
     assert '"source_id"' in retrieval_page
     assert "SourceScopePicker" in retrieval_page
-    assert "Exact source scope" in retrieval_page
-    assert "Exact source scope help" in retrieval_page
-    assert "Search is constrained to one exact source" in retrieval_page
-    assert "applied exact source" in retrieval_page
+    assert "components/source-scope-picker" in retrieval_page
+    assert "function SourceScopePicker" not in retrieval_page
+    assert "Exact source scope" in retrieval_source_scope_picker
+    assert "Exact source scope help" in retrieval_source_scope_picker
+    assert "Search is constrained to one exact source" in retrieval_source_scope_picker
+    assert "applied exact source" in retrieval_source_scope_picker
     assert "onUseSource" in retrieval_page
-    assert "Use source" in retrieval_page
+    assert "Use source" in retrieval_source_inventory_panel
     assert "payload.filters?.source_id" in retrieval_page
     assert "source_id?: string | null" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
@@ -704,26 +1883,33 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         REPO_ROOT / "frontend/src/types.ts"
     ).read_text(encoding="utf-8")
     assert "StrategyRecommendationsPanel" in retrieval_page
-    assert "StrategyRecommendationCard" in retrieval_page
-    assert "Strategy recommendations" in retrieval_page
-    assert "suggestedFilterAction(recommendation.suggested_filters)" in retrieval_page
+    assert "function StrategyRecommendationsPanel" not in retrieval_page
+    assert "StrategyRecommendationCard" in retrieval_strategy_standard_panels
+    assert "Strategy recommendations" in retrieval_strategy_standard_panels
+    assert "getSuggestedFilterAction(recommendation.suggested_filters)" in retrieval_strategy_standard_panels
     assert "strategy_recommendations: (packageData.strategy_recommendations ?? [])" in retrieval_page
     assert "Copy eval" in retrieval_page
     assert "Copy evaluation JSON" in retrieval_page
     assert "Copy retrieval judgment evaluation report" in retrieval_page
     assert "Judgment evaluation JSON report help" in retrieval_page
     assert "EvaluationReadinessPanel" in retrieval_page
-    assert "Judgment evaluation readiness" in retrieval_page
-    assert "Judgment readiness help" in retrieval_page
+    assert "components/judgment-evaluation-panels" in retrieval_page
+    assert "function EvaluationReadinessPanel" not in retrieval_page
+    assert "function JudgmentMetricCard" not in retrieval_page
+    assert "Judgment evaluation readiness" in retrieval_judgment_evaluation_panels
+    assert "evaluationReadinessVariant" in retrieval_judgment_evaluation_panels
+    assert "usable_with_gaps" in retrieval_judgment_evaluation_panels
+    assert "Judgment readiness help" in retrieval_judgment_evaluation_panels
     assert "evaluation_readiness: evaluation.evaluation_readiness" in retrieval_page
-    assert "evaluationReadinessVariant" in retrieval_page
-    assert "evaluationReadinessClass" in retrieval_page
+    assert "evaluationReadinessVariant" not in retrieval_page
+    assert "evaluationReadinessClass" not in retrieval_page
     assert "evaluationReportFromJudgmentSummary" in retrieval_page
     assert "retrieval_judgment_evaluation" in retrieval_page
     assert "correctiveActionReportContext" in retrieval_page
     assert "corrective_actions: correctiveActions" in retrieval_page
     assert "package_top_actions" in retrieval_page
     assert "runSummary.remediationSummary ?? searchRunRemediationSummary(runSummary)" in retrieval_page
+    assert "run.summary.remediationSummary ?? searchRunRemediationSummary(run.summary)" in retrieval_search_run_evidence_summary
     assert "retrievalRulePacksFromPackage" in retrieval_page
     assert "retrieval_rule_packs" in retrieval_page
     assert "content_hash" in retrieval_page
@@ -765,29 +1951,37 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "retrieval cockpit" in frontend_architecture
     assert "copyable `retrieval_cockpit` JSON report" in frontend_architecture
     assert "QueryHealthPanel" in retrieval_page
+    assert "function QueryHealthPanel" not in retrieval_page
     assert "Query health" in retrieval_page
-    assert "Query health help" in retrieval_page
+    assert "Query health help" in retrieval_search_cockpit_panels
     assert "queryHealthItems" in retrieval_page
     assert "queryDiagnosticHealthItems" in retrieval_page
-    assert "DiagnosticMetadataChips" in retrieval_page
+    assert "DiagnosticMetadataChips" in retrieval_query_diagnostic_list
     assert "metadata: recordValue(item.metadata)" in retrieval_page
     assert "metadata: diagnostic.metadata" in retrieval_page
-    assert "active_metadata_filters" in retrieval_page
-    assert "suggested_standards" in retrieval_page
+    assert "active_metadata_filters" in retrieval_query_diagnostic_list
+    assert "suggested_standards" in retrieval_query_diagnostic_list
     assert "diagnostic_${diagnostic.code}" in retrieval_page
     assert "Filter over-constraint" in retrieval_page
     assert "overconstrained_metadata_filters" in retrieval_page
-    assert "diagnostic_overconstrained_metadata_filters" in retrieval_page
-    assert "Clear source scope" in retrieval_page
-    assert "Broaden search" in retrieval_page
+    assert "diagnostic_overconstrained_metadata_filters" in retrieval_search_cockpit_panels
+    assert "Clear source scope" in retrieval_search_cockpit_panels
+    assert "Broaden search" in retrieval_search_cockpit_panels
     assert "onClearAllFilters" in retrieval_page
     assert "onClearFilter" in retrieval_page
-    assert "queryHealthBadgeVariant" in retrieval_page
-    assert "queryHealthOverallLabel" in retrieval_page
+    assert "queryHealthBadgeVariant" in retrieval_search_cockpit_panels
+    assert "queryHealthBadgeVariant" not in retrieval_page
+    assert "queryHealthOverallLabel" in retrieval_search_cockpit_panels
+    assert "queryHealthOverallLabel" not in retrieval_page
     assert "Query specificity" in retrieval_page
     assert "Clinical context" in retrieval_page
     assert "Search scope" in retrieval_page
     assert "Result coverage" in retrieval_page
+    assert "ResultFacets" in retrieval_page
+    assert "components/result-facets" in retrieval_page
+    assert "function ResultFacets" not in retrieval_page
+    assert "Result facets" in retrieval_result_facets
+    assert "click to refine" in retrieval_result_facets
     assert "Safety signals" in retrieval_page
     assert "query_health: queryHealth" in retrieval_page
     assert "query-health checklist" in frontend_architecture
@@ -812,55 +2006,75 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "isJudgmentSyncing" in retrieval_page
     assert "restoreSubmittedSearch" in retrieval_page
     assert "onRestoreSubmittedSearch" in retrieval_page
-    assert "Restore submitted search" in retrieval_page
-    assert "displayed request" in retrieval_page
+    assert "displayed request" in retrieval_submitted_search_summary
     assert "useRetrievalPresetsQuery" in retrieval_page
     assert "SearchPresetStrip" in retrieval_page
+    assert "components/search-preset-strip" in retrieval_page
+    assert "function SearchPresetStrip" not in retrieval_page
+    assert "Search presets" in retrieval_search_preset_strip
+    assert "Filter retrieval presets" in retrieval_search_preset_strip
+    assert "presetMatchesSearch" in retrieval_search_preset_strip
+    assert "presetFilterClass" in retrieval_search_preset_strip
     assert "activePresetId" in retrieval_page
-    assert "Loading retrieval presets" in retrieval_page
-    assert "data-driven" in retrieval_page
+    assert "Loading retrieval presets" in retrieval_search_preset_strip
+    assert "data-driven" in retrieval_search_preset_strip
     assert "useRetrievalSearchOptionsQuery" in retrieval_page
     assert "formatOptions" in retrieval_page
     assert "mergeSearchOptions" in retrieval_page
-    assert "categoryFilter" in retrieval_page
-    assert "presetSearch" in retrieval_page
-    assert "presetMatchesSearch" in retrieval_page
-    assert "Filter retrieval presets" in retrieval_page
-    assert "Preset categories" in retrieval_page
-    assert "sourceSearch" in retrieval_page
-    assert "sourceTypeFilter" in retrieval_page
-    assert "sourceMatchesInventoryFilters" in retrieval_page
-    assert "Filter trusted sources" in retrieval_page
-    assert "Source inventory filters" in retrieval_page
-    assert "SourceInventoryReadinessPanel" in retrieval_page
-    assert "Source inventory readiness" in retrieval_page
-    assert "Source readiness" in retrieval_page
-    assert "Source readiness help" in retrieval_page
-    assert "sourceInventoryReadiness" in retrieval_page
-    assert "sourceInventoryReadinessMessage" in retrieval_page
-    assert "filtered inventory" in retrieval_page
-    assert "all shown sources have chunks" in retrieval_page
-    assert "No trusted sources are loaded" in retrieval_page
-    assert "Trusted sources help" in retrieval_page
-    assert "Inventory filters only inspect available sources" in retrieval_page
+    assert "categoryFilter" in retrieval_search_preset_strip
+    assert "presetSearch" in retrieval_search_preset_strip
+    assert "presetMatchesSearch" not in retrieval_page
+    assert "Filter retrieval presets" in retrieval_search_preset_strip
+    assert "Preset categories" in retrieval_search_preset_strip
+    assert "SourceInventoryPanel" in retrieval_page
+    assert "components/source-inventory-panel" in retrieval_page
+    assert "function SourcesPanel" not in retrieval_page
+    assert "sourceSearch" in retrieval_source_inventory_panel
+    assert "sourceTypeFilter" in retrieval_source_inventory_panel
+    assert "sourceMatchesInventoryFilters" in retrieval_source_inventory_panel
+    assert "Filter trusted sources" in retrieval_source_inventory_panel
+    assert "Source inventory filters" in retrieval_source_inventory_panel
+    assert "SourceInventoryReadinessPanel" in retrieval_source_inventory_panel
+    assert "Source inventory readiness" in retrieval_source_inventory_panel
+    assert "Source readiness" in retrieval_source_inventory_panel
+    assert "Source readiness help" in retrieval_source_inventory_panel
+    assert "sourceInventoryReadiness" in retrieval_source_inventory_panel
+    assert "sourceInventoryReadinessMessage" in retrieval_source_inventory_panel
+    assert "filtered inventory" in retrieval_source_inventory_panel
+    assert "all shown sources have chunks" in retrieval_source_inventory_panel
+    assert "No trusted sources are loaded" in retrieval_source_inventory_panel
+    assert "Trusted sources help" in retrieval_source_inventory_panel
+    assert "Inventory filters only inspect available sources" in retrieval_source_inventory_panel
     assert '<option value="csv">CSV</option>' not in retrieval_page
     assert '<option value="fhir_like">FHIR-like</option>' not in retrieval_page
     assert "defaultQuery" not in retrieval_page
     assert "activeFacetFiltersFromPayload" in retrieval_page
     assert "onApplyFacet" in retrieval_page
-    assert "aria-pressed={applied}" in retrieval_page
+    assert "aria-pressed={applied}" in retrieval_result_facets
     assert "supportedSuggestionFilterFields" in retrieval_page
     assert "onApplyFilterSuggestion" in retrieval_page
+    assert "FilterSuggestionList" in retrieval_page
+    assert "components/filter-suggestion-list" in retrieval_page
+    assert "function FilterSuggestionList" not in retrieval_page
+    assert "Suggested filters" in retrieval_filter_suggestion_list
+    assert "isSuggestionSupported" in retrieval_filter_suggestion_list
+    assert "Apply" in retrieval_filter_suggestion_list
     assert "coverageSuggestedFilter" in retrieval_page
     assert "coverageSuggestedAction" in retrieval_page
-    assert "CoverageItemList" in retrieval_page
-    assert "Aspect coverage" in retrieval_page
-    assert "coverage?.query_aspects" in retrieval_page
+    assert "CoverageDiagnosticsPanel" in retrieval_page
+    assert "components/coverage-diagnostics-panel" in retrieval_page
+    assert "function CoverageDiagnosticsBlock" not in retrieval_page
+    assert "CoverageItemList" not in retrieval_page
+    assert "CoverageItemList" in retrieval_coverage_diagnostics_panel
+    assert "Aspect coverage" in retrieval_coverage_diagnostics_panel
+    assert "coverage?.query_aspects" in retrieval_coverage_diagnostics_panel
+    assert "Coverage diagnostics" in retrieval_coverage_diagnostics_panel
+    assert "getCoverageSuggestedFilter" in retrieval_coverage_diagnostics_panel
     assert "suggested_filter" in retrieval_page
     assert "onApplyCoverageFilter" in retrieval_page
-    assert "Copy medical search hint" in retrieval_page
-    assert "Open medical search hint" in retrieval_page
-    assert "launchable hint" in retrieval_page
+    assert "Copy medical search hint" in retrieval_search_hint_list
+    assert "Open medical search hint" in retrieval_search_hint_list
+    assert "launchable hint" in retrieval_search_hint_list
     assert "copyTextToClipboard" in retrieval_page
     assert "Embedding and rerank provider state" in frontend_architecture
     assert "per-hit ranking boost signals" in frontend_architecture
@@ -1089,6 +2303,60 @@ def test_help_center_surfaces_user_guidance() -> None:
     help_page = HELP_PAGE.read_text(encoding="utf-8")
     guide_panel = GUIDE_PANEL.read_text(encoding="utf-8")
     retrieval_page = RETRIEVAL_PAGE.read_text(encoding="utf-8")
+    retrieval_first_run_guide = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "first-run-guide.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_inline_guide = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-inline-guide.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_no_result_remediation_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "no-result-remediation-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_search_preset_strip = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "search-preset-strip.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_source_inventory_panel = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "source-inventory-panel.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_strategy_standard_panels = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "strategy-standard-panels.tsx"
+    ).read_text(encoding="utf-8")
     reviews_page = (
         REPO_ROOT / "frontend" / "src" / "features" / "reviews" / "reviews-page.tsx"
     ).read_text(encoding="utf-8")
@@ -1135,6 +2403,9 @@ def test_help_center_surfaces_user_guidance() -> None:
     assert "FHIR-like JSON" in help_page
     assert "PDF / DOCX / Image" in help_page
     assert "Retrieval Search Manual" in help_page
+    assert "Execution summary" in help_page
+    assert "Run first local task" in help_page
+    assert "Copy external follow-ups" in help_page
     assert "Hybrid search" in help_page
     assert "Reranking" in help_page
     assert "Exact source scope" in help_page
@@ -1155,9 +2426,15 @@ def test_help_center_surfaces_user_guidance() -> None:
     assert "AssistantInlineGuide" in assistant_page
     assert "How to use Assistant" in assistant_page
     assert "RetrievalInlineGuide" in retrieval_page
-    assert "How to read Retrieval" in retrieval_page
+    assert "components/retrieval-inline-guide" in retrieval_page
+    assert "function RetrievalInlineGuide" not in retrieval_page
+    assert "How to read Retrieval" in retrieval_inline_guide
     assert "RetrievalFirstRunGuide" in retrieval_page
+    assert "components/first-run-guide" in retrieval_page
+    assert "function RetrievalFirstRunGuide" not in retrieval_page
     assert "NoResultRemediationPanel" in retrieval_page
+    assert "components/no-result-remediation-panel" in retrieval_page
+    assert "function NoResultRemediationPanel" not in retrieval_page
     assert "Retrieval query help" in retrieval_page
     assert "Retrieval fields help" in retrieval_page
     assert "Schema filter help" in retrieval_page
@@ -1170,18 +2447,21 @@ def test_help_center_surfaces_user_guidance() -> None:
     assert "Source type filter help" in retrieval_page
     assert "explain missing units for lab_result_v1" in retrieval_page
     assert "date, patient_id, lab_name, value, unit" in retrieval_page
-    assert "Start with a concrete healthcare data question" in retrieval_page
-    assert "first search guide" in retrieval_page
-    assert "Good starter questions" in retrieval_page
-    assert "No matching evidence returned" in retrieval_page
-    assert "Loosen scope" in retrieval_page
-    assert "Clear all filters" in retrieval_page
-    assert "Clear exact source scope and rerun search" in retrieval_page
-    assert "Check source inventory" in retrieval_page
+    assert "Start with a concrete healthcare data question" in retrieval_first_run_guide
+    assert "first search guide" in retrieval_first_run_guide
+    assert "Good starter questions" in retrieval_first_run_guide
+    assert "No matching evidence returned" in retrieval_no_result_remediation_panel
+    assert "Loosen scope" in retrieval_no_result_remediation_panel
+    assert "Clear all filters" in retrieval_no_result_remediation_panel
+    assert (
+        "Clear exact source scope and rerun search"
+        in retrieval_no_result_remediation_panel
+    )
+    assert "Check source inventory" in retrieval_no_result_remediation_panel
     assert "firstSupportedRecommendedAction" in retrieval_page
     assert "direct controls to clear exact source scope" in frontend_architecture
-    assert "Search presets help" in retrieval_page
-    assert "Source inventory filters help" in retrieval_page
+    assert "Search presets help" in retrieval_search_preset_strip
+    assert "Source inventory filters help" in retrieval_source_inventory_panel
     assert "Execute write actions help" in assistant_page
     assert "Optional context JSON help" in assistant_page
     assert "Tool catalog help" in assistant_page
@@ -1203,9 +2483,9 @@ def test_help_center_surfaces_user_guidance() -> None:
     assert "The retrieval stack combines lexical search" in retrieval_page
     assert "How many independent sources survived source-diversity selection" in retrieval_page
     assert "Concepts and query aspects detected from the search" in retrieval_page
-    assert "Strategy recommendations help" in retrieval_page
+    assert "Strategy recommendations help" in retrieval_strategy_standard_panels
     assert "Open full manual" in assistant_page
-    assert "Open full manual" in retrieval_page
+    assert "Open full manual" in retrieval_inline_guide
     assert "operator guidance as first-class routes" in frontend_architecture
     assert "/help/tutorials" in frontend_architecture
     assert "/help/manual" in frontend_architecture
