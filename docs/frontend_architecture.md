@@ -574,8 +574,14 @@ selection state.
 Search-run comparison container rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/search-run-comparison-panel.tsx`
 owns the comparison card, copy button state, baseline query row, summary/detail
-panel composition, and top-source footer. The page owns baseline selection,
-comparison model derivation, and rule-pack view derivation.
+panel composition, and top-source footer. The page owns baseline selection and
+passes facet labels into the pure comparison model; it should not calculate
+rank movement, evidence churn, quality-signal deltas, coverage changes,
+source-diversity deltas, or rule-pack diffs inline.
+`frontend/src/features/retrieval/model/retrieval-run-comparison.ts` owns pure
+run-to-run comparison derivation, including evidence overlap, rank movement,
+source diversity, coverage, facet, quality-signal, query-profile,
+query-aspect, concept-grounding, rule-pack, and diagnosis inputs.
 `frontend/src/features/retrieval/model/retrieval-comparison-diagnosis.ts`
 owns pure comparison diagnosis policy, recommended-action policy,
 recommended-action summary derivation, operator-summary derivation, and copied
