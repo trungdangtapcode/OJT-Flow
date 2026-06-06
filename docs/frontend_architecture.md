@@ -401,6 +401,11 @@ Result cards must also render `source_locator.concept_matches[]` as per-hit
 concept grounding, including standard system, optional code, display name,
 confidence, matched fields, aliases, and reason.
 Per-hit explanation rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/hit-card.tsx` owns the ranked hit
+card composition, including evidence summary panels, provenance/snippet display,
+score explanations, concept/aspect support, ranking signals, relevance control,
+and copy-to-JSON affordance. The retrieval page maps backend hits to `HitCard`
+props and owns run state, filters, judgments, and search orchestration.
 `frontend/src/features/retrieval/components/hit-explanation-panels.tsx` owns
 score meters, score-component rows, diversity-selection details, concept
 grounding cards, and query-aspect support cards. Evidence logic is split under
