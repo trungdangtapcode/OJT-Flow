@@ -48,8 +48,7 @@
           "medication_normalization",
           "regulatory_drug_safety_search"
         ],
-        "any_candidate_domains": ["medication"],
-        "any_standards": ["RxNorm", "openFDA"]
+        "any_candidate_domains": ["medication"]
       }
     },
     {
@@ -66,7 +65,22 @@
           "essential_hypertension_icd10cm_seed"
         ],
         "any_candidate_domains": ["problem_list"],
-        "any_standards": ["ICD-10-CM", "SNOMED CT"]
+        "any_standards": ["ICD-10-CM"]
+      }
+    },
+    {
+      "rule_id": "suggest_allergy_domain",
+      "field": "clinical_domain",
+      "value": "allergy",
+      "reason": "Detected allergy, intolerance, adverse-reaction, or FHIR AllergyIntolerance context.",
+      "confidence": 0.9,
+      "match": {
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed",
+          "latex_allergy_seed"
+        ],
+        "any_candidate_domains": ["allergy"]
       }
     },
     {
@@ -204,6 +218,21 @@
       "match": {
         "any_standards": ["SNOMED CT"],
         "any_candidate_standards": ["SNOMED CT"]
+      }
+    },
+    {
+      "rule_id": "suggest_standard_rxnorm_for_allergy_substance",
+      "field": "standard_system",
+      "value": "RxNorm",
+      "reason": "Detected allergy substance context where ingredient-level medication identity may be needed.",
+      "confidence": 0.82,
+      "match": {
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed"
+        ],
+        "any_candidate_domains": ["allergy"],
+        "any_standards": ["RxNorm"]
       }
     },
     {

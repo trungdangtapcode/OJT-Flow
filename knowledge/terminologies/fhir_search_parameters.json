@@ -131,6 +131,40 @@
           "standard_systems": ["FHIR"]
         }
       ]
+    },
+    {
+      "resource_type": "AllergyIntolerance",
+      "clinical_domain": "allergy",
+      "parameters": [
+        {
+          "name": "code",
+          "type": "token",
+          "target_field": "AllergyIntolerance.code",
+          "example": "AllergyIntolerance?code=<substance-or-finding-code>",
+          "standard_systems": ["FHIR", "RxNorm", "SNOMED CT"]
+        },
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "AllergyIntolerance.patient",
+          "example": "AllergyIntolerance?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "clinical-status",
+          "type": "token",
+          "target_field": "AllergyIntolerance.clinicalStatus",
+          "example": "AllergyIntolerance?clinical-status=active",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "verification-status",
+          "type": "token",
+          "target_field": "AllergyIntolerance.verificationStatus",
+          "example": "AllergyIntolerance?verification-status=confirmed",
+          "standard_systems": ["FHIR"]
+        }
+      ]
     }
   ]
 }

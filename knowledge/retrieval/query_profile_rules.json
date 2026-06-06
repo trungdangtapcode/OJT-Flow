@@ -48,10 +48,6 @@
           "medication_normalization",
           "regulatory_drug_safety_search"
         ],
-        "any_standards": [
-          "RxNorm",
-          "openFDA"
-        ],
         "any_candidate_domains": [
           "medication"
         ],
@@ -84,8 +80,7 @@
           "essential_hypertension_icd10cm_seed"
         ],
         "any_standards": [
-          "ICD-10-CM",
-          "SNOMED CT"
+          "ICD-10-CM"
         ],
         "any_candidate_domains": [
           "problem_list"
@@ -94,8 +89,38 @@
           "diagnosis",
           "diagnoses",
           "condition",
-          "icd",
-          "snomed"
+          "icd"
+        ]
+      }
+    },
+    {
+      "rule_id": "profile_allergy_intolerance_grounding",
+      "profile_id": "allergy_intolerance_grounding",
+      "label": "Allergy and intolerance grounding",
+      "route": "clinical_allergy_grounding",
+      "complexity": "high",
+      "retrieval_mode": "hybrid_with_standard_coverage",
+      "description": "Use when the query is about allergies, intolerances, adverse reactions, FHIR AllergyIntolerance, reaction substances, or manifestation fields.",
+      "priority": 7,
+      "suggested_filters": {
+        "clinical_domain": "allergy",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed",
+          "latex_allergy_seed"
+        ],
+        "any_candidate_domains": [
+          "allergy"
+        ],
+        "any_tokens": [
+          "allergy",
+          "allergies",
+          "intolerance",
+          "reaction",
+          "manifestation"
         ]
       }
     },

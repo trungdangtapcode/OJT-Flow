@@ -654,6 +654,54 @@ def test_query_analysis_routes_condition_problem_list_grounding() -> None:
     assert any("ICD-10-CM diagnosis code" in variant for variant in analysis.query_variants)
 
 
+def test_query_analysis_routes_allergy_intolerance_grounding() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query=(
+                "penicillin allergy reaction manifestation FHIR "
+                "AllergyIntolerance RxNorm SNOMED"
+            ),
+            fields=[
+                "code",
+                "clinicalStatus",
+                "verificationStatus",
+                "reaction.manifestation",
+            ],
+            resource_type="AllergyIntolerance",
+        )
+    )
+
+    aspects = {aspect.aspect_id: aspect for aspect in analysis.query_aspects}
+    suggestions = {
+        (suggestion.field, suggestion.value)
+        for suggestion in analysis.filter_suggestions
+    }
+    hints = {hint.target: hint for hint in analysis.search_hints}
+
+    assert "fhir_allergyintolerance_profile" in analysis.detected_concepts
+    assert "penicillin_allergy_seed" in analysis.detected_concepts
+    assert "fhir_condition_profile" not in analysis.detected_concepts
+    assert "condition_terminology_coding" not in analysis.detected_concepts
+    assert "medication_normalization" not in analysis.detected_concepts
+    assert {"FHIR", "SNOMED CT", "RxNorm"}.issubset(set(analysis.standards))
+    assert analysis.query_profile is not None
+    assert analysis.query_profile.profile_id == "allergy_intolerance_grounding"
+    assert list(aspects) == ["allergy_intolerance_grounding"]
+    assert aspects["allergy_intolerance_grounding"].suggested_filters == {
+        "clinical_domain": "allergy"
+    }
+    assert ("clinical_domain", "allergy") in suggestions
+    assert ("clinical_domain", "problem_list") not in suggestions
+    assert ("clinical_domain", "medication") not in suggestions
+    assert ("standard_system", "RxNorm") in suggestions
+    assert ("standard_system", "SNOMED CT") in suggestions
+    assert "allergyintolerance" in hints
+    assert "AllergyIntolerance?code=<substance-or-finding-code>" in hints[
+        "allergyintolerance"
+    ].query
+    assert any("FHIR AllergyIntolerance" in variant for variant in analysis.query_variants)
+
+
 def test_query_analysis_uses_data_driven_query_profile_rules(tmp_path, monkeypatch) -> None:
     registry_path = tmp_path / "query_profile_rules.json"
     registry_path.write_text(
@@ -1574,11 +1622,13 @@ def test_default_ranking_policy_protects_canonical_healthcare_sources() -> None:
     assert rules["boost_fhir_observation_concept"]["weight"] >= 0.09
     assert rules["boost_loinc_blood_pressure_concept"]["weight"] >= 0.105
     assert rules["boost_condition_problem_list_standards"]["weight"] >= 0.1
+    assert rules["boost_allergy_intolerance_standards"]["weight"] >= 0.11
     assert "schema" in rules["boost_schema_source_match"]["reason"].lower()
     assert "loinc" in rules["boost_loinc_hba1c_concept"]["reason"].lower()
     assert "blood-pressure" in rules["boost_loinc_blood_pressure_concept"]["reason"].lower()
     assert "fhir" in rules["boost_fhir_observation_concept"]["reason"].lower()
     assert "condition" in rules["boost_condition_problem_list_standards"]["reason"].lower()
+    assert "allergy" in rules["boost_allergy_intolerance_standards"]["reason"].lower()
 
 
 def test_static_retrieval_ranks_condition_problem_list_evidence() -> None:
@@ -1614,6 +1664,45 @@ def test_static_retrieval_ranks_condition_problem_list_evidence() -> None:
         for hit in package.hits
     )
     assert any(hit.evidence.locator.get("standard") == "CDC/NCHS ICD-10-CM" for hit in package.hits)
+    assert any(hit.evidence.locator.get("standard") == "SNOMED CT" for hit in package.hits)
+
+
+def test_static_retrieval_ranks_allergy_intolerance_evidence() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    package = repository.search(
+        RetrievalQuery(
+            query=(
+                "FHIR AllergyIntolerance penicillin allergy reaction "
+                "manifestation RxNorm SNOMED"
+            ),
+            resource_type="AllergyIntolerance",
+            top_k=8,
+            filters={"trust_level": "approved"},
+        )
+    )
+
+    source_ids = [item.source_id for item in package.evidence]
+    coverage_aspects = {
+        item.value: item for item in (package.coverage.query_aspects if package.coverage else [])
+    }
+
+    assert source_ids[0] == "standard:fhir_allergyintolerance_r4"
+    assert set(source_ids[:3]) == {
+        "standard:fhir_allergyintolerance_r4",
+        "terminology:snomed_ct_allergy",
+        "terminology:rxnorm_allergy_substances",
+    }
+    assert package.coverage is not None
+    assert coverage_aspects["allergy_intolerance_grounding"].status == "covered"
+    assert any(
+        hit.evidence.locator.get("clinical_domain") == "allergy"
+        for hit in package.hits
+    )
+    assert any(
+        hit.evidence.locator.get("standard") == "HL7 FHIR R4 AllergyIntolerance"
+        for hit in package.hits
+    )
+    assert any(hit.evidence.locator.get("standard") == "RxNorm" for hit in package.hits)
     assert any(hit.evidence.locator.get("standard") == "SNOMED CT" for hit in package.hits)
 
 

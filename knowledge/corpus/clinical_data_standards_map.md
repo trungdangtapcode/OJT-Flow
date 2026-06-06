@@ -103,6 +103,33 @@ Retrieval behavior:
   verification status, and source evidence before mapping to downstream FHIR or
   analytics structures.
 
+## Allergies, Intolerances, And Adverse Reactions
+
+Primary standards:
+
+- FHIR AllergyIntolerance for allergy, intolerance, adverse-reaction, and
+  reaction-manifestation resource structure.
+- SNOMED CT for allergy, sensitivity, intolerance, and manifestation clinical
+  concepts.
+- RxNorm for medication ingredient or product identity when the reaction
+  substance is a drug.
+
+Common seed concepts:
+
+- Penicillin allergy: RxNorm ingredient-level seed code `70618`.
+- Latex allergy: SNOMED CT seed code `300916003`.
+
+Retrieval behavior:
+
+- Route allergy, intolerance, adverse-reaction, reaction-substance, and
+  manifestation queries to FHIR AllergyIntolerance evidence instead of generic
+  medication or Observation evidence.
+- Treat RxNorm and SNOMED CT matches as grounding candidates for review, not
+  automatic allergy-status, severity, or clinical-safety decisions.
+- Preserve original substance text, clinical status, verification status,
+  reaction manifestation, recorder/source, uncertainty, and review notes before
+  using allergy evidence in downstream safety or transformation workflows.
+
 ## Literature And Evidence Search
 
 Primary standards and datasets:

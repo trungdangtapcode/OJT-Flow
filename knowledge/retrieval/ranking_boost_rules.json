@@ -116,6 +116,20 @@
       }
     },
     {
+      "rule_id": "boost_allergy_intolerance_standards",
+      "weight": 0.11,
+      "reason": "Prefer FHIR AllergyIntolerance, SNOMED CT, and RxNorm evidence when allergy or adverse-reaction concepts are detected.",
+      "match": {
+        "chunk_clinical_domains": ["allergy"],
+        "chunk_standard_systems": ["FHIR", "SNOMED CT", "RxNorm"],
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed",
+          "latex_allergy_seed"
+        ]
+      }
+    },
+    {
       "rule_id": "boost_clinicaltrials_trial_concept",
       "weight": 0.08,
       "reason": "Prefer ClinicalTrials.gov evidence when trial-search concepts are detected.",

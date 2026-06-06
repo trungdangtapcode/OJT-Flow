@@ -56,6 +56,15 @@
       ]
     },
     {
+      "target": "allergyintolerance",
+      "label": "FHIR AllergyIntolerance",
+      "rationale": "Use FHIR AllergyIntolerance search patterns when grounding allergy, intolerance, adverse-reaction, reaction substance, or manifestation records.",
+      "warnings": [
+        "Do not infer active allergies from text alone; preserve clinicalStatus, verificationStatus, recorder/source, and reaction details.",
+        "Allergy evidence can affect safety workflows, so destructive transformations require human review."
+      ]
+    },
+    {
       "target": "clinicaltrials_gov",
       "label": "ClinicalTrials.gov API v2",
       "rationale": "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, intervention, recruitment status, and eligibility fields.",
