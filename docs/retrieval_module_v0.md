@@ -33,6 +33,9 @@ contract remains `RetrievalPackage`, so workflow state, UI rendering, assistant
 tools, and audit/explanation paths do not depend on LlamaIndex types.
 Framework retrieval also populates package readiness metadata and per-hit
 aspect/concept locator signals through the same OJTFlow retrieval contracts.
+It emits the same `standard_search_plan` contract as the native retrieval
+engine, so UI, assistant, and future MCP tool behavior do not diverge by
+retrieval framework.
 The LlamaIndex adapter builds a reusable in-process index for the current
 trusted chunk generation and invalidates it on `reindex()`. Retrieval still
 applies OJTFlow metadata filters before returning evidence. For framework
@@ -75,15 +78,35 @@ The retrieval pipeline is auditable in v0:
 9. Each ranked hit gets a deterministic extractive snippet: the most
    query-relevant sentence/window from the source chunk, with matched terms and
    normalized source offsets.
-10. Final selected hits are summarized into result facets by source type,
+10. Final selected hits use source-aware diversity selection before packaging,
+   so repeated high-scoring chunks from one source do not hide independent
+   standard, policy, or terminology evidence. The trace exposes selected-hit
+   rationale under the first-class `diversity.selected_hits` contract and also
+   mirrors it to `handoff_context.diversity.selected_hits` for agent handoff.
+11. Final selected hits are summarized into result facets by source type,
    clinical domain, standard system, and trust level.
-11. Trace safety flags mark prompt-injection-like query text and sensitive field
+12. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
 The retrieval package now includes a `graph_context` handoff that extracts
 entities and evidence triples from the retrieved claims. This is a
 GraphRAG-lite context for validation/explanation workflows, not diagnosis,
 treatment, triage, or medication advice.
+
+The package also includes a `standard_search_plan`. This is a typed,
+healthcare-standard playbook selected from
+`knowledge/retrieval/standard_search_playbook_rules.json`. It tells operators
+which governed search route should be run next, such as FHIR resource search
+with Provenance/AuditEvent follow-up, LOINC terminology lookup, UCUM unit
+validation, RxNorm medication normalization, PHI review, or literature/trial
+search hints. The plan is returned as first-class API data instead of hidden UI
+copy, so the assistant, retrieval console, exports, and future MCP tools can
+all use the same route guidance.
+Playbook rules are data-driven and can trigger from query profile, detected
+standards, detected concepts, decomposed query-aspect IDs, uploaded dataset
+field names, query tokens, FHIR resource type, quality signals, safety flags,
+or required metadata filters. This lets a CSV field such as `unit` select a
+UCUM validation route even when the user never names UCUM explicitly.
 
 ## Search Presets
 
@@ -174,9 +197,29 @@ not a bulk data dump. It now contains:
   severities, review severities, and the score threshold below which a package
   requires review.
 - `knowledge/retrieval/search_hint_targets.json`: target metadata for
-  external medical search hints, including operator rationale and warnings.
+  external and terminology search hints, including operator rationale and
+  warnings for PubMed, FHIR, LOINC, UCUM, ClinicalTrials.gov, and openFDA.
+- `knowledge/retrieval/standard_search_playbook_rules.json`: deterministic
+  healthcare-standard search playbook rules that turn query profiles,
+  standards, query aspects, dataset fields, query tokens, resource types,
+  safety flags, and quality signals into operator-facing FHIR, terminology,
+  privacy, and external-search route steps.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
-  parameter templates for resource-level search hints.
+  parameter templates for resource-level search hints. FHIR search hints expose
+  `metadata.parameter_examples`, `metadata.lineage_followup`, and a capability
+  warning so the UI can show concrete `code`, `patient`, `date`, and
+  `value-quantity` syntax plus Provenance/AuditEvent follow-up without
+  hardcoding FHIR in React.
+  LOINC hints expose the authenticated Search API scope endpoints and
+  query/rows/offset parameter examples. UCUM hints expose the NLM FHIR
+  CodeSystem `$validate-code` operation parameters and selected candidate unit
+  strings. UCUM hints are launchable only when the analyzer has a concrete unit
+  candidate; placeholder unit-code hints remain copy-only to avoid sending
+  meaningless requests.
+Assistant synthesis receives compact `medical_search_hints` and `diversity`
+from retrieval tool results, so the model can mention governed FHIR, LOINC,
+UCUM, PubMed, ClinicalTrials.gov, openFDA follow-up routes, and selected-source
+spread without inspecting raw retrieval JSON.
 - `knowledge/corpus/clinical_data_standards_map.md`: project-scope map from
   workflow use cases to FHIR, LOINC, UCUM, RxNorm, MeSH/PubMed,
   ClinicalTrials.gov, openFDA, and OMOP.
@@ -492,7 +535,11 @@ requested fields in matched terms, detected format presence, applied
 clinical-domain filter match, chunk trust level, source type, standard system,
 matched query terms, detected concepts, and query-expansion rule IDs.
 `OJT_RANKING_BOOST_RULES_PATH` can point the runtime to a deployment-specific
-ranking policy. Applied boosts are copied into each hit's
+ranking policy. The default policy intentionally gives stronger boosts to
+direct schema-source matches, HbA1c/LOINC concept grounding, and FHIR
+Observation profile grounding so broad unit evidence does not crowd out the
+canonical schema, terminology, or profile source for those query intents.
+Applied boosts are copied into each hit's
 `source_locator.ranking_boosts` as rule ID, weight, and reason objects so
 ranking influence is visible in API payloads and the Retrieval console. The
 legacy `source_locator.ranking_boost_rules` ID list is preserved for compact
@@ -524,7 +571,8 @@ vocabulary concept. The trace copies those details to
 `trace.query_variant_details` so operator review can inspect query rewrites
 without guessing why a variant was used.
 
-Source-aware diversity metadata includes `selected_hits`, one row per final hit.
+`RetrievalPackage.diversity` contains source-aware diversity metadata,
+including `selected_hits`, one row per final hit.
 Each row records evidence ID, source ID, selected rank, original rank,
 normalized relevance, redundancy penalty, final MMR selection score, and a short
 reason. This makes source diversity auditable per result card instead of only
@@ -955,9 +1003,10 @@ Retrieval is a two-stage architecture with deterministic defaults:
 3. Source-aware MMR selection chooses the final `top_k` hits from the ranked
    candidate list. It keeps relevance as the primary signal while penalizing
    redundant chunks from sources already selected, which reduces repeated
-   same-document evidence in operator review. The diversity handoff context
+   same-document evidence in operator review. `RetrievalPackage.diversity`
    records `selected_hits` so operators can inspect the relevance/redundancy
-   tradeoff for each selected item.
+   tradeoff for each selected item; the same payload is mirrored into
+   `handoff_context.diversity` for assistant and agent compatibility.
 4. The final package preserves `lexical_score`, `vector_score`, `rerank_score`,
    `score_components`, `source_locator.ranking_boosts`, and
    `source_locator.ranking_boost_rules` per hit so workflow explanations can
@@ -1059,7 +1108,8 @@ higher values favor relevance, lower values favor novelty. The default `0.72`
 keeps relevance dominant while reducing duplicate-source evidence in the final
 operator-visible list. Retrieval packages report the selection mode, lambda,
 candidate source count, selected source count, and duplicate selected source
-count under `handoff_context.diversity`.
+count under the first-class `diversity` field and mirror that data to
+`handoff_context.diversity`.
 
 `OJT_RETRIEVAL_HNSW_EF_SEARCH` controls the per-query pgvector HNSW search
 candidate depth for the Postgres vector candidate pool. pgvector defaults this
@@ -1133,6 +1183,15 @@ The Retrieval UI can copy a `retrieval_judgment_evaluation` JSON report with
 server metrics, local in-session metrics, stored-label summary,
 recommendations, ranked evidence IDs, unjudged IDs, and contributing judgment
 IDs for offline relevance-tuning notes.
+The Retrieval cockpit also renders and exports a top-level
+`readiness_checklist` that consolidates query health, required evidence-class
+coverage, source spread, and governance/readiness action state. It is designed
+as the first operator scan before deeper ranking, trace, or evidence-card
+inspection.
+Individual evidence-hit cards also export a `usability_summary` in copied
+`retrieval_evidence_hit` reports. It is derived from matched terms, provenance,
+concept/aspect grounding, evidence-bucket membership, and persisted judgment
+state; it is an operator evidence-review aid, not a clinical conclusion.
 The copied evaluation report also includes the active `query_profile`, and the
 copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
@@ -1167,6 +1226,17 @@ with score delta, highest action priority, evidence overlap, result churn, and
 top-source stability before detailed comparison sections. The
 Retrieval UI renders the same recommended actions in the comparison panel so
 operators do not need to copy JSON before seeing the next review steps.
+Before the dense comparison tables, the UI also renders an operator summary
+derived from the same typed comparison object: headline, evidence/quality/source
+spread bullets, and review-focus chips. Copied comparison reports include this
+as `operator_summary` so offline tuning notes remain readable without opening
+the detailed metrics tree first.
+The at-a-glance row and copied comparison report also include source-diversity
+comparison: selected-source delta, duplicate selected-source delta,
+candidate-source delta, selected-source overlap, added/removed/retained source
+IDs, selection mode, and lambda. Duplicate-source regressions and diversity
+policy changes are surfaced as recommended actions because healthcare evidence
+review should not silently collapse to one source family after relevance tuning.
 The copied run-comparison report also includes a compact `diagnosis[]` list
 that names likely change drivers such as query-profile changes, rule-pack
 changes, query-aspect plan changes, quality-signal changes, facet drift,
@@ -1248,6 +1318,10 @@ and reports:
 - NDCG@k: graded ranking quality against the ideal judged-source order.
 - reciprocal rank: rank-aware score for the first expected source.
 - selected source count: source diversity after final selection.
+
+The eval runner reads selected-source metrics from the first-class
+`RetrievalPackage.diversity` contract and falls back to
+`handoff_context.diversity` only for older packages.
 
 The release check runs this eval before Docker/E2E. The fixture set is small on
 purpose: it is a smoke benchmark for healthcare grounding regressions, not a

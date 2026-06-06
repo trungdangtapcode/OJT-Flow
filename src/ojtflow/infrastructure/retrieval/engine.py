@@ -20,6 +20,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalCoverage,
     RetrievalCoverageItem,
     RetrievalDiversitySelection,
+    RetrievalDiversitySummary,
     RetrievalEvidenceBucket,
     RetrievalFacetBucket,
     RetrievalFacets,
@@ -34,6 +35,8 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalRecommendedAction,
     RetrievalRecommendedActionSummary,
     RetrievalScoreComponent,
+    RetrievalStandardSearchPlan,
+    RetrievalStandardSearchStep,
     RetrievalSource,
     RetrievalSnippet,
     RetrievalStrategyRecommendation,
@@ -67,6 +70,12 @@ DEFAULT_STRATEGY_RECOMMENDATION_RULE_REGISTRY = (
     / "knowledge"
     / "retrieval"
     / "strategy_recommendation_rules.json"
+)
+DEFAULT_STANDARD_SEARCH_PLAYBOOK_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "standard_search_playbook_rules.json"
 )
 
 
@@ -201,6 +210,39 @@ class StrategyRecommendationRule:
     priority: int
     suggested_filters: dict[str, str]
     match: StrategyRecommendationMatch
+
+
+@dataclass(frozen=True)
+class StandardSearchPlaybookMatch:
+    """Matcher for one healthcare-standard search playbook step."""
+
+    any_profile_ids: tuple[str, ...] = ()
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_query_aspects: tuple[str, ...] = ()
+    any_fields: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    any_resource_types: tuple[str, ...] = ()
+    any_quality_signal_codes: tuple[str, ...] = ()
+    any_safety_flags: tuple[str, ...] = ()
+    any_filters: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StandardSearchPlaybookRule:
+    """One data-driven healthcare-standard search playbook rule."""
+
+    rule_id: str
+    label: str
+    standard_system: str
+    route_type: str
+    query_template: str
+    rationale: str
+    priority: int
+    suggested_filters: dict[str, str]
+    governance_notes: tuple[str, ...]
+    metadata: dict[str, Any]
+    match: StandardSearchPlaybookMatch
 
 
 @dataclass(frozen=True)
@@ -456,6 +498,7 @@ def rank_chunks(
         enabled=diversity_enabled,
         lambda_mult=diversity_lambda,
     )
+    diversity_summary = diversity_summary_from_metadata(diversity_metadata)
     top_hits = [hit for _, hit in selected_ranked_hits]
     selected_chunks = [chunk for chunk, _ in selected_ranked_hits]
     fusion_diagnostics = fusion_diagnostics_from_rankings(
@@ -522,6 +565,13 @@ def rank_chunks(
         safety_flags=safety_flags,
         reranker_enabled=_reranker_enabled(reranker),
     )
+    standard_search_plan = standard_search_plan_from_context(
+        query=query,
+        query_analysis=query_analysis,
+        quality_signals=quality_signals,
+        safety_flags=safety_flags,
+        strategy_recommendations=strategy_recommendations,
+    )
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
@@ -535,6 +585,8 @@ def rank_chunks(
         remediation_summary=remediation_summary,
         interpretation=interpretation,
         strategy_recommendations=strategy_recommendations,
+        standard_search_plan=standard_search_plan,
+        diversity=diversity_summary,
         trace=trace,
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
@@ -558,6 +610,11 @@ def rank_chunks(
                 recommendation.model_dump(mode="json")
                 for recommendation in strategy_recommendations
             ],
+            "standard_search_plan": (
+                standard_search_plan.model_dump(mode="json")
+                if standard_search_plan
+                else None
+            ),
             "query_analysis": query_analysis.model_dump(),
         },
     )
@@ -1563,6 +1620,224 @@ def strategy_recommendations_from_context(
     ]
 
 
+def standard_search_plan_from_context(
+    *,
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+    quality_signals: list[RetrievalQualitySignal],
+    safety_flags: list[str],
+    strategy_recommendations: list[RetrievalStrategyRecommendation],
+) -> RetrievalStandardSearchPlan | None:
+    """Build a healthcare-standard follow-up search plan from trusted rules."""
+
+    rules = active_standard_search_playbook_rules()
+    if not rules:
+        return None
+    signal_codes = {signal.code for signal in quality_signals}
+    matched_rules = [
+        rule
+        for rule in rules
+        if _standard_search_playbook_rule_matches(
+            rule,
+            query=query,
+            query_analysis=query_analysis,
+            signal_codes=signal_codes,
+            safety_flags=set(safety_flags),
+        )
+    ]
+    matched_rules.sort(key=lambda rule: rule.priority)
+    if not matched_rules:
+        return None
+
+    template_context = _standard_search_template_context(
+        query=query,
+        query_analysis=query_analysis,
+        signal_codes=signal_codes,
+        strategy_recommendations=strategy_recommendations,
+    )
+    steps = [
+        RetrievalStandardSearchStep(
+            step_id=f"standard_search:{rule.rule_id}",
+            label=rule.label,
+            standard_system=rule.standard_system,
+            route_type=rule.route_type,
+            query=_render_standard_search_template(rule.query_template, template_context),
+            rationale=rule.rationale,
+            priority=rule.priority,
+            suggested_filters=rule.suggested_filters,
+            governance_notes=list(rule.governance_notes),
+            metadata={
+                **rule.metadata,
+                "rule_id": rule.rule_id,
+                "matched_standards": _matched_values(
+                    query_analysis.standards,
+                    rule.match.any_standards,
+                ),
+                "matched_concepts": _matched_values(
+                    query_analysis.detected_concepts,
+                    rule.match.any_concepts,
+                ),
+                "matched_query_aspects": _matched_values(
+                    (aspect.aspect_id for aspect in query_analysis.query_aspects),
+                    rule.match.any_query_aspects,
+                ),
+                "matched_fields": _matched_values(
+                    query.fields,
+                    rule.match.any_fields,
+                    case_sensitive=False,
+                ),
+                "source_quality_signal_codes": sorted(
+                    signal_codes.intersection(rule.match.any_quality_signal_codes)
+                ),
+            },
+        )
+        for rule in matched_rules
+    ]
+    primary_route = steps[0].route_type
+    governance_notes = _unique_strings(
+        note for step in steps for note in step.governance_notes
+    )
+    missing_routes = _standard_search_missing_routes(steps, query_analysis)
+    return RetrievalStandardSearchPlan(
+        plan_id="standard_search_playbook.v1",
+        summary=(
+            f"Run {len(steps)} governed healthcare-standard search step(s) before "
+            "treating this evidence package as complete."
+        ),
+        primary_route=primary_route,
+        steps=steps[:6],
+        missing_routes=missing_routes,
+        governance_notes=governance_notes[:6],
+        metadata={
+            "query_profile_id": (
+                query_analysis.query_profile.profile_id
+                if query_analysis.query_profile
+                else None
+            ),
+            "detected_standards": list(query_analysis.standards),
+            "detected_concepts": list(query_analysis.detected_concepts),
+            "source_rule_count": len(matched_rules),
+        },
+    )
+
+
+def _standard_search_playbook_rule_matches(
+    rule: StandardSearchPlaybookRule,
+    *,
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+    signal_codes: set[str],
+    safety_flags: set[str],
+) -> bool:
+    match = rule.match
+    profile_id = query_analysis.query_profile.profile_id if query_analysis.query_profile else None
+    resource_type = (query.resource_type or "").lower()
+    query_aspect_ids = {aspect.aspect_id for aspect in query_analysis.query_aspects}
+    query_fields = {field.lower() for field in query.fields}
+    query_tokens = set(tokenize(query.query))
+    for field_name, expected_values in match.any_filters.items():
+        value = query.filters.get(field_name)
+        if value is None:
+            return False
+        if str(value).lower() not in {item.lower() for item in expected_values}:
+            return False
+    trigger_matches: list[bool] = []
+    if match.any_profile_ids:
+        trigger_matches.append(profile_id in match.any_profile_ids)
+    if match.any_concepts:
+        trigger_matches.append(
+            bool(set(query_analysis.detected_concepts).intersection(match.any_concepts))
+        )
+    if match.any_standards:
+        trigger_matches.append(
+            bool(set(query_analysis.standards).intersection(match.any_standards))
+        )
+    if match.any_query_aspects:
+        trigger_matches.append(bool(query_aspect_ids.intersection(match.any_query_aspects)))
+    if match.any_fields:
+        trigger_matches.append(
+            bool(query_fields.intersection({field.lower() for field in match.any_fields}))
+        )
+    if match.any_tokens:
+        trigger_matches.append(
+            bool(query_tokens.intersection({token.lower() for token in match.any_tokens}))
+        )
+    if match.any_resource_types:
+        trigger_matches.append(
+            resource_type in {value.lower() for value in match.any_resource_types}
+        )
+    if match.any_quality_signal_codes:
+        trigger_matches.append(bool(signal_codes.intersection(match.any_quality_signal_codes)))
+    if match.any_safety_flags:
+        trigger_matches.append(bool(safety_flags.intersection(match.any_safety_flags)))
+    return any(trigger_matches) if trigger_matches else True
+
+
+def _standard_search_template_context(
+    *,
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+    signal_codes: set[str],
+    strategy_recommendations: list[RetrievalStrategyRecommendation],
+) -> dict[str, str]:
+    return {
+        "query": query.query,
+        "fields": ", ".join(query.fields) if query.fields else "unspecified fields",
+        "schema_id": query.schema_id or "unspecified schema",
+        "detected_format": query.detected_format or "unspecified format",
+        "resource_type": query.resource_type or "Observation",
+        "standards": ", ".join(query_analysis.standards) if query_analysis.standards else "no detected standards",
+        "concepts": ", ".join(query_analysis.detected_concepts) if query_analysis.detected_concepts else "no detected concepts",
+        "query_aspects": ", ".join(aspect.label for aspect in query_analysis.query_aspects)
+        if query_analysis.query_aspects
+        else "no decomposed query aspects",
+        "quality_signals": ", ".join(sorted(signal_codes)) if signal_codes else "no quality signals",
+        "strategy_titles": ", ".join(
+            recommendation.title for recommendation in strategy_recommendations[:3]
+        )
+        or "no strategy recommendations",
+    }
+
+
+def _render_standard_search_template(template: str, context: dict[str, str]) -> str:
+    try:
+        rendered = template.format(**context)
+    except KeyError as exc:
+        missing_key = str(exc).strip("'")
+        raise ValueError(
+            f"Invalid standard search playbook template: unknown key {missing_key}"
+        ) from exc
+    return " ".join(rendered.split())
+
+
+def _matched_values(
+    values: Iterable[str],
+    candidates: Iterable[str],
+    *,
+    case_sensitive: bool = True,
+) -> list[str]:
+    if case_sensitive:
+        candidate_set = set(candidates)
+        return [value for value in values if value in candidate_set]
+    candidate_set = {candidate.lower() for candidate in candidates}
+    return [value for value in values if value.lower() in candidate_set]
+
+
+def _standard_search_missing_routes(
+    steps: list[RetrievalStandardSearchStep],
+    query_analysis: RetrievalQueryAnalysis,
+) -> list[str]:
+    route_types = {step.route_type for step in steps}
+    missing: list[str] = []
+    if "FHIR" in query_analysis.standards and "fhir_search" not in route_types:
+        missing.append("fhir_search")
+    if "LOINC" in query_analysis.standards and "terminology_lookup" not in route_types:
+        missing.append("loinc_lookup")
+    if "UCUM" in query_analysis.standards and "unit_validation" not in route_types:
+        missing.append("ucum_unit_validation")
+    return missing
+
+
 def _corrective_action_rule_matches(
     signal: RetrievalQualitySignal,
     rule: CorrectiveActionRule,
@@ -2008,6 +2283,15 @@ def active_strategy_recommendation_rules() -> list[StrategyRecommendationRule]:
     )
 
 
+def active_standard_search_playbook_rules() -> list[StandardSearchPlaybookRule]:
+    """Load active healthcare-standard search playbook rules from trusted data."""
+
+    path = os.environ.get("OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH")
+    return _load_standard_search_playbook_rules(
+        path or str(DEFAULT_STANDARD_SEARCH_PLAYBOOK_RULE_REGISTRY)
+    )
+
+
 @lru_cache(maxsize=4)
 def _load_strategy_recommendation_rules(path_text: str) -> list[StrategyRecommendationRule]:
     path = Path(path_text)
@@ -2030,6 +2314,176 @@ def _load_strategy_recommendation_rules(path_text: str) -> list[StrategyRecommen
             f"Invalid strategy recommendation registry at {path}: duplicate rule_id"
         )
     return sorted(rules, key=lambda rule: rule.priority)
+
+
+@lru_cache(maxsize=4)
+def _load_standard_search_playbook_rules(path_text: str) -> list[StandardSearchPlaybookRule]:
+    path = Path(path_text)
+    if not path.exists():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid standard search playbook registry at {path}: expected object")
+    records = raw.get("rules")
+    if not isinstance(records, list):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: rules must be a list"
+        )
+    rules = [_standard_search_playbook_rule(record, path=path) for record in records]
+    rule_ids = [rule.rule_id for rule in rules]
+    if len(set(rule_ids)) != len(rule_ids):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: duplicate rule_id"
+        )
+    return sorted(rules, key=lambda rule: rule.priority)
+
+
+def _standard_search_playbook_rule(
+    value: Any,
+    *,
+    path: Path,
+) -> StandardSearchPlaybookRule:
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: rule must be an object"
+        )
+    priority = value.get("priority", 100)
+    if not isinstance(priority, int) or isinstance(priority, bool) or priority < 1:
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: "
+            "priority must be a positive integer"
+        )
+    suggested_filters = value.get("suggested_filters", {})
+    if not isinstance(suggested_filters, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: "
+            "suggested_filters must be an object"
+        )
+    metadata = value.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: metadata must be an object"
+        )
+    match = value.get("match", {})
+    if not isinstance(match, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: match must be an object"
+        )
+    any_filters = match.get("any_filters", {})
+    if not isinstance(any_filters, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: any_filters must be an object"
+        )
+    return StandardSearchPlaybookRule(
+        rule_id=_required_quality_policy_text(value.get("rule_id"), path=path),
+        label=_required_quality_policy_text(value.get("label"), path=path),
+        standard_system=_required_quality_policy_text(value.get("standard_system"), path=path),
+        route_type=_required_quality_policy_text(value.get("route_type"), path=path),
+        query_template=_required_quality_policy_text(value.get("query_template"), path=path),
+        rationale=_required_quality_policy_text(value.get("rationale"), path=path),
+        priority=priority,
+        suggested_filters={
+            _required_quality_policy_text(key, path=path): _required_quality_policy_text(
+                item,
+                path=path,
+            )
+            for key, item in suggested_filters.items()
+        },
+        governance_notes=tuple(
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value.get("governance_notes", []),
+                field="governance_notes",
+                path=path,
+            )
+        ),
+        metadata=dict(metadata),
+        match=StandardSearchPlaybookMatch(
+            any_profile_ids=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_profile_ids", []),
+                    field="any_profile_ids",
+                    path=path,
+                )
+            ),
+            any_concepts=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_concepts", []),
+                    field="any_concepts",
+                    path=path,
+                )
+            ),
+            any_standards=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_standards", []),
+                    field="any_standards",
+                    path=path,
+                )
+            ),
+            any_query_aspects=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_query_aspects", []),
+                    field="any_query_aspects",
+                    path=path,
+                )
+            ),
+            any_fields=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_fields", []),
+                    field="any_fields",
+                    path=path,
+                )
+            ),
+            any_tokens=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_tokens", []),
+                    field="any_tokens",
+                    path=path,
+                )
+            ),
+            any_resource_types=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_resource_types", []),
+                    field="any_resource_types",
+                    path=path,
+                )
+            ),
+            any_quality_signal_codes=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_quality_signal_codes", []),
+                    field="any_quality_signal_codes",
+                    path=path,
+                )
+            ),
+            any_safety_flags=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_safety_flags", []),
+                    field="any_safety_flags",
+                    path=path,
+                )
+            ),
+            any_filters={
+                _required_quality_policy_text(key, path=path): tuple(
+                    _required_quality_policy_text(item, path=path)
+                    for item in _quality_policy_text_list(
+                        values,
+                        field=f"any_filters.{key}",
+                        path=path,
+                    )
+                )
+                for key, values in any_filters.items()
+            },
+        ),
+    )
 
 
 def _strategy_recommendation_rule(
@@ -4382,3 +4836,30 @@ def _diversity_metadata(
             for detail in selection_details
         ],
     }
+
+
+def diversity_summary_from_metadata(metadata: dict[str, Any]) -> RetrievalDiversitySummary:
+    """Build the first-class diversity contract from legacy handoff metadata."""
+
+    selected_hits = [
+        item
+        if isinstance(item, RetrievalDiversitySelection)
+        else RetrievalDiversitySelection.model_validate(item)
+        for item in metadata.get("selected_hits", [])
+    ]
+    lambda_value = metadata.get("lambda")
+    return RetrievalDiversitySummary(
+        enabled=bool(metadata.get("enabled")),
+        selection_mode=str(metadata.get("selection_mode") or "score_order"),
+        lambda_value=(
+            float(lambda_value)
+            if isinstance(lambda_value, (int, float)) and not isinstance(lambda_value, bool)
+            else None
+        ),
+        candidate_source_count=int(metadata.get("candidate_source_count") or 0),
+        selected_source_count=int(metadata.get("selected_source_count") or 0),
+        duplicate_selected_source_count=int(
+            metadata.get("duplicate_selected_source_count") or 0
+        ),
+        selected_hits=selected_hits,
+    )

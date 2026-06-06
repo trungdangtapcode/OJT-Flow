@@ -3,7 +3,7 @@
   "rules": [
     {
       "rule_id": "boost_schema_source_match",
-      "weight": 0.08,
+      "weight": 0.13,
       "reason": "Prefer evidence whose source ID matches the requested schema.",
       "match": {
         "query_schema_id_in_source_id": true
@@ -36,7 +36,7 @@
     },
     {
       "rule_id": "boost_loinc_hba1c_concept",
-      "weight": 0.08,
+      "weight": 0.115,
       "reason": "Prefer LOINC evidence when HbA1c laboratory concepts are detected.",
       "match": {
         "chunk_standard_systems": ["LOINC"],
@@ -54,7 +54,7 @@
     },
     {
       "rule_id": "boost_fhir_observation_concept",
-      "weight": 0.05,
+      "weight": 0.09,
       "reason": "Prefer FHIR evidence when FHIR Observation profile concepts are detected.",
       "match": {
         "chunk_standard_systems": ["FHIR"],

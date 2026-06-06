@@ -78,6 +78,8 @@ import type {
   RetrievalSearchPreset,
   RetrievalSource,
   RetrievalStrategyRecommendation,
+  RetrievalStandardSearchPlan,
+  RetrievalStandardSearchStep,
   RuntimeRetrievalRulePack,
   RuntimeConfig,
 } from "../../types";
@@ -104,6 +106,12 @@ type QueryHealthItem = {
   description: string;
   label: string;
   status: "ok" | "review" | "blocked" | "info";
+};
+type SearchReadinessChecklistItem = {
+  code: string;
+  detail: string;
+  label: string;
+  status: QueryHealthItem["status"];
 };
 type SourceInventoryReadiness = {
   chunkCount: number;
@@ -147,6 +155,7 @@ type RetrievalRunSummary = {
   conceptGrounding: ConceptGroundingSummary[];
   correctiveActionSummary: CorrectiveActionSummary;
   coverage: RetrievalCoverageSummary[];
+  diversity: DiversityStack;
   hitCount: number;
   qualitySummary: RetrievalQualitySummary | null;
   qualityWarningCount: number;
@@ -258,6 +267,7 @@ type RetrievalRunComparison = {
   retainedEvidenceIds: string[];
   rulePackChanges: RetrievalRulePackChange[];
   rulePackChanged: boolean;
+  sourceDiversityComparison: RetrievalSourceDiversityComparison;
   topSourceAfter: string | null;
   topSourceBefore: string | null;
   topSourceChanged: boolean;
@@ -304,6 +314,13 @@ type EvidenceUseGuidance = {
   status: EvidenceSupportMatrixRow["supportStatus"];
   title: string;
 };
+type EvidenceUsabilitySummary = {
+  checks: string[];
+  headline: string;
+  limitation: string;
+  recommendation: string;
+  status: EvidenceSupportMatrixRow["supportStatus"];
+};
 type RetrievalComparisonRecommendedActionSummary = {
   action_count: number;
   badge_variant: "success" | "warning" | "destructive";
@@ -312,6 +329,12 @@ type RetrievalComparisonRecommendedActionSummary = {
   source_count: number;
   source_counts: Record<string, number>;
   sources: string[];
+};
+type RetrievalComparisonOperatorSummary = {
+  bullets: string[];
+  headline: string;
+  reviewFocus: string[];
+  status: "stable" | "review" | "improved";
 };
 type RetrievalQueryAspectComparison = {
   added: QueryAspectSummary[];
@@ -361,6 +384,21 @@ type RetrievalRunComparisonMetrics = {
   overlapRatio: number;
   sharedCount: number;
   unionCount: number;
+};
+type RetrievalSourceDiversityComparison = {
+  active: DiversityStack;
+  activeSelectedSourceIds: string[];
+  addedSourceIds: string[];
+  baseline: DiversityStack;
+  baselineSelectedSourceIds: string[];
+  candidateSourceDelta: number;
+  duplicateSelectedSourceDelta: number;
+  lambdaChanged: boolean;
+  removedSourceIds: string[];
+  retainedSourceIds: string[];
+  selectedSourceDelta: number;
+  selectionModeChanged: boolean;
+  sourceOverlapRatio: number;
 };
 type RetrievalRankChange = {
   evidenceId: string;
@@ -1724,6 +1762,10 @@ function SearchRunComparison({
     () => comparisonReportRecommendedActions(comparison, judgments),
     [comparison, judgments],
   );
+  const operatorSummary = React.useMemo(
+    () => comparisonOperatorSummary(comparison, recommendedActions),
+    [comparison, recommendedActions],
+  );
 
   const copyReport = async () => {
     await copyTextToClipboard(
@@ -1783,6 +1825,7 @@ function SearchRunComparison({
       <SectionHelpText>
         Baseline is the older comparison run; active is the currently displayed package. Treat warning deltas, quality changes, and rank movement as tuning signals that need evidence review.
       </SectionHelpText>
+      <RunComparisonOperatorSummary summary={operatorSummary} />
       <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs">
         <span className="font-bold uppercase text-muted-foreground">Baseline query</span>
         <span className="break-words leading-5">{comparison.baselineQuery}</span>
@@ -1796,6 +1839,9 @@ function SearchRunComparison({
         actions={recommendedActions}
       />
       <RunComparisonMetrics metrics={comparison.metrics} />
+      <RunComparisonSourceDiversity
+        comparison={comparison.sourceDiversityComparison}
+      />
       <div className="grid gap-2 sm:grid-cols-2">
         <RunComparisonMetric
           delta={comparison.hitDelta}
@@ -1853,6 +1899,57 @@ function SearchRunComparison({
   );
 }
 
+function RunComparisonOperatorSummary({
+  summary,
+}: {
+  summary: RetrievalComparisonOperatorSummary;
+}) {
+  const variant =
+    summary.status === "improved"
+      ? "success"
+      : summary.status === "stable"
+        ? "muted"
+        : "warning";
+  return (
+    <div
+      aria-label="Comparison operator summary"
+      className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs"
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="grid min-w-0 gap-1">
+          <span className="font-bold text-muted-foreground">
+            Operator summary
+          </span>
+          <span className="break-words text-sm font-semibold">
+            {summary.headline}
+          </span>
+        </div>
+        <Badge variant={variant}>{humanize(summary.status)}</Badge>
+      </div>
+      <div className="grid gap-1 sm:grid-cols-2">
+        {summary.bullets.map((item) => (
+          <span
+            className="rounded-md border border-border bg-muted/30 px-2 py-1 text-muted-foreground"
+            key={item}
+          >
+            {item}
+          </span>
+        ))}
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        <span className="font-semibold text-muted-foreground">
+          Review focus
+        </span>
+        {summary.reviewFocus.map((item) => (
+          <Badge key={item} variant="muted">
+            {item}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function RunComparisonAtAGlance({
   actionSummary,
   comparison,
@@ -1861,7 +1958,7 @@ function RunComparisonAtAGlance({
   comparison: RetrievalRunComparison;
 }) {
   return (
-    <div aria-label="Comparison at a glance" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+    <div aria-label="Comparison at a glance" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
       <RunComparisonMetricCard
         label="Readiness"
         tone={comparison.qualitySummaryChanged ? "warning" : "success"}
@@ -1886,6 +1983,17 @@ function RunComparisonAtAGlance({
         label="Top source"
         tone={comparison.topSourceChanged ? "warning" : "success"}
         value={comparison.topSourceChanged ? "changed" : "stable"}
+      />
+      <RunComparisonMetricCard
+        label="Source spread"
+        tone={
+          comparison.sourceDiversityComparison.duplicateSelectedSourceDelta > 0
+            ? "warning"
+            : "success"
+        }
+        value={formatSignedDelta(
+          comparison.sourceDiversityComparison.selectedSourceDelta,
+        )}
       />
     </div>
   );
@@ -2011,6 +2119,105 @@ function RunComparisonMetrics({
           value={formatDecimal(metrics.meanAbsoluteRankDelta)}
         />
       </div>
+    </div>
+  );
+}
+
+function RunComparisonSourceDiversity({
+  comparison,
+}: {
+  comparison: RetrievalSourceDiversityComparison;
+}) {
+  return (
+    <div
+      aria-label="Source diversity comparison"
+      className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs"
+    >
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="font-bold text-muted-foreground">
+          Source diversity
+        </span>
+        <span className="flex flex-wrap justify-end gap-1.5">
+          <Badge
+            variant={
+              comparison.duplicateSelectedSourceDelta > 0 ? "warning" : "success"
+            }
+          >
+            duplicates {formatSignedDelta(comparison.duplicateSelectedSourceDelta)}
+          </Badge>
+          <Badge variant="muted">
+            overlap {formatPercent(comparison.sourceOverlapRatio)}
+          </Badge>
+        </span>
+      </div>
+      <SectionHelpText>
+        Shows whether tuning changed selected-source coverage after hybrid retrieval and reranking. More selected sources is useful when evidence must come from independent standards or source families; more duplicate selected sources needs review.
+      </SectionHelpText>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <RunComparisonMetricCard
+          label="Selected sources"
+          tone={comparison.selectedSourceDelta >= 0 ? "success" : "warning"}
+          value={`${comparison.baseline.selectedSourceCount} -> ${comparison.active.selectedSourceCount}`}
+        />
+        <RunComparisonMetricCard
+          label="Candidate sources"
+          tone={comparison.candidateSourceDelta >= 0 ? "success" : "warning"}
+          value={`${comparison.baseline.candidateSourceCount} -> ${comparison.active.candidateSourceCount}`}
+        />
+        <RunComparisonMetricCard
+          label="Policy"
+          tone={
+            comparison.selectionModeChanged || comparison.lambdaChanged
+              ? "warning"
+              : "success"
+          }
+          value={comparison.selectionModeChanged ? "changed" : "stable"}
+        />
+      </div>
+      <div className="grid gap-1">
+        <SourceListDelta
+          label="Added sources"
+          sourceIds={comparison.addedSourceIds}
+          variant="success"
+        />
+        <SourceListDelta
+          label="Removed sources"
+          sourceIds={comparison.removedSourceIds}
+          variant="warning"
+        />
+        <SourceListDelta
+          label="Retained sources"
+          sourceIds={comparison.retainedSourceIds}
+          variant="muted"
+        />
+      </div>
+    </div>
+  );
+}
+
+function SourceListDelta({
+  label,
+  sourceIds,
+  variant,
+}: {
+  label: string;
+  sourceIds: string[];
+  variant: "success" | "warning" | "muted";
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-start gap-2">
+      <span className="w-28 shrink-0 font-semibold text-muted-foreground">
+        {label}
+      </span>
+      {sourceIds.length ? (
+        sourceIds.slice(0, 8).map((sourceId) => (
+          <Badge key={sourceId} variant={variant}>
+            {sourceId}
+          </Badge>
+        ))
+      ) : (
+        <Badge variant="muted">none</Badge>
+      )}
     </div>
   );
 }
@@ -3470,6 +3677,9 @@ function searchAnswerReportFromPackage(
     status: summary.status.label,
     remediation_summary: summary.remediation,
     interpretation: retrievalInterpretationReport(packageData),
+    standard_search_plan: retrievalStandardSearchPlanReport(packageData),
+    medical_search_hints: medicalSearchHintReport(packageData),
+    diversity: retrievalDiversityReport(packageData),
     readiness: packageData.quality_summary,
     warnings: {
       count: summary.warningCount,
@@ -3770,6 +3980,7 @@ function RetrievalSearchCockpit({
   const topFilterAction = topAction ? recommendedActionFilter(topAction) : null;
   const topBroadeningAction = topAction?.action_type === "broaden_query";
   const strategyRecommendations = packageData.strategy_recommendations ?? [];
+  const standardSearchPlan = packageData.standard_search_plan ?? null;
   const requiredBuckets = packageData.evidence_buckets?.filter((bucket) => bucket.required) ?? [];
   const coveredRequiredBuckets = requiredBuckets.filter((bucket) => bucket.hit_count > 0);
   const coverageSummaries = coverageSummariesFromPackage(packageData);
@@ -3780,6 +3991,13 @@ function RetrievalSearchCockpit({
     ? activeFilterEntries(activeFacetFiltersFromPayload(submittedSearchPayload))
     : [];
   const queryHealth = queryHealthItems(submittedSearchPayload, packageData);
+  const readinessChecklist = searchReadinessChecklist({
+    diversity,
+    packageData,
+    queryHealth,
+    requiredBuckets,
+    topAction,
+  });
   const routeLabel = queryProfile
     ? `${queryProfile.label} / ${humanize(queryProfile.retrievalMode)}`
     : humanize(strategy);
@@ -3879,6 +4097,8 @@ function RetrievalSearchCockpit({
         onClearFilter={onClearFilter}
       />
 
+      <SearchReadinessChecklist items={readinessChecklist} />
+
       <div className="grid gap-2 lg:grid-cols-5">
         <CockpitMetricCard
           helpText="The backend route chosen for this query, such as broad, structured, or safety-sensitive search. Use this to confirm the search behavior matches the question."
@@ -3926,6 +4146,14 @@ function RetrievalSearchCockpit({
         onApplyFilter={onApplyFilter}
         recommendations={strategyRecommendations}
       />
+
+      <StandardSearchPlanPanel
+        isSearchPending={isSearchPending}
+        onApplyFilter={onApplyFilter}
+        plan={standardSearchPlan}
+      />
+
+      <SourceDiversityPanel diversity={diversity} isSearchPending={isSearchPending} />
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.75fr)]">
         <div className="grid gap-2 rounded-md border border-border bg-card p-3">
@@ -4283,6 +4511,126 @@ function queryHealthItems(
   ];
 }
 
+function SearchReadinessChecklist({
+  items,
+}: {
+  items: SearchReadinessChecklistItem[];
+}) {
+  const overallVariant = queryHealthOverallVariant(items);
+  const overallLabel = queryHealthOverallLabel(items);
+  return (
+    <section
+      aria-label="Search readiness checklist"
+      className="grid gap-2 rounded-md border border-border bg-card p-3"
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-xs font-black uppercase text-muted-foreground">
+            Search readiness checklist
+          </div>
+          <div className="mt-1 break-words text-sm font-semibold text-muted-foreground">
+            Fast review of whether this search package is ready to inspect,
+            needs human review, or should be remediated before downstream use.
+          </div>
+        </div>
+        <Badge variant={overallVariant}>{humanize(overallLabel)}</Badge>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {items.map((item) => (
+          <div
+            className="grid min-w-0 gap-1 rounded-md border border-border bg-muted/25 px-3 py-2"
+            key={item.code}
+          >
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
+              <span className="break-words text-xs font-black text-muted-foreground">
+                {item.label}
+              </span>
+              <Badge variant={queryHealthBadgeVariant(item.status)}>
+                {humanize(item.status)}
+              </Badge>
+            </div>
+            <div className="break-words text-xs leading-5 text-muted-foreground">
+              {item.detail}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function searchReadinessChecklist({
+  diversity,
+  packageData,
+  queryHealth,
+  requiredBuckets,
+  topAction,
+}: {
+  diversity: DiversityStack;
+  packageData: RetrievalPackage;
+  queryHealth: QueryHealthItem[];
+  requiredBuckets: RetrievalEvidenceBucket[];
+  topAction: RetrievalRecommendedAction | null;
+}): SearchReadinessChecklistItem[] {
+  const blockedHealthCount = queryHealth.filter((item) => item.status === "blocked").length;
+  const reviewHealthCount = queryHealth.filter((item) => item.status === "review").length;
+  const missingRequiredBuckets = requiredBuckets.filter((bucket) => bucket.hit_count === 0);
+  const qualitySummary = packageData.quality_summary ?? null;
+  const warningCount =
+    packageData.trace.warnings.length +
+    packageData.trace.safety_flags.length +
+    (packageData.quality_signals ?? []).filter((signal) => signal.severity !== "info").length;
+
+  return [
+    {
+      code: "query_health",
+      detail:
+        blockedHealthCount > 0
+          ? `${formatCount(blockedHealthCount, "blocked check")} must be fixed before relying on results.`
+          : reviewHealthCount > 0
+            ? `${formatCount(reviewHealthCount, "review check")} need operator attention.`
+            : "Query wording, context, scope, and result coverage are acceptable for inspection.",
+      label: "Query health",
+      status: blockedHealthCount > 0 ? "blocked" : reviewHealthCount > 0 ? "review" : "ok",
+    },
+    {
+      code: "evidence_classes",
+      detail: requiredBuckets.length
+        ? `${requiredBuckets.length - missingRequiredBuckets.length}/${requiredBuckets.length} required evidence classes covered.`
+        : "No required evidence-bucket policy is configured for this package.",
+      label: "Evidence classes",
+      status: missingRequiredBuckets.length ? "review" : "ok",
+    },
+    {
+      code: "source_spread",
+      detail: diversity.enabled
+        ? `${formatCount(diversity.selectedSourceCount, "selected source")} from ${formatCount(diversity.candidateSourceCount, "candidate source")}; ${formatCount(diversity.duplicateSelectedSourceCount, "duplicate selected source")}.`
+        : "Source diversity selection is disabled for this run.",
+      label: "Source spread",
+      status: diversity.enabled
+        ? diversity.selectedSourceCount > 1 || packageData.hits.length <= 1
+          ? "ok"
+          : "review"
+        : "review",
+    },
+    {
+      code: "governance",
+      detail: topAction
+        ? `Next action: ${topAction.title}.`
+        : qualitySummary
+          ? `Readiness ${humanize(qualitySummary.status)} at ${qualitySummary.score}/100 with ${formatCount(warningCount, "warning signal")}.`
+          : `No readiness score; ${formatCount(warningCount, "warning signal")} reported.`,
+      label: "Governance",
+      status:
+        qualitySummary?.status === "blocked"
+          ? "blocked"
+          : topAction || warningCount > 0 || qualitySummary?.status === "review"
+            ? "review"
+            : "ok",
+    },
+  ];
+}
+
 function queryDiagnosticHealthItems(diagnostics: QueryDiagnosticStack[]): QueryHealthItem[] {
   return diagnostics
     .filter((diagnostic) => diagnostic.severity !== "info")
@@ -4310,7 +4658,7 @@ function queryHealthBadgeVariant(
 }
 
 function queryHealthOverallVariant(
-  items: QueryHealthItem[],
+  items: Array<{ status: QueryHealthItem["status"] }>,
 ): "success" | "warning" | "destructive" | "muted" {
   if (items.some((item) => item.status === "blocked")) return "destructive";
   if (items.some((item) => item.status === "review")) return "warning";
@@ -4318,7 +4666,9 @@ function queryHealthOverallVariant(
   return "muted";
 }
 
-function queryHealthOverallLabel(items: QueryHealthItem[]): string {
+function queryHealthOverallLabel(
+  items: Array<{ status: QueryHealthItem["status"] }>,
+): string {
   if (items.some((item) => item.status === "blocked")) return "blocked";
   if (items.some((item) => item.status === "review")) return "review";
   if (items.some((item) => item.status === "ok")) return "healthy";
@@ -4360,6 +4710,306 @@ function StrategyRecommendationsPanel({
       </div>
     </div>
   );
+}
+
+function StandardSearchPlanPanel({
+  isSearchPending,
+  onApplyFilter,
+  plan,
+}: {
+  isSearchPending: boolean;
+  onApplyFilter: (field: SupportedFilterField, value: string) => void;
+  plan: RetrievalStandardSearchPlan | null;
+}) {
+  if (!plan || !plan.steps.length) {
+    return null;
+  }
+  const visibleNotes = plan.governance_notes.slice(0, 3);
+  return (
+    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
+            Healthcare search plan
+            <HelpTooltip label="Healthcare search plan help">
+              Backend-selected playbook for the next standards-aware search. It maps the query to FHIR, terminology, privacy, or external medical-search routes before downstream use.
+            </HelpTooltip>
+          </div>
+          <div className="mt-1 break-words text-sm leading-6 text-muted-foreground">
+            {plan.summary}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          <Badge variant={standardRouteBadgeVariant(plan.primary_route)}>
+            {humanize(plan.primary_route)}
+          </Badge>
+          <Badge variant="muted">{formatCount(plan.steps.length, "step")}</Badge>
+          {plan.missing_routes.length ? (
+            <Badge variant="warning">
+              {formatCount(plan.missing_routes.length, "missing route")}
+            </Badge>
+          ) : null}
+        </div>
+      </div>
+      <div className="grid gap-2 lg:grid-cols-2">
+        {plan.steps.slice(0, 4).map((step) => (
+          <StandardSearchStepCard
+            isSearchPending={isSearchPending}
+            key={step.step_id}
+            onApplyFilter={onApplyFilter}
+            step={step}
+          />
+        ))}
+      </div>
+      {visibleNotes.length ? (
+        <div className="grid gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+          <div className="font-black uppercase">Governance guardrails</div>
+          <ul className="grid gap-1">
+            {visibleNotes.map((note) => (
+              <li className="grid grid-cols-[12px_minmax(0,1fr)] gap-2" key={note}>
+                <span aria-hidden="true" className="pt-0.5 font-black">
+                  -
+                </span>
+                <span className="min-w-0 break-words">{note}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SourceDiversityPanel({
+  diversity,
+  isSearchPending,
+}: {
+  diversity: DiversityStack;
+  isSearchPending: boolean;
+}) {
+  const visibleSelections = diversity.selectedHits
+    .filter((selection) => selection.evidenceId && selection.sourceId)
+    .slice(0, 4);
+  const duplicateTone =
+    diversity.duplicateSelectedSourceCount > 0 ? "warning" : "success";
+  const modeLabel = humanize(diversity.selectionMode);
+  return (
+    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
+            Source diversity
+            <HelpTooltip label="Source diversity help">
+              Shows how the backend selected a balanced evidence set after hybrid retrieval and reranking. This helps detect over-reliance on one source before the package is used downstream.
+            </HelpTooltip>
+          </div>
+          <div className="mt-1 break-words text-sm leading-6 text-muted-foreground">
+            {diversity.enabled
+              ? "Final evidence was selected with source-aware diversity scoring so strong matches from repeated sources do not hide independent standards or policy evidence."
+              : "Source diversity selection is disabled for this retrieval run; evidence follows score order only."}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          <Badge variant={diversity.enabled ? "success" : "warning"}>
+            {diversity.enabled ? "enabled" : "disabled"}
+          </Badge>
+          <Badge variant="muted">{modeLabel}</Badge>
+          <Badge variant={duplicateTone}>
+            {formatCount(diversity.duplicateSelectedSourceCount, "duplicate")}
+          </Badge>
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <DiversityMetricCard
+          label="Candidate sources"
+          value={diversity.candidateSourceCount}
+        />
+        <DiversityMetricCard
+          label="Selected sources"
+          value={diversity.selectedSourceCount}
+        />
+        <DiversityMetricCard
+          label="Balance weight"
+          value={diversity.lambda === null ? "n/a" : diversity.lambda.toFixed(2)}
+        />
+      </div>
+      {isSearchPending ? (
+        <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
+          Updating source-diversity trace...
+        </div>
+      ) : visibleSelections.length ? (
+        <div className="grid gap-2">
+          <div className="text-xs font-black uppercase text-muted-foreground">
+            Selected-hit rationale
+          </div>
+          {visibleSelections.map((selection) => (
+            <div
+              className="grid gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"
+              key={`${selection.selectedRank}:${selection.evidenceId}`}
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <Badge variant="muted">#{selection.selectedRank}</Badge>
+                  <span className="min-w-0 break-words font-black">
+                    {selection.sourceId}
+                  </span>
+                </div>
+                <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                  <Badge variant="muted">original #{selection.originalRank}</Badge>
+                  <Badge variant={selection.redundancyScore > 0 ? "warning" : "success"}>
+                    redundancy {selection.redundancyScore.toFixed(2)}
+                  </Badge>
+                  <Badge variant="muted">
+                    score {selection.selectionScore.toFixed(3)}
+                  </Badge>
+                </div>
+              </div>
+              <div className="break-words leading-5 text-muted-foreground">
+                {selection.reason}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
+          No selected-hit diversity trace was returned for this run.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiversityMetricCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+      <div className="text-xs font-black uppercase text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 text-xl font-black tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function StandardSearchStepCard({
+  isSearchPending,
+  onApplyFilter,
+  step,
+}: {
+  isSearchPending: boolean;
+  onApplyFilter: (field: SupportedFilterField, value: string) => void;
+  step: RetrievalStandardSearchStep;
+}) {
+  const filterAction = suggestedFilterAction(step.suggested_filters);
+  return (
+    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+        <div className="min-w-0">
+          <div className="break-words font-black">{step.label}</div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+            <Badge variant="muted">P{step.priority}</Badge>
+            <Badge variant="success">{step.standard_system}</Badge>
+            <Badge variant={standardRouteBadgeVariant(step.route_type)}>
+              {humanize(step.route_type)}
+            </Badge>
+          </div>
+        </div>
+        {filterAction ? (
+          <Button
+            disabled={isSearchPending}
+            onClick={() => onApplyFilter(filterAction.field, filterAction.value)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <ListFilter className="h-4 w-4" />
+            Apply {filterFieldLabel(filterAction.field)}
+          </Button>
+        ) : null}
+      </div>
+      <div className="break-words text-xs leading-5 text-muted-foreground">
+        {step.rationale}
+      </div>
+      <StandardSearchMatchReasons metadata={step.metadata} />
+      <div className="break-words rounded-md border border-border bg-card px-3 py-2 font-mono text-xs leading-5 text-foreground">
+        {step.query}
+      </div>
+      <StandardSearchGovernanceNotes notes={step.governance_notes} />
+    </div>
+  );
+}
+
+function StandardSearchMatchReasons({ metadata }: { metadata: Record<string, unknown> }) {
+  const reasons = standardSearchMatchReasons(metadata);
+  if (!reasons.length) {
+    return null;
+  }
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
+      <span className="font-black uppercase text-muted-foreground">Matched by</span>
+      {reasons.map((reason) => (
+        <Badge key={`${reason.label}:${reason.value}`} variant={reason.variant}>
+          {reason.label}: {reason.value}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+function standardSearchMatchReasons(metadata: Record<string, unknown>) {
+  const sources: {
+    key: string;
+    label: string;
+    variant: React.ComponentProps<typeof Badge>["variant"];
+  }[] = [
+    { key: "matched_fields", label: "field", variant: "default" },
+    { key: "matched_query_aspects", label: "aspect", variant: "muted" },
+    { key: "matched_standards", label: "standard", variant: "success" },
+    { key: "matched_concepts", label: "concept", variant: "muted" },
+    { key: "source_quality_signal_codes", label: "signal", variant: "warning" },
+  ];
+  return sources.flatMap((source) =>
+    stringArrayValue(metadata[source.key])
+      .slice(0, 3)
+      .map((value) => ({
+        label: source.label,
+        value,
+        variant: source.variant,
+      })),
+  );
+}
+
+function StandardSearchGovernanceNotes({ notes }: { notes: string[] }) {
+  const visibleNotes = notes.slice(0, 2);
+  if (!visibleNotes.length) {
+    return null;
+  }
+  return (
+    <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
+      {visibleNotes.map((note) => (
+        <div className="grid grid-cols-[14px_minmax(0,1fr)] gap-2" key={note}>
+          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
+          <span className="min-w-0 break-words">{note}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function standardRouteBadgeVariant(
+  routeType: string,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  const normalized = routeType.toLowerCase();
+  if (normalized.includes("privacy") || normalized.includes("review")) return "warning";
+  if (normalized.includes("fhir") || normalized.includes("terminology")) return "default";
+  if (normalized.includes("validation")) return "success";
+  if (normalized.includes("external")) return "muted";
+  return "muted";
 }
 
 function StrategyRecommendationCard({
@@ -5542,6 +6192,11 @@ function HitCard({
     rankingBoostSignals,
     scoreComponents,
   });
+  const usabilitySummary = evidenceUsabilitySummary(
+    supportSummary,
+    matchExplanation,
+    judgment,
+  );
   const { copiedKey, markCopied } = useCopyFeedback();
   const evidenceCopyKey = `evidence-report-${evidence.source_id}-${index}`;
   const evidenceCopied = copiedKey === evidenceCopyKey;
@@ -5549,7 +6204,13 @@ function HitCard({
   const copyEvidenceReport = async () => {
     await copyTextToClipboard(
       JSON.stringify(
-        evidenceReportFromHit(hit, provenanceEntries, matchExplanation, recommendedActions),
+        evidenceReportFromHit(
+          hit,
+          provenanceEntries,
+          matchExplanation,
+          judgment,
+          recommendedActions,
+        ),
         null,
         2,
       ),
@@ -5606,6 +6267,8 @@ function HitCard({
       </p>
 
       <HitEvidenceAuditStrip summary={supportSummary} />
+
+      <EvidenceUsabilitySummaryPanel summary={usabilitySummary} />
 
       <EvidenceUseGuidancePanel
         guidance={evidenceUseGuidance(supportSummary, matchExplanation, judgment)}
@@ -5718,6 +6381,56 @@ function HitEvidenceAuditStrip({
         {formatCount(summary.ranking_signal_count, "ranking signal")}
       </Badge>
     </div>
+  );
+}
+
+function EvidenceUsabilitySummaryPanel({
+  summary,
+}: {
+  summary: EvidenceUsabilitySummary;
+}) {
+  return (
+    <section
+      aria-label="Evidence usability summary"
+      className="grid gap-2 rounded-md border border-border bg-muted/20 p-2 text-sm"
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="grid min-w-0 gap-1">
+          <div className="text-xs font-black uppercase text-muted-foreground">
+            Usability summary
+          </div>
+          <div className="break-words font-semibold">{summary.headline}</div>
+        </div>
+        <Badge variant={supportStatusBadgeVariant(summary.status)}>
+          {humanize(summary.status)}
+        </Badge>
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        <div className="rounded-md border border-border bg-card/70 px-2 py-1.5">
+          <div className="text-[11px] font-black uppercase text-muted-foreground">
+            Recommendation
+          </div>
+          <div className="mt-1 break-words font-semibold">
+            {summary.recommendation}
+          </div>
+        </div>
+        <div className="rounded-md border border-border bg-card/70 px-2 py-1.5">
+          <div className="text-[11px] font-black uppercase text-muted-foreground">
+            Limitation
+          </div>
+          <div className="mt-1 break-words text-muted-foreground">
+            {summary.limitation}
+          </div>
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {summary.checks.map((check) => (
+          <Badge className="max-w-full break-words" key={check} variant="muted">
+            {check}
+          </Badge>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -6894,6 +7607,7 @@ function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
               <code className="block max-h-24 overflow-auto break-words rounded bg-muted px-2 py-1 font-mono text-xs">
                 {hint.query}
               </code>
+              <SearchHintMetadata metadata={hint.metadata} />
               <div className="break-words text-muted-foreground">{hint.rationale}</div>
               {hint.warnings.length ? (
                 <TokenList items={hint.warnings} title="Hint warnings" tone="warning" />
@@ -6903,6 +7617,118 @@ function SearchHintList({ hints }: { hints: SearchHintStack[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+function SearchHintMetadata({ metadata }: { metadata: Record<string, unknown> }) {
+  const parameterExamples = searchHintParameterExamples(metadata.parameter_examples);
+  const lineageFollowup = searchHintLineageFollowup(metadata.lineage_followup);
+  const scopeEndpoints = stringArrayValue(metadata.scope_endpoints);
+  const selectedTerms = stringArrayValue(metadata.selected_terms);
+  const selectedUnitCandidates = stringArrayValue(metadata.selected_unit_candidates);
+  const selectedCandidates = selectedTerms.length ? selectedTerms : selectedUnitCandidates;
+  const selectedCandidateTitle = selectedTerms.length ? "Selected terminology terms" : "Selected unit candidates";
+  const capabilityWarning = optionalStringValue(metadata.capability_warning);
+  if (
+    !parameterExamples.length &&
+    !lineageFollowup.length &&
+    !scopeEndpoints.length &&
+    !selectedCandidates.length &&
+    !capabilityWarning
+  ) {
+    return null;
+  }
+  return (
+    <details className="rounded-md border border-border bg-muted/20">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 px-2 py-1.5 font-black">
+        Route details
+        {parameterExamples.length ? (
+          <Badge variant="muted">{formatCount(parameterExamples.length, "parameter")}</Badge>
+        ) : null}
+        {scopeEndpoints.length ? <Badge variant="muted">scoped API</Badge> : null}
+        {selectedCandidates.length ? (
+          <Badge variant="success">{formatCount(selectedCandidates.length, "candidate")}</Badge>
+        ) : null}
+        {lineageFollowup.length ? <Badge variant="warning">lineage</Badge> : null}
+      </summary>
+      <div className="grid gap-2 border-t border-border p-2">
+        {scopeEndpoints.length ? (
+          <div className="grid gap-1.5">
+            <div className="font-black uppercase text-muted-foreground">
+              Endpoint scope
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              {scopeEndpoints.slice(0, 6).map((endpoint) => (
+                <code
+                  className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[11px]"
+                  key={endpoint}
+                >
+                  {endpoint}
+                </code>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {selectedCandidates.length ? (
+          <div className="grid gap-1.5">
+            <div className="font-black uppercase text-muted-foreground">
+              {selectedCandidateTitle}
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              {selectedCandidates.slice(0, 8).map((candidate) => (
+                <Badge key={candidate} variant="success">
+                  {candidate}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {parameterExamples.length ? (
+          <div className="grid gap-1.5">
+            <div className="font-black uppercase text-muted-foreground">
+              Parameter examples
+            </div>
+            {parameterExamples.map((example) => (
+              <div
+                className="grid gap-1 rounded-md border border-border bg-card px-2 py-1.5"
+                key={`${example.name}:${example.example}`}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <Badge variant={example.matchedDatasetField ? "success" : "muted"}>
+                    {example.name}
+                  </Badge>
+                  <span className="break-words text-muted-foreground">
+                    {example.targetField}
+                  </span>
+                </div>
+                <code className="break-words font-mono text-[11px]">{example.example}</code>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {lineageFollowup.length ? (
+          <div className="grid gap-1.5">
+            <div className="font-black uppercase text-muted-foreground">
+              Lineage follow-up
+            </div>
+            {lineageFollowup.map((item) => (
+              <div
+                className="grid gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-950"
+                key={item.parameter}
+              >
+                <code className="break-words font-mono text-[11px]">{item.parameter}</code>
+                <div className="break-words text-[11px] leading-5">{item.purpose}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {capabilityWarning ? (
+          <div className="rounded-md border border-border bg-card px-2 py-1.5 text-[11px] font-semibold leading-5 text-muted-foreground">
+            {capabilityWarning}
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -7955,11 +8781,24 @@ type ConceptCandidateStack = {
 };
 
 type SearchHintStack = {
+  metadata: Record<string, unknown>;
   query: string;
   rationale: string;
   target: string;
   url: string | null;
   warnings: string[];
+};
+
+type SearchHintParameterExample = {
+  example: string;
+  matchedDatasetField: boolean;
+  name: string;
+  targetField: string;
+};
+
+type SearchHintLineageFollowup = {
+  parameter: string;
+  purpose: string;
 };
 
 type QueryDiagnosticStack = {
@@ -8083,13 +8922,13 @@ function queryAnalysisFromPackage(packageData: RetrievalPackage): QueryAnalysisS
 }
 
 function diversityFromPackage(packageData: RetrievalPackage): DiversityStack {
-  const diversity = recordValue(packageData.handoff_context.diversity);
+  const diversity = recordValue(packageData.diversity ?? packageData.handoff_context.diversity);
   return {
     candidateSourceCount: numberValue(diversity.candidate_source_count) ?? 0,
     duplicateSelectedSourceCount:
       numberValue(diversity.duplicate_selected_source_count) ?? 0,
     enabled: booleanValue(diversity.enabled),
-    lambda: numberValue(diversity.lambda),
+    lambda: numberValue(diversity.lambda_value) ?? numberValue(diversity.lambda),
     selectedHits: diversitySelectionDetailsValue(diversity.selected_hits),
     selectedSourceCount: numberValue(diversity.selected_source_count) ?? 0,
     selectionMode: stringValue(diversity.selection_mode, "unknown"),
@@ -8556,9 +9395,11 @@ function evidenceReportFromHit(
   hit: RetrievalHit,
   provenanceEntries: EvidenceProvenanceEntry[],
   matchExplanation: HitMatchExplanation,
+  judgment: RelevanceJudgment | null = null,
   recommendedActions: RetrievalRecommendedAction[] = [],
 ) {
   const correctiveActions = correctiveActionReportContext(hit, recommendedActions);
+  const supportSummary = evidenceSupportSummary(hit, provenanceEntries);
   return {
     report_type: "retrieval_evidence_hit",
     version: 1,
@@ -8572,7 +9413,12 @@ function evidenceReportFromHit(
       confidence: hit.evidence.confidence ?? null,
       claim: formatClaim(hit.evidence.claim),
     },
-    support_summary: evidenceSupportSummary(hit, provenanceEntries),
+    support_summary: supportSummary,
+    usability_summary: evidenceUsabilitySummary(
+      supportSummary,
+      matchExplanation,
+      judgment,
+    ),
     match_explanation: matchExplanation,
     ranking: {
       score: hit.score,
@@ -8731,6 +9577,57 @@ function evidenceUseGuidance(
     reasons,
     status: "weak",
     title: "Weak evidence support",
+  };
+}
+
+function evidenceUsabilitySummary(
+  summary: EvidenceSupportSummary,
+  explanation: HitMatchExplanation,
+  judgment: RelevanceJudgment | null,
+): EvidenceUsabilitySummary {
+  const status = evidenceSupportStatus(summary);
+  const guidance = evidenceUseGuidance(summary, explanation, judgment);
+  const traceability =
+    summary.provenance_field_count > 0
+      ? `${formatCount(summary.provenance_field_count, "provenance field")}`
+      : "missing provenance";
+  const grounding =
+    summary.concept_count > 0 || summary.aspect_count > 0
+      ? `${formatCount(
+          summary.concept_count + summary.aspect_count,
+          "grounding signal",
+        )}`
+      : "missing medical grounding";
+  const judgmentLabelText = judgment
+    ? `operator judged ${judgmentLabel(judgment.value)}`
+    : "not operator-judged";
+  const headline =
+    status === "strong"
+      ? "This result has enough support signals for operator evidence review."
+      : status === "partial"
+        ? "This result has partial support and needs review before use."
+        : "This result is weak support for the submitted search.";
+  const limitation =
+    status === "strong"
+      ? "Still verify the claim text and source locator before using it in an explanation."
+      : summary.provenance_field_count === 0
+        ? "Traceability is limited because no provenance field is available."
+        : "Medical grounding or exact query support is incomplete.";
+
+  return {
+    checks: [
+      `${formatCount(summary.matched_term_count, "matched term")}`,
+      traceability,
+      grounding,
+      judgmentLabelText,
+      explanation.bucketLabels.length
+        ? "evidence bucket matched"
+        : "not in evidence bucket",
+    ],
+    headline,
+    limitation,
+    recommendation: guidance.action,
+    status,
   };
 }
 
@@ -8893,6 +9790,7 @@ function searchHintsValue(value: unknown): SearchHintStack[] {
   return value
     .map((item) => recordValue(item))
     .map((item) => ({
+      metadata: recordValue(item.metadata),
       query: stringValue(item.query, ""),
       rationale: stringValue(item.rationale, "Generated from deterministic query analysis."),
       target: stringValue(item.target, "medical_search"),
@@ -8900,6 +9798,30 @@ function searchHintsValue(value: unknown): SearchHintStack[] {
       warnings: stringArrayValue(item.warnings),
     }))
     .filter((item) => item.query.length > 0 && item.target !== "medical_search");
+}
+
+function searchHintParameterExamples(value: unknown): SearchHintParameterExample[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      example: stringValue(item.example, ""),
+      matchedDatasetField: Boolean(item.matched_dataset_field),
+      name: stringValue(item.name, ""),
+      targetField: stringValue(item.target_field, ""),
+    }))
+    .filter((item) => item.name && item.example);
+}
+
+function searchHintLineageFollowup(value: unknown): SearchHintLineageFollowup[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      parameter: stringValue(item.parameter, ""),
+      purpose: stringValue(item.purpose, ""),
+    }))
+    .filter((item) => item.parameter && item.purpose);
 }
 
 async function copyTextToClipboard(text: string): Promise<void> {
@@ -9240,6 +10162,10 @@ function compareSearchRuns(
     baselineRun,
   );
   const queryAspectComparison = queryAspectComparisonBetweenRuns(activeRun, baselineRun);
+  const sourceDiversityComparison = sourceDiversityComparisonBetweenRuns(
+    activeRun,
+    baselineRun,
+  );
   const rulePackChanged = rulePackChanges.some((change) => change.status !== "stable");
   const topSourceChanged = activeRun.summary.topSourceId !== baselineRun.summary.topSourceId;
   const qualitySummaryChanged =
@@ -9288,6 +10214,7 @@ function compareSearchRuns(
     retainedEvidenceIds,
     rulePackChanges,
     rulePackChanged,
+    sourceDiversityComparison,
     topSourceAfter: activeRun.summary.topSourceId,
     topSourceBefore: baselineRun.summary.topSourceId,
     topSourceChanged,
@@ -9389,6 +10316,32 @@ function comparisonDiagnosisFromComparison(
       severity: "warning",
     });
   }
+  if (
+    comparison.sourceDiversityComparison.selectionModeChanged ||
+    comparison.sourceDiversityComparison.lambdaChanged
+  ) {
+    diagnosis.push({
+      code: "source_diversity_policy_changed",
+      message: "Source-diversity selection mode or lambda changed between runs.",
+      severity: "warning",
+    });
+  }
+  if (comparison.sourceDiversityComparison.duplicateSelectedSourceDelta > 0) {
+    diagnosis.push({
+      code: "source_diversity_regressed",
+      message: "The active run selected more duplicate evidence from already selected sources.",
+      severity: "warning",
+    });
+  } else if (
+    comparison.sourceDiversityComparison.selectedSourceDelta > 0 ||
+    comparison.sourceDiversityComparison.duplicateSelectedSourceDelta < 0
+  ) {
+    diagnosis.push({
+      code: "source_diversity_improved",
+      message: "The active run improved selected-source coverage or reduced duplicate-source evidence.",
+      severity: "success",
+    });
+  }
   if (comparison.rankChanges.length) {
     diagnosis.push({
       code: "rank_movement",
@@ -9427,6 +10380,7 @@ function comparisonReportFromComparison(
     version: 1,
     generated_at: new Date().toISOString(),
     summary: comparisonReportSummary(comparison, judgments),
+    operator_summary: comparisonOperatorSummary(comparison, recommendedActions),
     remediation: {
       active:
         comparison.activeSummary.remediationSummary ??
@@ -9464,6 +10418,12 @@ function comparisonReportFromComparison(
       hits: comparison.hitDelta,
       quality_score: comparison.qualityScoreDelta,
       quality_warnings: comparison.qualityWarningDelta,
+      source_diversity: {
+        candidate_sources: comparison.sourceDiversityComparison.candidateSourceDelta,
+        duplicate_selected_sources:
+          comparison.sourceDiversityComparison.duplicateSelectedSourceDelta,
+        selected_sources: comparison.sourceDiversityComparison.selectedSourceDelta,
+      },
       warnings: comparison.warningDelta,
     },
     diagnosis: comparison.diagnosis,
@@ -9519,6 +10479,41 @@ function comparisonReportFromComparison(
       after: comparison.topSourceAfter,
       changed: comparison.topSourceChanged,
     },
+    source_diversity: {
+      active: {
+        candidate_source_count:
+          comparison.sourceDiversityComparison.active.candidateSourceCount,
+        duplicate_selected_source_count:
+          comparison.sourceDiversityComparison.active.duplicateSelectedSourceCount,
+        enabled: comparison.sourceDiversityComparison.active.enabled,
+        lambda: comparison.sourceDiversityComparison.active.lambda,
+        selected_source_count:
+          comparison.sourceDiversityComparison.active.selectedSourceCount,
+        selection_mode: comparison.sourceDiversityComparison.active.selectionMode,
+        selected_source_ids:
+          comparison.sourceDiversityComparison.activeSelectedSourceIds,
+      },
+      baseline: {
+        candidate_source_count:
+          comparison.sourceDiversityComparison.baseline.candidateSourceCount,
+        duplicate_selected_source_count:
+          comparison.sourceDiversityComparison.baseline.duplicateSelectedSourceCount,
+        enabled: comparison.sourceDiversityComparison.baseline.enabled,
+        lambda: comparison.sourceDiversityComparison.baseline.lambda,
+        selected_source_count:
+          comparison.sourceDiversityComparison.baseline.selectedSourceCount,
+        selection_mode: comparison.sourceDiversityComparison.baseline.selectionMode,
+        selected_source_ids:
+          comparison.sourceDiversityComparison.baselineSelectedSourceIds,
+      },
+      added_source_ids: comparison.sourceDiversityComparison.addedSourceIds,
+      removed_source_ids: comparison.sourceDiversityComparison.removedSourceIds,
+      retained_source_ids: comparison.sourceDiversityComparison.retainedSourceIds,
+      source_overlap_ratio: comparison.sourceDiversityComparison.sourceOverlapRatio,
+      selection_mode_changed:
+        comparison.sourceDiversityComparison.selectionModeChanged,
+      lambda_changed: comparison.sourceDiversityComparison.lambdaChanged,
+    },
     query_profiles: {
       before: comparison.baselineSummary.queryProfile,
       after: comparison.activeSummary.queryProfile,
@@ -9542,11 +10537,19 @@ function retrievalCockpitReportFromPackage(
 ) {
   const analysis = queryAnalysisFromPackage(packageData);
   const ranking = rankingStackFromPackage(packageData);
-  const diversity = diversityFromPackage(packageData);
   const conceptGrounding = conceptGroundingSummariesFromPackage(packageData);
   const coverage = coverageSummariesFromPackage(packageData);
+  const diversity = diversityFromPackage(packageData);
   const rulePacks = retrievalRulePacksFromPackage(packageData);
   const queryHealth = queryHealthItems(submittedSearchPayload, packageData);
+  const requiredBuckets = packageData.evidence_buckets?.filter((bucket) => bucket.required) ?? [];
+  const readinessChecklist = searchReadinessChecklist({
+    diversity,
+    packageData,
+    queryHealth,
+    requiredBuckets,
+    topAction: (packageData.recommended_actions ?? [])[0] ?? null,
+  });
   const runSummary = retrievalRunSummary(packageData);
   return {
     report_type: "retrieval_cockpit",
@@ -9584,6 +10587,7 @@ function retrievalCockpitReportFromPackage(
         metadata: diagnostic.metadata,
       })),
       rule_ids: analysis.ruleIds,
+      medical_search_hints: medicalSearchHintReport(packageData),
     },
     ranking_stack: {
       embedding: ranking.embedding,
@@ -9604,20 +10608,15 @@ function retrievalCockpitReportFromPackage(
         metadata: recommendation.metadata,
       }),
     ),
+    standard_search_plan: retrievalStandardSearchPlanReport(packageData),
     evidence_readiness: {
+      readiness_checklist: readinessChecklist,
       quality_summary: packageData.quality_summary ?? null,
       quality_signals: packageData.quality_signals ?? [],
       evidence_buckets: packageData.evidence_buckets ?? [],
       coverage_gaps: coverage,
       concept_grounding: conceptGrounding,
-      diversity: {
-        enabled: diversity.enabled,
-        selection_mode: diversity.selectionMode,
-        candidate_source_count: diversity.candidateSourceCount,
-        selected_source_count: diversity.selectedSourceCount,
-        duplicate_selected_source_count: diversity.duplicateSelectedSourceCount,
-        lambda: diversity.lambda,
-      },
+      diversity: retrievalDiversityReport(packageData),
     },
     recommended_action_summary: packageData.recommended_action_summary ?? null,
     remediation_summary:
@@ -9669,6 +10668,86 @@ function retrievalCockpitEvidenceHitReports(packageData: RetrievalPackage) {
   });
 }
 
+function retrievalStandardSearchPlanReport(packageData: RetrievalPackage) {
+  const plan = packageData.standard_search_plan ?? null;
+  if (!plan) {
+    return null;
+  }
+  return {
+    plan_id: plan.plan_id,
+    summary: plan.summary,
+    primary_route: plan.primary_route,
+    missing_routes: plan.missing_routes,
+    governance_notes: plan.governance_notes,
+    steps: plan.steps.map((step) => ({
+      step_id: step.step_id,
+      label: step.label,
+      standard_system: step.standard_system,
+      route_type: step.route_type,
+      priority: step.priority,
+      query: step.query,
+      rationale: step.rationale,
+      suggested_filters: step.suggested_filters,
+      governance_notes: step.governance_notes,
+      metadata: step.metadata,
+    })),
+  };
+}
+
+function retrievalDiversityReport(packageData: RetrievalPackage) {
+  const diversity = diversityFromPackage(packageData);
+  return {
+    enabled: diversity.enabled,
+    selection_mode: diversity.selectionMode,
+    candidate_source_count: diversity.candidateSourceCount,
+    selected_source_count: diversity.selectedSourceCount,
+    duplicate_selected_source_count: diversity.duplicateSelectedSourceCount,
+    lambda: diversity.lambda,
+    selected_hits: diversity.selectedHits.map((selection) => ({
+      evidence_id: selection.evidenceId,
+      source_id: selection.sourceId,
+      selected_rank: selection.selectedRank,
+      original_rank: selection.originalRank,
+      relevance_score: selection.relevanceScore,
+      redundancy_score: selection.redundancyScore,
+      selection_score: selection.selectionScore,
+      reason: selection.reason,
+    })),
+  };
+}
+
+function medicalSearchHintReport(packageData: RetrievalPackage) {
+  const analysis = queryAnalysisFromPackage(packageData);
+  if (!analysis.searchHints.length) {
+    return [];
+  }
+  return analysis.searchHints.slice(0, 8).map((hint) => {
+    const metadata = hint.metadata;
+    return {
+      target: hint.target,
+      query: hint.query,
+      url: hint.url,
+      rationale: hint.rationale,
+      warnings: hint.warnings,
+      route_details: {
+        endpoint_scope: stringArrayValue(metadata.scope_endpoints).slice(0, 8),
+        selected_terms: stringArrayValue(metadata.selected_terms).slice(0, 8),
+        selected_unit_candidates: stringArrayValue(
+          metadata.selected_unit_candidates,
+        ).slice(0, 8),
+        parameter_examples: searchHintParameterExamples(
+          metadata.parameter_examples,
+        ).slice(0, 8),
+        lineage_followup: searchHintLineageFollowup(
+          metadata.lineage_followup,
+        ).slice(0, 4),
+        launchable: metadata.launchable === undefined ? Boolean(hint.url) : Boolean(metadata.launchable),
+        capability_warning: optionalStringValue(metadata.capability_warning),
+      },
+    };
+  });
+}
+
 function comparisonReportSummary(
   comparison: RetrievalRunComparison,
   judgments: RelevanceJudgment[],
@@ -9709,11 +10788,82 @@ function comparisonReportSummary(
       quality_warning_delta: comparison.qualityWarningDelta,
       overlap_ratio: comparison.metrics.overlapRatio,
       churn_ratio: comparison.metrics.churnRate,
+      source_diversity: {
+        selected_source_delta:
+          comparison.sourceDiversityComparison.selectedSourceDelta,
+        duplicate_selected_source_delta:
+          comparison.sourceDiversityComparison.duplicateSelectedSourceDelta,
+        source_overlap_ratio:
+          comparison.sourceDiversityComparison.sourceOverlapRatio,
+      },
     },
     changed_dimensions: comparison.diagnosis
       .filter((item) => item.severity !== "success")
       .map((item) => item.code),
     judgment_count: judgments.length,
+  };
+}
+
+function comparisonOperatorSummary(
+  comparison: RetrievalRunComparison,
+  recommendedActions: RetrievalComparisonRecommendedAction[],
+): RetrievalComparisonOperatorSummary {
+  const warnings = comparison.diagnosis.filter(
+    (item) => item.severity === "warning",
+  );
+  const improvements = comparison.diagnosis.filter(
+    (item) => item.severity === "success" && item.code !== "comparison_stable",
+  );
+  const diversity = comparison.sourceDiversityComparison;
+  const status: RetrievalComparisonOperatorSummary["status"] = warnings.length
+    ? "review"
+    : improvements.length
+      ? "improved"
+      : "stable";
+  const headline =
+    status === "review"
+      ? `Review ${formatCount(warnings.length, "change driver")} before accepting this retrieval tuning run.`
+      : status === "improved"
+        ? "Active run improved one or more retrieval readiness signals without warning drivers."
+        : "Active run is stable against the selected baseline.";
+  const topAction =
+    recommendedActions.find((action) => action.severity !== "success") ??
+    recommendedActions[0] ??
+    null;
+  const sourceSpread =
+    diversity.selectedSourceDelta === 0 &&
+    diversity.duplicateSelectedSourceDelta === 0
+      ? "Source spread is unchanged."
+      : `Source spread ${formatSignedDelta(
+          diversity.selectedSourceDelta,
+        )}; duplicate-source evidence ${formatSignedDelta(
+          diversity.duplicateSelectedSourceDelta,
+        )}.`;
+  const bullets = [
+    `Evidence overlap ${formatPercent(comparison.metrics.overlapRatio)}; churn ${formatPercent(comparison.metrics.churnRate)}.`,
+    `Quality score delta ${
+      comparison.qualityScoreDelta === null
+        ? "n/a"
+        : formatSignedDelta(comparison.qualityScoreDelta)
+    }; quality warnings ${formatSignedDelta(comparison.qualityWarningDelta)}.`,
+    sourceSpread,
+    topAction
+      ? `Next action: ${topAction.action}`
+      : "No follow-up action detected.",
+  ];
+  const reviewFocus = uniqueValues([
+    ...warnings.slice(0, 4).map((item) => humanize(item.code)),
+    ...(diversity.duplicateSelectedSourceDelta > 0 ? ["source concentration"] : []),
+    ...(comparison.metrics.churnRate > 0.5 ? ["evidence churn"] : []),
+    ...(comparison.rankChanges.length ? ["rank movement"] : []),
+    ...(comparison.qualitySummaryChanged ? ["quality readiness"] : []),
+  ]);
+
+  return {
+    bullets,
+    headline,
+    reviewFocus: reviewFocus.length ? reviewFocus : ["no immediate review focus"],
+    status,
   };
 }
 
@@ -9781,6 +10931,27 @@ function comparisonReportRecommendedActions(
       reason: "Evidence churn or top-source movement is high enough to affect review conclusions.",
       severity: "warning",
       source: "evidence",
+    });
+  }
+  if (comparison.sourceDiversityComparison.duplicateSelectedSourceDelta > 0) {
+    actions.push({
+      action: "Review whether active results over-concentrate evidence from the same source family before accepting the tuning change.",
+      priority: 2,
+      reason: "The active run selected more duplicate-source evidence than the baseline.",
+      severity: "warning",
+      source: "source_diversity",
+    });
+  }
+  if (
+    comparison.sourceDiversityComparison.selectionModeChanged ||
+    comparison.sourceDiversityComparison.lambdaChanged
+  ) {
+    actions.push({
+      action: "Document source-diversity policy changes with this comparison result.",
+      priority: 3,
+      reason: "Selection mode or lambda changed, so source spread is not directly comparable without configuration context.",
+      severity: "warning",
+      source: "source_diversity",
     });
   }
   if (!judgments.length) {
@@ -10143,6 +11314,52 @@ function comparisonMetrics({
   };
 }
 
+function sourceDiversityComparisonBetweenRuns(
+  activeRun: RetrievalSearchRun,
+  baselineRun: RetrievalSearchRun,
+): RetrievalSourceDiversityComparison {
+  const active = activeRun.summary.diversity;
+  const baseline = baselineRun.summary.diversity;
+  const activeSelectedSourceIds = diversitySelectedSourceIds(active);
+  const baselineSelectedSourceIds = diversitySelectedSourceIds(baseline);
+  const activeSourceSet = new Set(activeSelectedSourceIds);
+  const baselineSourceSet = new Set(baselineSelectedSourceIds);
+  const addedSourceIds = activeSelectedSourceIds.filter(
+    (sourceId) => !baselineSourceSet.has(sourceId),
+  );
+  const removedSourceIds = baselineSelectedSourceIds.filter(
+    (sourceId) => !activeSourceSet.has(sourceId),
+  );
+  const retainedSourceIds = activeSelectedSourceIds.filter((sourceId) =>
+    baselineSourceSet.has(sourceId),
+  );
+  const unionCount = Math.max(
+    0,
+    activeSelectedSourceIds.length + baselineSelectedSourceIds.length - retainedSourceIds.length,
+  );
+
+  return {
+    active,
+    activeSelectedSourceIds,
+    addedSourceIds,
+    baseline,
+    baselineSelectedSourceIds,
+    candidateSourceDelta: active.candidateSourceCount - baseline.candidateSourceCount,
+    duplicateSelectedSourceDelta:
+      active.duplicateSelectedSourceCount - baseline.duplicateSelectedSourceCount,
+    lambdaChanged: active.lambda !== baseline.lambda,
+    removedSourceIds,
+    retainedSourceIds,
+    selectedSourceDelta: active.selectedSourceCount - baseline.selectedSourceCount,
+    selectionModeChanged: active.selectionMode !== baseline.selectionMode,
+    sourceOverlapRatio: unionCount ? retainedSourceIds.length / unionCount : 1,
+  };
+}
+
+function diversitySelectedSourceIds(diversity: DiversityStack): string[] {
+  return uniqueValues(diversity.selectedHits.map((selection) => selection.sourceId));
+}
+
 function rankChangesBetweenRuns(
   activeRun: RetrievalSearchRun,
   baselineRun: RetrievalSearchRun,
@@ -10405,6 +11622,7 @@ function retrievalRunSummary(packageData: RetrievalPackage): RetrievalRunSummary
     conceptGrounding: conceptGroundingSummariesFromPackage(packageData),
     correctiveActionSummary: correctiveActionSummaryFromPackage(packageData),
     coverage: coverageSummariesFromPackage(packageData),
+    diversity: diversityFromPackage(packageData),
     hitCount: packageData.hits.length,
     qualitySummary: packageData.quality_summary ?? null,
     qualityWarningCount: qualityWarningCount(packageData.quality_signals ?? []),

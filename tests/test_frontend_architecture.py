@@ -220,6 +220,21 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "query_aspects" in retrieval_page
     assert "Search aspect plan" in retrieval_page
     assert "Query diagnostics explain parser" in retrieval_page
+    assert "SearchHintMetadata" in retrieval_page
+    assert "Route details" in retrieval_page
+    assert "Parameter examples" in retrieval_page
+    assert "Lineage follow-up" in retrieval_page
+    assert "Endpoint scope" in retrieval_page
+    assert "Selected terminology terms" in retrieval_page
+    assert "Selected unit candidates" in retrieval_page
+    assert "selected_terms" in retrieval_page
+    assert "selected_unit_candidates" in retrieval_page
+    assert "capability_warning" in retrieval_page
+    assert "searchHintParameterExamples" in retrieval_page
+    assert "searchHintLineageFollowup" in retrieval_page
+    assert "metadata?: Record<string, unknown>" in (
+        REPO_ROOT / "frontend/src/types.ts"
+    ).read_text(encoding="utf-8")
     assert "RunComparisonQueryAspects" in retrieval_page
     assert "queryAspectComparisonBetweenRuns" in retrieval_page
     assert "queryAspectComparison" in retrieval_page
@@ -249,6 +264,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "EvidenceUseGuidancePanel" in retrieval_page
     assert "Evidence interpretation guidance" in retrieval_page
     assert "Evidence interpretation help" in retrieval_page
+    assert "EvidenceUsabilitySummaryPanel" in retrieval_page
+    assert "Evidence usability summary" in retrieval_page
+    assert "Usability summary" in retrieval_page
+    assert "evidenceUsabilitySummary" in retrieval_page
+    assert "usability_summary: evidenceUsabilitySummary" in retrieval_page
     assert "evidenceUseGuidance" in retrieval_page
     assert "evidenceUseGuidanceReasons" in retrieval_page
     assert "Use with provenance check" in retrieval_page
@@ -302,8 +322,25 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "RetrievalInterpretation" in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
+    assert "StandardSearchPlanPanel" in retrieval_page
+    assert "Healthcare search plan" in retrieval_page
+    assert "Backend-selected playbook for the next standards-aware search" in retrieval_page
+    assert "StandardSearchMatchReasons" in retrieval_page
+    assert "Matched by" in retrieval_page
+    assert "matched_fields" in retrieval_page
+    assert "matched_query_aspects" in retrieval_page
+    assert "retrievalStandardSearchPlanReport" in retrieval_page
+    assert "standard_search_plan" in retrieval_page
+    assert "RetrievalStandardSearchPlan" in (REPO_ROOT / "frontend/src/types.ts").read_text(
+        encoding="utf-8"
+    )
     assert "searchAnswerReportFromPackage" in retrieval_page
     assert "retrieval_search_answer" in retrieval_page
+    assert "medicalSearchHintReport" in retrieval_page
+    assert "medical_search_hints" in retrieval_page
+    assert "route_details" in retrieval_page
+    assert "retrievalDiversityReport" in retrieval_page
+    assert "diversity: retrievalDiversityReport(packageData)" in retrieval_page
     assert "retrievalInterpretationReport" in retrieval_page
     assert "Copy answer JSON" in retrieval_page
     assert "This is an evidence retrieval summary for workflow operations" in retrieval_page
@@ -354,6 +391,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "framework_managed_fusion" in (
         REPO_ROOT / "docs/retrieval_module_v0.md"
     ).read_text(encoding="utf-8")
+    assert "RetrievalPackage.diversity" in (
+        REPO_ROOT / "docs/retrieval_module_v0.md"
+    ).read_text(encoding="utf-8")
     assert "trace.fusion_diagnostics" in (
         REPO_ROOT / "docs/api_contract_v0.md"
     ).read_text(encoding="utf-8")
@@ -361,9 +401,29 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         REPO_ROOT / "docs/api_contract_v0.md"
     ).read_text(encoding="utf-8")
     assert "DiversitySelectionExplanation" in retrieval_page
+    assert "SourceDiversityPanel" in retrieval_page
+    assert "Source diversity" in retrieval_page
+    assert "Selected-hit rationale" in retrieval_page
+    assert "DiversityMetricCard" in retrieval_page
+    assert "RunComparisonSourceDiversity" in retrieval_page
+    assert "Source diversity comparison" in retrieval_page
+    assert "RunComparisonOperatorSummary" in retrieval_page
+    assert "Comparison operator summary" in retrieval_page
+    assert "comparisonOperatorSummary" in retrieval_page
+    assert "operator_summary: comparisonOperatorSummary(comparison, recommendedActions)" in retrieval_page
+    assert "Review focus" in retrieval_page
+    assert "sourceDiversityComparisonBetweenRuns" in retrieval_page
+    assert "sourceDiversityComparison" in retrieval_page
+    assert "source_diversity_regressed" in retrieval_page
+    assert "source_diversity_improved" in retrieval_page
+    assert "source_diversity: {" in retrieval_page
+    assert "selected_source_delta" in retrieval_page
+    assert "duplicate_selected_source_delta" in retrieval_page
+    assert "selected_hits: diversity.selectedHits.map" in retrieval_page
     assert "diversitySelectionByEvidenceId" in retrieval_page
     assert "selected_hits" in retrieval_page
     assert "Diversity selection" in retrieval_page
+    assert "packageData.diversity ?? packageData.handoff_context.diversity" in retrieval_page
     assert "packageData.handoff_context.reranker" in retrieval_page
     assert "packageData.handoff_context.diversity" in retrieval_page
     assert "runtime?.rerank?.enabled" in retrieval_page
@@ -523,6 +583,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Readiness score unavailable" in retrieval_page
     assert "RetrievalSearchCockpit" in retrieval_page
     assert "Search cockpit" in retrieval_page
+    assert "SearchReadinessChecklist" in retrieval_page
+    assert "Search readiness checklist" in retrieval_page
+    assert "searchReadinessChecklist" in retrieval_page
+    assert "readiness_checklist: readinessChecklist" in retrieval_page
+    assert "Source spread" in retrieval_page
+    assert "Governance" in retrieval_page
     assert "Query transformation" in retrieval_page
     assert "Next best action" in retrieval_page
     assert "hybridStackValue" in retrieval_page
@@ -583,7 +649,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "provenanceFields" in retrieval_page
     assert "rankingSignalRuleIds" in retrieval_page
     assert "topScoreComponent" in retrieval_page
-    assert "evidenceReportFromHit(hit, provenanceEntries, matchExplanation" in retrieval_page
+    assert "evidenceReportFromHit(" in retrieval_page
+    assert "judgment," in retrieval_page
     assert "Top driver" in retrieval_page
     assert "Evidence pack" in retrieval_page
     assert "evidenceBucketLabelsByEvidenceId" in retrieval_page
@@ -868,8 +935,13 @@ def test_settings_page_surfaces_retrieval_rule_pack_inventory() -> None:
     assert "retrieval.rule_packs[]" in api_contract
     assert "OJT_QUERY_DIAGNOSTIC_RULES_PATH" in api_contract
     assert "OJT_CORRECTIVE_ACTION_RULES_PATH" in api_contract
+    assert "OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH" in api_contract
     assert "OJT_EVIDENCE_BUCKET_RULES_PATH" in api_contract
     assert "sanitized pack name" in frontend_architecture
+    assert "0 favors source novelty; 1 favors raw relevance" in settings_page
+    assert "disabled={!form.diversityEnabled}" in settings_page
+    assert "Disable it only when strict score order is required" in settings_page
+    assert "Retrieval source-diversity controls" in frontend_architecture
 
 
 def test_assistant_ui_surfaces_tool_layer() -> None:
@@ -896,6 +968,41 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "assistantEvidenceMatchExplanation" in assistant_page
     assert "matchSupportBadgeVariant" in assistant_page
     assert "item.match_explanation" in assistant_page
+    assert "AssistantStandardSearchPlan" in assistant_page
+    assert "Standards plan" in assistant_page
+    assert "AssistantStandardSearchMatchReasons" in assistant_page
+    assert "Matched by" in assistant_page
+    assert "matched_fields" in assistant_page
+    assert "AssistantMedicalSearchHints" in assistant_page
+    assert "Medical search hints" in assistant_page
+    assert "AssistantSourceDiversity" in assistant_page
+    assert "toolDiversitySummary" in assistant_page
+    assert "diversitySummaryValue" in assistant_page
+    assert "Evidence spread after final retrieval selection" in assistant_page
+    assert "_compact_retrieval_diversity" in (
+        REPO_ROOT / "src/ojtflow/application/assistant_service.py"
+    ).read_text(encoding="utf-8")
+    assert "toolSearchHints" in assistant_page
+    assert "selected_unit_candidates" in assistant_page
+    assert "scope_endpoints" in assistant_page
+    assert "ExternalLink" in assistant_page
+    assert "Clipboard" in assistant_page
+    assert "copyTextToClipboard" in assistant_page
+    assert "Copied" in assistant_page
+    assert 'rel="noopener noreferrer"' in assistant_page
+    assert "toolStandardSearchPlan" in assistant_page
+    assert "standardSearchPlanValue" in assistant_page
+    assert "RetrievalStandardSearchPlan" in assistant_page
+    assert "AssistantSessionSidebar" in assistant_page
+    assert "createAssistantChatSession" in assistant_page
+    assert "sessionWithAppendedTranscriptItem" in assistant_page
+    assert "New chat" in assistant_page
+    assert "transcriptEndRef" in assistant_page
+    assert 'scrollIntoView({ block: "end" })' in assistant_page
+    assert "lg:h-[calc(100dvh-6rem)]" in assistant_page
+    assert "ChatGPT-style chat sessions" in frontend_architecture
+    assert "contained app-viewport chat" in frontend_architecture
+    assert "auto-follow the active" in frontend_architecture
     assert "AbortController" in assistant_page
     assert "cancelActiveStream" in assistant_page
     assert "Stop" in assistant_page

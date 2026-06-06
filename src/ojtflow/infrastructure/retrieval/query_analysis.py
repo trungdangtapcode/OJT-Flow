@@ -46,6 +46,12 @@ DEFAULT_QUERY_ASPECT_RULE_REGISTRY = (
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
 )
+DEFAULT_FHIR_SEARCH_PARAMETER_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "terminologies"
+    / "fhir_search_parameters.json"
+)
 
 SUPPORTED_FILTER_SUGGESTION_FIELDS = {
     "clinical_domain",
@@ -166,6 +172,26 @@ class SearchHintTarget:
     label: str
     rationale: str
     warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FhirSearchParameter:
+    """Curated FHIR search parameter hint loaded from trusted registry data."""
+
+    name: str
+    parameter_type: str
+    target_field: str
+    example: str
+    standard_systems: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FhirSearchResource:
+    """FHIR resource-level search parameter seed."""
+
+    resource_type: str
+    clinical_domain: str | None
+    parameters: tuple[FhirSearchParameter, ...]
 
 
 def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
@@ -1015,6 +1041,129 @@ def _search_hint_targets() -> tuple[SearchHintTarget, ...]:
     return _load_search_hint_targets(path or str(DEFAULT_SEARCH_HINT_TARGET_REGISTRY))
 
 
+def _fhir_search_resource(resource_type: str) -> FhirSearchResource | None:
+    resources = {
+        item.resource_type.lower(): item for item in _fhir_search_resources()
+    }
+    return resources.get(resource_type.lower())
+
+
+def _fhir_parameter_examples(
+    resource_seed: FhirSearchResource | None,
+    *,
+    query_fields: list[str],
+) -> list[dict[str, Any]]:
+    if not resource_seed:
+        return []
+    field_tokens = {token for field in query_fields for token in _tokens(field)}
+    preferred_names = _fhir_preferred_parameter_names(field_tokens)
+    parameters = sorted(
+        resource_seed.parameters,
+        key=lambda parameter: (
+            0 if parameter.name in preferred_names else 1,
+            parameter.name,
+        ),
+    )
+    return [
+        {
+            "name": parameter.name,
+            "type": parameter.parameter_type,
+            "target_field": parameter.target_field,
+            "example": parameter.example,
+            "standard_systems": list(parameter.standard_systems),
+            "matched_dataset_field": parameter.name in preferred_names,
+        }
+        for parameter in parameters[:5]
+    ]
+
+
+def _fhir_preferred_parameter_names(field_tokens: set[str]) -> set[str]:
+    preferred: set[str] = set()
+    if {"lab", "test", "code", "loinc", "lab_name", "test_name"}.intersection(field_tokens):
+        preferred.update({"code", "combo-code"})
+    if {"patient", "patient_id", "subject", "mrn"}.intersection(field_tokens):
+        preferred.update({"patient", "subject"})
+    if {"date", "effective", "effective_date"}.intersection(field_tokens):
+        preferred.add("date")
+    if {"value", "unit", "units", "result_value"}.intersection(field_tokens):
+        preferred.add("value-quantity")
+    return preferred
+
+
+def _fhir_search_registry_version() -> str | None:
+    return _fhir_search_registry_raw().get("version")
+
+
+def _fhir_search_resources() -> tuple[FhirSearchResource, ...]:
+    raw = _fhir_search_registry_raw()
+    records = raw.get("resources")
+    path = Path(os.environ.get("OJT_FHIR_SEARCH_PARAMETERS_PATH") or str(DEFAULT_FHIR_SEARCH_PARAMETER_REGISTRY))
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: resources must be a list")
+    return tuple(_fhir_search_resource_record(record, path=path) for record in records)
+
+
+@lru_cache(maxsize=4)
+def _fhir_search_registry_raw() -> dict[str, Any]:
+    path = Path(
+        os.environ.get("OJT_FHIR_SEARCH_PARAMETERS_PATH")
+        or str(DEFAULT_FHIR_SEARCH_PARAMETER_REGISTRY)
+    )
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: expected object")
+    return raw
+
+
+def _fhir_search_resource_record(record: Any, *, path: Path) -> FhirSearchResource:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: resource must be an object")
+    parameters = record.get("parameters")
+    if not isinstance(parameters, list):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: parameters must be a list")
+    return FhirSearchResource(
+        resource_type=_required_search_hint_text(
+            record.get("resource_type"),
+            field="resource_type",
+            path=path,
+        ),
+        clinical_domain=_optional_fhir_registry_text(record.get("clinical_domain")),
+        parameters=tuple(
+            _fhir_search_parameter_record(parameter, path=path)
+            for parameter in parameters
+        ),
+    )
+
+
+def _fhir_search_parameter_record(record: Any, *, path: Path) -> FhirSearchParameter:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: parameter must be an object")
+    return FhirSearchParameter(
+        name=_required_search_hint_text(record.get("name"), field="name", path=path),
+        parameter_type=_required_search_hint_text(record.get("type"), field="type", path=path),
+        target_field=_required_search_hint_text(
+            record.get("target_field"),
+            field="target_field",
+            path=path,
+        ),
+        example=_required_search_hint_text(record.get("example"), field="example", path=path),
+        standard_systems=_search_hint_text_tuple(
+            record.get("standard_systems"),
+            field="standard_systems",
+            path=path,
+        ),
+    )
+
+
+def _optional_fhir_registry_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None
+
+
 def _load_search_hint_targets(path_text: str) -> tuple[SearchHintTarget, ...]:
     path = Path(path_text)
     if not path.exists():
@@ -1592,6 +1741,10 @@ def _search_hints(
         hints.extend(_openfda_search_hints(query, concept_candidates=concept_candidates))
     if "fhir_observation_profile" in concept_set or query.resource_type:
         hints.append(_fhir_search_hint(query))
+    if "LOINC" in standard_set:
+        hints.append(_loinc_search_hint(query, concept_candidates=concept_candidates))
+    if "UCUM" in standard_set:
+        hints.append(_ucum_search_hint(query, concept_candidates=concept_candidates))
     return hints
 
 
@@ -1617,9 +1770,74 @@ def _pubmed_search_hint(
     )
 
 
+def _loinc_search_terms(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> list[str]:
+    terms = _dedupe(
+        [
+            *(
+                candidate.display_name
+                for candidate in concept_candidates
+                if candidate.standard_system == "LOINC"
+            ),
+            *(
+                alias
+                for candidate in concept_candidates
+                if candidate.standard_system == "LOINC"
+                for alias in candidate.matched_aliases[:2]
+            ),
+            *(
+                field
+                for field in query.fields
+                if field.lower() in {"lab_name", "test_name", "code", "loinc_code"}
+            ),
+        ]
+    )
+    return terms[:5]
+
+
+def _ucum_unit_candidates(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> list[str]:
+    metadata_units = [
+        unit
+        for candidate in concept_candidates
+        for units in [candidate.metadata.get("preferred_units")]
+        if isinstance(units, list)
+        for unit in units
+        if isinstance(unit, str) and unit.strip()
+    ]
+    query_units = [
+        token
+        for token in _tokens(query.query)
+        if _looks_like_unit_token(token)
+    ]
+    return _dedupe([*metadata_units, *query_units])[:5]
+
+
+def _looks_like_unit_token(token: str) -> bool:
+    normalized = token.strip()
+    if not normalized:
+        return False
+    if normalized in {"mg/dl", "mmol/l", "umol/l", "ng/ml", "g/dl", "ml/min"}:
+        return True
+    return any(character in normalized for character in {"/", "%"})
+
+
 def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
     resource_type = query.resource_type or "Observation"
-    if resource_type.lower() == "observation":
+    resource_seed = _fhir_search_resource(resource_type)
+    parameter_examples = _fhir_parameter_examples(
+        resource_seed,
+        query_fields=query.fields,
+    )
+    if parameter_examples:
+        template = " ; ".join(example["example"] for example in parameter_examples[:3])
+    elif resource_type.lower() == "observation":
         template = (
             "Observation?code=<loinc-code>&subject=Patient/<id>&date=ge<yyyy-mm-dd>"
         )
@@ -1631,6 +1849,135 @@ def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
         query=template,
         rationale=target.rationale,
         warnings=list(target.warnings),
+        metadata={
+            "resource_type": resource_type,
+            "registry_version": _fhir_search_registry_version(),
+            "clinical_domain": resource_seed.clinical_domain if resource_seed else None,
+            "parameter_examples": parameter_examples,
+            "lineage_followup": [
+                {
+                    "parameter": "_revinclude=Provenance:target",
+                    "purpose": "Return Provenance resources that point at the matched clinical resources when the server supports this join.",
+                },
+                {
+                    "parameter": "_revinclude=AuditEvent:entity",
+                    "purpose": "Return access/use audit events tied to the matched entity when supported by the concrete server.",
+                },
+            ],
+            "capability_warning": (
+                "Verify the concrete FHIR server CapabilityStatement before execution."
+            ),
+        },
+    )
+
+
+def _loinc_search_hint(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> RetrievalSearchHint:
+    target = _search_hint_target("loinc")
+    terms = _loinc_search_terms(query, concept_candidates=concept_candidates)
+    text_query = " ".join(terms) if terms else query.query
+    encoded_query = quote_plus(text_query)
+    return RetrievalSearchHint(
+        target=target.target,
+        query=f"GET /searchapi/loincs?query={encoded_query}&rows=20&offset=0",
+        rationale=target.rationale,
+        warnings=list(target.warnings),
+        metadata={
+            "api_base_url": "https://loinc.regenstrief.org/searchapi",
+            "authentication_required": True,
+            "scope_endpoints": [
+                "/searchapi/loincs",
+                "/searchapi/answerlists",
+                "/searchapi/parts",
+                "/searchapi/groups",
+            ],
+            "parameter_examples": [
+                {
+                    "name": "query",
+                    "type": "string",
+                    "target_field": "LOINC search text",
+                    "example": f"query={encoded_query}",
+                    "standard_systems": ["LOINC"],
+                    "matched_dataset_field": bool(query.fields),
+                },
+                {
+                    "name": "rows",
+                    "type": "integer",
+                    "target_field": "result page size",
+                    "example": "rows=20",
+                    "standard_systems": ["LOINC"],
+                    "matched_dataset_field": False,
+                },
+                {
+                    "name": "offset",
+                    "type": "integer",
+                    "target_field": "result page offset",
+                    "example": "offset=0",
+                    "standard_systems": ["LOINC"],
+                    "matched_dataset_field": False,
+                },
+            ],
+            "selected_terms": terms,
+            "capability_warning": "LOINC Search API authentication and endpoint scope must be configured before execution.",
+        },
+    )
+
+
+def _ucum_search_hint(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> RetrievalSearchHint:
+    target = _search_hint_target("ucum")
+    unit_candidates = _ucum_unit_candidates(query, concept_candidates=concept_candidates)
+    code = unit_candidates[0] if unit_candidates else "<unit-code>"
+    encoded_code = quote_plus(code)
+    validation_path = (
+        "/ucum-fhir/R4/CodeSystem/$validate-code?"
+        f"url=http://unitsofmeasure.org&code={encoded_code}&_format=application/fhir+json"
+    )
+    return RetrievalSearchHint(
+        target=target.target,
+        query=f"GET {validation_path}",
+        url=f"https://ucum.nlm.nih.gov{validation_path}" if unit_candidates else None,
+        rationale=target.rationale,
+        warnings=list(target.warnings),
+        metadata={
+            "api_base_url": "https://ucum.nlm.nih.gov",
+            "operation": "FHIR CodeSystem $validate-code",
+            "launchable": bool(unit_candidates),
+            "parameter_examples": [
+                {
+                    "name": "url",
+                    "type": "uri",
+                    "target_field": "CodeSystem URL",
+                    "example": "url=http://unitsofmeasure.org",
+                    "standard_systems": ["UCUM", "FHIR"],
+                    "matched_dataset_field": False,
+                },
+                {
+                    "name": "code",
+                    "type": "code",
+                    "target_field": "source unit string",
+                    "example": f"code={encoded_code}",
+                    "standard_systems": ["UCUM"],
+                    "matched_dataset_field": "unit" in {field.lower() for field in query.fields},
+                },
+                {
+                    "name": "_format",
+                    "type": "mime-type",
+                    "target_field": "response format",
+                    "example": "_format=application/fhir+json",
+                    "standard_systems": ["FHIR"],
+                    "matched_dataset_field": False,
+                },
+            ],
+            "selected_unit_candidates": unit_candidates,
+            "capability_warning": "URL encode unit strings before execution and preserve the original source unit for audit.",
+        },
     )
 
 

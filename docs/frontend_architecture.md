@@ -175,8 +175,10 @@ the applied rule ID, reason, and weight, with
 older payloads. It must also surface source coverage from retrieval
 diversity metadata so redundant single-source results are visible during
 evidence review. Result cards must render per-hit diversity selection details
-from `handoff_context.diversity.selected_hits` when present, including original
-rank, normalized relevance, redundancy, MMR score, and selection reason.
+from first-class `diversity.selected_hits`, falling back to
+`handoff_context.diversity.selected_hits` for older responses. Details must
+include original rank, normalized relevance, redundancy, MMR score, and
+selection reason.
 Result cards must also render `source_locator.query_aspect_matches[]` as
 per-hit aspect support, including aspect label, priority, matched filters,
 matched terms, and reason.
@@ -211,6 +213,17 @@ Each ranked evidence card must also offer a copyable `retrieval_evidence_hit`
 report containing evidence identity, support-summary counts, `match_explanation`,
 ranking scores/components, concept/aspect grounding, provenance summary,
 locators, and snippet context.
+The retrieval cockpit must expose package-level source-diversity selection.
+First-class `diversity.selected_hits` should render as selected-hit rationale
+with source ID, selected rank, original rank, redundancy score, selection score,
+and the backend-provided reason. The same selection details should be included
+in copied answer and cockpit reports so source balance remains auditable
+outside the browser.
+Run comparison must also compare source-diversity deltas between active and
+baseline runs: selected-source count, candidate-source count, duplicate selected
+source count, selected-source overlap, added/removed/retained source IDs,
+selection mode, and lambda. This prevents relevance tuning from accidentally
+improving score order while narrowing evidence to one source family.
 Copy actions for evidence, comparison, evaluation, and search-hint reports must
 show transient success feedback so operators can tell the clipboard action
 completed without opening developer tools or raw browser state. Report copy
@@ -230,6 +243,12 @@ hits, `evidence_buckets[]`, `source_locator` metadata, and persisted judgments;
 it must not create hidden clinical claims or browser-only relevance scores. The
 matrix must explain how to interpret weak rows, missing provenance, and missing
 concept/aspect support before users inspect long evidence cards.
+Each ranked evidence card must also render a compact usability summary derived
+from the same support status, match explanation, provenance, bucket membership,
+and persisted judgment state. It should state whether the hit is strong,
+partial, or weak support, give the next operator recommendation, name the
+primary limitation, and export the same data as `usability_summary` in copied
+`retrieval_evidence_hit` JSON.
 On mobile, the evidence support matrix must render card rows instead of forcing
 the wide table as the primary view. The desktop table can remain horizontally
 scrollable for comparison, but the mobile-first view should show each evidence
@@ -276,7 +295,9 @@ source, required-support coverage, warnings, and backend action count. It should
 state that the summary supports workflow evidence review and is not clinical
 advice. Its copy action should export a `retrieval_search_answer` JSON report
 including backend `interpretation` so operators can share the plain-language
-result without copying raw trace state.
+result without copying raw trace state. That report should also include bounded
+`medical_search_hints` with route details for FHIR, LOINC, UCUM, and external
+medical search targets plus the source-diversity report when present.
 Immediately after `Search answer`, the ranked-result panel should render an
 `Evidence interpretation` section that translates the same package into
 operational review language: why the top result matched, required bucket
@@ -334,6 +355,11 @@ tell users when a search is too short, missing schema/format/field context,
 over-constrained by exact source scope or many filters, returning sparse hits,
 blocked by readiness, or carrying safety warnings. The same `query_health[]`
 data must be exported in the cockpit JSON report.
+The cockpit must also render a top-level search-readiness checklist before
+deeper metrics. It should consolidate query health, required evidence classes,
+source spread/diversity, and governance action/readiness into four scan-friendly
+checks. The same checklist must be exported as
+`evidence_readiness.readiness_checklist` in copied `retrieval_cockpit` JSON.
 Backend `query_analysis.diagnostics[]` warnings must also appear as query-health
 rows, including `overconstrained_metadata_filters`, so data-driven rule-pack
 diagnostics are visible before users open the detailed trace panel.
@@ -430,11 +456,13 @@ urgency without reading every action. The UI should render the source list as
 compact chips with per-source action counts above the detailed action rows. The
 comparison panel should first render an at-a-glance row for readiness status
 movement with score delta, highest action priority, evidence overlap, result
-churn, and top-source stability. It should then render a compact
+churn, top-source stability, and source-spread delta. It should then render a compact
+operator summary with a plain-language headline, scan-friendly bullets, and
+review-focus chips before the detailed comparison sections. It should then render a compact
 comparison diagnosis that names the likely change drivers before the detailed
 sections, then render the same recommended actions as a visible review checklist
 before metrics and detailed deltas. The copyable JSON report should include the
-same diagnosis and actions for offline tuning notes. The comparison panel should render the
+same `operator_summary`, diagnosis, and actions for offline tuning notes. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
 query-aspect plans across active and baseline runs, including added, removed,
@@ -453,6 +481,11 @@ rule-pack fingerprints from the active
 and baseline packages. This lets operators separate relevance changes caused by
 query/filter edits from changes caused by rule-pack data, and the copyable
 comparison report must include the same rule-pack delta.
+It should compare source-diversity policy and outcome across active and
+baseline packages, including selected-source coverage, duplicate selected-source
+delta, overlap, and source IDs added/removed/retained. Recommended actions
+should flag duplicate-source regressions and policy changes so reviewers know
+whether a tuning run is still evidence-diverse enough for healthcare workflows.
 The comparison panel must also explain how to read the comparison before showing
 long deltas: baseline is the older selected run, active is the currently
 displayed package, warning deltas and quality changes are tuning signals, and
@@ -503,6 +536,16 @@ boundary, render planning and tool-call events as they arrive, and stream OpenAI
 answer deltas into the current assistant bubble instead of waiting for a single
 final response. It must still support the non-streaming `/assistant/chat`
 contract for API clients, but the product UI should prefer the stream path.
+The page should expose ChatGPT-style chat sessions so users can separate
+investigations, switch between prior local transcripts, and start a clean
+thread without losing the current composer context. Until the backend exposes a
+durable assistant-session contract, these sessions are frontend state only and
+must not use browser storage or hidden mock data.
+The assistant workspace should keep desktop scrolling contained: session list,
+message timeline, and composer live inside a contained app-viewport chat
+surface so the LLM stream and tool timeline stay visible instead of fighting
+the surrounding page scroll. The message timeline should auto-follow the active
+stream inside that panel rather than moving the whole browser page.
 The stream request must be abortable from the composer, preserving any partial
 transcript and showing a cancellation state rather than leaving a stuck spinner.
 Long LLM planning must not look frozen: the UI should render backend
@@ -532,6 +575,27 @@ Assistant evidence summary cards must render compact retrieval
 evidence buckets, concept/aspect labels, provenance count, and ranking-signal
 count. This keeps chat evidence explainable without requiring users to open raw
 tool output.
+Assistant retrieval tool cards should also surface source-diversity summaries
+from the first-class `diversity` field, falling back to
+`handoff_context.diversity` for older responses. Chat users should see selected
+versus candidate source counts, duplicate selected-source count, and compact
+selected-hit reasons without opening raw JSON.
+Assistant and Retrieval standards-plan cards should also show compact
+backend-provided match reasons such as matched dataset fields, query aspects,
+standards, concepts, and quality signals. The UI must read those reasons from
+tool/package metadata instead of re-deriving healthcare logic in React.
+Retrieval medical-search hint cards should render backend metadata as structured
+route details: parameter examples, endpoint scope, selected terminology terms,
+selected unit candidates, lineage follow-up, and capability warnings. This
+keeps LOINC, UCUM, FHIR, and external-search guidance understandable without
+requiring users to inspect raw JSON.
+Assistant tool cards should surface the same medical-search hints compactly
+when retrieval tools return `query_analysis.search_hints`, so chat users can
+see launchable or copyable follow-up routes without leaving the conversation.
+When a hint includes a backend-provided `url`, the Assistant card should expose
+an external Open action with standard `noopener noreferrer` safeguards.
+All hint cards should also expose Copy for the generated query syntax, including
+syntax-only hints that require a configured terminology or literature system.
 Its primary form should be understandable to an end user: show outcome-oriented
 starter tasks from `/assistant/examples`, ask what operation the user wants
 done, and reserve JSON for optional data/filter context. Starter task data must
@@ -569,6 +633,11 @@ other secrets backend-only.
 Embedding and rerank provider state should be visible here because model choice,
 device, and second-stage reranking materially affect retrieval latency and
 evidence quality.
+Retrieval source-diversity controls should explain the lambda tradeoff directly
+in the form: lower values favor source novelty, higher values favor raw
+relevance, and the default should keep relevance primary while reducing
+repeated-source evidence. The lambda input should remain visible but disabled
+when source diversity is disabled so the inactive setting is still inspectable.
 Retrieval runtime controls should show the active retrieval rule-pack inventory
 from `/runtime/config`, including sanitized pack name, status, rule count,
 version, short content hash, default-vs-override source, and controlling

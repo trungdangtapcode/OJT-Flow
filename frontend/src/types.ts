@@ -281,6 +281,50 @@ export type RetrievalInterpretation = {
   metadata: Record<string, unknown>;
 };
 
+export type RetrievalStandardSearchStep = {
+  step_id: string;
+  label: string;
+  standard_system: string;
+  route_type: string;
+  query: string;
+  rationale: string;
+  priority: number;
+  suggested_filters: Record<string, string>;
+  governance_notes: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalStandardSearchPlan = {
+  plan_id: string;
+  summary: string;
+  primary_route: string;
+  steps: RetrievalStandardSearchStep[];
+  missing_routes: string[];
+  governance_notes: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalDiversitySelection = {
+  evidence_id: string;
+  source_id: string;
+  selected_rank: number;
+  original_rank: number;
+  relevance_score: number;
+  redundancy_score: number;
+  selection_score: number;
+  reason: string;
+};
+
+export type RetrievalDiversitySummary = {
+  enabled: boolean;
+  selection_mode: string;
+  lambda_value?: number | null;
+  candidate_source_count: number;
+  selected_source_count: number;
+  duplicate_selected_source_count: number;
+  selected_hits: RetrievalDiversitySelection[];
+};
+
 export type RetrievalGraphNode = {
   id: string;
   label: string;
@@ -359,6 +403,7 @@ export type RetrievalSearchHint = {
   url?: string | null;
   rationale: string;
   warnings: string[];
+  metadata?: Record<string, unknown>;
 };
 
 export type RetrievalQueryProfile = {
@@ -396,6 +441,8 @@ export type RetrievalPackage = {
   remediation_summary?: string | null;
   interpretation?: RetrievalInterpretation | null;
   strategy_recommendations?: RetrievalStrategyRecommendation[];
+  standard_search_plan?: RetrievalStandardSearchPlan | null;
+  diversity?: RetrievalDiversitySummary | null;
   trace: RetrievalTrace;
   handoff_context: {
     graph_context?: RetrievalGraphContext;

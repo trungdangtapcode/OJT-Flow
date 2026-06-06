@@ -33,6 +33,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     attach_hit_match_explanations,
     coverage_from_chunks,
     default_healthcare_chunks,
+    diversity_summary_from_metadata,
     evidence_buckets_from_hits,
     evidence_from_chunk,
     facets_from_chunks,
@@ -46,6 +47,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     retrieval_safety_flags,
     snippet_from_chunk,
     sources_from_chunks,
+    standard_search_plan_from_context,
     strategy_recommendations_from_context,
     tokenize,
 )
@@ -134,6 +136,11 @@ class LlamaIndexRetrievalRepository:
             vector_weight=self.vector_weight,
         )
         coverage = coverage_from_chunks(selected_chunks, query_analysis)
+        diversity_metadata = _framework_diversity_metadata(
+            hits=hits,
+            chunks=selected_chunks,
+        )
+        diversity_summary = diversity_summary_from_metadata(diversity_metadata)
         warnings.extend(coverage.warnings)
         safety_flags = retrieval_safety_flags(query)
         if safety_flags:
@@ -161,6 +168,7 @@ class LlamaIndexRetrievalRepository:
             coverage=coverage,
             safety_flags=safety_flags,
             candidates_seen=filtered_node_count,
+            diversity_metadata=diversity_metadata,
             policy=quality_policy,
             query_analysis=query_analysis,
         )
@@ -196,6 +204,13 @@ class LlamaIndexRetrievalRepository:
             safety_flags=safety_flags,
             reranker_enabled=False,
         )
+        standard_search_plan = standard_search_plan_from_context(
+            query=query,
+            query_analysis=query_analysis,
+            quality_signals=quality_signals,
+            safety_flags=safety_flags,
+            strategy_recommendations=strategy_recommendations,
+        )
         return RetrievalPackage(
             hits=hits,
             evidence=[hit.evidence for hit in hits],
@@ -209,6 +224,8 @@ class LlamaIndexRetrievalRepository:
             remediation_summary=remediation_summary,
             interpretation=interpretation,
             strategy_recommendations=strategy_recommendations,
+            standard_search_plan=standard_search_plan,
+            diversity=diversity_summary,
             trace=trace,
             handoff_context={
                 "retrieval_contract": "retrieval_package.v0",
@@ -232,6 +249,7 @@ class LlamaIndexRetrievalRepository:
                 "schema_id": query.schema_id,
                 "embedding": self.embedding_provider.metadata(),
                 "fusion_diagnostics": fusion_diagnostics,
+                "diversity": diversity_metadata,
                 "quality_policy": quality_policy.metadata(),
                 "quality_summary": quality_summary.model_dump(),
                 "recommended_actions": [
@@ -244,6 +262,11 @@ class LlamaIndexRetrievalRepository:
                     recommendation.model_dump(mode="json")
                     for recommendation in strategy_recommendations
                 ],
+                "standard_search_plan": (
+                    standard_search_plan.model_dump(mode="json")
+                    if standard_search_plan
+                    else None
+                ),
                 "query_analysis": query_analysis.model_dump(),
             },
         )
@@ -782,6 +805,13 @@ def _empty_package(
         safety_flags=safety_flags,
         reranker_enabled=False,
     )
+    standard_search_plan = standard_search_plan_from_context(
+        query=query,
+        query_analysis=query_analysis,
+        quality_signals=quality_signals,
+        safety_flags=safety_flags,
+        strategy_recommendations=strategy_recommendations,
+    )
     fusion_diagnostics = _framework_fusion_diagnostics(
         bm25_available=False,
         bm25_weight=0.0,
@@ -790,6 +820,8 @@ def _empty_package(
         hits=[],
         vector_weight=1.0,
     )
+    diversity_metadata = _framework_diversity_metadata(hits=[], chunks=[])
+    diversity_summary = diversity_summary_from_metadata(diversity_metadata)
     return RetrievalPackage(
         hits=[],
         evidence=[],
@@ -803,6 +835,8 @@ def _empty_package(
         remediation_summary=remediation_summary,
         interpretation=interpretation,
         strategy_recommendations=strategy_recommendations,
+        standard_search_plan=standard_search_plan,
+        diversity=diversity_summary,
         trace=RetrievalTrace(
             strategy=strategy,
             query_variants=query_analysis.query_variants,
@@ -818,6 +852,7 @@ def _empty_package(
             "retrieval_contract": "retrieval_package.v0",
             "framework": "llamaindex",
             "fusion_diagnostics": fusion_diagnostics,
+            "diversity": diversity_metadata,
             "quality_policy": quality_policy.metadata(),
             "quality_summary": quality_summary.model_dump(),
             "recommended_actions": [
@@ -830,9 +865,43 @@ def _empty_package(
                 recommendation.model_dump(mode="json")
                 for recommendation in strategy_recommendations
             ],
+            "standard_search_plan": (
+                standard_search_plan.model_dump(mode="json")
+                if standard_search_plan
+                else None
+            ),
             "query_analysis": query_analysis.model_dump(),
         },
     )
+
+
+def _framework_diversity_metadata(
+    *,
+    hits: list[RetrievalHit],
+    chunks: list[KnowledgeChunk],
+) -> dict[str, Any]:
+    source_ids = [chunk.source_id for chunk in chunks]
+    return {
+        "enabled": False,
+        "selection_mode": "framework_score_order",
+        "lambda": None,
+        "candidate_source_count": len(set(source_ids)),
+        "selected_source_count": len(set(source_ids)),
+        "duplicate_selected_source_count": len(source_ids) - len(set(source_ids)),
+        "selected_hits": [
+            {
+                "evidence_id": hit.evidence.evidence_id,
+                "source_id": chunk.source_id,
+                "selected_rank": index,
+                "original_rank": index,
+                "relevance_score": round(hit.score, 6),
+                "redundancy_score": 0.0,
+                "selection_score": round(hit.score, 6),
+                "reason": "Selected by framework score order; source-aware MMR was not applied in this adapter.",
+            }
+            for index, (hit, chunk) in enumerate(zip(hits, chunks), start=1)
+        ],
+    }
 
 
 def _optional_metadata(value: Any) -> str | None:

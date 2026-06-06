@@ -193,8 +193,7 @@ def _evaluate_case(repository: Any, case: RetrievalEvalCase) -> RetrievalEvalCas
         source_id for source_id in retrieved if ratings.get(source_id, 0) > 0
     }
     first_rank = min(relevant_ranks) if relevant_ranks else None
-    raw_diversity = package.handoff_context.get("diversity", {})
-    diversity = raw_diversity if isinstance(raw_diversity, dict) else {}
+    diversity = _package_diversity_summary(package, retrieved)
     return RetrievalEvalCaseResult(
         case_id=case.case_id,
         description=case.description,
@@ -212,14 +211,47 @@ def _evaluate_case(repository: Any, case: RetrievalEvalCase) -> RetrievalEvalCas
         judged_source_count=len(ratings),
         judged_retrieved_source_count=retrieved_judged_count,
         relevance_ratings=ratings,
-        selected_source_count=int(diversity.get("selected_source_count", len(set(retrieved)))),
-        duplicate_selected_source_count=int(
+        selected_source_count=diversity["selected_source_count"],
+        duplicate_selected_source_count=diversity["duplicate_selected_source_count"],
+    )
+
+
+def _package_diversity_summary(package: Any, retrieved: list[str]) -> dict[str, int]:
+    diversity_contract = getattr(package, "diversity", None)
+    if diversity_contract is not None:
+        selected_source_count = getattr(diversity_contract, "selected_source_count", None)
+        duplicate_selected_source_count = getattr(
+            diversity_contract,
+            "duplicate_selected_source_count",
+            None,
+        )
+        if isinstance(selected_source_count, int) and isinstance(
+            duplicate_selected_source_count,
+            int,
+        ):
+            return {
+                "selected_source_count": selected_source_count,
+                "duplicate_selected_source_count": duplicate_selected_source_count,
+            }
+
+    handoff_context = getattr(package, "handoff_context", {})
+    raw_diversity = (
+        handoff_context.get("diversity", {})
+        if isinstance(handoff_context, dict)
+        else {}
+    )
+    diversity = raw_diversity if isinstance(raw_diversity, dict) else {}
+    return {
+        "selected_source_count": int(
+            diversity.get("selected_source_count", len(set(retrieved)))
+        ),
+        "duplicate_selected_source_count": int(
             diversity.get(
                 "duplicate_selected_source_count",
                 len(retrieved) - len(set(retrieved)),
             )
         ),
-    )
+    }
 
 
 def _average_precision_at_k(

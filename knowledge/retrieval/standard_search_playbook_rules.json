@@ -1,0 +1,171 @@
+{
+  "version": "retrieval_standard_search_playbook_rules.v1",
+  "rules": [
+    {
+      "rule_id": "fhir_observation_with_provenance",
+      "label": "FHIR Observation + Provenance trace",
+      "standard_system": "FHIR",
+      "route_type": "fhir_search",
+      "query_template": "Search FHIR {resource_type} records for {query}; include Provenance:target and AuditEvent:entity when the server capability statement supports _revinclude.",
+      "rationale": "Clinical data search should preserve the resource shape and the provenance/audit trail that explains where the data came from and how it was used.",
+      "priority": 10,
+      "suggested_filters": {
+        "standard_system": "FHIR",
+        "trust_level": "approved"
+      },
+      "governance_notes": [
+        "Confirm the concrete FHIR server supports the requested search parameters before execution.",
+        "Treat returned Provenance as data lineage and AuditEvent as access/use history; do not collapse them into one evidence type."
+      ],
+      "metadata": {
+        "fhir_parameters": ["_revinclude=Provenance:target", "_revinclude=AuditEvent:entity"],
+        "primary_resources": ["Observation", "Bundle"],
+        "source_basis": "HL7 FHIR search, Provenance, and AuditEvent specifications"
+      },
+      "match": {
+        "any_standards": ["FHIR"],
+        "any_query_aspects": ["lab_identity_standardization", "observational_schema_context"],
+        "any_fields": ["resourceType", "observation", "patient_id", "date", "value"],
+        "any_tokens": ["fhir", "observation", "bundle"],
+        "any_resource_types": ["Observation", "Bundle"]
+      }
+    },
+    {
+      "rule_id": "laboratory_loinc_identity_lookup",
+      "label": "LOINC lab identity lookup",
+      "standard_system": "LOINC",
+      "route_type": "terminology_lookup",
+      "query_template": "Resolve lab identity for fields {fields}; search LOINC concepts and require code/display evidence for {query}.",
+      "rationale": "Lab names and aliases need terminology-backed identity evidence before normalization or downstream validation.",
+      "priority": 20,
+      "suggested_filters": {
+        "standard_system": "LOINC",
+        "clinical_domain": "laboratory"
+      },
+      "governance_notes": [
+        "Keep original lab labels beside normalized LOINC codes.",
+        "Flag ambiguous lab identity for human review instead of guessing a code."
+      ],
+      "metadata": {
+        "target_fields": ["lab_name", "test_name", "code"],
+        "source_basis": "LOINC terminology lookup"
+      },
+      "match": {
+        "any_profile_ids": ["laboratory_standardization"],
+        "any_standards": ["LOINC"],
+        "any_query_aspects": ["lab_identity_standardization"],
+        "any_fields": ["lab_name", "test_name", "loinc_code", "code"],
+        "any_tokens": ["loinc", "lab", "laboratory", "test"]
+      }
+    },
+    {
+      "rule_id": "ucum_unit_validation",
+      "label": "UCUM unit validation",
+      "standard_system": "UCUM",
+      "route_type": "unit_validation",
+      "query_template": "Validate units for {fields}; search UCUM computable units and preserve the original unit string for {query}.",
+      "rationale": "Units can change clinical meaning. Missing, ambiguous, or non-computable units must be reported with evidence and review status.",
+      "priority": 30,
+      "suggested_filters": {
+        "standard_system": "UCUM",
+        "clinical_domain": "laboratory"
+      },
+      "governance_notes": [
+        "Do not silently convert units without preserving source evidence.",
+        "Require review when a unit is missing, ambiguous, or incompatible with the lab value."
+      ],
+      "metadata": {
+        "target_fields": ["unit", "value"],
+        "source_basis": "UCUM computable unit vocabulary"
+      },
+      "match": {
+        "any_concepts": ["unit_normalization"],
+        "any_standards": ["UCUM"],
+        "any_query_aspects": ["unit_and_value_quality"],
+        "any_fields": ["unit", "units", "value", "result_value"],
+        "any_tokens": ["ucum", "unit", "units", "value"]
+      }
+    },
+    {
+      "rule_id": "phi_sensitive_context_review",
+      "label": "PHI governance review",
+      "standard_system": "HIPAA",
+      "route_type": "privacy_review",
+      "query_template": "Review sensitive fields in {fields}; classify identifiers and diagnosis context before external search or model handoff.",
+      "rationale": "Patient identifiers and sensitive clinical context should be handled as governed data, not copied into external searches or uncontrolled prompts.",
+      "priority": 40,
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "governance_notes": [
+        "Use minimum necessary disclosure for model and tool calls.",
+        "Mask direct identifiers before external retrieval unless the workflow has explicit approval."
+      ],
+      "metadata": {
+        "target_fields": ["patient_id", "ssn", "diagnosis"],
+        "source_basis": "healthcare privacy and human-review policy"
+      },
+      "match": {
+        "any_safety_flags": ["sensitive_field_context"],
+        "any_concepts": ["phi_review_context"],
+        "any_query_aspects": ["phi_review_governance"],
+        "any_fields": ["patient_id", "ssn", "mrn", "dob", "diagnosis", "name"],
+        "any_tokens": ["phi", "patient", "ssn", "diagnosis", "sensitive"]
+      }
+    },
+    {
+      "rule_id": "rxnorm_medication_normalization",
+      "label": "RxNorm medication normalization",
+      "standard_system": "RxNorm",
+      "route_type": "terminology_lookup",
+      "query_template": "Resolve medication names in {query}; search RxNorm/RxCUI candidates and keep source drug text for audit.",
+      "rationale": "Medication retrieval should normalize drug names through a controlled vocabulary before safety or transformation steps.",
+      "priority": 50,
+      "suggested_filters": {
+        "standard_system": "RxNorm",
+        "clinical_domain": "medication"
+      },
+      "governance_notes": [
+        "Separate exact normalized medication identity from patient-specific medication advice.",
+        "Require review when multiple RxCUIs are plausible."
+      ],
+      "metadata": {
+        "target_fields": ["drug", "medication", "rxnorm_code"],
+        "source_basis": "NLM RxNorm/RxNav"
+      },
+      "match": {
+        "any_profile_ids": ["medication_safety"],
+        "any_standards": ["RxNorm"],
+        "any_query_aspects": ["medication_terminology_safety"],
+        "any_fields": ["drug", "medication", "rxnorm_code", "rxcui"],
+        "any_tokens": ["rxnorm", "rxcui", "drug", "medication"]
+      }
+    },
+    {
+      "rule_id": "literature_and_trial_followup",
+      "label": "Literature and trial follow-up",
+      "standard_system": "PubMed/ClinicalTrials.gov",
+      "route_type": "external_medical_search_hint",
+      "query_template": "Prepare governed external search hints for {query}; keep local evidence as the primary audit package and separate literature/trial context.",
+      "rationale": "Literature and trial records can enrich explanations, but they should not replace local schema, terminology, and provenance evidence.",
+      "priority": 60,
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "governance_notes": [
+        "Do not send PHI to external literature or trial search endpoints.",
+        "Record retrieval timestamp and source URL for every external evidence item."
+      ],
+      "metadata": {
+        "target_sources": ["PubMed", "ClinicalTrials.gov", "openFDA"],
+        "source_basis": "governed external medical search routing"
+      },
+      "match": {
+        "any_profile_ids": ["medication_safety", "clinical_literature"],
+        "any_standards": ["MeSH", "ClinicalTrials.gov", "openFDA"],
+        "any_query_aspects": ["literature_external_evidence"],
+        "any_tokens": ["pubmed", "clinicaltrials", "openfda", "mesh", "literature"]
+      }
+    }
+  ]
+}
