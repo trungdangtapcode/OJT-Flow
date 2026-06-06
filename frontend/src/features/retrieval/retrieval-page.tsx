@@ -102,24 +102,8 @@ import {
   type RetrievalSummaryStripViewModel,
 } from "./components/retrieval-summary-strip";
 import {
-  RunComparisonConceptGrounding,
-  RunComparisonCoverage,
-  RunComparisonEvidenceChange,
-  RunComparisonFacetCoverage,
-  RunComparisonQualitySignals,
-  RunComparisonQueryAspects,
-  RunComparisonQueryProfile,
-  RunComparisonRankChanges,
-  RunComparisonRulePacks,
-} from "./components/run-comparison-detail-panels";
-import {
-  RunComparisonAtAGlance,
-  RunComparisonDiagnosis,
-  RunComparisonMetric,
-  RunComparisonMetrics,
-  RunComparisonOperatorSummary,
-  RunComparisonRecommendedActions,
-} from "./components/run-comparison-summary-panels";
+  SearchRunComparisonPanel,
+} from "./components/search-run-comparison-panel";
 import { RecommendedActionsPanel } from "./components/recommended-actions-panel";
 import { ResultFacets } from "./components/result-facets";
 import { SearchAnswerCard } from "./components/search-answer-card";
@@ -147,7 +131,6 @@ import { SearchRunHistory } from "./components/search-run-history";
 import { SectionHelpText } from "./components/section-help-text";
 import { SourceInventoryPanel } from "./components/source-inventory-panel";
 import {
-  RunComparisonSourceDiversity,
   SourceDiversityPanel,
   type DiversitySelectionStack,
   type DiversityStack,
@@ -559,6 +542,46 @@ export function RetrievalPage() {
         ? judgmentsForComparison(activeRunComparison, relevanceJudgments)
         : [],
     [activeRunComparison, relevanceJudgments],
+  );
+  const comparisonRecommendedActions = React.useMemo(
+    () =>
+      activeRunComparison
+        ? comparisonReportRecommendedActions(activeRunComparison, comparisonJudgments)
+        : [],
+    [activeRunComparison, comparisonJudgments],
+  );
+  const comparisonActionSummary = React.useMemo(
+    () => comparisonRecommendedActionSummary(comparisonRecommendedActions),
+    [comparisonRecommendedActions],
+  );
+  const comparisonOperatorView = React.useMemo(
+    () =>
+      activeRunComparison
+        ? comparisonOperatorSummary(activeRunComparison, comparisonRecommendedActions)
+        : null,
+    [activeRunComparison, comparisonRecommendedActions],
+  );
+  const comparisonReportJson = React.useMemo(
+    () =>
+      activeRunComparison
+        ? JSON.stringify(
+            comparisonReportFromComparison(
+              activeRunComparison,
+              comparisonJudgments,
+              comparisonRecommendedActions,
+            ),
+            null,
+            2,
+          )
+        : "",
+    [activeRunComparison, comparisonJudgments, comparisonRecommendedActions],
+  );
+  const comparisonRulePackViews = React.useMemo(
+    () =>
+      activeRunComparison
+        ? comparisonRulePackChangeViews(activeRunComparison.rulePackChanges)
+        : [],
+    [activeRunComparison],
   );
   const packageData = activeRun?.packageData ?? searchMutation.data;
   const isJudgmentSyncing = Boolean(
@@ -1382,10 +1405,21 @@ export function RetrievalPage() {
             activeRunId={activeRunId}
             comparisonBaselineRunId={comparisonBaselineRunId}
             comparisonNode={
-              activeRunComparison ? (
-                <SearchRunComparison
+              activeRunComparison && comparisonOperatorView ? (
+                <SearchRunComparisonPanel
+                  actionSummary={comparisonActionSummary}
                   comparison={activeRunComparison}
-                  judgments={comparisonJudgments}
+                  copyTextToClipboard={copyTextToClipboard}
+                  deltaBadgeVariant={deltaBadgeVariant}
+                  formatCount={formatCount}
+                  formatDecimal={formatDecimal}
+                  formatPercent={formatPercent}
+                  formatSignedDelta={formatSignedDelta}
+                  operatorSummary={comparisonOperatorView}
+                  readinessLabel={readinessGlanceLabel(activeRunComparison)}
+                  recommendedActions={comparisonRecommendedActions}
+                  reportJson={comparisonReportJson}
+                  rulePackChanges={comparisonRulePackViews}
                 />
               ) : null
             }
@@ -1517,197 +1551,6 @@ function qualitySummaryBadgeVariant(
   if (summary.status === "blocked") return "destructive";
   if (summary.status === "review") return "warning";
   return "muted";
-}
-
-function SearchRunComparison({
-  comparison,
-  judgments,
-}: {
-  comparison: RetrievalRunComparison;
-  judgments: RelevanceJudgment[];
-}) {
-  const { copiedKey, markCopied } = useCopyFeedback();
-  const reportCopyKey = "comparison-report";
-  const reportCopied = copiedKey === reportCopyKey;
-  const recommendedActions = React.useMemo(
-    () => comparisonReportRecommendedActions(comparison, judgments),
-    [comparison, judgments],
-  );
-  const operatorSummary = React.useMemo(
-    () => comparisonOperatorSummary(comparison, recommendedActions),
-    [comparison, recommendedActions],
-  );
-
-  const copyReport = async () => {
-    await copyTextToClipboard(
-      JSON.stringify(
-        comparisonReportFromComparison(comparison, judgments, recommendedActions),
-        null,
-        2,
-      ),
-    );
-    markCopied(reportCopyKey);
-  };
-
-  return (
-    <div
-      aria-label="Search run comparison"
-      className="mt-1 grid gap-3 rounded-md border border-border bg-muted/25 p-3 text-sm"
-    >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-muted-foreground">
-          Run comparison
-          <HelpTooltip label="Run comparison help">
-            Compares the currently displayed search package against the selected baseline run. Use this to tune query scope, filters, and retrieval policy, not to make clinical conclusions.
-          </HelpTooltip>
-        </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <Badge variant={comparison.topSourceChanged ? "warning" : "success"}>
-            {comparison.topSourceChanged ? "top source changed" : "top source stable"}
-          </Badge>
-          <Badge variant={comparison.queryProfileChanged ? "warning" : "success"}>
-            {comparison.queryProfileChanged ? "profile changed" : "profile stable"}
-          </Badge>
-          <Badge variant={comparison.rulePackChanged ? "warning" : "success"}>
-            {comparison.rulePackChanged ? "rule packs changed" : "rule packs stable"}
-          </Badge>
-          <Badge variant={comparison.qualitySummaryChanged ? "warning" : "success"}>
-            {comparison.qualitySummaryChanged ? "quality changed" : "quality stable"}
-          </Badge>
-          <Button
-            aria-label="Copy retrieval comparison report"
-            onClick={() => void copyReport()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {reportCopied ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : (
-              <Clipboard className="h-4 w-4" />
-            )}
-            {reportCopied ? "Copied" : "Copy comparison JSON"}
-          </Button>
-          <HelpTooltip label="Comparison JSON report help">
-            Copies active versus baseline search payloads, quality deltas, evidence changes, rank movement, and recommended tuning actions for offline review.
-          </HelpTooltip>
-        </div>
-      </div>
-      <SectionHelpText>
-        Baseline is the older comparison run; active is the currently displayed package. Treat warning deltas, quality changes, and rank movement as tuning signals that need evidence review.
-      </SectionHelpText>
-      <RunComparisonOperatorSummary summary={operatorSummary} />
-      <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs">
-        <span className="font-bold uppercase text-muted-foreground">Baseline query</span>
-        <span className="break-words leading-5">{comparison.baselineQuery}</span>
-      </div>
-      <RunComparisonAtAGlance
-        actionSummary={comparisonRecommendedActionSummary(recommendedActions)}
-        comparison={comparison}
-        formatPercent={formatPercent}
-        formatSignedDelta={formatSignedDelta}
-        readinessLabel={readinessGlanceLabel(comparison)}
-      />
-      <RunComparisonDiagnosis
-        diagnosis={comparison.diagnosis}
-        formatCount={formatCount}
-      />
-      <RunComparisonRecommendedActions
-        actions={recommendedActions}
-        actionSummary={comparisonRecommendedActionSummary(recommendedActions)}
-        formatCount={formatCount}
-      />
-      <RunComparisonMetrics
-        formatDecimal={formatDecimal}
-        formatPercent={formatPercent}
-        metrics={comparison.metrics}
-      />
-      <RunComparisonSourceDiversity
-        comparison={comparison.sourceDiversityComparison}
-        formatPercent={formatPercent}
-        formatSignedDelta={formatSignedDelta}
-      />
-      <div className="grid gap-2 sm:grid-cols-2">
-        <RunComparisonMetric
-          deltaBadgeVariant={deltaBadgeVariant}
-          delta={comparison.hitDelta}
-          formatSignedDelta={formatSignedDelta}
-          label="Hits"
-          positiveIsGood
-        />
-        <RunComparisonMetric
-          deltaBadgeVariant={deltaBadgeVariant}
-          delta={comparison.candidateDelta}
-          formatSignedDelta={formatSignedDelta}
-          label="Candidates"
-          positiveIsGood
-        />
-        <RunComparisonMetric
-          deltaBadgeVariant={deltaBadgeVariant}
-          delta={comparison.warningDelta}
-          formatSignedDelta={formatSignedDelta}
-          label="Warnings"
-          positiveIsGood={false}
-        />
-        <RunComparisonMetric
-          deltaBadgeVariant={deltaBadgeVariant}
-          delta={comparison.qualityWarningDelta}
-          formatSignedDelta={formatSignedDelta}
-          label="Quality issues"
-          positiveIsGood={false}
-        />
-      </div>
-      <div className="grid gap-2">
-        <RunComparisonQueryProfile comparison={comparison} />
-        <RunComparisonConceptGrounding
-          comparison={comparison.conceptGroundingComparison}
-        />
-        <RunComparisonQueryAspects
-          comparison={comparison.queryAspectComparison}
-          formatCount={formatCount}
-        />
-        <RunComparisonCoverage
-          comparison={comparison.coverageComparison}
-          formatCount={formatCount}
-        />
-        <RunComparisonQualitySignals
-          comparison={comparison.qualitySignalComparison}
-          formatCount={formatCount}
-        />
-        <RunComparisonFacetCoverage
-          facetComparisons={comparison.facetComparisons}
-          formatCount={formatCount}
-        />
-        <RunComparisonRulePacks
-          formatCount={formatCount}
-          rulePackChanges={comparisonRulePackChangeViews(comparison.rulePackChanges)}
-        />
-        <RunComparisonRankChanges
-          formatCount={formatCount}
-          rankChanges={comparison.rankChanges}
-        />
-        <RunComparisonEvidenceChange
-          evidenceIds={comparison.addedEvidenceIds}
-          label="Added evidence"
-          variant="success"
-        />
-        <RunComparisonEvidenceChange
-          evidenceIds={comparison.removedEvidenceIds}
-          label="Removed evidence"
-          variant="warning"
-        />
-        <RunComparisonEvidenceChange
-          evidenceIds={comparison.retainedEvidenceIds}
-          label="Retained evidence"
-          variant="muted"
-        />
-      </div>
-      <div className="break-words text-xs font-semibold text-muted-foreground">
-        Top source: {comparison.topSourceBefore ?? "none"} to{" "}
-        {comparison.topSourceAfter ?? "none"}
-      </div>
-    </div>
-  );
 }
 
 function SearchResults({
