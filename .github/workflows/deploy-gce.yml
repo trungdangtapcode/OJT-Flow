@@ -28,17 +28,28 @@ jobs:
 
       - name: Copy source to instance
         run: |
+          tar \
+            --exclude='.git' \
+            --exclude='frontend/node_modules' \
+            --exclude='frontend/dist' \
+            --exclude='node_modules' \
+            --exclude='var' \
+            --exclude='plan' \
+            --exclude='todo.txt' \
+            --exclude='image.png' \
+            --exclude='imge*.png' \
+            -czf /tmp/ojtflow-deploy.tgz .
+          gcloud compute scp /tmp/ojtflow-deploy.tgz "${{ secrets.GCE_INSTANCE }}:/tmp/ojtflow-deploy.tgz" \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --zone "${{ secrets.GCE_ZONE }}"
           gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}" \
-            --command "sudo mkdir -p /opt/ojtflow && sudo chown \$USER:\$USER /opt/ojtflow"
-          gcloud compute scp --recurse . "${{ secrets.GCE_INSTANCE }}:/opt/ojtflow" \
-            --project "${{ secrets.GCP_PROJECT_ID }}" \
-            --zone "${{ secrets.GCE_ZONE }}"
+            --command "sudo mkdir -p /opt/ojtflow && sudo tar --no-same-owner -xzf /tmp/ojtflow-deploy.tgz -C /opt/ojtflow && sudo chown -R \$(id -un):\$(id -gn) /opt/ojtflow"
 
       - name: Deploy stack
         run: |
           gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --zone "${{ secrets.GCE_ZONE }}" \
-            --command "cd /opt/ojtflow && docker compose up -d --build --remove-orphans"
+            --command "cd /opt/ojtflow && sudo docker compose up -d --build --remove-orphans"
