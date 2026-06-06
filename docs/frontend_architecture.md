@@ -213,9 +213,10 @@ The page derives the health/readiness arrays and passes filter-clear callbacks;
 the component should not import retrieval hooks or construct backend reports.
 Source-diversity presentation should stay outside the page shell:
 `frontend/src/features/retrieval/components/source-diversity-panel.tsx` owns the
-source diversity explanation, metric cards, and selected-hit rationale rows. The
-page derives the diversity stack from backend trace metadata and uses the
-exported view-model type where needed.
+source diversity explanation, metric cards, selected-hit rationale rows, and
+active-vs-baseline source-diversity comparison panel. The page derives the
+diversity stack and comparison stack from backend trace metadata and uses the
+exported view-model types where needed.
 Strategy and standards-aware search-plan presentation should stay outside the
 page shell: `frontend/src/features/retrieval/components/strategy-standard-panels.tsx`
 owns strategy recommendation cards, healthcare search-plan cards, route badges,
