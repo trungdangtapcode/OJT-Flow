@@ -53,7 +53,6 @@
       "rule_id": "fhir_observation_profile",
       "concept": "fhir_observation_profile",
       "triggers": [
-        "fhir",
         "observation",
         "resourcetype",
         "valuequantity",
@@ -178,6 +177,52 @@
       ],
       "standards": ["OJTFlow policy"],
       "variant": "patient identifiers sensitive fields PHI human review governance"
+    },
+    {
+      "rule_id": "fhir_condition_profile",
+      "concept": "fhir_condition_profile",
+      "triggers": [
+        "condition",
+        "conditions",
+        "diagnosis",
+        "diagnoses",
+        "problem list",
+        "problem-list",
+        "clinicalstatus",
+        "verificationstatus"
+      ],
+      "expanded_terms": [
+        "FHIR Condition",
+        "Condition.code",
+        "Condition.subject",
+        "clinicalStatus",
+        "verificationStatus"
+      ],
+      "standards": ["FHIR"],
+      "variant": "FHIR Condition code subject clinicalStatus verificationStatus problem list diagnosis"
+    },
+    {
+      "rule_id": "condition_terminology_coding",
+      "concept": "condition_terminology_coding",
+      "triggers": [
+        "icd",
+        "icd-10",
+        "icd-10-cm",
+        "snomed",
+        "snomed ct",
+        "diagnosis code",
+        "diagnosis coding",
+        "condition code",
+        "problem code"
+      ],
+      "expanded_terms": [
+        "ICD-10-CM diagnosis code",
+        "SNOMED CT clinical finding",
+        "condition terminology",
+        "problem-list coding"
+      ],
+      "standards": ["ICD-10-CM", "SNOMED CT", "FHIR"],
+      "variant": "ICD-10-CM diagnosis code SNOMED CT clinical finding FHIR Condition code"
     },
     {
       "rule_id": "medication_normalization",

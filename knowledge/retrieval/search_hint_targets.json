@@ -38,6 +38,24 @@
       ]
     },
     {
+      "target": "icd10cm",
+      "label": "CDC ICD-10-CM",
+      "rationale": "Use CDC/NCHS ICD-10-CM as the official U.S. diagnosis-coding reference before treating diagnosis codes as workflow evidence.",
+      "warnings": [
+        "Do not assign final ICD-10-CM codes from retrieval alone; coder or clinician review is required.",
+        "Preserve source diagnosis text and coding confidence when mapping problem-list data."
+      ]
+    },
+    {
+      "target": "snomed_ct",
+      "label": "SNOMED CT browser",
+      "rationale": "Use SNOMED CT clinical-finding terminology to ground problem-list concepts before mapping or FHIR Condition coding.",
+      "warnings": [
+        "SNOMED CT access and licensing can vary by jurisdiction; verify permitted use for the deployment.",
+        "Terminology lookup evidence is not a diagnosis or treatment recommendation."
+      ]
+    },
+    {
       "target": "clinicaltrials_gov",
       "label": "ClinicalTrials.gov API v2",
       "rationale": "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, intervention, recruitment status, and eligibility fields.",

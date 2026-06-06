@@ -615,6 +615,45 @@ def test_query_analysis_expands_non_bp_vital_signs() -> None:
         assert any(expected_variant in variant for variant in analysis.query_variants)
 
 
+def test_query_analysis_routes_condition_problem_list_grounding() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query=(
+                "diagnosis problem list type 2 diabetes ICD-10-CM SNOMED "
+                "FHIR Condition"
+            ),
+            fields=["diagnosis", "clinicalStatus", "verificationStatus"],
+            resource_type="Condition",
+        )
+    )
+
+    aspects = {aspect.aspect_id: aspect for aspect in analysis.query_aspects}
+    suggestions = {
+        (suggestion.field, suggestion.value)
+        for suggestion in analysis.filter_suggestions
+    }
+    hints = {hint.target: hint for hint in analysis.search_hints}
+
+    assert "fhir_condition_profile" in analysis.detected_concepts
+    assert "condition_terminology_coding" in analysis.detected_concepts
+    assert "type_2_diabetes_icd10cm_seed" in analysis.detected_concepts
+    assert "fhir_observation_profile" not in analysis.detected_concepts
+    assert {"FHIR", "ICD-10-CM", "SNOMED CT"}.issubset(set(analysis.standards))
+    assert analysis.query_profile is not None
+    assert analysis.query_profile.profile_id == "condition_problem_list_grounding"
+    assert "condition_problem_list_grounding" in aspects
+    assert aspects["condition_problem_list_grounding"].suggested_filters == {
+        "clinical_domain": "problem_list"
+    }
+    assert ("clinical_domain", "problem_list") in suggestions
+    assert ("standard_system", "ICD-10-CM") in suggestions
+    assert ("standard_system", "SNOMED CT") in suggestions
+    assert "fhir" in hints
+    assert "Condition?code=<condition-code>" in hints["fhir"].query
+    assert any("FHIR Condition" in variant for variant in analysis.query_variants)
+    assert any("ICD-10-CM diagnosis code" in variant for variant in analysis.query_variants)
+
+
 def test_query_analysis_uses_data_driven_query_profile_rules(tmp_path, monkeypatch) -> None:
     registry_path = tmp_path / "query_profile_rules.json"
     registry_path.write_text(
@@ -1534,10 +1573,48 @@ def test_default_ranking_policy_protects_canonical_healthcare_sources() -> None:
     assert rules["boost_loinc_hba1c_concept"]["weight"] >= 0.115
     assert rules["boost_fhir_observation_concept"]["weight"] >= 0.09
     assert rules["boost_loinc_blood_pressure_concept"]["weight"] >= 0.105
+    assert rules["boost_condition_problem_list_standards"]["weight"] >= 0.1
     assert "schema" in rules["boost_schema_source_match"]["reason"].lower()
     assert "loinc" in rules["boost_loinc_hba1c_concept"]["reason"].lower()
     assert "blood-pressure" in rules["boost_loinc_blood_pressure_concept"]["reason"].lower()
     assert "fhir" in rules["boost_fhir_observation_concept"]["reason"].lower()
+    assert "condition" in rules["boost_condition_problem_list_standards"]["reason"].lower()
+
+
+def test_static_retrieval_ranks_condition_problem_list_evidence() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    package = repository.search(
+        RetrievalQuery(
+            query="FHIR Condition ICD-10-CM SNOMED diagnosis problem list code",
+            resource_type="Condition",
+            top_k=8,
+            filters={"trust_level": "approved"},
+        )
+    )
+
+    source_ids = [item.source_id for item in package.evidence]
+    coverage_aspects = {
+        item.value: item for item in (package.coverage.query_aspects if package.coverage else [])
+    }
+
+    assert source_ids[0] == "standard:fhir_condition_r4"
+    assert set(source_ids[:3]) == {
+        "standard:fhir_condition_r4",
+        "terminology:icd10cm",
+        "terminology:snomed_ct",
+    }
+    assert package.coverage is not None
+    assert coverage_aspects["condition_problem_list_grounding"].status == "covered"
+    assert any(
+        hit.evidence.locator.get("clinical_domain") == "problem_list"
+        for hit in package.hits
+    )
+    assert any(
+        hit.evidence.locator.get("standard") == "HL7 FHIR R4 Condition"
+        for hit in package.hits
+    )
+    assert any(hit.evidence.locator.get("standard") == "CDC/NCHS ICD-10-CM" for hit in package.hits)
+    assert any(hit.evidence.locator.get("standard") == "SNOMED CT" for hit in package.hits)
 
 
 def test_static_retrieval_ranks_pubmed_mesh_search_evidence() -> None:
@@ -1711,7 +1788,10 @@ def test_static_retrieval_filters_by_source_type() -> None:
         for item in package.evidence
     )
     assert package.facets is not None
-    assert _bucket_counts(package.facets.source_type) == {"terminology_system": 4}
+    assert _bucket_counts(package.facets.source_type) == {
+        "terminology_system": len(package.evidence)
+    }
+    assert len(package.evidence) == 5
 
 
 def test_static_retrieval_filters_by_exact_source_id() -> None:

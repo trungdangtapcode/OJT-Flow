@@ -80,6 +80,29 @@ Retrieval behavior:
 - Preserve raw readings and units while surfacing candidate LOINC/UCUM
   grounding for review.
 
+## Conditions And Problem Lists
+
+Primary standards:
+
+- FHIR Condition for problem-list and diagnosis resource structure.
+- SNOMED CT for clinical finding terminology.
+- ICD-10-CM for U.S. diagnosis coding and classification.
+
+Common seed concepts:
+
+- Type 2 diabetes mellitus diagnosis: ICD-10-CM seed code `E11.9`.
+- Essential hypertension diagnosis: ICD-10-CM seed code `I10`.
+
+Retrieval behavior:
+
+- Route diagnosis, condition, and problem-list queries to FHIR Condition
+  evidence instead of generic Observation evidence.
+- Treat SNOMED CT and ICD-10-CM matches as terminology grounding for review,
+  not automatic diagnosis-code assignment.
+- Preserve original diagnosis text, code-system candidates, clinical status,
+  verification status, and source evidence before mapping to downstream FHIR or
+  analytics structures.
+
 ## Literature And Evidence Search
 
 Primary standards and datasets:

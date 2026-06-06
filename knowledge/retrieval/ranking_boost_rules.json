@@ -101,6 +101,21 @@
       }
     },
     {
+      "rule_id": "boost_condition_problem_list_standards",
+      "weight": 0.1,
+      "reason": "Prefer FHIR Condition, ICD-10-CM, and SNOMED CT evidence when diagnosis or problem-list concepts are detected.",
+      "match": {
+        "chunk_clinical_domains": ["problem_list"],
+        "chunk_standard_systems": ["FHIR", "ICD-10-CM", "SNOMED CT"],
+        "any_concepts": [
+          "fhir_condition_profile",
+          "condition_terminology_coding",
+          "type_2_diabetes_icd10cm_seed",
+          "essential_hypertension_icd10cm_seed"
+        ]
+      }
+    },
+    {
       "rule_id": "boost_clinicaltrials_trial_concept",
       "weight": 0.08,
       "reason": "Prefer ClinicalTrials.gov evidence when trial-search concepts are detected.",

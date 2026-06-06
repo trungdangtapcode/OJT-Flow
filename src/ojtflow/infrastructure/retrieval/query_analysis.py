@@ -2086,7 +2086,11 @@ def _search_hints(
         hints.append(_clinicaltrials_search_hint(query, concept_candidates=concept_candidates))
     if "regulatory_drug_safety_search" in concept_set or "openFDA" in standard_set:
         hints.extend(_openfda_search_hints(query, concept_candidates=concept_candidates))
-    if "fhir_observation_profile" in concept_set or query.resource_type:
+    if (
+        "fhir_observation_profile" in concept_set
+        or "fhir_condition_profile" in concept_set
+        or query.resource_type
+    ):
         hints.append(_fhir_search_hint(query))
     if "LOINC" in standard_set:
         hints.append(_loinc_search_hint(query, concept_candidates=concept_candidates))
