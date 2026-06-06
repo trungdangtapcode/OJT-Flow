@@ -790,9 +790,16 @@ review-focus chips before the detailed comparison sections. It should then rende
 comparison diagnosis that names the likely change drivers before the detailed
 sections, then render the same recommended actions as a visible review checklist
 before metrics and detailed deltas. The copyable JSON report should include the
-same `operator_summary`, diagnosis, and actions for offline tuning notes. The comparison panel should render the
-active-vs-baseline query-profile comparison directly, including profile label,
-route, retrieval mode, complexity, and stable/changed status. It should compare
+same `operator_summary`, diagnosis, and actions for offline tuning notes.
+Run-comparison summary rendering should stay outside the page shell:
+`frontend/src/features/retrieval/components/run-comparison-summary-panels.tsx`
+owns the operator summary, diagnosis, recommended-action checklist, comparison
+metrics, and reusable comparison metric cards. The retrieval page owns
+comparison selection, report-copy behavior, recommended-action derivation,
+diagnosis derivation, and baseline/active run state. The comparison panel should
+render the active-vs-baseline query-profile comparison directly, including
+profile label, route, retrieval mode, complexity, and stable/changed status. It
+should compare
 query-aspect plans across active and baseline runs, including added, removed,
 and retained aspects, so operators can see whether decomposition coverage
 changed before interpreting rank movement. It should compare controlled medical
