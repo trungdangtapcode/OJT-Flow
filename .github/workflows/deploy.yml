@@ -317,12 +317,17 @@ jobs:
           curl -fsS "${PUBLIC_URL}/health"
 
       - name: Deployment summary
+        if: always()
         run: |
           {
             echo "## Deployment"
             echo
             echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- Deploy job status: \`${{ job.status }}\`"
             echo "- API image: \`${{ needs.docker.outputs.api_image }}\`"
             echo "- Frontend image: \`${{ needs.docker.outputs.frontend_image }}\`"
-            echo "- Public URL: ${PUBLIC_URL}"
+            echo "- Public URL: ${PUBLIC_URL:-not configured}"
+            if [ "${{ job.status }}" != "success" ]; then
+              echo "- Result: deployment did not complete; check the failed step above."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

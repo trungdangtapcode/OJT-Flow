@@ -403,11 +403,16 @@ confidence, matched fields, aliases, and reason.
 Per-hit explanation rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/hit-explanation-panels.tsx` owns
 score meters, score-component rows, diversity-selection details, concept
-grounding cards, and query-aspect support cards. `frontend/src/features/retrieval/model/retrieval-evidence-model.ts`
-owns hit-derived score components, concept matches, query-aspect matches,
-ranking boost signals, provenance summaries, match explanations, evidence JSON
-reports, and evidence usability/support policy. The page owns diversity
-selection lookup and passes model-derived values into presentation components.
+grounding cards, and query-aspect support cards. Evidence logic is split under
+`frontend/src/features/retrieval/model/`: `retrieval-evidence-signals.ts` owns
+hit-derived score components, concept matches, query-aspect matches, ranking
+boost signals, and match explanations; `retrieval-evidence-provenance.ts` owns
+locator/provenance summaries and source links; `retrieval-evidence-support.ts`
+owns support status, usability guidance, and matrix rows;
+`retrieval-evidence-report.ts` owns copied evidence JSON reports; and
+`retrieval-evidence-types.ts` owns shared DTOs. `retrieval-evidence-model.ts`
+is only the stable barrel export. The page owns diversity selection lookup and
+passes model-derived values into presentation components.
 Result cards must render a compact evidence support summary above the detailed
 sections, using data-derived counts for matched terms, provenance fields,
 grounded concepts, supported aspects, and ranking signals.
@@ -422,8 +427,8 @@ Evidence support matrix rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/evidence-support-matrix.tsx` owns
 the responsive table, mobile evidence cards, and matrix help copy. The retrieval
 page owns judgment lookup and passes package state into `retrieval-evidence-model`;
-the model owns `evidenceSupportMatrixRows` and support-status derivation so
-evidence policy remains centralized.
+the support model owns `evidenceSupportMatrixRows` and support-status derivation
+so evidence policy remains centralized.
 Corrective-action type chips should stay outside the page shell:
 `frontend/src/features/retrieval/components/corrective-action-type-count-chips.tsx`
 owns the compact count chip rendering, while
