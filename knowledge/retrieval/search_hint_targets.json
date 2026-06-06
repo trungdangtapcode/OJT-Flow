@@ -20,6 +20,24 @@
       ]
     },
     {
+      "target": "loinc",
+      "label": "LOINC Search API",
+      "rationale": "Use LOINC terminology search to resolve lab identity before normalization, mapping, or FHIR Observation coding.",
+      "warnings": [
+        "LOINC Search API authentication is required; do not send PHI or patient identifiers in terminology search strings.",
+        "There is no single all-area LOINC search endpoint; select the LOINC, answer list, part, or group scope that matches the task."
+      ]
+    },
+    {
+      "target": "ucum",
+      "label": "UCUM validation",
+      "rationale": "Use UCUM validation for unit strings before unit conversion, canonical mapping, or downstream clinical data transformation.",
+      "warnings": [
+        "Validate the original unit string before conversion and preserve it for audit.",
+        "UCUM validation says whether a code is valid; it does not determine clinical appropriateness for a specific lab result."
+      ]
+    },
+    {
       "target": "clinicaltrials_gov",
       "label": "ClinicalTrials.gov API v2",
       "rationale": "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, intervention, recruitment status, and eligibility fields.",

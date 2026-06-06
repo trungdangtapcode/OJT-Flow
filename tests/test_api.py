@@ -1237,6 +1237,15 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         )
         assert rule_packs["strategy_recommendations"]["rule_count"] > 0
         assert len(rule_packs["strategy_recommendations"]["content_hash"]) == 64
+        assert rule_packs["standard_search_playbook"]["status"] == "ok"
+        assert rule_packs["standard_search_playbook"]["env_var"] == (
+            "OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH"
+        )
+        assert rule_packs["standard_search_playbook"]["version"] == (
+            "retrieval_standard_search_playbook_rules.v1"
+        )
+        assert rule_packs["standard_search_playbook"]["rule_count"] > 0
+        assert len(rule_packs["standard_search_playbook"]["content_hash"]) == 64
         assert rule_packs["evidence_buckets"]["status"] == "ok"
         assert rule_packs["evidence_buckets"]["env_var"] == "OJT_EVIDENCE_BUCKET_RULES_PATH"
         assert rule_packs["evidence_buckets"]["version"] == (
@@ -1244,6 +1253,15 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         )
         assert rule_packs["evidence_buckets"]["rule_count"] > 0
         assert len(rule_packs["evidence_buckets"]["content_hash"]) == 64
+        assert rule_packs["fhir_search_parameters"]["status"] == "ok"
+        assert rule_packs["fhir_search_parameters"]["env_var"] == (
+            "OJT_FHIR_SEARCH_PARAMETERS_PATH"
+        )
+        assert rule_packs["fhir_search_parameters"]["version"] == (
+            "FHIR R4 curated seed v0"
+        )
+        assert rule_packs["fhir_search_parameters"]["rule_count"] > 0
+        assert len(rule_packs["fhir_search_parameters"]["content_hash"]) == 64
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
         response_text = response.text

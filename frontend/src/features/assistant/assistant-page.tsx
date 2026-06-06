@@ -4,17 +4,22 @@ import {
   Bot,
   BookOpen,
   CheckCircle2,
+  Clipboard,
+  ExternalLink,
   HelpCircle,
   Image,
   Loader2,
   MessageSquareText,
+  Network,
   Paperclip,
+  Plus,
   Route,
   Send,
   Settings2,
   ShieldAlert,
   Sparkles,
   Square,
+  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -46,10 +51,23 @@ import type {
   AssistantTranscriptItem,
   ExtractedDocument,
   Evidence,
+  RetrievalDiversitySelection,
+  RetrievalDiversitySummary,
   RetrievalEvidenceBucket,
+  RetrievalStandardSearchPlan,
+  RetrievalStandardSearchStep,
 } from "../../types";
 
+type AssistantChatSession = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  transcript: AssistantTranscriptItem[];
+};
+
 export function AssistantPage() {
+  const initialSession = React.useMemo(() => createAssistantChatSession(), []);
   const runtimeQuery = useRuntimeConfigQuery();
   const toolsQuery = useAssistantToolsQuery();
   const examplesQuery = useAssistantExamplesQuery();
@@ -61,9 +79,11 @@ export function AssistantPage() {
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
   const [executeWriteActions, setExecuteWriteActions] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
-  const [transcript, setTranscript] = React.useState<AssistantTranscriptItem[]>([]);
+  const [sessions, setSessions] = React.useState<AssistantChatSession[]>([initialSession]);
+  const [activeSessionId, setActiveSessionId] = React.useState(initialSession.id);
   const activeStreamRef = React.useRef<AbortController | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const transcriptEndRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(
     () => () => {
@@ -116,16 +136,14 @@ export function AssistantPage() {
     const abortController = new AbortController();
     activeStreamRef.current = abortController;
     const transcriptId = crypto.randomUUID();
-    setTranscript((items) => [
-      ...items,
-      {
-        id: transcriptId,
-        message: assistantMessage,
-        context: assistantContext,
-        stream_events: [],
-        streamed_answer: "",
-      },
-    ]);
+    const targetSessionId = activeSessionId || sessions[0]?.id || createAndSelectSession();
+    appendTranscriptItem(targetSessionId, {
+      id: transcriptId,
+      message: assistantMessage,
+      context: assistantContext,
+      stream_events: [],
+      streamed_answer: "",
+    });
     setMessage("");
     setSelectedFile(null);
     try {
@@ -137,28 +155,26 @@ export function AssistantPage() {
         },
         signal: abortController.signal,
         onEvent: (streamEvent) => {
-          setTranscript((items) =>
-            items.map((item) =>
-              item.id === transcriptId
-                ? transcriptItemWithStreamEvent(item, streamEvent)
-                : item,
-            ),
+          updateTranscriptItem(
+            targetSessionId,
+            transcriptId,
+            (item) => transcriptItemWithStreamEvent(item, streamEvent),
           );
         },
       });
-      setTranscript((items) =>
-        items.map((item) =>
-          item.id === transcriptId ? { ...item, response } : item,
-        ),
+      updateTranscriptItem(
+        targetSessionId,
+        transcriptId,
+        (item) => ({ ...item, response }),
       );
     } catch (error) {
       const errorMessage = abortController.signal.aborted
         ? "Assistant request was cancelled."
         : workflowErrorMessage(error);
-      setTranscript((items) =>
-        items.map((item) =>
-          item.id === transcriptId ? { ...item, error: errorMessage } : item,
-        ),
+      updateTranscriptItem(
+        targetSessionId,
+        transcriptId,
+        (item) => ({ ...item, error: errorMessage }),
       );
     } finally {
       if (activeStreamRef.current === abortController) {
@@ -171,17 +187,79 @@ export function AssistantPage() {
     activeStreamRef.current?.abort();
   };
 
+  const createAndSelectSession = () => {
+    const session = createAssistantChatSession();
+    setSessions((items) => [session, ...items]);
+    setActiveSessionId(session.id);
+    return session.id;
+  };
+
+  const deleteSession = (sessionId: string) => {
+    setSessions((items) => {
+      const next = items.filter((session) => session.id !== sessionId);
+      if (next.length) {
+        if (sessionId === activeSessionId) {
+          setActiveSessionId(next[0].id);
+        }
+        return next;
+      }
+      const replacement = createAssistantChatSession();
+      setActiveSessionId(replacement.id);
+      return [replacement];
+    });
+  };
+
+  const appendTranscriptItem = (
+    sessionId: string,
+    item: AssistantTranscriptItem,
+  ) => {
+    setSessions((items) =>
+      items.map((session) =>
+        session.id === sessionId
+          ? sessionWithAppendedTranscriptItem(session, item)
+          : session,
+      ),
+    );
+  };
+
+  const updateTranscriptItem = (
+    sessionId: string,
+    transcriptId: string,
+    update: (item: AssistantTranscriptItem) => AssistantTranscriptItem,
+  ) => {
+    setSessions((items) =>
+      items.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              updatedAt: new Date().toISOString(),
+              transcript: session.transcript.map((item) =>
+                item.id === transcriptId ? update(item) : item,
+              ),
+            }
+          : session,
+      ),
+    );
+  };
+
   const uploadExtensions =
     runtimeQuery.data?.upload.allowed_extensions ?? extractorsQuery.data?.supported_extensions ?? [];
   const acceptedUploadExtensions = uploadExtensions.join(",") || undefined;
   const maxUploadBytes = runtimeQuery.data?.upload.max_upload_bytes ?? null;
   const isBusy = assistantMutation.isPending || extractMutation.isPending;
   const llm = runtimeQuery.data?.llm;
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
+  const transcript = activeSession?.transcript ?? [];
   const latestTranscriptItem = transcript[transcript.length - 1] ?? null;
+  const latestStreamEventCount = latestTranscriptItem?.stream_events?.length ?? 0;
   const activeToolName = assistantActiveToolName(latestTranscriptItem, toolsQuery.data ?? []);
 
+  React.useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ block: "end" });
+  }, [activeSessionId, transcript.length, latestStreamEventCount, latestTranscriptItem?.response?.message]);
+
   return (
-    <div className="grid gap-4">
+    <div className="grid min-h-0 gap-4 lg:h-[calc(100dvh-6rem)] lg:grid-rows-[auto_auto_auto_minmax(0,1fr)] lg:overflow-hidden">
       <PageHeader
         title="AI Assistant"
         description="Ask about your data in natural language. The AI uses OJTFlow tools to validate, convert, retrieve evidence, and explain."
@@ -203,174 +281,299 @@ export function AssistantPage() {
       </div>
       <AssistantInlineGuide />
 
-      <section className="grid min-h-[calc(100vh-190px)] overflow-hidden rounded-lg border border-border bg-[#f7f7fb] shadow-sm">
-        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border bg-muted/35 px-4 py-2">
-          <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-mono font-semibold text-muted-foreground">
-            <Settings2 className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{activeToolName}</span>
+      <div className="grid min-h-0 gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <AssistantSessionSidebar
+          activeSessionId={activeSession?.id ?? ""}
+          onDeleteSession={deleteSession}
+          onNewSession={createAndSelectSession}
+          onSelectSession={setActiveSessionId}
+          sessions={sessions}
+        />
+        <section className="grid min-h-[640px] min-w-0 overflow-hidden rounded-lg border border-border bg-[#f7f7fb] shadow-sm lg:min-h-0">
+          <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border bg-muted/35 px-4 py-2">
+            <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-mono font-semibold text-muted-foreground">
+              <Settings2 className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{activeToolName}</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Badge variant={isBusy ? "warning" : "muted"}>
+                {extractMutation.isPending
+                  ? "extracting"
+                  : assistantMutation.isPending
+                    ? "streaming"
+                    : "ready"}
+              </Badge>
+              <Badge variant={executeWriteActions ? "warning" : "success"}>
+                {executeWriteActions ? "writes enabled" : "writes gated"}
+              </Badge>
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge variant={isBusy ? "warning" : "muted"}>
-              {extractMutation.isPending
-                ? "extracting"
-                : assistantMutation.isPending
-                  ? "streaming"
-                  : "ready"}
-            </Badge>
-            <Badge variant={executeWriteActions ? "warning" : "success"}>
-              {executeWriteActions ? "writes enabled" : "writes gated"}
-            </Badge>
-          </div>
-        </div>
-        <div className="grid min-h-0 grid-rows-[1fr_auto]">
-          <div className="min-h-0 overflow-y-auto px-4 py-5 sm:px-6">
-            {transcript.length === 0 ? (
-              <ChatEmptyState
-                error={
-                  examplesQuery.isError
-                    ? workflowErrorMessage(examplesQuery.error)
-                    : null
-                }
-                examples={examplesQuery.data ?? []}
-                isLoading={examplesQuery.isLoading}
-                onSelect={(example) => {
-                  setMessage(example.message);
-                  setContextText(formatContext(example.context));
-                }}
-              />
-            ) : (
-              <div className="mx-auto grid max-w-7xl gap-5">
-                {transcript.map((item) => (
-                  <ConversationTurn item={item} key={item.id} />
-                ))}
-                {assistantMutation.isPending &&
-                !(latestTranscriptItem?.stream_events?.length) ? (
-                  <PendingAssistantBubble />
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          <form
-            className="border-t border-border bg-card/95 p-4"
-            onSubmit={(event) => void submit(event)}
-          >
-            <div className="mx-auto grid max-w-7xl gap-3">
-              {formError ? (
-                <Notice title="Message blocked" tone="danger">
-                  {formError}
-                </Notice>
-              ) : null}
-              <div className="grid gap-2">
-                <Textarea
-                  aria-label="Message"
-                  className="min-h-32 resize-y"
-                  disabled={isBusy}
-                  onChange={(event) => setMessage(event.target.value)}
-                  onPaste={(event) => {
-                    const file = fileFromClipboard(event.clipboardData);
-                    if (!file) return;
-                    const validationError = validateAssistantAttachment(
-                      file,
-                      uploadExtensions,
-                      maxUploadBytes,
-                    );
-                    event.preventDefault();
-                    setSelectedFile(file);
-                    setFormError(validationError);
-                  }}
-                  placeholder="Ask about your data. Paste an image, attach a file, Enter to send, Shift+Enter for newline."
-                  value={message}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      event.currentTarget.form?.requestSubmit();
-                    }
+          <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+            <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+              {transcript.length === 0 ? (
+                <ChatEmptyState
+                  error={
+                    examplesQuery.isError
+                      ? workflowErrorMessage(examplesQuery.error)
+                      : null
+                  }
+                  examples={examplesQuery.data ?? []}
+                  isLoading={examplesQuery.isLoading}
+                  onSelect={(example) => {
+                    setMessage(example.message);
+                    setContextText(formatContext(example.context));
                   }}
                 />
-                {selectedFile ? (
-                  <AttachmentPreview
-                    file={selectedFile}
-                    onRemove={() => setSelectedFile(null)}
-                  />
+              ) : (
+                <div className="mx-auto grid max-w-7xl gap-5">
+                  {transcript.map((item) => (
+                    <ConversationTurn item={item} key={item.id} />
+                  ))}
+                  {assistantMutation.isPending &&
+                  !(latestTranscriptItem?.stream_events?.length) ? (
+                    <PendingAssistantBubble />
+                  ) : null}
+                  <div ref={transcriptEndRef} />
+                </div>
+              )}
+            </div>
+
+            <form
+              className="border-t border-border bg-card/95 p-4"
+              onSubmit={(event) => void submit(event)}
+            >
+              <div className="mx-auto grid max-w-7xl gap-3">
+                {formError ? (
+                  <Notice title="Message blocked" tone="danger">
+                    {formError}
+                  </Notice>
                 ) : null}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <input
-                      accept={acceptedUploadExtensions}
-                      className="hidden"
-                      disabled={isBusy}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        const validationError = file
-                          ? validateAssistantAttachment(file, uploadExtensions, maxUploadBytes)
-                          : null;
-                        setSelectedFile(file);
-                        setFormError(validationError);
-                        event.target.value = "";
-                      }}
-                      ref={fileInputRef}
-                      type="file"
+                <div className="grid gap-2">
+                  <Textarea
+                    aria-label="Message"
+                    className="min-h-24 resize-y lg:min-h-28"
+                    disabled={isBusy}
+                    onChange={(event) => setMessage(event.target.value)}
+                    onPaste={(event) => {
+                      const file = fileFromClipboard(event.clipboardData);
+                      if (!file) return;
+                      const validationError = validateAssistantAttachment(
+                        file,
+                        uploadExtensions,
+                        maxUploadBytes,
+                      );
+                      event.preventDefault();
+                      setSelectedFile(file);
+                      setFormError(validationError);
+                    }}
+                    placeholder="Ask about your data. Paste an image, attach a file, Enter to send, Shift+Enter for newline."
+                    value={message}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                  />
+                  {selectedFile ? (
+                    <AttachmentPreview
+                      file={selectedFile}
+                      onRemove={() => setSelectedFile(null)}
                     />
-                    <Button
-                      disabled={isBusy}
-                      onClick={() => fileInputRef.current?.click()}
-                      type="button"
-                      variant="outline"
-                    >
-                      <Paperclip className="h-4 w-4" />
-                      Attach
-                    </Button>
-                    <AttachmentCapabilityBadge
-                      availableExtractors={extractorsQuery.data?.available ?? []}
-                      isLoading={extractorsQuery.isLoading}
-                      supportedExtensions={uploadExtensions}
-                    />
-                    <AssistantControlsPanel
-                      contextText={contextText}
-                      executeWriteActions={executeWriteActions}
-                      onContextTextChange={setContextText}
-                      onExecuteWriteActionsChange={setExecuteWriteActions}
-                    />
-                    <ToolCatalogPanel
-                      error={toolsQuery.isError ? workflowErrorMessage(toolsQuery.error) : null}
-                      isLoading={toolsQuery.isLoading}
-                      tools={toolsQuery.data ?? []}
-                    />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {assistantMutation.isPending ? (
+                  ) : null}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <input
+                        accept={acceptedUploadExtensions}
+                        className="hidden"
+                        disabled={isBusy}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          const validationError = file
+                            ? validateAssistantAttachment(file, uploadExtensions, maxUploadBytes)
+                            : null;
+                          setSelectedFile(file);
+                          setFormError(validationError);
+                          event.target.value = "";
+                        }}
+                        ref={fileInputRef}
+                        type="file"
+                      />
                       <Button
-                        className="min-h-10"
-                        onClick={cancelActiveStream}
+                        disabled={isBusy}
+                        onClick={() => fileInputRef.current?.click()}
                         type="button"
                         variant="outline"
                       >
-                        <Square className="h-4 w-4" />
-                        Stop
+                        <Paperclip className="h-4 w-4" />
+                        Attach
                       </Button>
-                    ) : null}
-                    <Button
-                      className="min-h-10 min-w-36"
-                      disabled={isBusy}
-                      type="submit"
-                    >
-                      {isBusy ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4" />
-                      )}
-                      {extractMutation.isPending ? "Parsing" : "Send"}
-                    </Button>
+                      <AttachmentCapabilityBadge
+                        availableExtractors={extractorsQuery.data?.available ?? []}
+                        isLoading={extractorsQuery.isLoading}
+                        supportedExtensions={uploadExtensions}
+                      />
+                      <AssistantControlsPanel
+                        contextText={contextText}
+                        executeWriteActions={executeWriteActions}
+                        onContextTextChange={setContextText}
+                        onExecuteWriteActionsChange={setExecuteWriteActions}
+                      />
+                      <ToolCatalogPanel
+                        error={toolsQuery.isError ? workflowErrorMessage(toolsQuery.error) : null}
+                        isLoading={toolsQuery.isLoading}
+                        tools={toolsQuery.data ?? []}
+                      />
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {assistantMutation.isPending ? (
+                        <Button
+                          className="min-h-10"
+                          onClick={cancelActiveStream}
+                          type="button"
+                          variant="outline"
+                        >
+                          <Square className="h-4 w-4" />
+                          Stop
+                        </Button>
+                      ) : null}
+                      <Button
+                        className="min-h-10 min-w-36"
+                        disabled={isBusy}
+                        type="submit"
+                      >
+                        {isBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                        {extractMutation.isPending ? "Parsing" : "Send"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </form>
-        </div>
-      </section>
+            </form>
+          </div>
+        </section>
+      </div>
     </div>
   );
+}
+
+function AssistantSessionSidebar({
+  activeSessionId,
+  onDeleteSession,
+  onNewSession,
+  onSelectSession,
+  sessions,
+}: {
+  activeSessionId: string;
+  onDeleteSession: (sessionId: string) => void;
+  onNewSession: () => void;
+  onSelectSession: (sessionId: string) => void;
+  sessions: AssistantChatSession[];
+}) {
+  return (
+    <aside className="grid min-h-0 rounded-lg border border-border bg-card shadow-sm lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:overflow-hidden">
+      <div className="flex items-center justify-between gap-2 border-b border-border p-3">
+        <div>
+          <div className="text-sm font-black">Chats</div>
+          <div className="text-xs text-muted-foreground">
+            {formatCount(sessions.length, "session")}
+          </div>
+        </div>
+        <Button onClick={onNewSession} size="sm" type="button" variant="outline">
+          <Plus className="h-4 w-4" />
+          New
+        </Button>
+      </div>
+      <div className="grid max-h-72 content-start gap-1 overflow-y-auto overscroll-contain p-2 lg:max-h-none">
+        {sessions.map((session) => (
+          <div
+            className={cn(
+              "group grid gap-1 rounded-md border p-2 text-left transition",
+              session.id === activeSessionId
+                ? "border-primary bg-primary/5"
+                : "border-transparent hover:border-border hover:bg-muted/40",
+            )}
+            key={session.id}
+          >
+            <button
+              className="grid min-w-0 gap-1 text-left focus-ring"
+              onClick={() => onSelectSession(session.id)}
+              type="button"
+            >
+              <div className="line-clamp-2 break-words text-sm font-black">
+                {session.title}
+              </div>
+              <div className="flex min-w-0 flex-wrap gap-2 text-[11px] font-semibold text-muted-foreground">
+                <span>{formatCount(session.transcript.length, "message")}</span>
+                <span>{relativeSessionTime(session.updatedAt)}</span>
+              </div>
+            </button>
+            <div className="flex justify-end">
+              <Button
+                aria-label={`Delete chat ${session.title}`}
+                onClick={() => onDeleteSession(session.id)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function createAssistantChatSession(): AssistantChatSession {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    title: "New chat",
+    createdAt: now,
+    updatedAt: now,
+    transcript: [],
+  };
+}
+
+function sessionWithAppendedTranscriptItem(
+  session: AssistantChatSession,
+  item: AssistantTranscriptItem,
+): AssistantChatSession {
+  const now = new Date().toISOString();
+  return {
+    ...session,
+    title:
+      session.transcript.length === 0 && session.title === "New chat"
+        ? assistantSessionTitle(item.message)
+        : session.title,
+    updatedAt: now,
+    transcript: [...session.transcript, item],
+  };
+}
+
+function assistantSessionTitle(message: string) {
+  const normalized = message.replace(/\s+/g, " ").trim();
+  if (!normalized) return "New chat";
+  return normalized.length > 52 ? `${normalized.slice(0, 52)}...` : normalized;
+}
+
+function relativeSessionTime(value: string) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "just now";
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (elapsedSeconds < 60) return "just now";
+  const elapsedMinutes = Math.round(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h ago`;
+  const elapsedDays = Math.round(elapsedHours / 24);
+  return `${elapsedDays}d ago`;
 }
 
 function ChatEmptyState({
@@ -1675,6 +1878,9 @@ function AssistantStatus({ response }: { response: AssistantResponse }) {
 function ToolResultCard({ call }: { call: AssistantToolResult }) {
   const evidence = toolEvidence(call);
   const evidenceBuckets = toolEvidenceBuckets(call);
+  const standardSearchPlan = toolStandardSearchPlan(call);
+  const searchHints = toolSearchHints(call);
+  const diversity = toolDiversitySummary(call);
   return (
     <details className="overflow-hidden rounded-md border border-border bg-muted/20">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/35 px-3 py-2">
@@ -1705,6 +1911,18 @@ function ToolResultCard({ call }: { call: AssistantToolResult }) {
           <AssistantEvidencePack buckets={evidenceBuckets} />
         ) : null}
 
+        {standardSearchPlan ? (
+          <AssistantStandardSearchPlan plan={standardSearchPlan} />
+        ) : null}
+
+        {searchHints.length ? (
+          <AssistantMedicalSearchHints hints={searchHints} />
+        ) : null}
+
+        {diversity ? (
+          <AssistantSourceDiversity diversity={diversity} />
+        ) : null}
+
         {evidence.length > 0 ? (
           <div className="grid gap-2">
             {evidence.slice(0, 3).map((item) => (
@@ -1723,6 +1941,280 @@ function ToolResultCard({ call }: { call: AssistantToolResult }) {
         )}
       </div>
     </details>
+  );
+}
+
+function AssistantStandardSearchPlan({
+  plan,
+}: {
+  plan: RetrievalStandardSearchPlan;
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+            <Route className="h-4 w-4 shrink-0 text-primary" />
+            Standards plan
+          </div>
+          <div className="mt-1 break-words text-sm leading-6 text-muted-foreground">
+            {plan.summary}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          <Badge variant="default">{humanize(plan.primary_route)}</Badge>
+          <Badge variant="muted">{formatCount(plan.steps.length, "step")}</Badge>
+        </div>
+      </div>
+      <div className="grid gap-1.5">
+        {plan.steps.slice(0, 3).map((step) => (
+          <AssistantStandardSearchStep key={step.step_id} step={step} />
+        ))}
+      </div>
+      {plan.governance_notes.length ? (
+        <div className="grid gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+          <div className="font-black uppercase">Guardrails</div>
+          {plan.governance_notes.slice(0, 2).map((note) => (
+            <div className="grid grid-cols-[12px_minmax(0,1fr)] gap-2" key={note}>
+              <span aria-hidden="true" className="font-black">
+                -
+              </span>
+              <span className="break-words">{note}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AssistantStandardSearchStep({
+  step,
+}: {
+  step: RetrievalStandardSearchStep;
+}) {
+  return (
+    <div className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Badge variant="muted">P{step.priority}</Badge>
+        <Badge variant="success">{step.standard_system}</Badge>
+        <Badge variant="muted">{humanize(step.route_type)}</Badge>
+        <span className="min-w-0 break-words font-black">{step.label}</span>
+      </div>
+      <div className="break-words leading-5 text-muted-foreground">{step.rationale}</div>
+      <AssistantStandardSearchMatchReasons metadata={step.metadata} />
+      <div className="break-words rounded border border-border bg-card px-2 py-1.5 font-mono leading-5">
+        {step.query}
+      </div>
+    </div>
+  );
+}
+
+function AssistantStandardSearchMatchReasons({
+  metadata,
+}: {
+  metadata: Record<string, unknown>;
+}) {
+  const reasons = assistantStandardSearchMatchReasons(metadata);
+  if (!reasons.length) {
+    return null;
+  }
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className="font-black uppercase text-muted-foreground">Matched by</span>
+      {reasons.map((reason) => (
+        <Badge key={`${reason.label}:${reason.value}`} variant={reason.variant}>
+          {reason.label}: {reason.value}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+type AssistantSearchHint = {
+  metadata: Record<string, unknown>;
+  query: string;
+  rationale: string;
+  target: string;
+  url: string | null;
+  warnings: string[];
+};
+
+function AssistantMedicalSearchHints({ hints }: { hints: AssistantSearchHint[] }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+            <Route className="h-4 w-4 shrink-0 text-primary" />
+            Medical search hints
+          </div>
+          <div className="mt-1 text-sm leading-6 text-muted-foreground">
+            Backend-generated routes for governed terminology, FHIR, literature, or regulatory follow-up.
+          </div>
+        </div>
+        <Badge variant="muted">{formatCount(hints.length, "hint")}</Badge>
+      </div>
+      <div className="grid gap-1.5">
+        {hints.slice(0, 4).map((hint) => (
+          <AssistantMedicalSearchHintCard hint={hint} key={`${hint.target}:${hint.query}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssistantMedicalSearchHintCard({ hint }: { hint: AssistantSearchHint }) {
+  const [copied, setCopied] = React.useState(false);
+  const endpointScope = stringArrayValue(hint.metadata.scope_endpoints);
+  const selectedTerms = stringArrayValue(hint.metadata.selected_terms);
+  const selectedUnits = stringArrayValue(hint.metadata.selected_unit_candidates);
+  const candidates = selectedTerms.length ? selectedTerms : selectedUnits;
+  const parameterCount = arrayCount(hint.metadata.parameter_examples);
+  const launchable = Boolean(hint.url) || Boolean(hint.metadata.launchable);
+  const copyHintQuery = async () => {
+    try {
+      await copyTextToClipboard(hint.query);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <Badge variant={launchable ? "success" : "muted"}>
+            {launchable ? "launchable" : "syntax"}
+          </Badge>
+          <Badge variant="muted">{humanize(hint.target)}</Badge>
+          {endpointScope.length ? <Badge variant="muted">scoped API</Badge> : null}
+          {parameterCount ? <Badge variant="muted">{formatCount(parameterCount, "parameter")}</Badge> : null}
+          <span className="min-w-0 break-words font-black">{hint.rationale}</span>
+        </div>
+        {hint.url ? (
+          <Button asChild size="sm" type="button" variant="outline">
+            <a href={hint.url} rel="noopener noreferrer" target="_blank">
+              <ExternalLink className="h-4 w-4" />
+              Open
+            </a>
+          </Button>
+        ) : null}
+        <Button onClick={() => void copyHintQuery()} size="sm" type="button" variant="outline">
+          {copied ? <CheckCircle2 className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      {candidates.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          {candidates.slice(0, 5).map((candidate) => (
+            <Badge key={candidate} variant="success">
+              {candidate}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      <code className="max-h-20 overflow-auto break-words rounded border border-border bg-card px-2 py-1.5 font-mono leading-5">
+        {hint.query}
+      </code>
+      {hint.warnings.length ? (
+        <div className="grid gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-950">
+          {hint.warnings.slice(0, 2).map((warning) => (
+            <span className="break-words" key={warning}>
+              {warning}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AssistantSourceDiversity({
+  diversity,
+}: {
+  diversity: RetrievalDiversitySummary;
+}) {
+  const visibleSelections = diversity.selected_hits
+    .filter((selection) => selection.evidence_id && selection.source_id)
+    .slice(0, 3);
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2 text-xs font-black uppercase text-muted-foreground">
+            <Network className="h-4 w-4 shrink-0 text-primary" />
+            Source diversity
+          </div>
+          <div className="mt-1 break-words text-sm leading-6 text-muted-foreground">
+            Evidence spread after final retrieval selection. Use this to check whether the answer depends on one repeated source or multiple independent sources.
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          <Badge variant={diversity.enabled ? "success" : "warning"}>
+            {diversity.enabled ? "balanced" : "score order"}
+          </Badge>
+          <Badge variant="muted">
+            {diversity.selected_source_count}/{diversity.candidate_source_count} sources
+          </Badge>
+          <Badge variant={diversity.duplicate_selected_source_count ? "warning" : "success"}>
+            {formatCount(diversity.duplicate_selected_source_count, "duplicate")}
+          </Badge>
+        </div>
+      </div>
+      {visibleSelections.length ? (
+        <div className="grid gap-1.5">
+          {visibleSelections.map((selection) => (
+            <div
+              className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"
+              key={`${selection.selected_rank}:${selection.evidence_id}`}
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <Badge variant="muted">#{selection.selected_rank}</Badge>
+                  <span className="min-w-0 break-words font-black">
+                    {selection.source_id}
+                  </span>
+                </div>
+                <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                  <Badge variant="muted">original #{selection.original_rank}</Badge>
+                  <Badge variant={selection.redundancy_score > 0 ? "warning" : "success"}>
+                    redundancy {selection.redundancy_score.toFixed(2)}
+                  </Badge>
+                </div>
+              </div>
+              <div className="break-words leading-5 text-muted-foreground">
+                {selection.reason}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function assistantStandardSearchMatchReasons(metadata: Record<string, unknown>) {
+  const sources: {
+    key: string;
+    label: string;
+    variant: React.ComponentProps<typeof Badge>["variant"];
+  }[] = [
+    { key: "matched_fields", label: "field", variant: "default" },
+    { key: "matched_query_aspects", label: "aspect", variant: "muted" },
+    { key: "matched_standards", label: "standard", variant: "success" },
+    { key: "matched_concepts", label: "concept", variant: "muted" },
+    { key: "source_quality_signal_codes", label: "signal", variant: "warning" },
+  ];
+  return sources.flatMap((source) =>
+    stringArrayValue(metadata[source.key])
+      .slice(0, 3)
+      .map((value) => ({
+        label: source.label,
+        value,
+        variant: source.variant,
+      })),
   );
 }
 
@@ -1944,6 +2436,22 @@ function formatCount(value: number, noun: string) {
   return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
 type AssistantEvidenceMatchExplanation = {
   aspectLabels: string[];
   bucketLabels: string[];
@@ -2027,6 +2535,176 @@ function toolEvidenceBuckets(call: AssistantToolResult): RetrievalEvidenceBucket
     if (Array.isArray(nested)) return nested as RetrievalEvidenceBucket[];
   }
   return [];
+}
+
+function toolStandardSearchPlan(call: AssistantToolResult): RetrievalStandardSearchPlan | null {
+  const direct = standardSearchPlanValue(call.output.standard_search_plan);
+  if (direct) return direct;
+  const handoff = recordValue(call.output.handoff_context);
+  const handoffPlan = standardSearchPlanValue(handoff.standard_search_plan);
+  if (handoffPlan) return handoffPlan;
+  const retrieval = recordValue(call.output.retrieval);
+  const retrievalPlan = standardSearchPlanValue(retrieval.standard_search_plan);
+  if (retrievalPlan) return retrievalPlan;
+  const retrievalHandoff = recordValue(retrieval.handoff_context);
+  return standardSearchPlanValue(retrievalHandoff.standard_search_plan);
+}
+
+function toolSearchHints(call: AssistantToolResult): AssistantSearchHint[] {
+  const direct = searchHintsValue(call.output.search_hints);
+  if (direct.length) return direct;
+  const queryAnalysis = recordValue(call.output.query_analysis);
+  const queryAnalysisHints = searchHintsValue(queryAnalysis.search_hints);
+  if (queryAnalysisHints.length) return queryAnalysisHints;
+  const handoff = recordValue(call.output.handoff_context);
+  const handoffAnalysis = recordValue(handoff.query_analysis);
+  const handoffHints = searchHintsValue(handoffAnalysis.search_hints);
+  if (handoffHints.length) return handoffHints;
+  const retrieval = recordValue(call.output.retrieval);
+  const retrievalAnalysis = recordValue(retrieval.query_analysis);
+  const retrievalAnalysisHints = searchHintsValue(retrievalAnalysis.search_hints);
+  if (retrievalAnalysisHints.length) return retrievalAnalysisHints;
+  const retrievalHandoff = recordValue(retrieval.handoff_context);
+  const retrievalHandoffAnalysis = recordValue(retrievalHandoff.query_analysis);
+  return searchHintsValue(retrievalHandoffAnalysis.search_hints);
+}
+
+function toolDiversitySummary(call: AssistantToolResult): RetrievalDiversitySummary | null {
+  const direct = diversitySummaryValue(call.output.diversity);
+  if (direct) return direct;
+  const handoff = recordValue(call.output.handoff_context);
+  const handoffDiversity = diversitySummaryValue(handoff.diversity);
+  if (handoffDiversity) return handoffDiversity;
+  const retrieval = recordValue(call.output.retrieval);
+  const retrievalDiversity = diversitySummaryValue(retrieval.diversity);
+  if (retrievalDiversity) return retrievalDiversity;
+  const retrievalHandoff = recordValue(retrieval.handoff_context);
+  return diversitySummaryValue(retrievalHandoff.diversity);
+}
+
+function diversitySummaryValue(value: unknown): RetrievalDiversitySummary | null {
+  const record = recordValue(value);
+  const candidateSourceCount = numberValue(record.candidate_source_count);
+  const selectedSourceCount = numberValue(record.selected_source_count);
+  const duplicateSelectedSourceCount = numberValue(record.duplicate_selected_source_count);
+  if (
+    candidateSourceCount === null ||
+    selectedSourceCount === null ||
+    duplicateSelectedSourceCount === null
+  ) {
+    return null;
+  }
+  return {
+    enabled: Boolean(record.enabled),
+    selection_mode: optionalStringValue(record.selection_mode) ?? "score_order",
+    lambda_value: numberValue(record.lambda_value) ?? numberValue(record.lambda),
+    candidate_source_count: candidateSourceCount,
+    selected_source_count: selectedSourceCount,
+    duplicate_selected_source_count: duplicateSelectedSourceCount,
+    selected_hits: diversitySelectionValues(record.selected_hits),
+  };
+}
+
+function diversitySelectionValues(value: unknown): RetrievalDiversitySelection[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      evidence_id: optionalStringValue(item.evidence_id) ?? "",
+      source_id: optionalStringValue(item.source_id) ?? "",
+      selected_rank: numberValue(item.selected_rank) ?? 0,
+      original_rank: numberValue(item.original_rank) ?? 0,
+      relevance_score: numberValue(item.relevance_score) ?? 0,
+      redundancy_score: numberValue(item.redundancy_score) ?? 0,
+      selection_score: numberValue(item.selection_score) ?? 0,
+      reason: optionalStringValue(item.reason) ?? "Selected retrieval evidence.",
+    }))
+    .filter((item) => item.evidence_id && item.source_id);
+}
+
+function searchHintsValue(value: unknown): AssistantSearchHint[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => recordValue(item))
+    .map((item) => ({
+      metadata: recordValue(item.metadata),
+      query: optionalStringValue(item.query) ?? "",
+      rationale: optionalStringValue(item.rationale) ?? "Generated by retrieval analysis.",
+      target: optionalStringValue(item.target) ?? "",
+      url: optionalStringValue(item.url),
+      warnings: stringArrayValue(item.warnings),
+    }))
+    .filter((item) => item.target && item.query);
+}
+
+function arrayCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function standardSearchPlanValue(value: unknown): RetrievalStandardSearchPlan | null {
+  const record = recordValue(value);
+  const planId = optionalStringValue(record.plan_id);
+  const summary = optionalStringValue(record.summary);
+  const primaryRoute = optionalStringValue(record.primary_route);
+  const rawSteps = Array.isArray(record.steps) ? record.steps : [];
+  const steps = rawSteps
+    .map(standardSearchStepValue)
+    .filter((step): step is RetrievalStandardSearchStep => step !== null);
+  if (!planId || !summary || !primaryRoute || !steps.length) {
+    return null;
+  }
+  return {
+    plan_id: planId,
+    summary,
+    primary_route: primaryRoute,
+    steps,
+    missing_routes: stringArrayValue(record.missing_routes),
+    governance_notes: stringArrayValue(record.governance_notes),
+    metadata: recordValue(record.metadata),
+  };
+}
+
+function standardSearchStepValue(value: unknown): RetrievalStandardSearchStep | null {
+  const record = recordValue(value);
+  const stepId = optionalStringValue(record.step_id);
+  const label = optionalStringValue(record.label);
+  const standardSystem = optionalStringValue(record.standard_system);
+  const routeType = optionalStringValue(record.route_type);
+  const query = optionalStringValue(record.query);
+  const rationale = optionalStringValue(record.rationale);
+  const priority = numberValue(record.priority);
+  if (
+    !stepId ||
+    !label ||
+    !standardSystem ||
+    !routeType ||
+    !query ||
+    !rationale ||
+    priority === null
+  ) {
+    return null;
+  }
+  return {
+    step_id: stepId,
+    label,
+    standard_system: standardSystem,
+    route_type: routeType,
+    query,
+    rationale,
+    priority,
+    suggested_filters: stringRecordValue(record.suggested_filters),
+    governance_notes: stringArrayValue(record.governance_notes),
+    metadata: recordValue(record.metadata),
+  };
+}
+
+function stringRecordValue(value: unknown): Record<string, string> {
+  const record = recordValue(value);
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
 }
 
 function previewJson(value: Record<string, unknown>) {

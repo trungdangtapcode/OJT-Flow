@@ -571,6 +571,9 @@ def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
     coverage = output.get("coverage") if isinstance(output.get("coverage"), dict) else {}
     evidence_buckets = _evidence_buckets(output)
     interpretation = _retrieval_interpretation(output)
+    standard_search_plan = _standard_search_plan(output)
+    search_hints = _medical_search_hints(output)
+    diversity = _retrieval_diversity(output)
     remediation_summary = _remediation_summary(output)
     findings = [
         AssistantFinding(
@@ -608,6 +611,62 @@ def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
                 detail=remediation_summary,
                 severity="warning",
                 source_tool="retrieval_search",
+            )
+        )
+    if standard_search_plan:
+        steps = standard_search_plan.get("steps")
+        step_count = len(steps) if isinstance(steps, list) else 0
+        findings.append(
+            AssistantFinding(
+                title="Healthcare search plan",
+                detail=(
+                    f"{standard_search_plan.get('summary') or 'Review the standards-aware search plan.'} "
+                    f"Primary route: {standard_search_plan.get('primary_route') or 'unreported'}; "
+                    f"{step_count} step(s)."
+                ),
+                severity="info",
+                source_tool="retrieval_search",
+            )
+        )
+    if search_hints:
+        launchable_count = sum(1 for hint in search_hints if _search_hint_launchable(hint))
+        targets = _unique_nonblank_strings(
+            str(hint.get("target"))
+            for hint in search_hints
+            if hint.get("target")
+        )
+        findings.append(
+            AssistantFinding(
+                title="Medical search hints",
+                detail=(
+                    f"Generated {len(search_hints)} governed follow-up route(s)"
+                    f"{f' for {', '.join(targets[:4])}' if targets else ''}; "
+                    f"{launchable_count} launchable."
+                ),
+                severity="info",
+                source_tool="retrieval_search",
+            )
+        )
+    if diversity:
+        findings.append(
+            AssistantFinding(
+                title="Source diversity",
+                detail=(
+                    f"Selected {diversity.get('selected_source_count', 0)} of "
+                    f"{diversity.get('candidate_source_count', 0)} candidate source(s); "
+                    f"{diversity.get('duplicate_selected_source_count', 0)} duplicate selected."
+                ),
+                severity="warning"
+                if int(diversity.get("duplicate_selected_source_count") or 0) > 0
+                else "info",
+                source_tool="retrieval_search",
+                source_ids=[
+                    str(item.get("source_id"))
+                    for item in diversity.get("selected_hits", [])
+                    if isinstance(item, dict) and item.get("source_id")
+                ][:5]
+                if isinstance(diversity.get("selected_hits"), list)
+                else [],
             )
         )
     missing_required = [
@@ -911,6 +970,147 @@ def _retrieval_interpretation(output: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _standard_search_plan(output: dict[str, Any]) -> dict[str, Any] | None:
+    plan = output.get("standard_search_plan")
+    if isinstance(plan, dict):
+        return plan
+    handoff_context = output.get("handoff_context")
+    if isinstance(handoff_context, dict):
+        handoff_plan = handoff_context.get("standard_search_plan")
+        if isinstance(handoff_plan, dict):
+            return handoff_plan
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        return _standard_search_plan(retrieval)
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _standard_search_plan(workflow_retrieval)
+    return None
+
+
+def _medical_search_hints(output: dict[str, Any]) -> list[dict[str, Any]]:
+    direct = output.get("search_hints")
+    if isinstance(direct, list):
+        return [item for item in direct if isinstance(item, dict)][:8]
+    query_analysis = output.get("query_analysis")
+    if isinstance(query_analysis, dict):
+        hints = query_analysis.get("search_hints")
+        if isinstance(hints, list):
+            return [item for item in hints if isinstance(item, dict)][:8]
+    handoff_context = output.get("handoff_context")
+    if isinstance(handoff_context, dict):
+        handoff_analysis = handoff_context.get("query_analysis")
+        if isinstance(handoff_analysis, dict):
+            hints = handoff_analysis.get("search_hints")
+            if isinstance(hints, list):
+                return [item for item in hints if isinstance(item, dict)][:8]
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        hints = _medical_search_hints(retrieval)
+        if hints:
+            return hints
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _medical_search_hints(workflow_retrieval)
+    return []
+
+
+def _compact_medical_search_hints(output: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "target": hint.get("target"),
+            "query": hint.get("query"),
+            "url": hint.get("url"),
+            "rationale": hint.get("rationale"),
+            "warnings": hint.get("warnings") if isinstance(hint.get("warnings"), list) else [],
+            "metadata": _compact_search_hint_metadata(hint.get("metadata")),
+        }
+        for hint in _medical_search_hints(output)
+    ]
+
+
+def _compact_search_hint_metadata(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    if "launchable" in value:
+        compact["launchable"] = bool(value.get("launchable"))
+    for key in ("scope_endpoints", "selected_terms", "selected_unit_candidates"):
+        items = value.get(key)
+        if isinstance(items, list):
+            compact[key] = [item for item in items if isinstance(item, str)][:8]
+    for key, limit in (("parameter_examples", 8), ("lineage_followup", 4)):
+        items = value.get(key)
+        if isinstance(items, list):
+            compact[key] = [item for item in items if isinstance(item, dict)][:limit]
+    warning = value.get("capability_warning")
+    if isinstance(warning, str) and warning.strip():
+        compact["capability_warning"] = warning.strip()
+    return compact
+
+
+def _retrieval_diversity(output: dict[str, Any]) -> dict[str, Any] | None:
+    diversity = output.get("diversity")
+    if isinstance(diversity, dict):
+        return diversity
+    handoff_context = output.get("handoff_context")
+    if isinstance(handoff_context, dict):
+        handoff_diversity = handoff_context.get("diversity")
+        if isinstance(handoff_diversity, dict):
+            return handoff_diversity
+    retrieval = output.get("retrieval")
+    if isinstance(retrieval, dict):
+        return _retrieval_diversity(retrieval)
+    workflow = output.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_retrieval = workflow.get("retrieval")
+        if isinstance(workflow_retrieval, dict):
+            return _retrieval_diversity(workflow_retrieval)
+    return None
+
+
+def _compact_retrieval_diversity(output: dict[str, Any]) -> dict[str, Any] | None:
+    diversity = _retrieval_diversity(output)
+    if not diversity:
+        return None
+    selected_hits = diversity.get("selected_hits")
+    return {
+        "enabled": bool(diversity.get("enabled")),
+        "selection_mode": diversity.get("selection_mode"),
+        "lambda": diversity.get("lambda_value", diversity.get("lambda")),
+        "candidate_source_count": diversity.get("candidate_source_count"),
+        "selected_source_count": diversity.get("selected_source_count"),
+        "duplicate_selected_source_count": diversity.get("duplicate_selected_source_count"),
+        "selected_hits": [
+            {
+                "evidence_id": item.get("evidence_id"),
+                "source_id": item.get("source_id"),
+                "selected_rank": item.get("selected_rank"),
+                "original_rank": item.get("original_rank"),
+                "relevance_score": item.get("relevance_score"),
+                "redundancy_score": item.get("redundancy_score"),
+                "selection_score": item.get("selection_score"),
+                "reason": item.get("reason"),
+            }
+            for item in selected_hits[:5]
+            if isinstance(item, dict)
+        ]
+        if isinstance(selected_hits, list)
+        else [],
+    }
+
+
+def _search_hint_launchable(hint: dict[str, Any]) -> bool:
+    if hint.get("url"):
+        return True
+    metadata = hint.get("metadata")
+    return isinstance(metadata, dict) and bool(metadata.get("launchable"))
+
+
 def _interpretation_severity(interpretation: dict[str, Any]) -> str:
     status = str(interpretation.get("status") or "").lower()
     if "no_ranked" in status or "support_gaps" in status or "warning" in status:
@@ -941,6 +1141,9 @@ def _tool_results_for_llm(tool_results: list[AssistantToolResult]) -> list[dict[
             "evidence": _evidence_items(result.output)[:5],
             "evidence_buckets": _evidence_buckets(result.output),
             "interpretation": _retrieval_interpretation(result.output),
+            "standard_search_plan": _standard_search_plan(result.output),
+            "medical_search_hints": _compact_medical_search_hints(result.output),
+            "diversity": _compact_retrieval_diversity(result.output),
             "remediation_summary": _remediation_summary(result.output),
             "trace": _compact_mapping(result.output.get("trace")),
             "coverage": _compact_mapping(result.output.get("coverage")),
@@ -968,6 +1171,18 @@ def _compact_mapping(value: Any) -> dict[str, Any]:
             "query_aspects",
         }
     }
+
+
+def _unique_nonblank_strings(values) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def _evidence_buckets(output: dict[str, Any]) -> list[dict[str, Any]]:

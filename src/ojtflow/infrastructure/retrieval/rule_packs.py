@@ -61,6 +61,11 @@ RULE_PACK_SPECS: tuple[tuple[str, Path, str], ...] = (
         "OJT_STRATEGY_RECOMMENDATION_RULES_PATH",
     ),
     (
+        "standard_search_playbook",
+        Path("retrieval/standard_search_playbook_rules.json"),
+        "OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH",
+    ),
+    (
         "evidence_buckets",
         Path("retrieval/evidence_bucket_rules.json"),
         "OJT_EVIDENCE_BUCKET_RULES_PATH",
@@ -69,6 +74,11 @@ RULE_PACK_SPECS: tuple[tuple[str, Path, str], ...] = (
         "search_hint_targets",
         Path("retrieval/search_hint_targets.json"),
         "OJT_SEARCH_HINT_TARGETS_PATH",
+    ),
+    (
+        "fhir_search_parameters",
+        Path("terminologies/fhir_search_parameters.json"),
+        "OJT_FHIR_SEARCH_PARAMETERS_PATH",
     ),
 )
 
@@ -122,6 +132,7 @@ def retrieval_rule_pack(
     rules = raw.get("rules") if isinstance(raw, dict) else None
     targets = raw.get("targets") if isinstance(raw, dict) else None
     buckets = raw.get("buckets") if isinstance(raw, dict) else None
+    resources = raw.get("resources") if isinstance(raw, dict) else None
     items = (
         rules
         if isinstance(rules, list)
@@ -129,6 +140,8 @@ def retrieval_rule_pack(
         if isinstance(targets, list)
         else buckets
         if isinstance(buckets, list)
+        else resources
+        if isinstance(resources, list)
         else []
     )
     return {

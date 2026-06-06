@@ -777,6 +777,7 @@ function RetrievalSettingsForm({
               <Label>
                 Diversity lambda
                 <Input
+                  disabled={!form.diversityEnabled}
                   min={0}
                   max={1}
                   onChange={(event) => updateField("diversityLambda", event.target.value)}
@@ -784,6 +785,9 @@ function RetrievalSettingsForm({
                   type="number"
                   value={form.diversityLambda}
                 />
+                <span className="mt-1 block text-xs font-semibold leading-5 text-muted-foreground">
+                  0 favors source novelty; 1 favors raw relevance. Default 0.72 keeps relevance primary while reducing repeated-source evidence.
+                </span>
               </Label>
               <label className="flex min-h-9 items-center gap-2 rounded-md border border-border bg-muted/20 px-3 text-sm font-semibold">
                 <input
@@ -794,6 +798,9 @@ function RetrievalSettingsForm({
                 />
                 Source diversity
               </label>
+              <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground sm:col-span-2">
+                Source diversity changes final evidence selection after hybrid retrieval and reranking. Disable it only when strict score order is required for debugging or benchmarking.
+              </div>
             </div>
 
             <RetrievalRulePackInventory packs={runtime?.retrieval?.rule_packs ?? []} />

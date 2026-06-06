@@ -195,6 +195,18 @@ class RetrievalDiversitySelection(ContractModel):
     reason: NonBlankStr
 
 
+class RetrievalDiversitySummary(ContractModel):
+    """Package-level source-diversity summary for final evidence selection."""
+
+    enabled: bool = False
+    selection_mode: NonBlankStr = "score_order"
+    lambda_value: float | None = Field(default=None, ge=0.0, le=1.0)
+    candidate_source_count: int = Field(ge=0)
+    selected_source_count: int = Field(ge=0)
+    duplicate_selected_source_count: int = Field(ge=0)
+    selected_hits: list[RetrievalDiversitySelection] = Field(default_factory=list)
+
+
 class RetrievalHit(ContractModel):
     """One ranked retrieval candidate with transparent scoring components."""
 
@@ -326,6 +338,33 @@ class RetrievalStrategyRecommendation(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RetrievalStandardSearchStep(ContractModel):
+    """One healthcare-standard search step recommended for follow-up retrieval."""
+
+    step_id: NonBlankStr
+    label: NonBlankStr
+    standard_system: NonBlankStr
+    route_type: NonBlankStr
+    query: NonBlankStr
+    rationale: NonBlankStr
+    priority: int = Field(ge=1)
+    suggested_filters: dict[str, NonBlankStr] = Field(default_factory=dict)
+    governance_notes: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalStandardSearchPlan(ContractModel):
+    """Standards-aware playbook for the next governed healthcare search."""
+
+    plan_id: NonBlankStr
+    summary: NonBlankStr
+    primary_route: NonBlankStr
+    steps: list[RetrievalStandardSearchStep] = Field(default_factory=list)
+    missing_routes: list[NonBlankStr] = Field(default_factory=list)
+    governance_notes: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalFilterSuggestion(ContractModel):
     """Metadata filter suggested by deterministic self-query analysis."""
 
@@ -355,6 +394,7 @@ class RetrievalSearchHint(ContractModel):
     url: str | None = None
     rationale: NonBlankStr
     warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RetrievalQueryProfile(ContractModel):
@@ -488,6 +528,8 @@ class RetrievalPackage(ContractModel):
     remediation_summary: NonBlankStr | None = None
     interpretation: RetrievalInterpretation | None = None
     strategy_recommendations: list[RetrievalStrategyRecommendation] = Field(default_factory=list)
+    standard_search_plan: RetrievalStandardSearchPlan | None = None
+    diversity: RetrievalDiversitySummary | None = None
     trace: RetrievalTrace
     handoff_context: dict[str, Any] = Field(default_factory=dict)
 

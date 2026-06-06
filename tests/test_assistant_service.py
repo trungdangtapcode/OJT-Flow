@@ -30,6 +30,9 @@ class _FakeToolExecutor:
 class _FakePlanner:
     model_name = "fake-model"
 
+    def __init__(self) -> None:
+        self.last_tool_results = None
+
     async def plan(self, *, message, context, tools, max_tool_calls):
         del message, context, tools, max_tool_calls
         return AssistantPlan(
@@ -53,7 +56,8 @@ class _FakePlanner:
         findings,
         evidence_summary,
     ):
-        del message, context, plan, tool_results, findings, evidence_summary
+        del message, context, plan, findings, evidence_summary
+        self.last_tool_results = tool_results
         return "LLM synthesized answer with cited evidence."
 
 
@@ -194,6 +198,128 @@ class _FakeRetrievalToolExecutor:
                         "metadata": {"corrective_rule_id": "missing_required_bucket_recovery"},
                     }
                 ],
+                "diversity": {
+                    "enabled": True,
+                    "selection_mode": "mmr_source_diversity",
+                    "lambda_value": 0.72,
+                    "candidate_source_count": 3,
+                    "selected_source_count": 2,
+                    "duplicate_selected_source_count": 0,
+                    "selected_hits": [
+                        {
+                            "evidence_id": "ev_schema",
+                            "source_id": "schema:lab_result_v1",
+                            "selected_rank": 1,
+                            "original_rank": 1,
+                            "relevance_score": 1.0,
+                            "redundancy_score": 0.0,
+                            "selection_score": 1.0,
+                            "reason": "Top-ranked hit selected as the initial MMR seed.",
+                        },
+                        {
+                            "evidence_id": "ev_policy",
+                            "source_id": "policy:review_gate",
+                            "selected_rank": 2,
+                            "original_rank": 4,
+                            "relevance_score": 0.72,
+                            "redundancy_score": 0.0,
+                            "selection_score": 0.52,
+                            "reason": "Selected from a new source with no measured redundancy penalty.",
+                        },
+                    ],
+                },
+                "standard_search_plan": {
+                    "plan_id": "standard_search_playbook.v1",
+                    "summary": (
+                        "Run 2 governed healthcare-standard search step(s) before "
+                        "treating this evidence package as complete."
+                    ),
+                    "primary_route": "unit_validation",
+                    "steps": [
+                        {
+                            "step_id": "standard_search:ucum_unit_validation",
+                            "label": "UCUM unit validation",
+                            "standard_system": "UCUM",
+                            "route_type": "unit_validation",
+                            "query": "Validate units for lab_name, unit.",
+                            "rationale": "Units can change clinical meaning.",
+                            "priority": 30,
+                            "suggested_filters": {"standard_system": "UCUM"},
+                            "governance_notes": [
+                                "Do not silently convert units without preserving source evidence."
+                            ],
+                            "metadata": {"rule_id": "ucum_unit_validation"},
+                        },
+                        {
+                            "step_id": "standard_search:fhir_observation_with_provenance",
+                            "label": "FHIR Observation + Provenance trace",
+                            "standard_system": "FHIR",
+                            "route_type": "fhir_search",
+                            "query": "Search FHIR Observation records with Provenance.",
+                            "rationale": "Clinical data search should preserve lineage.",
+                            "priority": 40,
+                            "suggested_filters": {"standard_system": "FHIR"},
+                            "governance_notes": [
+                                "Confirm the concrete FHIR server supports the requested search parameters."
+                            ],
+                            "metadata": {"rule_id": "fhir_observation_with_provenance"},
+                        },
+                    ],
+                    "missing_routes": [],
+                    "governance_notes": [
+                        "Do not silently convert units without preserving source evidence.",
+                        "Confirm the concrete FHIR server supports the requested search parameters.",
+                    ],
+                    "metadata": {"query_profile_id": "laboratory_standardization"},
+                },
+                "handoff_context": {
+                    "query_analysis": {
+                        "search_hints": [
+                            {
+                                "target": "ucum",
+                                "query": (
+                                    "GET /ucum-fhir/R4/CodeSystem/$validate-code?"
+                                    "url=http://unitsofmeasure.org&code=%25"
+                                ),
+                                "url": (
+                                    "https://ucum.nlm.nih.gov/ucum-fhir/R4/"
+                                    "CodeSystem/$validate-code?url=http://unitsofmeasure.org&code=%25"
+                                ),
+                                "rationale": "Validate UCUM unit strings.",
+                                "warnings": ["Preserve original source unit."],
+                                "metadata": {
+                                    "launchable": True,
+                                    "selected_unit_candidates": [
+                                        "%",
+                                        "mg/dL",
+                                        "mmol/L",
+                                        "umol/L",
+                                        "g/dL",
+                                        "ng/mL",
+                                        "mL/min",
+                                        "IU/L",
+                                        "extra-unit",
+                                    ],
+                                    "parameter_examples": [
+                                        {"name": f"p{index}", "example": str(index)}
+                                        for index in range(10)
+                                    ],
+                                },
+                            },
+                            {
+                                "target": "loinc",
+                                "query": "GET /searchapi/loincs?query=hba1c&rows=20",
+                                "url": None,
+                                "rationale": "Resolve lab identity.",
+                                "warnings": ["LOINC API authentication is required."],
+                                "metadata": {
+                                    "scope_endpoints": ["/searchapi/loincs"],
+                                    "selected_terms": ["HbA1c"],
+                                },
+                            },
+                        ]
+                    }
+                },
             },
             summary="Retrieved evidence.",
         )
@@ -201,9 +327,10 @@ class _FakeRetrievalToolExecutor:
 
 @pytest.mark.asyncio
 async def test_assistant_service_uses_planner_but_backend_executor_owns_tools() -> None:
+    planner = _FakePlanner()
     service = AssistantService(
-        _FakeToolExecutor(),  # type: ignore[arg-type]
-        planner=_FakePlanner(),
+        _FakeRetrievalToolExecutor(),  # type: ignore[arg-type]
+        planner=planner,
         max_tool_calls=2,
     )
 
@@ -216,6 +343,21 @@ async def test_assistant_service_uses_planner_but_backend_executor_owns_tools() 
     assert response.tool_calls[0].tool_name == "retrieval_search"
     assert response.tool_calls[0].status == "completed"
     assert response.findings[0].title == "Trusted evidence retrieved"
+    assert planner.last_tool_results is not None
+    assert planner.last_tool_results[0]["medical_search_hints"][0]["target"] == "ucum"
+    assert planner.last_tool_results[0]["medical_search_hints"][0]["metadata"]["launchable"] is True
+    assert len(
+        planner.last_tool_results[0]["medical_search_hints"][0]["metadata"][
+            "selected_unit_candidates"
+        ]
+    ) == 8
+    assert len(
+        planner.last_tool_results[0]["medical_search_hints"][0]["metadata"][
+            "parameter_examples"
+        ]
+    ) == 8
+    assert planner.last_tool_results[0]["diversity"]["selected_source_count"] == 2
+    assert len(planner.last_tool_results[0]["diversity"]["selected_hits"]) == 2
 
 
 @pytest.mark.asyncio
@@ -290,10 +432,19 @@ async def test_assistant_service_flags_missing_required_evidence_buckets() -> No
     assert "required evidence support is missing for Policy" in response.findings[1].detail
     assert response.findings[2].title == "Retrieval remediation"
     assert response.findings[2].detail == "Recover Policy evidence (P20; apply filter 1)"
-    assert response.findings[3].title == "Evidence pack needs attention"
-    assert "Policy" in response.findings[3].detail
-    assert response.findings[4].title == "Recommended search action"
-    assert "Recover Policy evidence" in response.findings[4].detail
+    assert response.findings[3].title == "Healthcare search plan"
+    assert "Primary route: unit_validation" in response.findings[3].detail
+    assert "2 step(s)" in response.findings[3].detail
+    assert response.findings[4].title == "Medical search hints"
+    assert "2 governed follow-up route(s)" in response.findings[4].detail
+    assert "1 launchable" in response.findings[4].detail
+    assert response.findings[5].title == "Source diversity"
+    assert "Selected 2 of 3 candidate source(s)" in response.findings[5].detail
+    assert response.findings[6].title == "Evidence pack needs attention"
+    assert "Policy" in response.findings[6].detail
+    assert response.findings[7].title == "Recommended search action"
+    assert "Recover Policy evidence" in response.findings[7].detail
+    assert response.tool_calls[0].output["standard_search_plan"]["steps"][0]["standard_system"] == "UCUM"
     assert response.suggestions[0] == "Recover Policy evidence: Run a targeted policy evidence search."
     assert response.suggestions[1] == (
         "Next retrieval step: Recover Policy evidence (P20; apply filter 1)"

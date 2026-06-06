@@ -63,6 +63,7 @@ This means the project already has the right backbone shape. The weak point is n
 | Validation | `ValidationReport` and `Issue` | Store data-quality findings, schema mismatch, malformed rows, missing units, PHI risk, prompt injection, and review requirement. |
 | Clinical canonical model | FHIR-like JSON | Represent clinical meaning as resources such as Patient, Encounter, Observation, DiagnosticReport, Condition, Procedure, MedicationRequest, DocumentReference, ImagingStudy. |
 | Evidence model | `Evidence`, OCR boxes, DICOM references, visual artifacts | Link every claim or transformation to source rows, pages, boxes, studies, masks, events, or human decisions. |
+| Retrieval search plan | `RetrievalStandardSearchPlan` | Explain which governed healthcare-standard search route applies next: FHIR, Provenance/AuditEvent, LOINC, UCUM, RxNorm, PHI review, or external medical-search hints. |
 | Workflow model | `WorkflowState`, `WorkflowStep`, audit events, review state | Preserve progress, approval, failures, output refs, and restart-safe traceability. |
 | Terminology model | LOINC, UCUM, SNOMED CT, later local code aliases | Normalize clinical names, units, findings, procedures, and concepts. |
 | Analytics target | OMOP CDM, Parquet/lakehouse, BigQuery later | Support research, cohorts, population analysis, and model evaluation. |
@@ -135,6 +136,25 @@ Current `lab_result_v1` should map into FHIR-like `Observation` resources.
 | `value` | `Observation.valueQuantity.value` | Must be numeric when represented as a Quantity. |
 | `unit` | `Observation.valueQuantity.unit`; later `Observation.valueQuantity.system/code` with UCUM | Missing unit requires review. |
 | source row | `Evidence.locator.row` and future `Provenance` | Do not lose row-level traceability. |
+
+The retrieval layer now returns a standard-search playbook for the same mapping
+problem. For a lab CSV with FHIR, LOINC, and UCUM signals, the plan should
+recommend:
+
+- FHIR `Observation` search and, where supported by the concrete server,
+  `_revinclude` follow-up for `Provenance:target` and `AuditEvent:entity`.
+- LOINC lookup for lab identity before semantic normalization.
+- UCUM validation for units and source unit preservation.
+- PHI review when patient identifiers or sensitive fields are present.
+
+The playbook can be selected from data shape, not only from explicit user text.
+For example, a CSV field named `unit` can trigger the UCUM validation route,
+`lab_name` can trigger LOINC lookup, and `patient_id` or `ssn` can trigger PHI
+review even when the user asks only to "validate this dataset."
+
+This keeps the workflow enterprise-safe: evidence retrieval, canonical mapping,
+and audit/provenance requirements are visible before the app transforms or
+exports healthcare data.
 
 Example target:
 

@@ -20,6 +20,8 @@ from ojtflow.infrastructure.retrieval.embeddings import (
     OpenAIEmbeddingProvider,
 )
 from ojtflow.infrastructure.retrieval.evaluation import (
+    RetrievalEvalCase,
+    RetrievalEvalJudgment,
     evaluate_retrieval_repository,
     load_eval_cases,
 )
@@ -721,16 +723,52 @@ def test_query_analysis_builds_medical_search_hints() -> None:
 
     assert "biomedical_literature_search" in literature.detected_concepts
     assert "MeSH" in literature.standards
+    assert "LOINC" in literature.standards
+    assert "UCUM" in literature.standards
     assert "pubmed" in literature_hints
+    assert "loinc" in literature_hints
+    assert "ucum" in literature_hints
     assert "hba1c" in literature_hints["pubmed"].query.lower()
     assert "[tiab]" in literature_hints["pubmed"].query
     assert literature_hints["pubmed"].url is not None
     assert literature_hints["pubmed"].url.startswith("https://pubmed.ncbi.nlm.nih.gov/?term=")
     assert literature_hints["pubmed"].warnings
+    assert literature_hints["loinc"].query.startswith("GET /searchapi/loincs?query=")
+    assert literature_hints["loinc"].metadata["authentication_required"] is True
+    assert "/searchapi/loincs" in literature_hints["loinc"].metadata["scope_endpoints"]
+    loinc_parameters = {
+        item["name"]: item for item in literature_hints["loinc"].metadata["parameter_examples"]
+    }
+    assert loinc_parameters["query"]["standard_systems"] == ["LOINC"]
+    assert literature_hints["ucum"].query.startswith(
+        "GET /ucum-fhir/R4/CodeSystem/$validate-code?"
+    )
+    assert literature_hints["ucum"].url is not None
+    assert literature_hints["ucum"].url.startswith(
+        "https://ucum.nlm.nih.gov/ucum-fhir/R4/CodeSystem/$validate-code?"
+    )
+    ucum_parameters = {
+        item["name"]: item for item in literature_hints["ucum"].metadata["parameter_examples"]
+    }
+    assert ucum_parameters["url"]["example"] == "url=http://unitsofmeasure.org"
+    assert literature_hints["ucum"].metadata["launchable"] is True
+    assert "selected_unit_candidates" in literature_hints["ucum"].metadata
     assert "fhir" in fhir_hints
     assert fhir_hints["fhir"].query.startswith("Observation?")
     assert fhir_hints["fhir"].url is None
-    assert "subject=Patient/<id>" in fhir_hints["fhir"].query
+    assert "Observation?code=http://loinc.org|2345-7" in fhir_hints["fhir"].query
+    assert fhir_hints["fhir"].metadata["resource_type"] == "Observation"
+    assert fhir_hints["fhir"].metadata["registry_version"] == "FHIR R4 curated seed v0"
+    parameter_examples = {
+        item["name"]: item for item in fhir_hints["fhir"].metadata["parameter_examples"]
+    }
+    assert parameter_examples["code"]["target_field"] == "Observation.code"
+    assert parameter_examples["patient"]["example"] == "Observation?patient=<patient-id>"
+    lineage_parameters = {
+        item["parameter"] for item in fhir_hints["fhir"].metadata["lineage_followup"]
+    }
+    assert "_revinclude=Provenance:target" in lineage_parameters
+    assert "_revinclude=AuditEvent:entity" in lineage_parameters
 
 
 def test_query_analysis_uses_data_driven_search_hint_targets(tmp_path, monkeypatch) -> None:
@@ -781,6 +819,16 @@ def test_query_analysis_uses_data_driven_search_hint_targets(tmp_path, monkeypat
 
     assert reloaded_hint.rationale == "Reloaded PubMed rationale"
     assert reloaded_hint.warnings == ["Reloaded PubMed warning"]
+
+
+def test_query_analysis_does_not_launch_placeholder_ucum_hint() -> None:
+    analysis = analyze_query(RetrievalQuery(query="missing unit validation"))
+    hints = {hint.target: hint for hint in analysis.search_hints}
+
+    assert "ucum" in hints
+    assert hints["ucum"].url is None
+    assert "code=%3Cunit-code%3E" in hints["ucum"].query
+    assert hints["ucum"].metadata["launchable"] is False
 
 
 def test_query_analysis_uses_mesh_seed_concepts_in_pubmed_hint() -> None:
@@ -911,6 +959,21 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.handoff_context["strategy_recommendations"] == [
         item.model_dump(mode="json") for item in package.strategy_recommendations
     ]
+    assert package.standard_search_plan is not None
+    assert package.standard_search_plan.primary_route in {
+        "terminology_lookup",
+        "unit_validation",
+        "fhir_search",
+    }
+    assert package.handoff_context["standard_search_plan"] == (
+        package.standard_search_plan.model_dump(mode="json")
+    )
+    standard_steps = {
+        step.route_type: step for step in package.standard_search_plan.steps
+    }
+    assert "unit_validation" in standard_steps
+    assert standard_steps["unit_validation"].standard_system == "UCUM"
+    assert "UCUM" in standard_steps["unit_validation"].query
     analysis = package.handoff_context["query_analysis"]
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
@@ -935,6 +998,103 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
         match["concept_id"] == "hba1c_lab_test"
         and match["standard_system"] == "LOINC"
         for match in concept_matches
+    )
+
+
+def test_retrieval_standard_search_plan_uses_data_driven_registry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    registry_path = tmp_path / "standard_search_playbook_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_standard_search_playbook_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_fhir_route",
+                        "label": "Custom FHIR route",
+                        "standard_system": "FHIR",
+                        "route_type": "custom_fhir_search",
+                        "query_template": "Custom route for {resource_type}: {query} / {fields}",
+                        "rationale": "Custom registry route.",
+                        "priority": 1,
+                        "suggested_filters": {"standard_system": "FHIR"},
+                        "governance_notes": ["Custom governance note."],
+                        "metadata": {"owner": "test"},
+                        "match": {
+                            "any_standards": ["FHIR"],
+                            "any_resource_types": ["Observation"]
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH", str(registry_path))
+
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="fhir",
+                source_id="standard:fhir_observation",
+                source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+                title="FHIR Observation",
+                content="FHIR Observation resources represent clinical measurements.",
+                standard_system="FHIR",
+            )
+        ],
+        RetrievalQuery(
+            query="FHIR Observation lab unit",
+            fields=["unit"],
+            resource_type="Observation",
+            top_k=1,
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+        strategy="test_standard_search_playbook",
+    )
+
+    assert package.standard_search_plan is not None
+    assert package.standard_search_plan.primary_route == "custom_fhir_search"
+    assert package.standard_search_plan.steps[0].label == "Custom FHIR route"
+    assert package.standard_search_plan.steps[0].query == (
+        "Custom route for Observation: FHIR Observation lab unit / unit"
+    )
+    assert package.standard_search_plan.steps[0].metadata["owner"] == "test"
+
+
+def test_retrieval_standard_search_plan_matches_dataset_fields() -> None:
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="schema",
+                source_id="schema:generic_lab_rows",
+                source_type=EvidenceSourceType.SCHEMA,
+                title="Generic lab row schema",
+                content="Rows include a numeric result value and a unit column.",
+            )
+        ],
+        RetrievalQuery(
+            query="validate this uploaded dataset",
+            fields=["value", "unit"],
+            top_k=1,
+        ),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+        strategy="test_standard_search_field_match",
+    )
+
+    assert package.standard_search_plan is not None
+    steps = {
+        step.route_type: step for step in package.standard_search_plan.steps
+    }
+    assert "unit_validation" in steps
+    assert steps["unit_validation"].standard_system == "UCUM"
+    assert "unit" in steps["unit_validation"].metadata["matched_fields"]
+    assert package.handoff_context["standard_search_plan"] == (
+        package.standard_search_plan.model_dump(mode="json")
     )
 
 
@@ -1185,6 +1345,22 @@ def test_rank_chunks_uses_data_driven_ranking_boost_rules(tmp_path, monkeypatch)
     ]
 
 
+def test_default_ranking_policy_protects_canonical_healthcare_sources() -> None:
+    registry = json.loads(
+        (ROOT / "knowledge/retrieval/ranking_boost_rules.json").read_text(
+            encoding="utf-8",
+        )
+    )
+    rules = {rule["rule_id"]: rule for rule in registry["rules"]}
+
+    assert rules["boost_schema_source_match"]["weight"] >= 0.13
+    assert rules["boost_loinc_hba1c_concept"]["weight"] >= 0.115
+    assert rules["boost_fhir_observation_concept"]["weight"] >= 0.09
+    assert "schema" in rules["boost_schema_source_match"]["reason"].lower()
+    assert "loinc" in rules["boost_loinc_hba1c_concept"]["reason"].lower()
+    assert "fhir" in rules["boost_fhir_observation_concept"]["reason"].lower()
+
+
 def test_static_retrieval_ranks_pubmed_mesh_search_evidence() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
     package = repository.search(
@@ -1406,6 +1582,10 @@ def test_llamaindex_retrieval_applies_metadata_filters_before_ranking() -> None:
     assert package.handoff_context["strategy_recommendations"] == [
         item.model_dump(mode="json") for item in package.strategy_recommendations
     ]
+    assert package.standard_search_plan is not None
+    assert package.handoff_context["standard_search_plan"] == (
+        package.standard_search_plan.model_dump(mode="json")
+    )
 
 
 def test_llamaindex_metadata_filters_include_exact_source_id() -> None:
@@ -2198,6 +2378,14 @@ def test_retrieval_diversity_selection_reduces_redundant_sources() -> None:
 
     selected_sources = [hit.evidence.source_id for hit in package.hits]
     assert selected_sources == ["source:alpha", "source:beta"]
+    assert package.diversity is not None
+    assert package.diversity.enabled is True
+    assert package.diversity.selection_mode == "mmr_source_diversity"
+    assert package.diversity.lambda_value == 0.5
+    assert package.diversity.candidate_source_count == 2
+    assert package.diversity.selected_source_count == 2
+    assert package.diversity.duplicate_selected_source_count == 0
+    assert [item.source_id for item in package.diversity.selected_hits] == selected_sources
     diversity = package.handoff_context["diversity"]
     assert diversity["enabled"] is True
     assert diversity["selection_mode"] == "mmr_source_diversity"
@@ -2483,6 +2671,66 @@ def test_retrieval_eval_fixture_passes_static_repository() -> None:
     assert all(result.first_relevant_rank == 1 for result in summary.results)
     assert all(result.ndcg_at_k == 1.0 for result in summary.results)
     assert all(result.judged_source_count >= 1 for result in summary.results)
+
+
+def test_retrieval_eval_uses_first_class_diversity_contract() -> None:
+    chunks = [
+        KnowledgeChunk(
+            chunk_id="alpha_one",
+            source_id="source:alpha",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Alpha unit policy",
+            content="alpha unit validation review",
+        ),
+        KnowledgeChunk(
+            chunk_id="alpha_two",
+            source_id="source:alpha",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Alpha unit duplicate",
+            content="alpha unit validation duplicate",
+        ),
+        KnowledgeChunk(
+            chunk_id="beta_one",
+            source_id="source:beta",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="Beta unit policy",
+            content="alpha unit validation alternate source",
+        ),
+    ]
+    package = rank_chunks(
+        chunks,
+        RetrievalQuery(query="alpha unit validation", top_k=2),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=True,
+        diversity_lambda=0.5,
+        strategy="test_eval_diversity_contract",
+    )
+    package.handoff_context.pop("diversity", None)
+
+    class Repository:
+        def search(self, query):
+            del query
+            return package
+
+    summary = evaluate_retrieval_repository(
+        Repository(),
+        [
+            RetrievalEvalCase(
+                case_id="diversity_contract",
+                description="Eval metrics should read package.diversity.",
+                query="alpha unit validation",
+                expected_source_ids=["source:alpha", "source:beta"],
+                judgments=[
+                    RetrievalEvalJudgment(source_id="source:alpha", rating=3),
+                    RetrievalEvalJudgment(source_id="source:beta", rating=2),
+                ],
+                top_k=2,
+            )
+        ],
+    )
+
+    assert summary.results[0].selected_source_count == 2
+    assert summary.results[0].duplicate_selected_source_count == 0
 
 
 def test_retrieval_eval_cli_outputs_json_summary() -> None:

@@ -184,9 +184,11 @@ uses an MMR-style relevance/novelty balance so repeated chunks from the same
 source do not crowd out other relevant evidence. `OJT_RETRIEVAL_DIVERSITY_LAMBDA`
 must be between `0` and `1`; higher values favor relevance and lower values
 favor diversity. Retrieval packages expose the policy and source coverage under
-`handoff_context.diversity`. Diversity metadata includes aggregate source
-counts plus `selected_hits[]` rows with evidence ID, source ID, selected rank,
-original rank, relevance score, redundancy score, selection score, and reason.
+the first-class `diversity` field and also copy the same metadata into
+`handoff_context.diversity` for assistant/agent handoff compatibility.
+Diversity metadata includes aggregate source counts plus `selected_hits[]` rows
+with evidence ID, source ID, selected rank, original rank, relevance score,
+redundancy score, selection score, and reason.
 
 Retrieval hits expose `score_components` as the score explanation contract.
 Custom/static/Postgres retrieval emits lexical RRF, vector RRF, policy boost,
@@ -975,8 +977,9 @@ such as `OJT_QUERY_EXPANSION_RULES_PATH`, `OJT_FILTER_SUGGESTION_RULES_PATH`,
 `OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_QUERY_PROFILE_RULES_PATH`,
 `OJT_RANKING_BOOST_RULES_PATH`,
 `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, `OJT_CORRECTIVE_ACTION_RULES_PATH`,
-`OJT_STRATEGY_RECOMMENDATION_RULES_PATH`, `OJT_EVIDENCE_BUCKET_RULES_PATH`,
-and `OJT_SEARCH_HINT_TARGETS_PATH`.
+`OJT_STRATEGY_RECOMMENDATION_RULES_PATH`,
+`OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH`, `OJT_EVIDENCE_BUCKET_RULES_PATH`,
+`OJT_SEARCH_HINT_TARGETS_PATH`, and `OJT_FHIR_SEARCH_PARAMETERS_PATH`.
 The response exposes the env var name, loaded status, rule-pack version, and
 SHA-256 content hash, but not local paths.
 
@@ -1347,10 +1350,25 @@ Response data is a `RetrievalPackage`:
   concept/aspect labels, required bucket coverage, warnings, and next action
 - `strategy_recommendations[]` with backend-owned retrieval technique and route
   explanations
+- `standard_search_plan` with backend-owned healthcare-standard follow-up search
+  steps, including route type, standard system, suggested query, governance
+  notes, supported filters, and data-driven match metadata
+- `diversity` with source-aware final-selection state, selected/candidate source
+  counts, duplicate selected-source count, optional lambda value, and
+  `selected_hits[]` rationale rows
 - `trace.strategy`
 - `trace.query_variants`
 - `trace.query_variant_details[]` with `variant`, `source`, `reason`, and
   `metadata`
+- `handoff_context.query_analysis.search_hints[]` with `target`, `query`,
+  optional launch `url`, `rationale`, `warnings`, and optional metadata. FHIR
+  hints can include `metadata.parameter_examples`,
+  `metadata.lineage_followup`, `metadata.registry_version`, and
+  `metadata.capability_warning`. LOINC and UCUM terminology hints can include
+  authenticated endpoint scope, parameter examples, selected terminology
+  terms, selected unit candidates, validation-operation metadata, and
+  `metadata.launchable`. UCUM hints expose `url` only when the selected unit
+  candidate is concrete.
 - `trace.fusion_diagnostics` with hybrid/fusion observability such as method,
   diagnostic scope, lexical/vector overlap when available, selected-hit rank
   delta when available, dominant signal balance, and interpretation
@@ -1362,8 +1380,11 @@ Response data is a `RetrievalPackage`:
 - `handoff_context`
 - `handoff_context.graph_context`
 - `handoff_context.query_analysis`
+- `handoff_context.diversity` mirrors top-level `diversity` for assistant and
+  agent handoff compatibility
 - `handoff_context.quality_policy`
 - `handoff_context.retrieval_rule_packs`
+- `handoff_context.standard_search_plan`
 - `handoff_context.search_request`
 - `handoff_context.search_signature`
 
@@ -1429,6 +1450,13 @@ retrieval readiness policy version and severity scoring rules used to produce
 server-side retrieval request, and `handoff_context.search_signature` is a
 stable `sha256:<digest>` fingerprint of that request for judgment, report, and
 audit correlation.
+The standard-search playbook rule pack is included in the same fingerprinted
+inventory and drives `standard_search_plan`, including FHIR, terminology,
+privacy, and external medical-search route guidance. A playbook rule can match
+query profiles, detected standards, concepts, decomposed query aspects, dataset
+field names, query tokens, resource type, quality signals, safety flags, and
+required filters. This keeps route selection in backend rule data rather than
+React copy or LLM-only reasoning.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.

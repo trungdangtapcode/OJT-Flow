@@ -1,0 +1,41 @@
+name: Deploy GCE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Docker Compose stack to GCE
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Copy source to instance
+        run: |
+          gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --zone "${{ secrets.GCE_ZONE }}" \
+            --command "sudo mkdir -p /opt/ojtflow && sudo chown \$USER:\$USER /opt/ojtflow"
+          gcloud compute scp --recurse . "${{ secrets.GCE_INSTANCE }}:/opt/ojtflow" \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --zone "${{ secrets.GCE_ZONE }}"
+
+      - name: Deploy stack
+        run: |
+          gcloud compute ssh "${{ secrets.GCE_INSTANCE }}" \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --zone "${{ secrets.GCE_ZONE }}" \
+            --command "cd /opt/ojtflow && docker compose up -d --build --remove-orphans"
