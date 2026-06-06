@@ -728,6 +728,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "components"
         / "hit-card.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_copy_feedback = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "copy-feedback.ts"
+    ).read_text(encoding="utf-8")
     retrieval_hit_explanation_panels = (
         REPO_ROOT
         / "frontend"
@@ -1374,7 +1383,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Query rewrites are backend-generated search variants" in retrieval_query_variant_list
     assert "Copy query rewrite" in retrieval_query_variant_list
     assert "copyTextToClipboard" in retrieval_query_variant_list
-    assert "document.execCommand" in retrieval_query_variant_list
+    assert "document.execCommand" in retrieval_copy_feedback
     assert "query_variant_details" in retrieval_query_analysis_model
     assert "SearchPlanPreview" in retrieval_page
     assert "components/search-plan-preview" in retrieval_page

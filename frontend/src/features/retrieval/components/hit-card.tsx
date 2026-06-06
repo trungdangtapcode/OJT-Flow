@@ -1,4 +1,3 @@
-import * as React from "react";
 import { CheckCircle2, Clipboard, Gauge } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
@@ -41,6 +40,10 @@ import {
   RelevanceJudgmentControl,
   type RelevanceJudgmentValue,
 } from "./relevance-judgment-control";
+import {
+  copyTextToClipboard,
+  useCopyFeedback,
+} from "./copy-feedback";
 
 type RelevanceJudgment = {
   value: RelevanceJudgmentValue;
@@ -271,36 +274,4 @@ export function HitCard({
       </details>
     </article>
   );
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textarea);
-}
-
-function useCopyFeedback(timeoutMs = 1800) {
-  const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!copiedKey) return;
-    const timeout = window.setTimeout(() => setCopiedKey(null), timeoutMs);
-    return () => window.clearTimeout(timeout);
-  }, [copiedKey, timeoutMs]);
-
-  return {
-    copiedKey,
-    markCopied: setCopiedKey,
-  };
 }

@@ -40,6 +40,10 @@ import {
 } from "../../lib/server-state";
 import { cn, humanize } from "../../lib/utils";
 import { ActiveFilterBar } from "./components/active-filter-bar";
+import {
+  copyTextToClipboard,
+  useCopyFeedback,
+} from "./components/copy-feedback";
 import { EvidencePackBuckets } from "./components/evidence-pack-buckets";
 import { EvidenceInterpretationPanel } from "./components/evidence-interpretation-panel";
 import { EvidenceReadinessPanel } from "./components/evidence-readiness-panel";
@@ -2072,43 +2076,6 @@ function booleanValue(value: unknown): boolean {
 function stringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textarea);
-}
-
-function useCopyFeedback(timeoutMs = 1800) {
-  const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!copiedKey) return;
-    const timer = window.setTimeout(() => setCopiedKey(null), timeoutMs);
-    return () => window.clearTimeout(timer);
-  }, [copiedKey, timeoutMs]);
-
-  const markCopied = React.useCallback((key: string) => {
-    setCopiedKey(key);
-  }, []);
-
-  const clearCopied = React.useCallback(() => {
-    setCopiedKey(null);
-  }, []);
-
-  return { clearCopied, copiedKey, markCopied };
 }
 
 function integrityBadgeVariant(
