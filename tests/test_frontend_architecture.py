@@ -1187,6 +1187,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "model"
         / "retrieval-runtime-stack.ts"
     ).read_text(encoding="utf-8")
+    retrieval_run_summary_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-run-summary.ts"
+    ).read_text(encoding="utf-8")
     retrieval_search_plan_tasks_model = (
         REPO_ROOT
         / "frontend"
@@ -1625,6 +1634,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "conceptGroundingComparison" in retrieval_page
     assert "concept_grounding_changed" in retrieval_comparison_diagnosis_model
     assert "serverSearchSignatureFromPackage" in retrieval_page
+    assert "function serverSearchSignatureFromPackage" not in retrieval_page
+    assert "function serverSearchSignatureFromPackage" in retrieval_run_summary_model
     assert "Search signature" in retrieval_page
     assert "search_signature: comparison.activeSummary.serverSignature" in retrieval_comparison_diagnosis_model
     assert "qualityPolicyFromPackage" in retrieval_page
@@ -1634,8 +1645,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "function qualityPolicyFromPackage" in retrieval_runtime_stack_model
     assert "Quality policy" in retrieval_page
     assert "query_profiles" in retrieval_comparison_diagnosis_model
-    assert "queryProfileSummaryFromPackage" in retrieval_page
-    assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_page
+    assert "queryProfileSummaryFromPackage" in retrieval_run_summary_model
+    assert "queryProfile: queryProfileSummaryFromPackage(packageData)" in retrieval_run_summary_model
+    assert "function queryProfileSummaryFromPackage" not in retrieval_page
     assert "SearchRunHistory" in retrieval_page
     assert "components/search-run-history" in retrieval_page
     assert "function SearchRunHistory" not in retrieval_page
@@ -1685,12 +1697,16 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copy answer JSON" in retrieval_search_answer
     assert "This is an evidence retrieval summary for workflow operations" in retrieval_search_answer
     assert "it is not clinical advice" in retrieval_inline_guide
-    assert "remediationSummary: string | null" in retrieval_page
-    assert "packageData.remediation_summary" in retrieval_page
-    assert "handoff_context.remediation_summary" in retrieval_page
+    assert "remediationSummary: string | null" in retrieval_run_summary_model
+    assert "remediationSummary: string | null" not in retrieval_page
+    assert "packageData.remediation_summary" in retrieval_run_summary_model
+    assert "handoff_context.remediation_summary" in retrieval_run_summary_model
+    assert "handoff_context.remediation_summary" not in retrieval_page
     assert "Top action" in retrieval_search_run_history
     assert "qualitySummary: packageData.quality_summary ?? null" in retrieval_page
     assert "qualitySummaryFingerprint" in retrieval_page
+    assert "function qualitySummaryFingerprint" not in retrieval_page
+    assert "function qualitySummaryFingerprint" in retrieval_run_summary_model
     assert "qualitySummaryChanged" in retrieval_page
     assert "quality_score: comparison.qualityScoreDelta" in retrieval_comparison_diagnosis_model
     assert "searchRunQualityBadgeVariant" in retrieval_search_run_presentation_model
@@ -1854,6 +1870,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "createSearchRun" in retrieval_page
     assert "restoreSearchRun" in retrieval_page
     assert "retrievalRunSummary" in retrieval_page
+    assert "function retrievalRunSummary" not in retrieval_page
+    assert "function retrievalRunSummary" in retrieval_run_summary_model
     assert "SearchRunComparisonPanel" in retrieval_page
     assert "components/search-run-comparison-panel" in retrieval_page
     assert "function SearchRunComparisonPanel" not in retrieval_page
@@ -1957,9 +1975,13 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "comparisonRulePackChangeViews" in retrieval_page
     assert "rulePackChangesBetweenRuns" in retrieval_page
     assert "rulePackFingerprint" in retrieval_page
+    assert "function rulePackFingerprint" not in retrieval_page
+    assert "function rulePackFingerprint" in retrieval_run_summary_model
     assert "rulePackChanged" in retrieval_page
     assert "rule_packs" in retrieval_page
     assert "retrievalRulePacksFromPackage" in retrieval_page
+    assert "function retrievalRulePacksFromPackage" not in retrieval_page
+    assert "function retrievalRulePacksFromPackage" in retrieval_run_summary_model
     assert "configured" in retrieval_page
     assert "content_hash" in retrieval_page
     assert "Search comparison metrics" in retrieval_run_comparison_summary_panels
@@ -2062,10 +2084,11 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "corrective_rule_source" in retrieval_page
     assert "query diagnostic" in retrieval_page
     assert 'action.action_type === "broaden_query"' in retrieval_recommended_actions_panel
-    assert "correctiveActionSummaryFromPackage" in retrieval_page
-    assert "packageData.recommended_action_summary" in retrieval_page
-    assert "correctiveActionSummary: CorrectiveActionSummary" in retrieval_page
-    assert "recommendedActionTypeCounts" in retrieval_page
+    assert "correctiveActionSummaryFromPackage" in retrieval_run_summary_model
+    assert "packageData.recommended_action_summary" in retrieval_run_summary_model
+    assert "correctiveActionSummary: CorrectiveActionSummary" in retrieval_run_summary_model
+    assert "recommendedActionTypeCounts" in retrieval_run_summary_model
+    assert "function correctiveActionSummaryFromPackage" not in retrieval_page
     assert "CorrectiveActionTypeCountChips" in retrieval_search_run_history
     assert "./corrective-action-type-count-chips" in retrieval_search_run_history
     assert "function CorrectiveActionTypeCountChips" not in retrieval_page
@@ -2076,10 +2099,10 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         "counts={run.summary.correctiveActionSummary.actionTypeCounts}"
         in retrieval_search_run_history
     )
-    assert "action_type_counts" in retrieval_page
-    assert "broaden_query_count" in retrieval_page
-    assert "actionTypeCounts" in retrieval_page
-    assert "broadenQueryCount" in retrieval_page
+    assert "action_type_counts" in retrieval_run_summary_model
+    assert "broaden_query_count" in retrieval_run_summary_model
+    assert "actionTypeCounts" in retrieval_run_summary_model
+    assert "broadenQueryCount" in retrieval_run_summary_model
     assert "Top action:" in retrieval_search_run_history
     assert "missing_required_evidence_buckets" in retrieval_evidence_readiness_panel
     assert "qualitySummaryBadgeVariant" in retrieval_page
@@ -2202,6 +2225,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "runSummary.remediationSummary ?? searchRunRemediationSummary(runSummary)" in retrieval_page
     assert "run.summary.remediationSummary ?? searchRunRemediationSummary(run.summary)" in retrieval_search_run_evidence_summary
     assert "retrievalRulePacksFromPackage" in retrieval_page
+    assert "function retrievalRulePacksFromPackage" not in retrieval_page
+    assert "function retrievalRulePacksFromPackage" in retrieval_run_summary_model
     assert "retrieval_rule_packs" in retrieval_page
     assert "content_hash" in retrieval_page
     assert "retrieval_rule_packs?: RuntimeRetrievalRulePack[]" in (
