@@ -1169,6 +1169,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "model"
         / "retrieval-search-payload.ts"
     ).read_text(encoding="utf-8")
+    retrieval_query_analysis_model = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "model"
+        / "retrieval-query-analysis.ts"
+    ).read_text(encoding="utf-8")
     retrieval_search_plan_tasks_model = (
         REPO_ROOT
         / "frontend"
@@ -1274,6 +1283,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "qualitySummaryTone" in retrieval_page
     assert "qualitySignalBadgeVariant" in retrieval_page
     assert "queryVariantsFromTrace" in retrieval_page
+    assert "function queryVariantsFromTrace" not in retrieval_page
+    assert "function queryVariantsFromTrace" in retrieval_query_analysis_model
     assert "QueryVariantList" in retrieval_trace_panel
     assert "./query-variant-list" in retrieval_trace_panel
     assert "function QueryVariantList" not in retrieval_page
@@ -1282,7 +1293,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copy query rewrite" in retrieval_query_variant_list
     assert "copyTextToClipboard" in retrieval_query_variant_list
     assert "document.execCommand" in retrieval_query_variant_list
-    assert "query_variant_details" in retrieval_page
+    assert "query_variant_details" in retrieval_query_analysis_model
     assert "SearchPlanPreview" in retrieval_page
     assert "components/search-plan-preview" in retrieval_page
     assert "function SearchPlanPreview" not in retrieval_page
@@ -1310,6 +1321,8 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "packageDataForPlanPreview = isSearchResultStale ? undefined : packageData" in retrieval_page
     assert "currentPlanData" in retrieval_page
     assert "queryAnalysisFromPlan" in retrieval_page
+    assert "function queryAnalysisFromPlan" not in retrieval_page
+    assert "function queryAnalysisFromPlan" in retrieval_query_analysis_model
     assert "retrievalSearchPlanPreviewReport" in retrieval_page
     assert "retrieval_search_plan_preview" in retrieval_page
     assert "SearchPlanTaskPreview" in retrieval_search_plan_preview
@@ -1346,7 +1359,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Run task" in retrieval_search_plan_task_preview
     assert "SearchPlanTaskRow" in retrieval_search_plan_task_preview
     assert "retrievalTaskExternalUrl" in retrieval_search_plan_tasks_model
-    assert "retrievalTaskActionTypeValue" in retrieval_page
+    assert "retrievalTaskActionTypeValue" in retrieval_query_analysis_model
     assert "Open follow-up" in retrieval_search_plan_task_preview
     assert "syntax only" in retrieval_search_plan_task_preview
     assert "Copy query" in retrieval_search_plan_task_preview
@@ -1365,22 +1378,28 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "Copy external follow-ups" in retrieval_search_plan_summary_panels
     assert "plan-external-followups" in retrieval_search_plan_summary_panels
     assert "searchPlanTaskSummary" in retrieval_page
-    assert "planTaskSummaryValue" in retrieval_page
+    assert "function searchPlanTaskSummary" not in retrieval_page
+    assert "function searchPlanTaskSummary" in retrieval_query_analysis_model
+    assert "planTaskSummaryValue" in retrieval_query_analysis_model
     assert "Plan coverage" in retrieval_search_plan_summary_panels
     assert "Next action" in retrieval_search_plan_summary_panels
-    assert "nextAction" in retrieval_page
+    assert "nextAction" in retrieval_query_analysis_model
     assert "searchPlanCoverageSummary" in retrieval_page
-    assert "planCoverageSummaryValue" in retrieval_page
-    assert "planCoverageSummary" in retrieval_page
-    assert "coverage_summary" in retrieval_page
-    assert "task_summary" in retrieval_page
+    assert "function searchPlanCoverageSummary" not in retrieval_page
+    assert "function searchPlanCoverageSummary" in retrieval_query_analysis_model
+    assert "planCoverageSummaryValue" in retrieval_query_analysis_model
+    assert "planCoverageSummary" in retrieval_query_analysis_model
+    assert "coverage_summary" in retrieval_query_analysis_model
+    assert "task_summary" in retrieval_query_analysis_model
     assert "SearchPlanRiskSignalsPanel" in retrieval_search_plan_preview
     assert "function SearchPlanRiskSignalsPanel" not in retrieval_page
     assert "Plan risks" in retrieval_search_plan_summary_panels
     assert "searchPlanRiskSignals" in retrieval_page
-    assert "planRiskSignalsValue" in retrieval_page
+    assert "function searchPlanRiskSignals" not in retrieval_page
+    assert "function searchPlanRiskSignals" in retrieval_query_analysis_model
+    assert "planRiskSignalsValue" in retrieval_query_analysis_model
     assert "riskSignalListBadgeVariant" in retrieval_search_plan_summary_panels
-    assert "risk_signals" in retrieval_page
+    assert "risk_signals" in retrieval_query_analysis_model
     assert "SearchAnswerCard" in retrieval_page
     assert "components/search-answer-card" in retrieval_page
     assert "function SearchAnswerCard" not in retrieval_page
@@ -1403,8 +1422,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "retrievalPackageWarnings" in retrieval_review_model
     assert "Next operator action" in retrieval_review_path
     assert "A plain-language checklist built from backend retrieval quality" in retrieval_review_path
-    assert "retrievalTasksValue" in retrieval_page
-    assert "retrieval_tasks" in retrieval_page
+    assert "retrievalTasksValue" in retrieval_query_analysis_model
+    assert "function retrievalTasksValue" not in retrieval_page
+    assert "retrieval_tasks" in retrieval_query_analysis_model
     assert "plan only" in retrieval_search_plan_preview
     assert "Planning search" in retrieval_search_plan_preview
     assert 'request<RetrievalPlan>("/retrieval/plan"' in api_module
@@ -1463,11 +1483,12 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "function QueryProfileCard" not in retrieval_page
     assert "Query profile" in retrieval_query_profile_card
     assert "Suggested by query profile" in retrieval_query_profile_card
-    assert "queryProfileValue" in retrieval_page
-    assert "query_profile" in retrieval_page
+    assert "queryProfileValue" in retrieval_query_analysis_model
+    assert "function queryProfileValue" not in retrieval_page
+    assert "query_profile" in retrieval_query_analysis_model
     assert "QueryAspectPlan" in retrieval_query_analysis_block
-    assert "queryAspectsValue" in retrieval_page
-    assert "query_aspects" in retrieval_page
+    assert "queryAspectsValue" in retrieval_query_analysis_model
+    assert "query_aspects" in retrieval_query_analysis_model
     assert "./query-aspect-plan" in retrieval_query_analysis_block
     assert "function QueryAspectPlan" not in retrieval_page
     assert "Search aspect plan" in retrieval_query_aspect_plan
@@ -1475,8 +1496,9 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "./concept-candidate-list" in retrieval_query_analysis_block
     assert "function ConceptCandidateList" not in retrieval_page
     assert "Concept candidates" in retrieval_concept_candidate_list
-    assert "conceptCandidatesValue" in retrieval_page
-    assert "concept_candidates" in retrieval_page
+    assert "conceptCandidatesValue" in retrieval_query_analysis_model
+    assert "function conceptCandidatesValue" not in retrieval_page
+    assert "concept_candidates" in retrieval_query_analysis_model
     assert "QueryDiagnosticList" in retrieval_query_analysis_block
     assert "./query-diagnostic-list" in retrieval_query_analysis_block
     assert "function QueryDiagnosticList" not in retrieval_page
@@ -2204,7 +2226,7 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "queryHealthItems" in retrieval_page
     assert "queryDiagnosticHealthItems" in retrieval_page
     assert "DiagnosticMetadataChips" in retrieval_query_diagnostic_list
-    assert "metadata: recordValue(item.metadata)" in retrieval_page
+    assert "metadata: recordValue(item.metadata)" in retrieval_query_analysis_model
     assert "metadata: diagnostic.metadata" in retrieval_page
     assert "active_metadata_filters" in retrieval_query_diagnostic_list
     assert "suggested_standards" in retrieval_query_diagnostic_list

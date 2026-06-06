@@ -584,6 +584,12 @@ comparison report JSON assembly.
 retrieval form serialization, planned-task search overrides, field parsing, and
 search signature construction. The retrieval page should import those helpers
 and keep React state/effects, not duplicate request payload policy.
+`frontend/src/features/retrieval/model/retrieval-query-analysis.ts` owns
+backend query-analysis normalization for retrieval packages and plans, including
+plan coverage summaries, task summaries, risk signals, query variants, profile
+records, concept candidates, diagnostics, and retrieval task coercion. The page
+may map those normalized objects into display-specific filter labels, but should
+not parse backend query-analysis payloads directly.
 The ranked-result panel should also render a compact package-level `Search
 answer` section before detailed readiness, facets, matrices, and hit cards.
 This section must derive from the backend retrieval package and show the
