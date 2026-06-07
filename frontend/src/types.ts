@@ -285,6 +285,11 @@ export type RetrievalGraphNode = {
   id: string;
   label: string;
   type: string;
+  normalized_code?: string;
+  normalized_system?: string;
+  normalized_display?: string;
+  standard_system?: string;
+  display_name?: string;
 };
 
 export type RetrievalGraphEdge = {

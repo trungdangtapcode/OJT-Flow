@@ -8,7 +8,9 @@ from pydantic import ValidationError
 
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType
+from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.retrieval_service import RetrievalService
@@ -2271,6 +2273,63 @@ def test_retrieval_service_adds_graph_context() -> None:
         "top_k": 3,
         "filters": {},
     }
+
+
+def test_graph_ner_normalizes_clinical_concepts_to_standard_codes() -> None:
+    service = GraphNERService()
+    evidence = [
+        Evidence(
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            source_id="laboratory_semantic_retrieval",
+            claim="A row mentions HbA1c and blood glucose without a unit.",
+            locator={"standard_system": "LOINC", "clinical_domain": "laboratory"},
+        )
+    ]
+
+    graph = service.build_graph_context(evidence, RetrievalQuery(query="HbA1c glucose"))
+    nodes_by_id = {node["id"]: node for node in graph["nodes"]}
+
+    hba1c = nodes_by_id["clinical_concept:hba1c_lab_test"]
+    assert hba1c["normalized_code"] == "LOINC:4548-4"
+    assert hba1c["normalized_system"] == "LOINC"
+    assert hba1c["normalized_display"] == "Hemoglobin A1c"
+
+    glucose = nodes_by_id["clinical_concept:glucose_serum_plasma"]
+    assert glucose["label"] == "blood glucose"
+    assert glucose["normalized_code"] == "LOINC:2345-7"
+
+    code_node = nodes_by_id["code:loinc:4548-4"]
+    assert code_node["type"] == "standard_code"
+    assert code_node["standard_system"] == "LOINC"
+    assert code_node["display_name"] == "Hemoglobin A1c"
+
+    normalizes_edge = next(edge for edge in graph["edges"] if edge["relation"] == "normalizes_to")
+    assert normalizes_edge["source"] == hba1c["id"]
+    assert normalizes_edge["target"] == code_node["id"]
+    assert any(
+        triple["subject"] == "HbA1c"
+        and triple["predicate"] == "normalizes_to"
+        and triple["object"] == "LOINC:4548-4"
+        for triple in graph["triples"]
+    )
+
+
+def test_graph_ner_skips_normalization_for_unmapped_concepts() -> None:
+    service = GraphNERService()
+    evidence = [
+        Evidence(
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            source_id="laboratory_semantic_retrieval",
+            claim="The laboratory result needs a lab result review.",
+            locator={},
+        )
+    ]
+
+    graph = service.build_graph_context(evidence, RetrievalQuery(query="laboratory review"))
+
+    assert not any(node["type"] == "standard_code" for node in graph["nodes"])
+    assert not any(edge["relation"] == "normalizes_to" for edge in graph["edges"])
+    assert any(node["id"] == "clinical_concept:laboratory" for node in graph["nodes"])
 
 
 def test_retrieval_service_attaches_rule_pack_fingerprints() -> None:
