@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 
 EmbeddingProvider = Literal["deterministic", "openai", "huggingface"]
 LLMProvider = Literal["disabled", "openai"]
+ProductMode = Literal["local_dev", "demo", "pilot", "production"]
 RetrievalFramework = Literal["custom", "llamaindex"]
 RerankProvider = Literal["none", "huggingface"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
@@ -49,6 +50,12 @@ COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 DNS_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 UPLOAD_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9][a-z0-9-]{0,15}$")
 ALLOWED_STORAGE_BACKENDS: tuple[StorageBackend, ...] = ("postgres", "sqlite", "memory")
+ALLOWED_PRODUCT_MODES: tuple[ProductMode, ...] = (
+    "local_dev",
+    "demo",
+    "pilot",
+    "production",
+)
 ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = (
     "deterministic",
     "openai",
@@ -106,6 +113,8 @@ RUNTIME_SETTING_ALIASES = {
 class Settings(BaseModel):
     """Environment-backed settings with local demo defaults."""
 
+    product_mode: ProductMode = Field(default="local_dev", alias="OJT_PRODUCT_MODE")
+    no_mock_data: bool = Field(default=False, alias="OJT_NO_MOCK_DATA")
     storage_backend: StorageBackend = Field(
         default=DEFAULT_STORAGE_BACKEND,
         alias="OJT_STORAGE_BACKEND",
@@ -329,6 +338,21 @@ class Settings(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_product_mode_policy(self) -> "Settings":
+        if self.product_mode in {"pilot", "production"}:
+            if self.storage_backend == "memory":
+                raise ValueError(
+                    "OJT_STORAGE_BACKEND=memory is not allowed when "
+                    "OJT_PRODUCT_MODE is pilot or production"
+                )
+            if self.llm_provider == "disabled":
+                raise ValueError(
+                    "OJT_LLM_PROVIDER=disabled is not allowed when "
+                    "OJT_PRODUCT_MODE is pilot or production"
+                )
+        return self
+
     @property
     def repo_root(self) -> Path:
         return Path(__file__).resolve().parents[2]
@@ -379,6 +403,12 @@ class Settings(BaseModel):
 
         return self.auth_cookie_secure or self.auth_cookie_samesite.lower() == "none"
 
+    @property
+    def effective_no_mock_data(self) -> bool:
+        """Return whether demo/mock data paths must be blocked."""
+
+        return self.no_mock_data or self.product_mode in {"pilot", "production"}
+
 
 def _resolve_path(path: Path, root: Path) -> Path:
     return path if path.is_absolute() else root / path
@@ -389,6 +419,8 @@ def get_settings() -> Settings:
     """Return cached settings."""
 
     settings_kwargs = dict(
+        OJT_PRODUCT_MODE=_parse_product_mode(os.getenv("OJT_PRODUCT_MODE")),
+        OJT_NO_MOCK_DATA=_parse_bool(os.getenv("OJT_NO_MOCK_DATA"), default=False),
         OJT_STORAGE_BACKEND=_parse_storage_backend(os.getenv("OJT_STORAGE_BACKEND")),
         OJT_DATABASE_URL=_parse_postgres_dsn(
             os.getenv(
@@ -941,6 +973,18 @@ def _parse_storage_backend(value: str | None) -> StorageBackend:
     allowed = ", ".join(ALLOWED_STORAGE_BACKENDS)
     raise ValueError(
         f"Invalid storage backend environment value: {value}. Expected one of: {allowed}"
+    )
+
+
+def _parse_product_mode(value: str | None) -> ProductMode:
+    normalized = "local_dev" if value is None else value.strip().lower().replace("-", "_")
+    if normalized in {"local", "dev", "development"}:
+        return "local_dev"
+    if normalized in ALLOWED_PRODUCT_MODES:
+        return normalized  # type: ignore[return-value]
+    allowed = ", ".join(ALLOWED_PRODUCT_MODES)
+    raise ValueError(
+        f"Invalid product mode environment value: {value}. Expected one of: {allowed}"
     )
 
 
