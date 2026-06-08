@@ -2312,6 +2312,83 @@ def test_graph_ner_normalizes_clinical_concepts_to_standard_codes() -> None:
         and triple["object"] == "LOINC:4548-4"
         for triple in graph["triples"]
     )
+    assert graph["summary"]["concept_registry_count"] >= 1
+    assert graph["summary"]["rule_source_count"] >= 1
+
+
+def test_graph_ner_extracts_query_entities_and_fhir_search_parameters() -> None:
+    service = GraphNERService()
+
+    graph = service.build_graph_context(
+        [],
+        RetrievalQuery(
+            query="FHIR Observation HbA1c unit",
+            fields=["patient_id"],
+            resource_type="Observation",
+        ),
+    )
+    nodes_by_id = {node["id"]: node for node in graph["nodes"]}
+
+    assert nodes_by_id["standard:fhir"]["rule_source"] == "graph_ner_rules"
+    assert nodes_by_id["clinical_concept:hba1c_lab_test"]["normalized_code"] == "LOINC:4548-4"
+    assert nodes_by_id["fhir_search_parameter:observation:code"]["target_field"] == "Observation.code"
+    assert nodes_by_id["fhir_search_parameter:observation:value-quantity"]["search_type"] == "quantity"
+    assert any(
+        edge["source"] == "query:current"
+        and edge["relation"] == "mentions_entity"
+        and edge["target"] == "standard:fhir"
+        for edge in graph["edges"]
+    )
+    assert any(
+        edge["source"] == "resource:observation"
+        and edge["relation"] == "has_search_parameter"
+        and edge["target"] == "fhir_search_parameter:observation:code"
+        for edge in graph["edges"]
+    )
+    assert any(
+        edge["source"] == "fhir_search_parameter:observation:value-quantity"
+        and edge["relation"] == "uses_standard"
+        and edge["target"] == "standard:ucum"
+        for edge in graph["edges"]
+    )
+
+
+def test_graph_ner_entity_rules_are_data_driven(tmp_path, monkeypatch) -> None:
+    rules_path = tmp_path / "graph_ner_rules.json"
+    rules_path.write_text(
+        json.dumps(
+            {
+                "entity_rules": [
+                    {
+                        "entity_id": "clinical_concept:custom_marker",
+                        "label": "Custom marker",
+                        "type": "clinical_concept",
+                        "aliases": ["zeta marker"],
+                        "confidence": 0.77,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_GRAPH_NER_RULES_PATH", str(rules_path))
+
+    graph = GraphNERService().build_graph_context(
+        [
+            Evidence(
+                source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+                source_id="custom_source",
+                claim="The zeta marker appears in the source evidence.",
+                locator={},
+            )
+        ],
+        RetrievalQuery(query="zeta marker"),
+    )
+
+    nodes_by_id = {node["id"]: node for node in graph["nodes"]}
+    assert nodes_by_id["clinical_concept:custom_marker"]["confidence"] == 0.77
+    assert nodes_by_id["clinical_concept:custom_marker"]["matched_text"] == "zeta marker"
+    assert graph["summary"]["rule_source_count"] == 1
 
 
 def test_graph_ner_skips_normalization_for_unmapped_concepts() -> None:

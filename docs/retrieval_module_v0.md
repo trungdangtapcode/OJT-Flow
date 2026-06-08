@@ -928,24 +928,37 @@ Workflow output includes:
 `graph_context` uses contract `graph_ner_handoff.v0` and includes:
 
 - `nodes`: query, evidence, healthcare standard, clinical concept, standard
-  code, and data-field nodes. `clinical_concept` nodes whose label matches an
-  alias in `knowledge/terminologies/medical_concepts.json` (the same seed
-  registry deterministic query analysis uses, overridable with
-  `OJT_MEDICAL_CONCEPT_REGISTRY_PATH`) carry deterministic dictionary
-  normalization: `normalized_code` (e.g. `LOINC:4548-4`), `normalized_system`,
-  and `normalized_display`. The matching `standard_code` node carries
-  `standard_system` and `display_name`.
+  code, data-field, FHIR resource, and FHIR search-parameter nodes.
+  Standards, data fields, and fallback clinical concepts are recognized from
+  `knowledge/terminologies/graph_ner_rules.json`, overridable with
+  `OJT_GRAPH_NER_RULES_PATH`. Nodes include deterministic `confidence` and
+  `rule_source` metadata when available.
+- `clinical_concept` nodes whose label matches an alias in
+  `knowledge/terminologies/medical_concepts.json` (the same seed registry
+  deterministic query analysis uses, overridable with
+  `OJT_MEDICAL_CONCEPT_REGISTRY_PATH`) carry dictionary normalization:
+  `normalized_code` (e.g. `LOINC:4548-4`), `normalized_system`,
+  `normalized_display`, `clinical_domain`, and `concept_registry_id`. The
+  matching `standard_code` node carries `standard_system` and `display_name`.
+- FHIR resource nodes expand into search-parameter nodes from
+  `knowledge/terminologies/fhir_search_parameters.json`, overridable with
+  `OJT_FHIR_SEARCH_PARAMETERS_PATH`. These nodes expose `target_field`,
+  `search_type`, and example query syntax for downstream retrieval/MCP tools.
 - `edges`: auditable relationships such as `supports`, `mentions_field`,
-  `requests_resource`, and `normalizes_to` (clinical concept to its canonical
+  `mentions_entity`, `requests_resource`, `has_search_parameter`,
+  `uses_standard`, and `normalizes_to` (clinical concept to its canonical
   standard code).
 - `triples`: source/evidence triples, including `normalizes_to` triples that
   pair a recognized concept label with its canonical code (for example
   `HbA1c / normalizes_to / LOINC:4548-4`), for downstream Graph-NER/RAG
   handoff.
+- `summary`: node, edge, triple, Graph-NER rule, and concept-registry counts
+  so UIs and operators can tell whether a graph package is thin or well
+  grounded.
 
-Concept normalization is dictionary lookup against a seed registry, not a
-clinical coding decision; unmapped terms keep their plain `clinical_concept`
-node without a `normalizes_to` edge.
+Concept normalization is deterministic dictionary lookup against seed
+registries, not a clinical coding decision; unmapped terms keep their plain
+`clinical_concept` node without a `normalizes_to` edge.
 
 `retrieval_trace.safety_flags` is deterministic and auditable. Current flags are:
 

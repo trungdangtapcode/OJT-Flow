@@ -1370,6 +1370,16 @@ Response data is a `RetrievalPackage`:
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
 `prompt_injection_pattern_in_query` and `sensitive_field_context`.
+`handoff_context.graph_context` uses contract `graph_ner_handoff.v0`. It is a
+deterministic GraphRAG-lite handoff with query/evidence/standard/field/concept
+nodes, `supports`, `mentions_entity`, `requests_resource`,
+`has_search_parameter`, `uses_standard`, and `normalizes_to` edges, plus
+summary counts. Entity rules come from
+`knowledge/terminologies/graph_ner_rules.json`; medical concept-code
+normalization comes from `knowledge/terminologies/medical_concepts.json`; FHIR
+search-parameter expansion comes from
+`knowledge/terminologies/fhir_search_parameters.json`. This is retrieval
+grounding and audit metadata, not an autonomous clinical coding decision.
 `handoff_context.query_analysis` is auditable query-understanding metadata.
 It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
 such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
