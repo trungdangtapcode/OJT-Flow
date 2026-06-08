@@ -285,11 +285,19 @@ export type RetrievalGraphNode = {
   id: string;
   label: string;
   type: string;
+  confidence?: number;
+  matched_text?: string;
+  rule_source?: string;
+  clinical_domain?: string;
+  concept_registry_id?: string;
   normalized_code?: string;
   normalized_system?: string;
   normalized_display?: string;
   standard_system?: string;
   display_name?: string;
+  target_field?: string | null;
+  search_type?: string | null;
+  example?: string | null;
 };
 
 export type RetrievalGraphEdge = {
@@ -311,6 +319,13 @@ export type RetrievalGraphContext = {
   nodes: RetrievalGraphNode[];
   edges: RetrievalGraphEdge[];
   triples: RetrievalGraphTriple[];
+  summary?: {
+    node_count?: number;
+    edge_count?: number;
+    triple_count?: number;
+    rule_source_count?: number;
+    concept_registry_count?: number;
+  };
   limits?: Record<string, unknown>;
 };
 
