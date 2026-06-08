@@ -9,6 +9,12 @@ All `/api/v1` endpoints return the same envelope:
 }
 ```
 
+Clients should send `X-Request-ID` on every API request. If omitted, the
+backend generates one. Responses echo the ID in the `X-Request-ID` header.
+Error envelopes also include `error.request_id` and
+`error.details.request_id` so browser diagnostics can be matched to backend
+logs and assistant stream replay events.
+
 The operational liveness probe `GET /health` is intentionally outside
 `/api/v1` and returns raw JSON (`{"status":"ok"}`) for Docker, load balancers,
 and simple uptime checks.
@@ -40,6 +46,8 @@ Default persistence uses Postgres plus local file-backed artifacts:
 
 ```text
 OJT_STORAGE_BACKEND=postgres
+OJT_PRODUCT_MODE=local_dev
+OJT_NO_MOCK_DATA=false
 OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
 OJT_REDIS_URL=redis://localhost:6379/0
 OJT_DATA_DIR=var
@@ -81,6 +89,11 @@ OJT_RETRIEVAL_FRAMEWORK=custom
 OJT_RETRIEVAL_EVALUATION_POLICY_PATH=
 ```
 
+`OJT_PRODUCT_MODE` must be `local_dev`, `demo`, `pilot`, or `production`.
+`pilot` and `production` require persistent storage and reject
+`OJT_LLM_PROVIDER=disabled` during settings load. `OJT_NO_MOCK_DATA=true` blocks
+demo/mock data paths explicitly; it is also effectively enabled in `pilot` and
+`production`.
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
 are rejected during settings load before API services are constructed.
 `OJT_DATABASE_URL` must use `postgres://` or `postgresql://` syntax with a host,
@@ -126,7 +139,9 @@ Inline JSON/text payloads are capped by `OJT_MAX_INLINE_DATA_BYTES` for
 `POST /api/v1/workflows`, `POST /api/v1/convert`,
 `POST /api/v1/validate`, `POST /api/v1/fhir/profile`,
 `POST /api/v1/ocr/evidence`, `POST /api/v1/retrieval/search`, and
-`POST /api/v1/assistant/chat`.
+`POST /api/v1/assistant/chat`. Job creation routes accept bounded structured
+arguments and store large work inputs by reference rather than accepting raw
+bulk content.
 Multipart uploads are capped by
 `OJT_MAX_UPLOAD_BYTES`, read in `OJT_UPLOAD_READ_CHUNK_BYTES` chunks, and
 filtered by `OJT_ALLOWED_UPLOAD_EXTENSIONS`. Larger inline inputs should use the
@@ -772,6 +787,84 @@ Example response data:
 ]
 ```
 
+`GET /api/v1/assistant/sessions`
+
+Lists persisted Assistant chat sessions for the authenticated user. Query
+parameters:
+
+- `include_archived`: include archived sessions when `true`; default `false`.
+- `limit`: maximum sessions to return; default `100`.
+- `q`: optional search text. Searches session titles and persisted message
+  content for the authenticated user.
+
+`POST /api/v1/assistant/sessions`
+
+Creates a persisted Assistant chat session:
+
+```json
+{
+  "title": "Lab review"
+}
+```
+
+`GET /api/v1/assistant/sessions/{session_id}`
+
+Returns the user-owned session summary and ordered messages.
+
+`GET /api/v1/assistant/sessions/{session_id}/stream-replays`
+
+Returns persisted SSE replay artifacts for a user-owned session. Replay
+artifacts are stored separately from chat messages so support staff can inspect
+stream order, tool progress, planner deltas, errors, and final response without
+polluting the normal chat transcript or inflating message counts.
+
+`PATCH /api/v1/assistant/sessions/{session_id}`
+
+Renames a user-owned session:
+
+```json
+{
+  "title": "Reviewed lab CSV"
+}
+```
+
+`POST /api/v1/assistant/sessions/{session_id}/archive`
+
+Archives a user-owned session. Archived sessions are hidden from the default
+session list but can be returned with `include_archived=true`.
+
+`DELETE /api/v1/assistant/sessions/{session_id}`
+
+Deletes a user-owned session and its persisted messages.
+
+`POST /api/v1/assistant/sessions/{session_id}/messages`
+
+Appends a persisted message or tool artifact:
+
+```json
+{
+  "role": "assistant",
+  "content": "Two validation issues need review.",
+  "workflow_refs": ["wf_assistant_link"],
+  "payload": {
+    "finding_count": 2,
+    "response": {
+      "tool_calls": [
+        {"output": {"workflow_id": "wf_assistant_link"}}
+      ]
+    }
+  }
+}
+```
+
+Session and message records are stored through the configured backend: memory
+for tests, SQLite for local development, and Postgres for production-like
+deployments. Session access is owner-scoped by authenticated user ID. Messages
+include `workflow_refs` so the UI can deep-link chat turns to workflow runs.
+If `workflow_refs` is omitted, the backend extracts common workflow reference
+fields such as `workflow_id`, `workflow_ids`, `workflow_ref`, and
+`workflow_refs` from the structured payload.
+
 `POST /api/v1/assistant/chat`
 
 `POST /api/v1/assistant/chat/stream`
@@ -793,6 +886,7 @@ the HTTP status can no longer be changed.
 ```json
 {
   "message": "Validate this lab CSV and explain the issues with trusted evidence.",
+  "session_id": "chat_abc123",
   "context": {
     "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
     "input_format": "csv",
@@ -803,6 +897,10 @@ the HTTP status can no longer be changed.
   "execute_write_actions": false
 }
 ```
+
+When `session_id` is supplied, each SSE event is stamped with `stream_id`,
+`session_id`, `sequence`, and `created_at`. After the stream finishes or emits a
+structured error, the backend persists one replay artifact for that stream.
 
 The assistant is an operator convenience layer over existing backend tools. It
 does not replace workflow state, retrieval trace, validation reports, or human
@@ -930,6 +1028,7 @@ local filesystem paths.
 Response data includes:
 
 - `status`
+- `product_mode`
 - `storage_backend`
 - `persistent_storage`
 - `postgres_configured`
@@ -953,6 +1052,10 @@ Response data includes:
 - `llm.max_tool_calls`
 - `llm.runtime_settings_configured`
 - `llm.runtime_settings`
+- `policy.no_mock_data`
+- `policy.effective_no_mock_data`
+- `policy.requires_real_llm`
+- `policy.requires_persistent_storage`
 - `retrieval.framework`
 - `retrieval.corpus_dir_count`
 - `retrieval.chunk_max_chars`
@@ -1150,7 +1253,9 @@ Response:
 Returns sanitized readiness diagnostics for authenticated operators. This is
 separate from the public raw `GET /health` liveness probe: `/health` should stay
 cheap enough for Docker/load balancer checks, while readiness verifies that the
-backend can reach the workflow repository and load governance/retrieval assets.
+backend can reach the runtime spine: storage, migrations, auth/session cache,
+model provider configuration, MCP tool metadata, workflow repository, schemas,
+retrieval assets, background jobs, and sampled artifact references.
 The response must not expose DSNs, OAuth secrets, Redis URLs, ADC material,
 session tokens, or local filesystem paths.
 
@@ -1162,17 +1267,41 @@ Response data includes:
 Current checks:
 
 - `settings`
+- `postgres_migrations`
 - `artifact_directory`
+- `auth_configuration`
 - `session_cache`
+- `embedding_configuration`
+- `llm_configuration`
+- `mcp_tool_registry`
 - `retrieval_rule_packs`: data-driven retrieval policy/rule-pack availability.
 - `workflow_repository`
+- `background_job_repository`: owner-scoped job repository probe, runner mode,
+  queue-backed support flag, and supported job type inventory.
 - `schema_inventory`
 - `retrieval_inventory`: source inventory plus a bounded retrieval search probe.
+- `storage_consistency`: sampled workflow input/output artifact refs and hashes.
 
+`postgres_migrations` validates the source migration manifest for all backends.
+In Postgres mode it also compares the manifest with `ojtflow.schema_migrations`
+and reports pending versions, unknown applied versions, and checksum mismatches
+without exposing the DSN.
+The same data is available in the Settings page and through
+`GET /api/v1/runtime/migrations` for admin drill-down.
 In Postgres mode, `session_cache` verifies that Redis can be reached with a
 short ping. If Redis is missing or unavailable, readiness returns
 `status = "not_ready"` because process-local OAuth/session fallback is not
 multi-instance safe for Postgres deployments.
+`auth_configuration` reports whether Google OAuth is fully configured and
+whether hosted-domain restrictions and cookie settings are active. Partial OAuth
+configuration is an error because the login path cannot work with only one of
+client ID or client secret.
+`embedding_configuration` and `llm_configuration` verify that selected providers
+are internally consistent. Selecting OpenAI mode without an API key is an error;
+deterministic embeddings or disabled LLM mode are valid for local/dev mode and
+are reported explicitly.
+`mcp_tool_registry` checks that tool metadata has unique names and scoped
+allowed-agent metadata before those tools are exposed to MCP clients.
 For file artifacts, `artifact_directory` performs safe create/delete probes in
 the data, dataset, and output directories and returns only booleans and error
 types, never local filesystem paths.
@@ -1194,9 +1323,126 @@ If no trusted retrieval sources are loaded, readiness returns
 exist but the bounded probe returns no evidence, readiness returns
 `status = "degraded"` so operators can investigate retrieval quality without
 blocking all startup.
+For persistent storage, `storage_consistency` samples the authenticated user's
+visible workflows and checks local artifact references from workflow input,
+extracted dataset handoff context, step output refs, and transformation output
+refs. It also samples persisted dataset metadata rows and checks that dataset
+rows point to existing files, that workflow artifact refs have backing dataset
+rows, and that dataset/file hashes agree. When hashes are present it streams
+files and compares SHA-256 digests. The check returns counts and sanitized
+examples with workflow ID, dataset ID, label, and error type, never file paths
+or storage refs. Memory storage skips this check.
 If a readiness check fails, the check is marked `error` and exposes only a
 sanitized `error_type`; exception messages, DSNs, Redis URLs, and local paths are
 not returned.
+
+`GET /api/v1/runtime/migrations`
+
+Returns sanitized migration diagnostics for authenticated operators. For
+non-Postgres storage backends this validates the source manifest and returns
+`status = "not_required"`. For Postgres it compares the manifest with
+`ojtflow.schema_migrations`.
+
+Response data includes:
+
+- `status`: `ok`, `warning`, `error`, or `not_required`.
+- `required`: whether Postgres migration state is required for the active
+  storage backend.
+- `bootstrap_code`: one of the operator-facing classifications such as `ok`,
+  `not_required`, `pending_migrations`, `migration_history_conflict`,
+  `dependency_unavailable`, `missing_dsn`, `bad_dsn`, `auth_failed`,
+  `dns_failed`, `network_refused`, `network_timeout`, `missing_extension`, or
+  `duplicate_migration`.
+- `bootstrap_summary`: sanitized operator summary without DSNs or raw database
+  error text.
+- `manifest_count`, `applied_count`, `pending_count`,
+  `unknown_applied_count`, and `checksum_mismatch_count`.
+- `latest_available_version` and `latest_applied_version`.
+- `migrations[]`: version, name, checksum, status, `applied_at`,
+  nullable `duration_ms`, and nullable `failure_reason`.
+
+`duration_ms` is populated for migrations applied by the updated runner. Older
+rows may show `null` and should render as "not recorded". Failed migration
+attempts are reported as bootstrap diagnostics rather than inserted into the
+applied migration ledger.
+
+`GET /api/v1/runtime/storage-consistency`
+
+Returns a direct sanitized storage consistency report for authenticated
+operators. This is the drill-down view behind the `storage_consistency`
+readiness check.
+
+Query parameters:
+
+- `limit`: number of visible workflows to sample for the authenticated user,
+  from `1` to `500`; default is `100`.
+
+Response data includes:
+
+- `status`: `consistent` or `inconsistent`.
+- `report.required`: whether persistent file-backed storage is active.
+- `report.sampled_workflow_count`: number of workflow states inspected.
+- `report.artifact_ref_count`: number of workflow artifact refs extracted.
+- `report.dataset_record_count`: number of dataset metadata rows inspected.
+- `report.checked_hash_count`: number of refs with SHA-256 hashes checked.
+- `report.checked_dataset_file_count`: number of dataset row files hashed.
+- `report.missing_count`: missing, unsupported, or out-of-root artifact refs.
+- `report.missing_dataset_file_count`: dataset rows whose file ref is missing,
+  unsupported, or outside the configured artifact roots.
+- `report.missing_dataset_record_count`: workflow artifact refs without a
+  sampled dataset metadata row.
+- `report.hash_mismatch_count`: artifacts whose content hash differs from
+  workflow state.
+- `report.dataset_hash_mismatch_count`: dataset row files whose content hash
+  differs from the dataset metadata row.
+- `report.unreferenced_dataset_record_count`: dataset metadata rows not
+  referenced by the sampled workflows. This is an orphan candidate count, not an
+  automatic delete instruction.
+- `report.examples[]`: sanitized workflow ID, dataset ID, label, and error type
+  only.
+
+The endpoint does not return file paths, storage refs, DSNs, secrets, or raw
+artifact content. Memory storage returns `required = false`.
+
+`GET /api/v1/runtime/storage-repair-plan`
+
+Returns a sanitized, non-destructive repair plan derived from the same workflow
+and dataset sample as the storage consistency report.
+
+Query parameters:
+
+- `limit`: number of visible workflows to sample, from `1` to `500`; default
+  is `100`.
+- `max_candidates`: number of repair candidates to return, from `1` to `500`;
+  default is `100`.
+
+Response data includes:
+
+- `status`: `not_required`, `no_action_needed`, or `review_required`.
+- `plan.required`: whether file-backed persistent storage is active.
+- `plan.dry_run`: always `true`; the plan endpoint does not mutate anything.
+- `plan.mutation_applied`: always `false`.
+- `plan.scanned_file_count`: number of files scanned in configured dataset and
+  output artifact directories.
+- `plan.total_candidate_count` and `plan.returned_candidate_count`.
+- `plan.candidates[]`: sanitized candidate ID, kind, severity, recommended
+  action, workflow ID, dataset ID, artifact-ref hash, and bounded evidence.
+
+Candidate kinds include `missing_artifact_ref`, `missing_dataset_record`,
+`missing_dataset_file`, `hash_mismatch`, `dataset_hash_mismatch`,
+`orphaned_dataset_record`, and `orphaned_file_artifact`.
+
+`POST /api/v1/runtime/storage-repair-markers`
+
+Builds the current repair plan and writes a sanitized marker artifact under the
+runtime data directory when candidates exist. This is the first repair command:
+it marks orphaned rows/files for operator review without deleting files or
+mutating workflow/dataset rows.
+
+Response `status` is `not_required`, `no_action_needed`, or `marked`. When
+marked, response data includes a `marker` with `marker_id`, `marked_at`,
+`candidate_count`, `candidate_ids`, `marker_ref_hash`, and `destructive=false`.
+The response still does not expose local paths or raw storage refs.
 
 Example:
 
@@ -1776,6 +2022,73 @@ snapshots should be ingested into ignored runtime/object storage and then
 distilled into reviewed knowledge chunks. They should not be committed directly
 to source control. Corpus content comes from trusted runtime directories
 configured by operators.
+
+## Job Operations
+
+Background jobs are durable, owner-scoped operational records for work that may
+be moved to a queue-backed worker later. v0 includes a sync local runner so the
+same job contract is available before worker execution is introduced.
+
+`GET /api/v1/jobs`
+
+Optional query parameters:
+
+- `status`: `queued`, `running`, `succeeded`, `failed`, or `cancelled`.
+- `job_type`: `retrieval_reindex`, `file_parse`, `ocr_extract`,
+  `embedding_reindex`, `external_ingest`, or `export_package`.
+- `limit`: `1` to `500`, default `100`.
+
+Response data is an owner-scoped list of `BackgroundJob` objects with
+`job_id`, `job_type`, `status`, `input`, `output`, structured `error`,
+`progress`, attempts, and timestamps.
+
+`GET /api/v1/jobs/{job_id}`
+
+Returns one owner-scoped `BackgroundJob` or a structured not-found error.
+
+`POST /api/v1/jobs/retrieval-reindex`
+
+Creates a durable retrieval reindex job. The default `execute_now=true` runs the
+job through the sync local runner and records the output or structured failure
+on the job row. The job `input` includes the originating `request_id` from the
+API middleware so operations staff can connect the job record to frontend
+diagnostics and backend logs.
+
+```json
+{
+  "include_seeded": true,
+  "include_corpus": true,
+  "execute_now": true
+}
+```
+
+Example response:
+
+```json
+{
+  "data": {
+    "job_id": "job_abc123",
+    "owner_user_id": "user_123",
+    "job_type": "retrieval_reindex",
+    "status": "succeeded",
+    "input": {
+      "include_seeded": true,
+      "include_corpus": true,
+      "request_id": "web_123"
+    },
+    "output": {"repository": "postgres_fts_vector_rrf", "chunks_indexed": 42},
+    "error": null,
+    "progress": {"current": 1, "total": 1, "message": "Completed"},
+    "attempts": 1,
+    "max_attempts": 1,
+    "created_at": "2026-06-11T00:00:00+00:00",
+    "updated_at": "2026-06-11T00:00:01+00:00",
+    "started_at": "2026-06-11T00:00:00+00:00",
+    "completed_at": "2026-06-11T00:00:01+00:00"
+  },
+  "error": null
+}
+```
 
 ## Upload Workflow
 

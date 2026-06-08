@@ -51,9 +51,12 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
   storage, OpenAI semantic embeddings, deterministic test embeddings, and static fallback.
 - FastAPI routes for workflows, review, assistant chat, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
 - Optional OpenAI Responses planner for assistant tool selection, with deterministic fallback.
+- Persisted Assistant chat sessions/messages for memory, SQLite, and Postgres storage, with frontend session history, stream replay payloads, and workflow refs.
 - Local MCP server wrappers for retrieval, validation, conversion, FHIR profiling, workflow reads, review reads, and gated workflow creation.
-- Authenticated runtime diagnostics for sanitized configuration and readiness
-  checks.
+- Authenticated runtime diagnostics for sanitized configuration, readiness checks,
+  migration ledger status, and bootstrap failure classification.
+- Durable owner-scoped background jobs for operational work such as retrieval
+  reindexing, with a sync local runner and a queue-ready contract.
 - React product console for assistant commands, workflow intake, review, schema, audit, and settings surfaces.
 - React retrieval console for direct evidence search, source inventory, and corpus reindexing.
 
@@ -140,6 +143,8 @@ check passes.
 The default backend storage is Postgres plus local file artifacts:
 
 - `OJT_STORAGE_BACKEND=postgres`
+- `OJT_PRODUCT_MODE=local_dev`
+- `OJT_NO_MOCK_DATA=false`
 - `OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
 - `OJT_REDIS_URL=redis://localhost:6379/0`
 - `OJT_GOOGLE_CLIENT_ID=`
@@ -186,6 +191,11 @@ The default backend storage is Postgres plus local file artifacts:
 `OJT_STORAGE_BACKEND` must be one of `postgres`, `sqlite`, or `memory`.
 Postgres is the production-like default. SQLite is a local single-file fallback.
 Memory storage is for tests and short-lived demos only.
+`OJT_PRODUCT_MODE` must be `local_dev`, `demo`, `pilot`, or `production`.
+Pilot and production modes require persistent storage and a real Assistant LLM
+provider; `OJT_LLM_PROVIDER=disabled` and memory storage are rejected during
+settings load. `OJT_NO_MOCK_DATA=true` explicitly blocks demo/mock data paths,
+and it is effectively enabled in pilot and production modes.
 `OJT_DATABASE_URL` must use `postgres://` or `postgresql://` syntax with a host,
 optional numeric port, and database name.
 `OJT_REDIS_URL` may be blank only to mark Redis as not configured; otherwise it
@@ -325,8 +335,13 @@ Upload parsing routes:
 - `GET /api/v1/auth/google/url`
 - `GET /api/v1/auth/google/callback`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/assistant/sessions/{session_id}/stream-replays`
 - `GET /api/v1/runtime/config`
 - `GET /api/v1/runtime/readiness`
+- `GET /api/v1/runtime/migrations`
+- `GET /api/v1/runtime/storage-consistency`
+- `GET /api/v1/runtime/storage-repair-plan`
+- `POST /api/v1/runtime/storage-repair-markers`
 - `PUT /api/v1/runtime/retrieval-settings`
 - `POST /api/v1/auth/logout`
 
@@ -445,6 +460,7 @@ Useful routes:
 - `POST /api/v1/workflows`
 - `GET /api/v1/workflows/{workflow_id}`
 - `GET /api/v1/workflows/{workflow_id}/events`
+- `GET /api/v1/assistant/sessions/{session_id}/stream-replays`
 - `GET /api/v1/reviews`
 - `GET /api/v1/schemas`
 - `POST /api/v1/review/{review_id}`
@@ -452,9 +468,15 @@ Useful routes:
 - `POST /api/v1/validate`
 - `POST /api/v1/fhir/profile`
 - `POST /api/v1/ocr/evidence`
+- `GET /api/v1/runtime/storage-consistency`
+- `GET /api/v1/runtime/storage-repair-plan`
+- `POST /api/v1/runtime/storage-repair-markers`
 - `POST /api/v1/retrieval/search`
 - `POST /api/v1/retrieval/reindex`
 - `GET /api/v1/retrieval/sources`
+- `GET /api/v1/jobs`
+- `GET /api/v1/jobs/{job_id}`
+- `POST /api/v1/jobs/retrieval-reindex`
 - `POST /api/v1/parse/extract`
 - `POST /api/v1/parse/upload/workflow`
 - `GET /api/v1/parse/extractors`

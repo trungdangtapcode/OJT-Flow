@@ -64,6 +64,36 @@ runtime defaults: the Assistant form starts empty, and selecting an example
 only fills the message/context fields for the user to edit before execution.
 Do not bury demo payloads in React state or backend control flow.
 
+`GET /api/v1/assistant/sessions`
+
+`POST /api/v1/assistant/sessions`
+
+`GET /api/v1/assistant/sessions/{session_id}`
+
+`PATCH /api/v1/assistant/sessions/{session_id}`
+
+`POST /api/v1/assistant/sessions/{session_id}/archive`
+
+`DELETE /api/v1/assistant/sessions/{session_id}`
+
+`POST /api/v1/assistant/sessions/{session_id}/messages`
+
+Assistant sessions are persisted through the same storage backend as workflows:
+memory for tests, SQLite for local single-file development, and Postgres for
+production-like Docker/runtime deployments. Sessions are scoped by authenticated
+user ID. A session stores title, archive state, message count, timestamps, and
+ordered messages. Messages store role (`user`, `assistant`, `system`, or
+`tool`), content, explicit `workflow_refs`, and a structured payload for tool
+calls, stream events, context snapshots, or final assistant responses. The
+service also extracts common workflow reference fields from nested payloads as a
+fallback, so tool outputs that include `workflow_id` become linkable in chat
+history. The API returns sanitized session/message contracts only; it does not
+expose session tokens or auth material.
+
+Session listing accepts `q` to search session titles and persisted message
+content server-side within the authenticated user's boundary. The browser
+sidebar uses this query instead of relying on browser-only history.
+
 `POST /api/v1/assistant/chat`
 
 `POST /api/v1/assistant/chat/stream`
@@ -190,8 +220,7 @@ runtime.
 
 ## Extension Path
 
-1. Add conversation persistence keyed by user/session.
-2. Add a second LLM synthesis step over tool outputs with citation constraints.
-3. Add tool-call audit events for assistant and MCP invocations.
-4. Add remote MCP authorization and per-user owner scoping.
-5. Add eval fixtures for natural-language commands and tool selection quality.
+1. Add retention settings and admin export for persisted sessions.
+2. Add tool-call audit events for assistant and MCP invocations.
+3. Add remote MCP authorization and per-user owner scoping.
+4. Add eval fixtures for natural-language commands and tool selection quality.
