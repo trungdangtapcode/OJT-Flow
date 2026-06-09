@@ -6,8 +6,16 @@ import json
 import sqlite3
 from pathlib import Path
 
+from ojtflow.core.contracts.assistant import (
+    AssistantChatMessage,
+    AssistantChatSessionDetail,
+    AssistantChatSessionSummary,
+    AssistantMessageRole,
+    AssistantStreamReplay,
+)
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalRelevanceJudgment,
     RetrievalRelevanceJudgmentWrite,
@@ -112,6 +120,89 @@ class SQLiteBackboneStore:
 
                 create index if not exists idx_retrieval_judgments_owner_query
                     on retrieval_relevance_judgments(owner_user_id, query_hash, updated_at desc);
+
+                create table if not exists assistant_chat_sessions (
+                    session_id text primary key,
+                    owner_user_id text not null,
+                    title text not null,
+                    message_count integer not null default 0,
+                    archived_at text,
+                    created_at text not null,
+                    updated_at text not null
+                );
+
+                create index if not exists idx_assistant_sessions_owner_updated
+                    on assistant_chat_sessions(owner_user_id, updated_at desc);
+
+                create index if not exists idx_assistant_sessions_owner_archived
+                    on assistant_chat_sessions(owner_user_id, archived_at, updated_at desc);
+
+                create table if not exists assistant_chat_messages (
+                    message_id text primary key,
+                    session_id text not null references assistant_chat_sessions(session_id)
+                        on delete cascade,
+                    owner_user_id text not null,
+                    role text not null,
+                    content text not null,
+                    workflow_refs_json text not null default '[]',
+                    payload_json text not null,
+                    created_at text not null,
+                    check (role in ('user', 'assistant', 'system', 'tool'))
+                );
+
+                create index if not exists idx_assistant_messages_session_created
+                    on assistant_chat_messages(session_id, created_at, message_id);
+
+                create table if not exists assistant_stream_replays (
+                    stream_id text primary key,
+                    session_id text not null references assistant_chat_sessions(session_id)
+                        on delete cascade,
+                    owner_user_id text not null,
+                    status text not null,
+                    events_json text not null,
+                    created_at text not null,
+                    completed_at text not null,
+                    check (status in ('completed', 'failed'))
+                );
+
+                create index if not exists idx_assistant_stream_replays_session_created
+                    on assistant_stream_replays(session_id, created_at, stream_id);
+
+                create table if not exists background_jobs (
+                    job_id text primary key,
+                    owner_user_id text not null,
+                    job_type text not null,
+                    status text not null,
+                    input_json text not null,
+                    output_json text not null,
+                    error_json text,
+                    progress_json text not null,
+                    attempts integer not null,
+                    max_attempts integer not null,
+                    created_at text not null,
+                    updated_at text not null,
+                    started_at text,
+                    completed_at text,
+                    check (
+                        job_type in (
+                            'retrieval_reindex',
+                            'file_parse',
+                            'ocr_extract',
+                            'embedding_reindex',
+                            'external_ingest',
+                            'export_package'
+                        )
+                    ),
+                    check (status in ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+                    check (attempts >= 0),
+                    check (max_attempts >= 1)
+                );
+
+                create index if not exists idx_background_jobs_owner_updated
+                    on background_jobs(owner_user_id, updated_at desc);
+
+                create index if not exists idx_background_jobs_owner_status
+                    on background_jobs(owner_user_id, status, updated_at desc);
                 """
             )
             columns = {
@@ -120,6 +211,19 @@ class SQLiteBackboneStore:
             }
             if "owner_user_id" not in columns:
                 connection.execute("alter table workflows add column owner_user_id text")
+            message_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "pragma table_info(assistant_chat_messages)"
+                ).fetchall()
+            }
+            if "workflow_refs_json" not in message_columns:
+                connection.execute(
+                    """
+                    alter table assistant_chat_messages
+                    add column workflow_refs_json text not null default '[]'
+                    """
+                )
             connection.execute(
                 """
                 create index if not exists idx_workflows_owner_updated
@@ -232,6 +336,20 @@ class SQLiteDatasetStore:
             [self.backbone.datasets_dir, self.backbone.outputs_dir],
         )
         return path.read_text(encoding="utf-8")
+
+    def list_records(self, limit: int = 1000) -> list[DatasetRecord]:
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                """
+                select dataset_id, workflow_id, source_kind, declared_format,
+                       detected_format, byte_size, sha256, storage_ref
+                from datasets
+                order by created_at desc, dataset_id desc
+                limit ?
+                """,
+                (max(0, min(limit, 10_000)),),
+            ).fetchall()
+        return [_sqlite_dataset_record_from_row(row) for row in rows]
 
 
 class SQLiteWorkflowRepository:
@@ -509,6 +627,428 @@ class SQLiteRetrievalJudgmentRepository:
             raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
 
 
+class SQLiteAssistantSessionRepository:
+    """SQLite-backed user Assistant chat sessions."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def create_session(self, *, owner_user_id: str, title: str) -> AssistantChatSessionSummary:
+        now = utc_now().isoformat()
+        session = AssistantChatSessionSummary(
+            owner_user_id=owner_user_id,
+            title=title,
+            message_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into assistant_chat_sessions (
+                    session_id, owner_user_id, title, message_count,
+                    archived_at, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session.session_id,
+                    session.owner_user_id,
+                    session.title,
+                    session.message_count,
+                    session.archived_at,
+                    session.created_at,
+                    session.updated_at,
+                ),
+            )
+        return session
+
+    def list_sessions(
+        self,
+        *,
+        owner_user_id: str,
+        include_archived: bool = False,
+        limit: int = 100,
+        q: str | None = None,
+    ) -> list[AssistantChatSessionSummary]:
+        clauses = ["owner_user_id = ?"]
+        params: list[object] = [owner_user_id]
+        if not include_archived:
+            clauses.append("archived_at is null")
+        if q:
+            pattern = _sqlite_like_pattern(q)
+            clauses.append(
+                """
+                (
+                    title like ? escape '\\'
+                    or exists (
+                        select 1 from assistant_chat_messages message
+                        where message.session_id = assistant_chat_sessions.session_id
+                          and message.owner_user_id = assistant_chat_sessions.owner_user_id
+                          and message.content like ? escape '\\'
+                    )
+                )
+                """
+            )
+            params.extend([pattern, pattern])
+        params.append(max(1, min(limit, 500)))
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                f"""
+                select * from assistant_chat_sessions
+                where {' and '.join(clauses)}
+                order by updated_at desc, session_id asc
+                limit ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [_sqlite_assistant_session_from_row(row) for row in rows]
+
+    def get_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionDetail:
+        with self.backbone.connect() as connection:
+            session_row = connection.execute(
+                """
+                select * from assistant_chat_sessions
+                where owner_user_id = ? and session_id = ?
+                """,
+                (owner_user_id, session_id),
+            ).fetchone()
+            if not session_row:
+                raise NotFoundError(f"Assistant chat session not found: {session_id}")
+            message_rows = connection.execute(
+                """
+                select * from assistant_chat_messages
+                where owner_user_id = ? and session_id = ?
+                order by created_at, message_id
+                """,
+                (owner_user_id, session_id),
+            ).fetchall()
+        return AssistantChatSessionDetail(
+            session=_sqlite_assistant_session_from_row(session_row),
+            messages=[_sqlite_assistant_message_from_row(row) for row in message_rows],
+        )
+
+    def rename_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        title: str,
+    ) -> AssistantChatSessionSummary:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            cursor = connection.execute(
+                """
+                update assistant_chat_sessions
+                set title = ?, updated_at = ?
+                where owner_user_id = ? and session_id = ?
+                """,
+                (title, now, owner_user_id, session_id),
+            )
+            if cursor.rowcount == 0:
+                raise NotFoundError(f"Assistant chat session not found: {session_id}")
+        return self.get_session(owner_user_id=owner_user_id, session_id=session_id).session
+
+    def archive_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionSummary:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            cursor = connection.execute(
+                """
+                update assistant_chat_sessions
+                set archived_at = coalesce(archived_at, ?), updated_at = ?
+                where owner_user_id = ? and session_id = ?
+                """,
+                (now, now, owner_user_id, session_id),
+            )
+            if cursor.rowcount == 0:
+                raise NotFoundError(f"Assistant chat session not found: {session_id}")
+        return self.get_session(owner_user_id=owner_user_id, session_id=session_id).session
+
+    def delete_session(self, *, owner_user_id: str, session_id: str) -> None:
+        with self.backbone.connect() as connection:
+            cursor = connection.execute(
+                """
+                delete from assistant_chat_sessions
+                where owner_user_id = ? and session_id = ?
+                """,
+                (owner_user_id, session_id),
+            )
+        if cursor.rowcount == 0:
+            raise NotFoundError(f"Assistant chat session not found: {session_id}")
+
+    def append_message(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        role: AssistantMessageRole,
+        content: str,
+        payload: dict | None = None,
+        workflow_refs: list[str] | None = None,
+    ) -> AssistantChatMessage:
+        now = utc_now().isoformat()
+        message = AssistantChatMessage(
+            session_id=session_id,
+            owner_user_id=owner_user_id,
+            role=role,
+            content=content,
+            workflow_refs=workflow_refs or [],
+            payload=payload or {},
+            created_at=now,
+        )
+        with self.backbone.connect() as connection:
+            session_row = connection.execute(
+                """
+                select session_id from assistant_chat_sessions
+                where owner_user_id = ? and session_id = ?
+                """,
+                (owner_user_id, session_id),
+            ).fetchone()
+            if not session_row:
+                raise NotFoundError(f"Assistant chat session not found: {session_id}")
+            connection.execute(
+                """
+                insert into assistant_chat_messages (
+                    message_id, session_id, owner_user_id, role,
+                    content, workflow_refs_json, payload_json, created_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message.message_id,
+                    message.session_id,
+                    message.owner_user_id,
+                    message.role,
+                    message.content,
+                    _json_dump(message.workflow_refs),
+                    _json_dump(message.payload),
+                    message.created_at,
+                ),
+            )
+            connection.execute(
+                """
+                update assistant_chat_sessions
+                set message_count = message_count + 1, updated_at = ?
+                where owner_user_id = ? and session_id = ?
+                """,
+                (now, owner_user_id, session_id),
+            )
+        return message
+
+    def append_stream_replay(self, *, replay: AssistantStreamReplay) -> AssistantStreamReplay:
+        with self.backbone.connect() as connection:
+            session_row = connection.execute(
+                """
+                select session_id from assistant_chat_sessions
+                where owner_user_id = ? and session_id = ?
+                """,
+                (replay.owner_user_id, replay.session_id),
+            ).fetchone()
+            if not session_row:
+                raise NotFoundError(
+                    f"Assistant chat session not found: {replay.session_id}"
+                )
+            connection.execute(
+                """
+                insert into assistant_stream_replays (
+                    stream_id, session_id, owner_user_id, status,
+                    events_json, created_at, completed_at
+                ) values (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    replay.stream_id,
+                    replay.session_id,
+                    replay.owner_user_id,
+                    replay.status,
+                    json.dumps(replay.events, separators=(",", ":"), sort_keys=True),
+                    replay.created_at,
+                    replay.completed_at,
+                ),
+            )
+        return replay
+
+    def list_stream_replays(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> list[AssistantStreamReplay]:
+        with self.backbone.connect() as connection:
+            session_row = connection.execute(
+                """
+                select session_id from assistant_chat_sessions
+                where owner_user_id = ? and session_id = ?
+                """,
+                (owner_user_id, session_id),
+            ).fetchone()
+            if not session_row:
+                raise NotFoundError(f"Assistant chat session not found: {session_id}")
+            rows = connection.execute(
+                """
+                select * from assistant_stream_replays
+                where owner_user_id = ? and session_id = ?
+                order by created_at, stream_id
+                """,
+                (owner_user_id, session_id),
+            ).fetchall()
+        return [_sqlite_assistant_stream_replay_from_row(row) for row in rows]
+
+
+class SQLiteBackgroundJobRepository:
+    """SQLite-backed background job state."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        job_type: JobType,
+        input: dict,
+        max_attempts: int = 1,
+    ) -> BackgroundJob:
+        now = utc_now().isoformat()
+        job = BackgroundJob(
+            owner_user_id=owner_user_id,
+            job_type=job_type,
+            input=input,
+            max_attempts=max_attempts,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into background_jobs (
+                    job_id, owner_user_id, job_type, status, input_json,
+                    output_json, error_json, progress_json, attempts, max_attempts,
+                    created_at, updated_at, started_at, completed_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                _sqlite_job_values(job),
+            )
+        return job
+
+    def get(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        with self.backbone.connect() as connection:
+            row = connection.execute(
+                """
+                select * from background_jobs
+                where owner_user_id = ? and job_id = ?
+                """,
+                (owner_user_id, job_id),
+            ).fetchone()
+        if not row:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return _sqlite_background_job_from_row(row)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: str | None = None,
+        job_type: str | None = None,
+        limit: int = 100,
+    ) -> list[BackgroundJob]:
+        clauses = ["owner_user_id = ?"]
+        params: list[object] = [owner_user_id]
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if job_type:
+            clauses.append("job_type = ?")
+            params.append(job_type)
+        params.append(max(1, min(limit, 500)))
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                f"""
+                select * from background_jobs
+                where {' and '.join(clauses)}
+                order by updated_at desc, job_id desc
+                limit ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [_sqlite_background_job_from_row(row) for row in rows]
+
+    def mark_running(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        job = self.get(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "running"
+        job.attempts += 1
+        job.started_at = job.started_at or now
+        job.updated_at = now
+        return self._replace(job)
+
+    def mark_succeeded(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        output: dict,
+    ) -> BackgroundJob:
+        job = self.get(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "succeeded"
+        job.output = output
+        job.error = None
+        job.progress.current = job.progress.total or 1
+        job.progress.total = job.progress.total or 1
+        job.progress.message = "Completed."
+        job.completed_at = now
+        job.updated_at = now
+        return self._replace(job)
+
+    def mark_failed(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob:
+        job = self.get(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "failed"
+        job.error = error
+        job.progress.message = error.message
+        job.completed_at = now
+        job.updated_at = now
+        return self._replace(job)
+
+    def _replace(self, job: BackgroundJob) -> BackgroundJob:
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                update background_jobs
+                set status = ?, output_json = ?, error_json = ?, progress_json = ?,
+                    attempts = ?, updated_at = ?, started_at = ?, completed_at = ?
+                where owner_user_id = ? and job_id = ?
+                """,
+                (
+                    job.status,
+                    _json_dump(job.output),
+                    job.error.model_dump_json() if job.error else None,
+                    job.progress.model_dump_json(),
+                    job.attempts,
+                    job.updated_at,
+                    job.started_at,
+                    job.completed_at,
+                    job.owner_user_id,
+                    job.job_id,
+                ),
+            )
+        return job
+
+
 def _sqlite_judgment_from_row(row) -> RetrievalRelevanceJudgment:
     return RetrievalRelevanceJudgment(
         judgment_id=row["judgment_id"],
@@ -529,6 +1069,97 @@ def _sqlite_judgment_from_row(row) -> RetrievalRelevanceJudgment:
     )
 
 
+def _sqlite_dataset_record_from_row(row) -> DatasetRecord:
+    return DatasetRecord(
+        dataset_id=row["dataset_id"],
+        workflow_id=row["workflow_id"],
+        source_kind=row["source_kind"],
+        declared_format=row["declared_format"],
+        detected_format=row["detected_format"],
+        byte_size=int(row["byte_size"]),
+        sha256=row["sha256"],
+        storage_ref=row["storage_ref"],
+    )
+
+
+def _sqlite_job_values(job: BackgroundJob) -> tuple[object, ...]:
+    return (
+        job.job_id,
+        job.owner_user_id,
+        job.job_type,
+        job.status,
+        _json_dump(job.input),
+        _json_dump(job.output),
+        job.error.model_dump_json() if job.error else None,
+        job.progress.model_dump_json(),
+        job.attempts,
+        job.max_attempts,
+        job.created_at,
+        job.updated_at,
+        job.started_at,
+        job.completed_at,
+    )
+
+
+def _sqlite_background_job_from_row(row) -> BackgroundJob:
+    return BackgroundJob(
+        job_id=row["job_id"],
+        owner_user_id=row["owner_user_id"],
+        job_type=row["job_type"],
+        status=row["status"],
+        input=_json_load(row["input_json"]),
+        output=_json_load(row["output_json"]),
+        error=JobError.model_validate_json(row["error_json"]) if row["error_json"] else None,
+        progress=_job_progress_from_json(row["progress_json"]),
+        attempts=int(row["attempts"]),
+        max_attempts=int(row["max_attempts"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        started_at=row["started_at"],
+        completed_at=row["completed_at"],
+    )
+
+
+def _sqlite_assistant_session_from_row(row) -> AssistantChatSessionSummary:
+    return AssistantChatSessionSummary(
+        session_id=row["session_id"],
+        owner_user_id=row["owner_user_id"],
+        title=row["title"],
+        message_count=int(row["message_count"]),
+        archived_at=row["archived_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _sqlite_assistant_message_from_row(row) -> AssistantChatMessage:
+    return AssistantChatMessage(
+        message_id=row["message_id"],
+        session_id=row["session_id"],
+        owner_user_id=row["owner_user_id"],
+        role=row["role"],
+        content=row["content"],
+        workflow_refs=_json_load_list(
+            row["workflow_refs_json"] if "workflow_refs_json" in row.keys() else None
+        ),
+        payload=_json_load(row["payload_json"]),
+        created_at=row["created_at"],
+    )
+
+
+def _sqlite_assistant_stream_replay_from_row(row) -> AssistantStreamReplay:
+    events = json.loads(row["events_json"]) if row["events_json"] else []
+    return AssistantStreamReplay(
+        stream_id=row["stream_id"],
+        session_id=row["session_id"],
+        owner_user_id=row["owner_user_id"],
+        status=row["status"],
+        events=events if isinstance(events, list) else [],
+        created_at=row["created_at"],
+        completed_at=row["completed_at"],
+    )
+
+
 def _json_dump(value: object) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
 
@@ -538,3 +1169,21 @@ def _json_load(value: str | None) -> dict:
         return {}
     loaded = json.loads(value)
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _json_load_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    loaded = json.loads(value)
+    if not isinstance(loaded, list):
+        return []
+    return [item for item in loaded if isinstance(item, str)]
+
+
+def _job_progress_from_json(value: str):
+    return JobProgress.model_validate_json(value)
+
+
+def _sqlite_like_pattern(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

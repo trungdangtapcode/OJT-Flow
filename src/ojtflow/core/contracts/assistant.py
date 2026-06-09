@@ -7,10 +7,13 @@ from typing import Any, Literal
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
+from ojtflow.core.ids import new_id
+from ojtflow.core.time import utc_now
 
 
 AssistantToolStatus = Literal["completed", "failed", "requires_approval", "skipped"]
 AssistantFindingSeverity = Literal["info", "warning", "error", "action_required"]
+AssistantMessageRole = Literal["user", "assistant", "system", "tool"]
 
 
 class AssistantToolSpec(ContractModel):
@@ -79,6 +82,50 @@ class AssistantExample(ContractModel):
     description: NonBlankStr
     message: NonBlankStr
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssistantChatSessionSummary(ContractModel):
+    """Persisted Assistant chat session summary."""
+
+    session_id: str = Field(default_factory=lambda: new_id("chat"))
+    owner_user_id: str
+    title: str
+    message_count: int = 0
+    archived_at: str | None = None
+    created_at: str = Field(default_factory=lambda: utc_now().isoformat())
+    updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
+
+
+class AssistantChatMessage(ContractModel):
+    """Persisted Assistant chat message or tool artifact."""
+
+    message_id: str = Field(default_factory=lambda: new_id("msg"))
+    session_id: str
+    owner_user_id: str
+    role: AssistantMessageRole
+    content: str = ""
+    workflow_refs: list[str] = Field(default_factory=list)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=lambda: utc_now().isoformat())
+
+
+class AssistantStreamReplay(ContractModel):
+    """Persisted SSE timeline for replay/debugging."""
+
+    stream_id: str
+    session_id: str
+    owner_user_id: str
+    status: Literal["completed", "failed"]
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: str
+    completed_at: str
+
+
+class AssistantChatSessionDetail(ContractModel):
+    """Persisted Assistant session with ordered messages."""
+
+    session: AssistantChatSessionSummary
+    messages: list[AssistantChatMessage] = Field(default_factory=list)
 
 
 class AssistantResponse(ContractModel):

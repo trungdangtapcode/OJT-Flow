@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from ojtflow.core.contracts.assistant import (
+    AssistantChatMessage,
+    AssistantChatSessionDetail,
+    AssistantChatSessionSummary,
+    AssistantMessageRole,
+    AssistantStreamReplay,
+)
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalRelevanceJudgment,
     RetrievalRelevanceJudgmentWrite,
@@ -84,6 +92,10 @@ class InMemoryDatasetStore:
             return self._text_by_ref[storage_ref]
         except KeyError as exc:
             raise NotFoundError(f"Dataset not found: {storage_ref}") from exc
+
+    def list_records(self, limit: int = 1000) -> list[DatasetRecord]:
+        records = list(self._records.values())
+        return [deepcopy(record) for record in records[: max(0, limit)]]
 
 
 class InMemoryWorkflowRepository:
@@ -229,3 +241,245 @@ class InMemoryRetrievalJudgmentRepository:
         if not judgment or judgment.owner_user_id != owner_user_id:
             raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
         del self._judgments[judgment_id]
+
+
+class InMemoryAssistantSessionRepository:
+    """User-scoped in-memory Assistant chat sessions."""
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, AssistantChatSessionSummary] = {}
+        self._messages: dict[str, list[AssistantChatMessage]] = {}
+        self._stream_replays: dict[str, list[AssistantStreamReplay]] = {}
+
+    def create_session(self, *, owner_user_id: str, title: str) -> AssistantChatSessionSummary:
+        now = utc_now().isoformat()
+        session = AssistantChatSessionSummary(
+            owner_user_id=owner_user_id,
+            title=title,
+            message_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        self._sessions[session.session_id] = deepcopy(session)
+        self._messages[session.session_id] = []
+        self._stream_replays[session.session_id] = []
+        return deepcopy(session)
+
+    def list_sessions(
+        self,
+        *,
+        owner_user_id: str,
+        include_archived: bool = False,
+        limit: int = 100,
+        q: str | None = None,
+    ) -> list[AssistantChatSessionSummary]:
+        sessions = [
+            session
+            for session in self._sessions.values()
+            if session.owner_user_id == owner_user_id
+            and (include_archived or session.archived_at is None)
+        ]
+        if q:
+            needle = q.casefold()
+            sessions = [
+                session
+                for session in sessions
+                if needle in session.title.casefold()
+                or any(
+                    needle in message.content.casefold()
+                    for message in self._messages.get(session.session_id, [])
+                )
+            ]
+        sessions.sort(key=lambda session: session.updated_at, reverse=True)
+        return [deepcopy(session) for session in sessions[: max(1, min(limit, 500))]]
+
+    def get_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionDetail:
+        session = self._session(owner_user_id=owner_user_id, session_id=session_id)
+        return AssistantChatSessionDetail(
+            session=deepcopy(session),
+            messages=deepcopy(self._messages.get(session_id, [])),
+        )
+
+    def rename_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        title: str,
+    ) -> AssistantChatSessionSummary:
+        session = self._session(owner_user_id=owner_user_id, session_id=session_id)
+        session.title = title
+        session.updated_at = utc_now().isoformat()
+        self._sessions[session_id] = deepcopy(session)
+        return deepcopy(session)
+
+    def archive_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionSummary:
+        session = self._session(owner_user_id=owner_user_id, session_id=session_id)
+        now = utc_now().isoformat()
+        session.archived_at = now
+        session.updated_at = now
+        self._sessions[session_id] = deepcopy(session)
+        return deepcopy(session)
+
+    def delete_session(self, *, owner_user_id: str, session_id: str) -> None:
+        self._session(owner_user_id=owner_user_id, session_id=session_id)
+        del self._sessions[session_id]
+        self._messages.pop(session_id, None)
+        self._stream_replays.pop(session_id, None)
+
+    def append_message(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        role: AssistantMessageRole,
+        content: str,
+        payload: dict | None = None,
+        workflow_refs: list[str] | None = None,
+    ) -> AssistantChatMessage:
+        session = self._session(owner_user_id=owner_user_id, session_id=session_id)
+        message = AssistantChatMessage(
+            session_id=session_id,
+            owner_user_id=owner_user_id,
+            role=role,
+            content=content,
+            workflow_refs=workflow_refs or [],
+            payload=payload or {},
+        )
+        self._messages.setdefault(session_id, []).append(deepcopy(message))
+        session.message_count = len(self._messages[session_id])
+        session.updated_at = message.created_at
+        self._sessions[session_id] = deepcopy(session)
+        return deepcopy(message)
+
+    def append_stream_replay(self, *, replay: AssistantStreamReplay) -> AssistantStreamReplay:
+        self._session(owner_user_id=replay.owner_user_id, session_id=replay.session_id)
+        self._stream_replays.setdefault(replay.session_id, []).append(deepcopy(replay))
+        return deepcopy(replay)
+
+    def list_stream_replays(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> list[AssistantStreamReplay]:
+        self._session(owner_user_id=owner_user_id, session_id=session_id)
+        replays = self._stream_replays.get(session_id, [])
+        return [deepcopy(replay) for replay in replays]
+
+    def _session(self, *, owner_user_id: str, session_id: str) -> AssistantChatSessionSummary:
+        session = self._sessions.get(session_id)
+        if not session or session.owner_user_id != owner_user_id:
+            raise NotFoundError(f"Assistant chat session not found: {session_id}")
+        return deepcopy(session)
+
+
+class InMemoryBackgroundJobRepository:
+    """In-memory background jobs for tests and local scaffolding."""
+
+    def __init__(self) -> None:
+        self._jobs: dict[str, BackgroundJob] = {}
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        job_type: JobType,
+        input: dict,
+        max_attempts: int = 1,
+    ) -> BackgroundJob:
+        now = utc_now().isoformat()
+        job = BackgroundJob(
+            owner_user_id=owner_user_id,
+            job_type=job_type,
+            input=input,
+            max_attempts=max_attempts,
+            created_at=now,
+            updated_at=now,
+        )
+        self._jobs[job.job_id] = deepcopy(job)
+        return deepcopy(job)
+
+    def get(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        return deepcopy(self._job(owner_user_id=owner_user_id, job_id=job_id))
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: str | None = None,
+        job_type: str | None = None,
+        limit: int = 100,
+    ) -> list[BackgroundJob]:
+        jobs = [
+            job
+            for job in self._jobs.values()
+            if job.owner_user_id == owner_user_id
+            and (status is None or job.status == status)
+            and (job_type is None or job.job_type == job_type)
+        ]
+        jobs.sort(key=lambda job: job.updated_at, reverse=True)
+        return [deepcopy(job) for job in jobs[: max(1, min(limit, 500))]]
+
+    def mark_running(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        job = self._job(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "running"
+        job.attempts += 1
+        job.started_at = job.started_at or now
+        job.updated_at = now
+        self._jobs[job_id] = deepcopy(job)
+        return deepcopy(job)
+
+    def mark_succeeded(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        output: dict,
+    ) -> BackgroundJob:
+        job = self._job(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "succeeded"
+        job.output = output
+        job.error = None
+        job.progress.current = job.progress.total or 1
+        job.progress.total = job.progress.total or 1
+        job.progress.message = "Completed."
+        job.completed_at = now
+        job.updated_at = now
+        self._jobs[job_id] = deepcopy(job)
+        return deepcopy(job)
+
+    def mark_failed(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob:
+        job = self._job(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "failed"
+        job.error = error
+        job.progress.message = error.message
+        job.completed_at = now
+        job.updated_at = now
+        self._jobs[job_id] = deepcopy(job)
+        return deepcopy(job)
+
+    def _job(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        job = self._jobs.get(job_id)
+        if not job or job.owner_user_id != owner_user_id:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return deepcopy(job)

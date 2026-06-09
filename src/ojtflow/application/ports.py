@@ -12,10 +12,19 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
-from ojtflow.core.contracts.assistant import AssistantPlan, AssistantToolSpec
+from ojtflow.core.contracts.assistant import (
+    AssistantChatMessage,
+    AssistantChatSessionDetail,
+    AssistantChatSessionSummary,
+    AssistantPlan,
+    AssistantMessageRole,
+    AssistantStreamReplay,
+    AssistantToolSpec,
+)
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -51,6 +60,8 @@ class DatasetStore(Protocol):
     ) -> DatasetRecord: ...
 
     def get_text(self, storage_ref: str) -> str: ...
+
+    def list_records(self, limit: int = 1000) -> list[DatasetRecord]: ...
 
 
 class WorkflowRepository(Protocol):
@@ -191,6 +202,107 @@ class RetrievalJudgmentRepository(Protocol):
     ) -> list[RetrievalRelevanceJudgment]: ...
 
     def delete(self, *, owner_user_id: str, judgment_id: str) -> None: ...
+
+
+class AssistantSessionRepository(Protocol):
+    def create_session(self, *, owner_user_id: str, title: str) -> AssistantChatSessionSummary: ...
+
+    def list_sessions(
+        self,
+        *,
+        owner_user_id: str,
+        include_archived: bool = False,
+        limit: int = 100,
+        q: str | None = None,
+    ) -> list[AssistantChatSessionSummary]: ...
+
+    def get_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionDetail: ...
+
+    def rename_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        title: str,
+    ) -> AssistantChatSessionSummary: ...
+
+    def archive_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionSummary: ...
+
+    def delete_session(self, *, owner_user_id: str, session_id: str) -> None: ...
+
+    def append_message(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        role: AssistantMessageRole,
+        content: str,
+        payload: dict[str, Any] | None = None,
+        workflow_refs: list[str] | None = None,
+    ) -> AssistantChatMessage: ...
+
+    def append_stream_replay(
+        self,
+        *,
+        replay: AssistantStreamReplay,
+    ) -> AssistantStreamReplay: ...
+
+    def list_stream_replays(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> list[AssistantStreamReplay]: ...
+
+
+class BackgroundJobRepository(Protocol):
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        job_type: JobType,
+        input: dict[str, Any],
+        max_attempts: int = 1,
+    ) -> BackgroundJob: ...
+
+    def get(self, *, owner_user_id: str, job_id: str) -> BackgroundJob: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: str | None = None,
+        job_type: str | None = None,
+        limit: int = 100,
+    ) -> list[BackgroundJob]: ...
+
+    def mark_running(self, *, owner_user_id: str, job_id: str) -> BackgroundJob: ...
+
+    def mark_succeeded(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        output: dict[str, Any],
+    ) -> BackgroundJob: ...
+
+    def mark_failed(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob: ...
 
 
 class AssistantPlanner(Protocol):
