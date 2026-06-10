@@ -10,6 +10,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ojtflow.application.auth_service import AuthService
 from ojtflow.application.assistant_service import AssistantService
+from ojtflow.application.assistant_session_service import AssistantSessionService
+from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
@@ -34,20 +36,26 @@ from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
+    InMemoryAssistantSessionRepository,
+    InMemoryBackgroundJobRepository,
     InMemoryDatasetStore,
     InMemoryEventRepository,
     InMemoryRetrievalJudgmentRepository,
     InMemoryWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.postgres import (
+    PostgresAssistantSessionRepository,
     PostgresBackboneStore,
+    PostgresBackgroundJobRepository,
     PostgresDatasetStore,
     PostgresEventRepository,
     PostgresRetrievalJudgmentRepository,
     PostgresWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.sqlite import (
+    SQLiteAssistantSessionRepository,
     SQLiteBackboneStore,
+    SQLiteBackgroundJobRepository,
     SQLiteDatasetStore,
     SQLiteEventRepository,
     SQLiteRetrievalJudgmentRepository,
@@ -260,6 +268,50 @@ def _build_assistant_service() -> AssistantService:
     )
 
 
+@lru_cache(maxsize=1)
+def _build_assistant_session_service() -> AssistantSessionService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryAssistantSessionRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteAssistantSessionRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresAssistantSessionRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return AssistantSessionService(repository)
+
+
+@lru_cache(maxsize=1)
+def _build_background_job_service() -> BackgroundJobService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryBackgroundJobRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteBackgroundJobRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresBackgroundJobRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return BackgroundJobService(repository)
+
+
 async def get_workflow_service() -> WorkflowService:
     """Return the cached workflow service without FastAPI threadpool dispatch."""
 
@@ -282,6 +334,18 @@ async def get_assistant_service() -> AssistantService:
     """Return natural-language assistant service."""
 
     return _build_assistant_service()
+
+
+async def get_assistant_session_service() -> AssistantSessionService:
+    """Return persisted Assistant chat session service."""
+
+    return _build_assistant_session_service()
+
+
+async def get_background_job_service() -> BackgroundJobService:
+    """Return durable background job service."""
+
+    return _build_background_job_service()
 
 
 async def get_auth_service() -> AuthService:
@@ -404,3 +468,5 @@ def clear_workflow_service_cache() -> None:
     _build_medical_evidence_service.cache_clear()
     _build_retrieval_judgment_service.cache_clear()
     _build_assistant_service.cache_clear()
+    _build_assistant_session_service.cache_clear()
+    _build_background_job_service.cache_clear()

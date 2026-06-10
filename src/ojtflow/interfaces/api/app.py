@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from uuid import uuid4
 
 from ojtflow.core.errors import OJTFlowError
 from ojtflow.interfaces.api.responses import (
@@ -20,6 +21,7 @@ from ojtflow.interfaces.api.routes import (
     convert,
     fhir,
     health,
+    jobs,
     ocr,
     parse,
     retrieval,
@@ -44,6 +46,14 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
     @app.middleware("http")
+    async def request_id_responses(request, call_next):
+        request_id = _request_id(request.headers.get("x-request-id"))
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    @app.middleware("http")
     async def no_store_auth_responses(request, call_next):
         response = await call_next(request)
         if request.url.path.startswith("/api/v1/auth/"):
@@ -63,8 +73,20 @@ def create_app() -> FastAPI:
     app.include_router(ocr.router, prefix="/api/v1", dependencies=protected)
     app.include_router(parse.router, prefix="/api/v1")
     app.include_router(retrieval.router, prefix="/api/v1")
+    app.include_router(jobs.router, prefix="/api/v1")
     app.include_router(runtime.router, prefix="/api/v1")
     return app
+
+
+def _request_id(value: str | None) -> str:
+    if value:
+        clean = value.strip()
+        if 1 <= len(clean) <= 128 and all(
+            character.isalnum() or character in {"-", "_", ".", ":"}
+            for character in clean
+        ):
+            return clean
+    return f"req_{uuid4().hex}"
 
 
 app = create_app()

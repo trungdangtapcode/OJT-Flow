@@ -279,6 +279,10 @@ class RetrievalReindexRequest(ContractModel):
     }
 
 
+class RetrievalReindexJobRequest(RetrievalReindexRequest):
+    execute_now: bool = True
+
+
 class RuntimeRetrievalSettingsRequest(ContractModel):
     retrieval_framework: Literal["custom", "llamaindex"] | None = None
     retrieval_candidate_multiplier: int | None = Field(default=None, ge=1, le=20)
@@ -351,6 +355,7 @@ class AssistantChatRequest(ContractModel):
     message: NonBlankStr
     context: dict[str, Any] = Field(default_factory=dict)
     execute_write_actions: bool = False
+    session_id: str | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -363,6 +368,7 @@ class AssistantChatRequest(ContractModel):
                         "clinical_domain": "laboratory",
                     },
                     "execute_write_actions": False,
+                    "session_id": "chat_abc123",
                 },
                 {
                     "message": "Validate this messy lab CSV and explain it with trusted evidence.",
@@ -380,3 +386,18 @@ class AssistantChatRequest(ContractModel):
             ]
         }
     }
+
+
+class AssistantSessionCreateRequest(ContractModel):
+    title: NonBlankStr = "New chat"
+
+
+class AssistantSessionRenameRequest(ContractModel):
+    title: NonBlankStr
+
+
+class AssistantSessionMessageRequest(ContractModel):
+    role: Literal["user", "assistant", "system", "tool"]
+    content: str = ""
+    workflow_refs: list[str] = Field(default_factory=list)
+    payload: dict[str, Any] = Field(default_factory=dict)
