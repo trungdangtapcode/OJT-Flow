@@ -29,6 +29,7 @@ import {
   useExtractorInventoryQuery,
   useRuntimeConfigQuery,
   useRuntimeHealthQuery,
+  useRuntimeMigrationsQuery,
   useRuntimeReadinessQuery,
   useRuntimeAssistantSettingsMutation,
   useRuntimeRetrievalSettingsMutation,
@@ -40,6 +41,7 @@ import type {
   RuntimeAssistantSettings,
   RuntimeAssistantSettingsPayload,
   RuntimeConfig,
+  MigrationDiagnostics,
   RuntimeReadiness,
   RuntimeRetrievalRulePack,
   RuntimeRetrievalSettings,
@@ -50,6 +52,7 @@ export function SettingsPage() {
   const { user } = useAuth();
   const healthQuery = useRuntimeHealthQuery();
   const runtimeConfigQuery = useRuntimeConfigQuery();
+  const migrationsQuery = useRuntimeMigrationsQuery();
   const readinessQuery = useRuntimeReadinessQuery();
   const schemasQuery = useSchemasQuery();
   const extractorsQuery = useExtractorInventoryQuery();
@@ -133,6 +136,17 @@ export function SettingsPage() {
               </RuntimeFactGroup>
 
               <RuntimeFactGroup icon={HardDrive} title="Persistence">
+                <SettingRow
+                  label="Product mode"
+                  value={runtime?.product_mode ?? runtimeConfigLabel(runtimeConfigQuery)}
+                  badge={
+                    runtime?.product_mode === "production" || runtime?.product_mode === "pilot"
+                      ? "controlled"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "local"
+                  }
+                />
                 <SettingRow
                   label="Storage backend"
                   value={runtime?.storage_backend ?? runtimeConfigLabel(runtimeConfigQuery)}
@@ -352,6 +366,36 @@ export function SettingsPage() {
                 Workflow, review, retrieval, and output reads are scoped to the authenticated owner.
               </ControlStatus>
               <ControlStatus
+                title="No-mock runtime policy"
+                status={
+                  runtimeConfigQuery.isLoading
+                    ? "planned"
+                    : runtime?.policy.effective_no_mock_data
+                      ? "active"
+                      : "attention"
+                }
+              >
+                Effective no-mock mode is{" "}
+                {runtimeConfigQuery.isLoading
+                  ? "checking"
+                  : runtime?.policy.effective_no_mock_data
+                    ? "on"
+                    : "off"}{" "}
+                for {runtime?.product_mode ?? "unknown"} mode.
+              </ControlStatus>
+              <ControlStatus
+                title="Real assistant AI requirement"
+                status={
+                  runtimeConfigQuery.isLoading
+                    ? "planned"
+                    : runtime?.policy.requires_real_llm
+                      ? "active"
+                      : "planned"
+                }
+              >
+                Pilot and production modes reject disabled LLM configuration during settings load.
+              </ControlStatus>
+              <ControlStatus
                 title="Cookie policy"
                 status={
                   runtimeConfigQuery.isLoading
@@ -405,6 +449,12 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          <MigrationAdminPanel
+            diagnostics={migrationsQuery.data}
+            error={migrationsQuery.isError ? workflowErrorMessage(migrationsQuery.error) : null}
+            isLoading={migrationsQuery.isLoading}
+          />
+
           <AssistantSettingsForm
             isLoading={runtimeConfigQuery.isLoading}
             runtime={runtime}
@@ -438,6 +488,128 @@ export function SettingsPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function MigrationAdminPanel({
+  diagnostics,
+  error,
+  isLoading,
+}: {
+  diagnostics: MigrationDiagnostics | undefined;
+  error: string | null;
+  isLoading: boolean;
+}) {
+  const statusVariant: React.ComponentProps<typeof Badge>["variant"] =
+    diagnostics?.status === "ok" || diagnostics?.status === "not_required"
+      ? "success"
+      : diagnostics?.status === "warning"
+        ? "warning"
+        : "destructive";
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-primary" />
+              Schema migrations
+            </CardTitle>
+            <CardDescription>
+              Applied, pending, and drift diagnostics for the Postgres schema ledger.
+            </CardDescription>
+          </div>
+          {diagnostics ? (
+            <Badge variant={statusVariant}>{diagnostics.status}</Badge>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Checking migration state.</div>
+        ) : null}
+        {error ? (
+          <Notice title="Migration diagnostics unavailable" tone="danger">
+            {error}
+          </Notice>
+        ) : null}
+        {diagnostics ? (
+          <>
+            <div className="grid gap-2 text-sm sm:grid-cols-4">
+              <ReadinessCounter
+                label="Applied"
+                tone="success"
+                value={diagnostics.applied_count}
+              />
+              <ReadinessCounter
+                label="Pending"
+                tone={diagnostics.pending_count ? "danger" : "success"}
+                value={diagnostics.pending_count}
+              />
+              <ReadinessCounter
+                label="Mismatch"
+                tone={diagnostics.checksum_mismatch_count ? "danger" : "success"}
+                value={diagnostics.checksum_mismatch_count}
+              />
+              <ReadinessCounter
+                label="Unknown"
+                tone={diagnostics.unknown_applied_count ? "danger" : "success"}
+                value={diagnostics.unknown_applied_count}
+              />
+            </div>
+            <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Badge variant={diagnostics.connection_ok === false ? "warning" : "muted"}>
+                  {diagnostics.bootstrap_code ?? "unknown"}
+                </Badge>
+                <span className="font-semibold">{diagnostics.bootstrap_summary}</span>
+              </div>
+              <div className="flex min-w-0 flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>backend: {diagnostics.storage_backend}</span>
+                <span>latest available: {diagnostics.latest_available_version ?? "none"}</span>
+                <span>latest applied: {diagnostics.latest_applied_version ?? "none"}</span>
+                <span>table: {diagnostics.table_exists ? "present" : "missing"}</span>
+              </div>
+            </div>
+            <div className="grid max-h-80 gap-2 overflow-y-auto pr-1">
+              {diagnostics.migrations.map((migration) => (
+                <div
+                  className="grid gap-2 rounded-md border border-border bg-card p-3"
+                  key={`${migration.status}-${migration.version}`}
+                >
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="break-words text-sm font-black">
+                        {migration.version} / {migration.name}
+                      </div>
+                      <div className="mt-0.5 break-all font-mono text-[11px] text-muted-foreground">
+                        {migration.checksum ?? "checksum unavailable"}
+                      </div>
+                    </div>
+                    <Badge variant={migrationStatusVariant(migration.status)}>
+                      {migration.status}
+                    </Badge>
+                  </div>
+                  <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
+                    <span>applied: {migration.applied_at ?? "not applied"}</span>
+                    <span>
+                      duration:{" "}
+                      {typeof migration.duration_ms === "number"
+                        ? `${migration.duration_ms}ms`
+                        : "not recorded"}
+                    </span>
+                    <span>failure: {migration.failure_reason ?? "none"}</span>
+                  </div>
+                </div>
+              ))}
+              {!diagnostics.migrations.length ? (
+                <Badge variant="warning">No migration manifest entries</Badge>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1241,6 +1413,14 @@ function SettingRow({ badge, label, value }: { badge?: string; label: string; va
       </div>
     </div>
   );
+}
+
+function migrationStatusVariant(
+  status: MigrationDiagnostics["migrations"][number]["status"],
+): React.ComponentProps<typeof Badge>["variant"] {
+  if (status === "applied") return "success";
+  if (status === "pending") return "warning";
+  return "destructive";
 }
 
 function ReadinessChecks({

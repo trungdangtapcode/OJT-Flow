@@ -21,6 +21,7 @@ import { API_BASE_URL } from "../../api";
 import { useRuntimeConfigQuery } from "../../lib/server-state";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
+import { PageGuide } from "./page-guide";
 
 const navGroups = [
   {
@@ -70,7 +71,7 @@ export function AppShell() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-[204px_minmax(0,1fr)] bg-sidebar max-lg:grid-cols-1">
+    <div className="grid h-dvh min-h-dvh grid-cols-[204px_minmax(0,1fr)] overflow-hidden bg-sidebar max-lg:h-auto max-lg:min-h-screen max-lg:grid-cols-1 max-lg:overflow-visible">
       <aside className="sticky top-0 z-20 flex h-dvh flex-col border-r border-black/15 bg-sidebar p-3 text-sidebar-foreground shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-r-0 max-lg:p-2 max-sm:grid-cols-1 max-sm:gap-0 max-sm:p-1.5">
         <div className="mb-6 flex shrink-0 items-center gap-3 px-1 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:hidden">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ccfbf1] text-[11px] font-black text-sidebar shadow-[0_8px_24px_rgba(45,212,191,0.16)] sm:h-9 sm:w-9 sm:rounded-lg sm:text-sm">
@@ -113,8 +114,8 @@ export function AppShell() {
           ))}
         </nav>
       </aside>
-      <main className="min-w-0 bg-background">
-        <header className="sticky top-0 z-10 border-b border-border bg-card/88 backdrop-blur">
+      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background max-lg:min-h-screen max-lg:overflow-visible">
+        <header className="z-10 shrink-0 border-b border-border bg-card/88 backdrop-blur">
           <div className="mx-auto flex min-h-12 w-full max-w-[1440px] items-center justify-between gap-3 px-6 py-2 max-md:px-4 max-sm:gap-2 max-sm:px-3">
             <div className="hidden min-w-0 items-center gap-2 overflow-x-auto text-[11px] font-bold text-muted-foreground sm:flex">
               <span className="rounded-full bg-muted px-2 py-1">API {API_BASE_URL}</span>
@@ -172,8 +173,11 @@ export function AppShell() {
             </div>
           </div>
         </header>
-        <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4 max-sm:p-2">
-          <Outlet />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain max-lg:overflow-visible">
+          <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4 max-sm:p-2">
+            <PageGuide pathname={pathname} />
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>

@@ -1,0 +1,191 @@
+[
+  {
+    "id": "assistant",
+    "path": "/assistant",
+    "title": "What can I do with Assistant?",
+    "summary": "Use natural language when you know the outcome but not the exact screen or API.",
+    "items": [
+      {
+        "title": "Ask for an operation",
+        "text": "Request validation, conversion, evidence search, workflow status, or pending-review help in plain language."
+      },
+      {
+        "title": "Attach context",
+        "text": "Paste CSV, JSON, screenshots, or files when the Assistant needs source data. Sensitive changes remain review-gated."
+      },
+      {
+        "title": "Read the timeline",
+        "text": "Planner text, tool calls, warnings, and final answers are shown in sequence; failures include request IDs for support."
+      }
+    ],
+    "nextAction": "Start with: Validate this lab CSV and explain the issues with trusted evidence."
+  },
+  {
+    "id": "workbench",
+    "path": "/workbench",
+    "title": "What can I do in Workbench?",
+    "summary": "Create governed healthcare data workflows from inline data or uploaded files.",
+    "items": [
+      {
+        "title": "Choose the task",
+        "text": "Describe the target outcome, such as validate, convert, profile FHIR-like data, or explain anomalies."
+      },
+      {
+        "title": "Provide source data",
+        "text": "Paste structured data or upload a supported file. The backend records artifact hashes and source metadata."
+      },
+      {
+        "title": "Review before action",
+        "text": "Meaning-changing transformations and low-confidence results pause for human approval before completion."
+      }
+    ],
+    "nextAction": "Start with a small CSV or JSON sample before uploading a large document."
+  },
+  {
+    "id": "workflows",
+    "path": "/workflows",
+    "title": "What can I do with Workflows?",
+    "summary": "Inspect run status, validation issues, evidence, output artifacts, and audit events.",
+    "items": [
+      {
+        "title": "Find the run",
+        "text": "Search and filter by workflow status, review state, and update time."
+      },
+      {
+        "title": "Inspect progress",
+        "text": "Use steps for UI progress and events for audit traceability."
+      },
+      {
+        "title": "Open evidence and output",
+        "text": "Check validation issues, retrieval evidence, limitations, and generated output before downstream use."
+      }
+    ],
+    "nextAction": "Open the latest review-gated workflow first if you need an operational decision."
+  },
+  {
+    "id": "reviews",
+    "path": "/reviews",
+    "title": "What can I do with Reviews?",
+    "summary": "Approve, edit, reject, or investigate workflow decisions that require human control.",
+    "items": [
+      {
+        "title": "Read why it paused",
+        "text": "Check the review reason, issue count, confidence signals, and evidence before deciding."
+      },
+      {
+        "title": "Approve only clear cases",
+        "text": "Approve when the source data, validation findings, and intended transformation are consistent."
+      },
+      {
+        "title": "Reject unsafe output",
+        "text": "Reject or edit when PHI, malformed data, missing units, or ambiguous clinical meaning is unresolved."
+      }
+    ],
+    "nextAction": "Sort by newest pending reviews and resolve high-risk warnings first."
+  },
+  {
+    "id": "retrieval",
+    "path": "/retrieval",
+    "title": "What can I do with Retrieval?",
+    "summary": "Search trusted healthcare standards and inspect why evidence was ranked.",
+    "items": [
+      {
+        "title": "Search standards",
+        "text": "Ask for schemas, FHIR-like resources, LOINC/UCUM guidance, validation rules, or medical evidence context."
+      },
+      {
+        "title": "Check grounding",
+        "text": "Use score breakdowns, source diversity, query diagnostics, and evidence support before trusting a hit."
+      },
+      {
+        "title": "Improve weak results",
+        "text": "Apply suggested filters, broaden narrow queries, or reindex trusted sources after corpus changes."
+      }
+    ],
+    "nextAction": "Start with a concrete standard question, such as: What fields are required for lab_result_v1?"
+  },
+  {
+    "id": "audit",
+    "path": "/audit",
+    "title": "What can I do with Audit?",
+    "summary": "Trace what happened to a workflow and when each backend action occurred.",
+    "items": [
+      {
+        "title": "Search by workflow",
+        "text": "Select a run to inspect ordered events, status transitions, review gates, and output references."
+      },
+      {
+        "title": "Use request IDs",
+        "text": "Match frontend errors and assistant stream replay events to backend diagnostics."
+      },
+      {
+        "title": "Verify sequence",
+        "text": "Use audit events for traceability; use workflow steps for user-facing progress."
+      }
+    ],
+    "nextAction": "Use the request ID from an error panel when investigating a failed operation."
+  },
+  {
+    "id": "schemas",
+    "path": "/schemas",
+    "title": "What can I do with Schemas?",
+    "summary": "Review supported data profiles, required fields, validation rules, and example formats.",
+    "items": [
+      {
+        "title": "Choose a profile",
+        "text": "Use schema IDs such as lab_result_v1 when validating or converting clinical data."
+      },
+      {
+        "title": "Check required fields",
+        "text": "Required fields drive validation issues and review gates."
+      },
+      {
+        "title": "Align input data",
+        "text": "Use examples to rename columns or provide missing dates, units, and patient identifiers."
+      }
+    ],
+    "nextAction": "Open lab_result_v1 before validating laboratory CSV data."
+  },
+  {
+    "id": "settings",
+    "path": "/settings",
+    "title": "What can I do in Settings?",
+    "summary": "Inspect runtime readiness, migrations, storage, model, retrieval, and deployment controls.",
+    "items": [
+      {
+        "title": "Check readiness",
+        "text": "Confirm Postgres, Redis, OAuth, LLM, embeddings, retrieval, jobs, and storage consistency before demos."
+      },
+      {
+        "title": "Adjust runtime controls",
+        "text": "Change retrieval or assistant settings through validated backend settings APIs, not code edits."
+      },
+      {
+        "title": "Read migration state",
+        "text": "Use migration diagnostics to catch duplicate versions, checksum drift, and pending database changes."
+      }
+    ],
+    "nextAction": "Start by checking runtime readiness after any Docker, database, or environment change."
+  },
+  {
+    "id": "help",
+    "path": "/help",
+    "title": "What can I do in Help?",
+    "summary": "Learn the product vocabulary, workflows, and operator decision patterns.",
+    "items": [
+      {
+        "title": "Pick your role",
+        "text": "Use role-based guides to understand whether you should upload data, review outputs, or inspect evidence."
+      },
+      {
+        "title": "Read examples",
+        "text": "Use concrete CSV, validation, review, and retrieval examples before handling production-like data."
+      },
+      {
+        "title": "Escalate with diagnostics",
+        "text": "Copy request IDs, workflow IDs, and error payloads when asking for support."
+      }
+    ],
+    "nextAction": "Start with the role guide that matches your current task."
+  }
+]

@@ -270,7 +270,7 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
           </CardContent>
         </Card>
         {selectedId ? (
-          <div className="min-w-0 max-xl:hidden xl:sticky xl:top-[4.25rem]">
+          <div className="min-w-0 max-xl:hidden xl:sticky xl:top-4">
             <WorkflowDetail workflowId={selectedId} />
           </div>
         ) : null}
