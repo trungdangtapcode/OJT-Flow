@@ -9,6 +9,7 @@ export type ApiError = {
   message: string;
   details: Record<string, unknown>;
   workflow_id?: string | null;
+  request_id?: string | null;
 };
 
 export type AuthUser = {
@@ -751,6 +752,7 @@ export type AssistantChatPayload = {
   message: string;
   context?: Record<string, unknown>;
   execute_write_actions?: boolean;
+  session_id?: string;
 };
 
 export type AssistantToolSpec = {
@@ -817,6 +819,57 @@ export type AssistantResponse = {
   tool_calls: AssistantToolResult[];
   suggestions: string[];
   warnings: string[];
+};
+
+export type AssistantChatSessionSummary = {
+  session_id: string;
+  owner_user_id: string;
+  title: string;
+  message_count: number;
+  archived_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AssistantChatMessage = {
+  message_id: string;
+  session_id: string;
+  owner_user_id: string;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  workflow_refs: string[];
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AssistantStreamReplay = {
+  stream_id: string;
+  session_id: string;
+  owner_user_id: string;
+  status: "completed" | "failed";
+  events: AssistantStreamEvent[];
+  created_at: string;
+  completed_at: string;
+};
+
+export type AssistantChatSessionDetail = {
+  session: AssistantChatSessionSummary;
+  messages: AssistantChatMessage[];
+};
+
+export type AssistantSessionCreatePayload = {
+  title?: string;
+};
+
+export type AssistantSessionRenamePayload = {
+  title: string;
+};
+
+export type AssistantSessionMessagePayload = {
+  role: "user" | "assistant" | "system" | "tool";
+  content?: string;
+  workflow_refs?: string[];
+  payload?: Record<string, unknown>;
 };
 
 export type AssistantStreamEvent =
@@ -1093,6 +1146,45 @@ export type RuntimeHealth = {
   status: string;
 };
 
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export type JobType =
+  | "retrieval_reindex"
+  | "file_parse"
+  | "ocr_extract"
+  | "embedding_reindex"
+  | "external_ingest"
+  | "export_package";
+
+export type BackgroundJob = {
+  job_id: string;
+  owner_user_id: string;
+  job_type: JobType;
+  status: JobStatus;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  error?: {
+    code: string;
+    message: string;
+    details: Record<string, unknown>;
+  } | null;
+  progress: {
+    current: number;
+    total?: number | null;
+    message: string;
+  };
+  attempts: number;
+  max_attempts: number;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+};
+
+export type RetrievalReindexJobPayload = RetrievalReindexPayload & {
+  execute_now?: boolean;
+};
+
 export type ReadinessCheck = {
   name: string;
   status: "ok" | "warning" | "error";
@@ -1103,6 +1195,36 @@ export type ReadinessCheck = {
 export type RuntimeReadiness = {
   status: "ready" | "degraded" | "not_ready";
   checks: ReadinessCheck[];
+};
+
+export type MigrationDiagnosticItem = {
+  version: string;
+  name: string;
+  checksum?: string | null;
+  status: "applied" | "pending" | "checksum_mismatch" | "unknown_applied";
+  applied_at?: string | null;
+  duration_ms?: number | null;
+  failure_reason?: string | null;
+};
+
+export type MigrationDiagnostics = {
+  status: "ok" | "warning" | "error" | "not_required";
+  storage_backend: string;
+  required: boolean;
+  postgres_configured: boolean;
+  dependency_available: boolean;
+  connection_ok?: boolean | null;
+  table_exists: boolean;
+  manifest_count: number;
+  applied_count: number;
+  pending_count: number;
+  unknown_applied_count: number;
+  checksum_mismatch_count: number;
+  latest_available_version?: string | null;
+  latest_applied_version?: string | null;
+  bootstrap_code?: string | null;
+  bootstrap_summary: string;
+  migrations: MigrationDiagnosticItem[];
 };
 
 export type RuntimeRetrievalSettings = {
@@ -1151,6 +1273,7 @@ export type RuntimeAssistantSettingsUpdate = {
 
 export type RuntimeConfig = {
   status: string;
+  product_mode: "local_dev" | "demo" | "pilot" | "production";
   storage_backend: string;
   persistent_storage: boolean;
   postgres_configured: boolean;
@@ -1215,5 +1338,11 @@ export type RuntimeConfig = {
     max_inline_data_bytes: number;
     read_chunk_bytes: number;
     allowed_extensions: string[];
+  };
+  policy: {
+    no_mock_data: boolean;
+    effective_no_mock_data: boolean;
+    requires_real_llm: boolean;
+    requires_persistent_storage: boolean;
   };
 };

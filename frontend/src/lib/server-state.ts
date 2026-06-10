@@ -4,23 +4,34 @@ import { toast } from "sonner";
 import {
   ApiRequestError,
   API_BASE_URL,
+  appendAssistantSessionMessage,
+  archiveAssistantSession,
   chatWithAssistant,
+  createAssistantSession,
+  createRetrievalReindexJob,
   createWorkflow,
+  deleteAssistantSession,
   deleteRetrievalJudgment,
   evaluateRetrievalJudgments,
   extractFileText,
+  getAssistantSession,
+  getAssistantSessionStreamReplays,
+  getJob,
   getExtractorInventory,
   getRetrievalJudgmentSummary,
   getRetrievalIntegrity,
   getRetrievalSearchOptions,
   getRuntimeConfig,
   getRuntimeHealth,
+  getRuntimeMigrations,
   getRuntimeReadiness,
   getWorkflow,
   getWorkflowOutput,
   getWorkflowStats,
   listAssistantTools,
   listAssistantExamples,
+  listAssistantSessions,
+  listJobs,
   listRetrievalJudgments,
   listRetrievalPresets,
   listRetrievalSources,
@@ -30,6 +41,7 @@ import {
   listWorkflowSummaries,
   planRetrieval,
   reindexRetrieval,
+  renameAssistantSession,
   searchRetrieval,
   streamAssistantChat,
   submitReview,
@@ -38,10 +50,20 @@ import {
   upsertRetrievalJudgment,
   uploadFileWorkflow,
 } from "../api";
+import { apiErrorMessage } from "./api-error-diagnostics";
 import type {
   AssistantChatPayload,
+  AssistantChatMessage,
+  AssistantChatSessionDetail,
+  AssistantChatSessionSummary,
+  AssistantSessionCreatePayload,
+  AssistantSessionMessagePayload,
+  AssistantSessionRenamePayload,
   AssistantResponse,
   AssistantStreamEvent,
+  AssistantStreamReplay,
+  BackgroundJob,
+  RetrievalReindexJobPayload,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentPayload,
   RetrievalPlan,
@@ -56,6 +78,15 @@ type AssistantStreamMutationPayload = {
   payload: AssistantChatPayload;
   onEvent: (event: AssistantStreamEvent) => void;
   signal?: AbortSignal;
+};
+
+type AppendAssistantSessionMessageInput = {
+  sessionId: string;
+  payload: AssistantSessionMessagePayload;
+};
+
+type RetrievalReindexJobInput = {
+  payload: RetrievalReindexJobPayload;
 };
 
 export const queryKeys = {
@@ -79,9 +110,17 @@ export const queryKeys = {
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
+  runtimeMigrations: ["runtime-migrations"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
+  jobs: (params: Record<string, unknown>) => ["jobs", params] as const,
+  job: (jobId: string | null) => ["job", jobId] as const,
   assistantTools: ["assistant-tools"] as const,
   assistantExamples: ["assistant-examples"] as const,
+  assistantSessions: (params: Record<string, unknown>) =>
+    ["assistant-sessions", params] as const,
+  assistantSession: (sessionId: string | null) => ["assistant-session", sessionId] as const,
+  assistantStreamReplays: (sessionId: string | null) =>
+    ["assistant-stream-replays", sessionId] as const,
   retrievalPresets: ["retrieval-presets"] as const,
 };
 
@@ -168,6 +207,42 @@ export function useRuntimeConfigQuery() {
 
 export function useRuntimeReadinessQuery() {
   return useQuery({ queryKey: queryKeys.runtimeReadiness, queryFn: getRuntimeReadiness });
+}
+
+export function useRuntimeMigrationsQuery() {
+  return useQuery({ queryKey: queryKeys.runtimeMigrations, queryFn: getRuntimeMigrations });
+}
+
+export function useJobsQuery(params: {
+  status?: string | null;
+  job_type?: string | null;
+  limit?: number;
+} = {}) {
+  return useQuery({
+    queryKey: queryKeys.jobs(params),
+    queryFn: () => listJobs(params),
+  });
+}
+
+export function useJobQuery(jobId: string | null) {
+  return useQuery<BackgroundJob>({
+    enabled: Boolean(jobId),
+    queryKey: queryKeys.job(jobId),
+    queryFn: () => getJob(jobId!),
+  });
+}
+
+export function useRetrievalReindexJobMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<BackgroundJob, Error, RetrievalReindexJobInput>({
+    mutationFn: ({ payload }) => createRetrievalReindexJob(payload),
+    onSuccess: async (job) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["jobs"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.job(job.job_id) }),
+      ]);
+    },
+  });
 }
 
 export function useRuntimeRetrievalSettingsMutation() {
@@ -322,7 +397,12 @@ export function useAssistantChatStreamMutation() {
   return useMutation<AssistantResponse, Error, AssistantStreamMutationPayload>({
     mutationFn: ({ payload, onEvent, signal }) =>
       streamAssistantChat(payload, onEvent, signal),
-    onSuccess: async (response) => {
+    onSuccess: async (response, variables) => {
+      if (variables.payload.session_id) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.assistantStreamReplays(variables.payload.session_id),
+        });
+      }
       if (
         response.tool_calls.some(
           (call) => call.tool_name === "start_workflow" && call.status === "completed",
@@ -330,6 +410,108 @@ export function useAssistantChatStreamMutation() {
       ) {
         await invalidateWorkflowCollections(queryClient);
       }
+    },
+  });
+}
+
+export function useAssistantSessionsQuery(params: {
+  include_archived?: boolean;
+  limit?: number;
+  q?: string;
+} = {}) {
+  return useQuery({
+    queryKey: queryKeys.assistantSessions(params),
+    queryFn: () => listAssistantSessions(params),
+  });
+}
+
+export function useAssistantSessionQuery(sessionId: string | null) {
+  return useQuery<AssistantChatSessionDetail>({
+    enabled: Boolean(sessionId),
+    queryKey: queryKeys.assistantSession(sessionId),
+    queryFn: () => getAssistantSession(sessionId!),
+  });
+}
+
+export function useAssistantStreamReplaysQuery(sessionId: string | null) {
+  return useQuery<AssistantStreamReplay[]>({
+    enabled: Boolean(sessionId),
+    queryKey: queryKeys.assistantStreamReplays(sessionId),
+    queryFn: () => getAssistantSessionStreamReplays(sessionId!),
+  });
+}
+
+export function useCreateAssistantSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<AssistantChatSessionSummary, Error, AssistantSessionCreatePayload>({
+    mutationFn: (payload) => createAssistantSession(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["assistant-sessions"] });
+    },
+  });
+}
+
+export function useRenameAssistantSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    AssistantChatSessionSummary,
+    Error,
+    { sessionId: string; payload: AssistantSessionRenamePayload }
+  >({
+    mutationFn: ({ sessionId, payload }) => renameAssistantSession(sessionId, payload),
+    onSuccess: async (session) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["assistant-sessions"] }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.assistantSession(session.session_id),
+        }),
+      ]);
+    },
+  });
+}
+
+export function useArchiveAssistantSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<AssistantChatSessionSummary, Error, string>({
+    mutationFn: (sessionId) => archiveAssistantSession(sessionId),
+    onSuccess: async (session) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["assistant-sessions"] }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.assistantSession(session.session_id),
+        }),
+      ]);
+    },
+  });
+}
+
+export function useDeleteAssistantSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<{ deleted: boolean; session_id: string }, Error, string>({
+    mutationFn: (sessionId) => deleteAssistantSession(sessionId),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["assistant-sessions"] }),
+        queryClient.removeQueries({
+          queryKey: queryKeys.assistantSession(result.session_id),
+        }),
+      ]);
+    },
+  });
+}
+
+export function useAppendAssistantSessionMessageMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<AssistantChatMessage, Error, AppendAssistantSessionMessageInput>({
+    mutationFn: ({ sessionId, payload }) =>
+      appendAssistantSessionMessage(sessionId, payload),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["assistant-sessions"] }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.assistantSession(variables.sessionId),
+        }),
+      ]);
     },
   });
 }
@@ -434,9 +616,13 @@ async function invalidateWorkflowDetail(
 }
 
 export function workflowErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return apiErrorMessage(error);
 }
 
 export function workflowErrorWorkflowId(error: unknown): string | null {
   return error instanceof ApiRequestError ? error.workflowId : null;
+}
+
+export function workflowErrorRequestId(error: unknown): string | null {
+  return error instanceof ApiRequestError ? error.requestId : null;
 }

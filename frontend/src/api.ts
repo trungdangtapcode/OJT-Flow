@@ -1,14 +1,23 @@
 import type {
   ApiEnvelope,
   AssistantChatPayload,
+  AssistantChatMessage,
+  AssistantChatSessionDetail,
+  AssistantChatSessionSummary,
   AssistantExample,
   AssistantResponse,
+  AssistantSessionCreatePayload,
+  AssistantSessionMessagePayload,
+  AssistantSessionRenamePayload,
   AssistantStreamEvent,
+  AssistantStreamReplay,
   AssistantToolSpec,
   AuthLoginResponse,
   AuthSessionResponse,
+  BackgroundJob,
   ExtractedDocument,
   ExtractorInventory,
+  MigrationDiagnostics,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentEvaluationResult,
   RetrievalIntegrityReport,
@@ -18,6 +27,7 @@ import type {
   RetrievalRelevanceJudgment,
   RetrievalRelevanceJudgmentSummary,
   RetrievalReindexPayload,
+  RetrievalReindexJobPayload,
   RetrievalReindexResult,
   RetrievalSearchPayload,
   RetrievalSearchOptions,
@@ -47,12 +57,15 @@ export const API_BASE_URL =
     : "/api/v1";
 
 export const AUTH_SESSION_EXPIRED_EVENT = "ojtflow:auth-session-expired";
+export const API_REQUEST_ERROR_EVENT = "ojtflow:api-request-error";
 
 export class ApiRequestError extends Error {
   status: number;
   code: string;
   details: Record<string, unknown>;
   workflowId: string | null;
+  requestId: string | null;
+  endpoint: string | null;
 
   constructor({
     status,
@@ -60,12 +73,16 @@ export class ApiRequestError extends Error {
     message,
     details,
     workflowId = null,
+    requestId = null,
+    endpoint = null,
   }: {
     status: number;
     code: string;
     message: string;
     details?: Record<string, unknown>;
     workflowId?: string | null;
+    requestId?: string | null;
+    endpoint?: string | null;
   }) {
     super(`${code}: ${message}`);
     this.name = "ApiRequestError";
@@ -73,6 +90,8 @@ export class ApiRequestError extends Error {
     this.code = code;
     this.details = details ?? {};
     this.workflowId = workflowId;
+    this.requestId = requestId;
+    this.endpoint = endpoint;
   }
 }
 
@@ -96,6 +115,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 function requestHeaders(init?: RequestInit): Headers {
   const headers = new Headers(init?.headers);
+  if (!headers.has("X-Request-ID")) {
+    headers.set("X-Request-ID", newRequestId());
+  }
   if (
     init?.body !== undefined &&
     !(init.body instanceof FormData) &&
@@ -106,18 +128,39 @@ function requestHeaders(init?: RequestInit): Headers {
   return headers;
 }
 
+function newRequestId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `web_${crypto.randomUUID()}`;
+  }
+  return `web_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function requestIdFromInit(init?: RequestInit): string | null {
+  const value = new Headers(init?.headers).get("X-Request-ID");
+  return value && value.trim() ? value : null;
+}
+
+function responseRequestId(response: Response): string | null {
+  const value = response.headers.get("X-Request-ID");
+  return value && value.trim() ? value : null;
+}
+
 async function fetchApi(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
     return await fetch(input, init);
   } catch (error) {
-    throw new ApiRequestError({
+    const apiError = new ApiRequestError({
       status: 0,
       code: "network_error",
       message: "API request could not reach the server.",
       details: {
         reason: error instanceof Error ? error.message : String(error),
       },
+      requestId: requestIdFromInit(init),
+      endpoint: String(input),
     });
+    emitApiRequestError(apiError);
+    throw apiError;
   }
 }
 
@@ -136,8 +179,13 @@ async function parseEnvelope<T>(response: Response): Promise<ApiEnvelope<T>> {
     error: {
       code: response.ok ? "invalid_response" : "http_error",
       message: body || `HTTP ${response.status}`,
-      details: { status: response.status, content_type: contentType || null },
+      details: {
+        status: response.status,
+        content_type: contentType || null,
+        request_id: responseRequestId(response),
+      },
       workflow_id: null,
+      request_id: responseRequestId(response),
     },
   };
 }
@@ -190,8 +238,10 @@ function invalidEnvelope<T>(
         status: response.status,
         content_type: contentType || null,
         body_length: body.length,
+        request_id: responseRequestId(response),
       },
       workflow_id: null,
+      request_id: responseRequestId(response),
     },
   };
 }
@@ -212,8 +262,10 @@ function invalidJsonEnvelope<T>(
         content_type: contentType || null,
         body_length: body.length,
         parse_error: error instanceof Error ? error.message : String(error),
+        request_id: responseRequestId(response),
       },
       workflow_id: null,
+      request_id: responseRequestId(response),
     },
   };
 }
@@ -222,7 +274,7 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
   const body = await response.text();
   if (!contentType.includes("application/json")) {
-    throw new ApiRequestError({
+    const error = new ApiRequestError({
       status: response.status,
       code: "invalid_response",
       message: "API returned a non-JSON response.",
@@ -230,13 +282,18 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
         status: response.status,
         content_type: contentType || null,
         body_length: body.length,
+        request_id: responseRequestId(response),
       },
+      requestId: responseRequestId(response),
+      endpoint: response.url,
     });
+    emitApiRequestError(error);
+    throw error;
   }
   try {
     return JSON.parse(body) as T;
   } catch (error) {
-    throw new ApiRequestError({
+    const apiError = new ApiRequestError({
       status: response.status,
       code: "invalid_response",
       message: "API returned malformed JSON.",
@@ -245,8 +302,13 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
         content_type: contentType || null,
         body_length: body.length,
         parse_error: error instanceof Error ? error.message : String(error),
+        request_id: responseRequestId(response),
       },
+      requestId: responseRequestId(response),
+      endpoint: response.url,
     });
+    emitApiRequestError(apiError);
+    throw apiError;
   }
 }
 
@@ -283,6 +345,11 @@ function parseAssistantStreamEvent(block: string): AssistantStreamEvent | null {
   }
 }
 
+function requestIdFromStreamEvent(event: AssistantStreamEvent): string | null {
+  const value = (event as { request_id?: unknown }).request_id;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 function pathSegment(value: string): string {
   return encodeURIComponent(value);
 }
@@ -299,9 +366,30 @@ function throwApiRequestError<T>(
     message: envelope.error?.message ?? fallbackMessage,
     details: envelope.error?.details,
     workflowId: envelope.error?.workflow_id ?? null,
+    requestId: envelope.error?.request_id ?? responseRequestId(response),
+    endpoint: response.url,
   });
+  emitApiRequestError(error);
   if (error.status === 401) notifyAuthSessionExpired();
   throw error;
+}
+
+function emitApiRequestError(error: ApiRequestError) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(API_REQUEST_ERROR_EVENT, {
+      detail: {
+        status: error.status,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        workflowId: error.workflowId,
+        requestId: error.requestId,
+        endpoint: error.endpoint,
+        occurredAt: new Date().toISOString(),
+      },
+    }),
+  );
 }
 
 function notifyAuthSessionExpired() {
@@ -474,6 +562,89 @@ export function chatWithAssistant(
   });
 }
 
+export function listAssistantSessions(params: {
+  include_archived?: boolean;
+  limit?: number;
+  q?: string;
+} = {}): Promise<AssistantChatSessionSummary[]> {
+  return request<AssistantChatSessionSummary[]>(
+    `/assistant/sessions${queryString({
+      include_archived: params.include_archived ? "true" : undefined,
+      limit: params.limit,
+      q: params.q,
+    })}`,
+  );
+}
+
+export function createAssistantSession(
+  payload: AssistantSessionCreatePayload = {},
+): Promise<AssistantChatSessionSummary> {
+  return request<AssistantChatSessionSummary>("/assistant/sessions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getAssistantSession(
+  sessionId: string,
+): Promise<AssistantChatSessionDetail> {
+  return request<AssistantChatSessionDetail>(
+    `/assistant/sessions/${pathSegment(sessionId)}`,
+  );
+}
+
+export function getAssistantSessionStreamReplays(
+  sessionId: string,
+): Promise<AssistantStreamReplay[]> {
+  return request<AssistantStreamReplay[]>(
+    `/assistant/sessions/${pathSegment(sessionId)}/stream-replays`,
+  );
+}
+
+export function renameAssistantSession(
+  sessionId: string,
+  payload: AssistantSessionRenamePayload,
+): Promise<AssistantChatSessionSummary> {
+  return request<AssistantChatSessionSummary>(
+    `/assistant/sessions/${pathSegment(sessionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function archiveAssistantSession(
+  sessionId: string,
+): Promise<AssistantChatSessionSummary> {
+  return request<AssistantChatSessionSummary>(
+    `/assistant/sessions/${pathSegment(sessionId)}/archive`,
+    { method: "POST" },
+  );
+}
+
+export function deleteAssistantSession(sessionId: string): Promise<{
+  deleted: boolean;
+  session_id: string;
+}> {
+  return request(`/assistant/sessions/${pathSegment(sessionId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function appendAssistantSessionMessage(
+  sessionId: string,
+  payload: AssistantSessionMessagePayload,
+): Promise<AssistantChatMessage> {
+  return request<AssistantChatMessage>(
+    `/assistant/sessions/${pathSegment(sessionId)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export async function streamAssistantChat(
   payload: AssistantChatPayload,
   onEvent: (event: AssistantStreamEvent) => void,
@@ -497,11 +668,15 @@ export async function streamAssistantChat(
     );
   }
   if (!response.body) {
-    throw new ApiRequestError({
+    const error = new ApiRequestError({
       status: response.status,
       code: "assistant_stream_unavailable",
       message: "Assistant stream response did not include a readable body.",
+      requestId: responseRequestId(response),
+      endpoint: response.url,
     });
+    emitApiRequestError(error);
+    throw error;
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -516,12 +691,16 @@ export async function streamAssistantChat(
     for (const event of parsed.events) {
       onEvent(event);
       if (event.type === "error") {
-        throw new ApiRequestError({
+        const error = new ApiRequestError({
           status: response.status,
           code: event.code,
           message: event.message,
           details: event.details,
+          requestId: requestIdFromStreamEvent(event) ?? responseRequestId(response),
+          endpoint: response.url,
         });
+        emitApiRequestError(error);
+        throw error;
       }
       if (event.type === "final") finalResponse = event.response;
     }
@@ -531,21 +710,29 @@ export async function streamAssistantChat(
   for (const event of parsed.events) {
     onEvent(event);
     if (event.type === "error") {
-      throw new ApiRequestError({
+      const error = new ApiRequestError({
         status: response.status,
         code: event.code,
         message: event.message,
         details: event.details,
+        requestId: requestIdFromStreamEvent(event) ?? responseRequestId(response),
+        endpoint: response.url,
       });
+      emitApiRequestError(error);
+      throw error;
     }
     if (event.type === "final") finalResponse = event.response;
   }
   if (!finalResponse) {
-    throw new ApiRequestError({
+    const error = new ApiRequestError({
       status: response.status,
       code: "assistant_stream_incomplete",
       message: "Assistant stream ended before the final response was received.",
+      requestId: responseRequestId(response),
+      endpoint: response.url,
     });
+    emitApiRequestError(error);
+    throw error;
   }
   return finalResponse;
 }
@@ -578,6 +765,33 @@ export function reindexRetrieval(
   payload: RetrievalReindexPayload,
 ): Promise<RetrievalReindexResult> {
   return request<RetrievalReindexResult>("/retrieval/reindex", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listJobs(params: {
+  status?: string | null;
+  job_type?: string | null;
+  limit?: number;
+} = {}): Promise<BackgroundJob[]> {
+  return request<BackgroundJob[]>(
+    `/jobs${queryString({
+      status: params.status ?? undefined,
+      job_type: params.job_type ?? undefined,
+      limit: params.limit,
+    })}`,
+  );
+}
+
+export function getJob(jobId: string): Promise<BackgroundJob> {
+  return request<BackgroundJob>(`/jobs/${pathSegment(jobId)}`);
+}
+
+export function createRetrievalReindexJob(
+  payload: RetrievalReindexJobPayload,
+): Promise<BackgroundJob> {
+  return request<BackgroundJob>("/jobs/retrieval-reindex", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -618,6 +832,10 @@ export function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 export function getRuntimeReadiness(): Promise<RuntimeReadiness> {
   return request<RuntimeReadiness>("/runtime/readiness");
+}
+
+export function getRuntimeMigrations(): Promise<MigrationDiagnostics> {
+  return request<MigrationDiagnostics>("/runtime/migrations");
 }
 
 export function updateRuntimeRetrievalSettings(
