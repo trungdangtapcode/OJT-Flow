@@ -1,0 +1,43 @@
+{
+  "policy_id": "external_api_cache_policy_v0",
+  "version": "2026-06-11",
+  "cache_key_fields": [
+    "connector_id",
+    "endpoint_url",
+    "normalized_query",
+    "request_parameters",
+    "source_release_version",
+    "accepted_license_version",
+    "auth_mode"
+  ],
+  "required_metadata_fields": [
+    "source_id",
+    "endpoint_url_hash",
+    "query_hash",
+    "source_release_version",
+    "fetched_at",
+    "expires_at",
+    "response_hash",
+    "ingestion_approval_state"
+  ],
+  "default_ttl_seconds": 604800,
+  "stale_while_revalidate_seconds": 86400,
+  "invalidation_triggers": [
+    "source release/version changes",
+    "license terms change",
+    "connector policy changes",
+    "review rejection",
+    "PHI/sensitive-query policy violation",
+    "manual data steward invalidation"
+  ],
+  "privacy_controls": [
+    "Do not use raw PHI in cache keys.",
+    "Hash endpoint URLs and queries in metadata views.",
+    "Store raw provider response only after source ingestion approval.",
+    "Preserve source release/version and fetched_at for reproducibility."
+  ],
+  "warnings": [
+    "The cache key must be reproducible but must not expose sensitive user query text in admin summaries.",
+    "Cached external responses are candidate evidence only until ingestion approval marks them searchable."
+  ]
+}

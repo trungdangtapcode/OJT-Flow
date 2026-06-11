@@ -281,6 +281,137 @@ class DocumentReferenceMapRequest(ContractModel):
     }
 
 
+class OmopPreviewRequest(ContractModel):
+    package: ClinicalPackage
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "package": {
+                        "package_type": "ojtflow_clinical_package",
+                        "schema_version": "clinical_package.v0",
+                        "workflow_id": "wf_demo",
+                        "raw_input": {
+                            "dataset_ref": "storage://datasets/demo",
+                            "input_hash": "sha256:demo",
+                            "declared_format": "csv",
+                            "detected_format": "csv",
+                        },
+                        "clinical_bundle": {
+                            "resourceType": "Bundle",
+                            "type": "collection",
+                            "entry": [],
+                            "resources": [],
+                        },
+                        "operation_outcome": {"resourceType": "OperationOutcome", "issue": []},
+                    }
+                }
+            ]
+        }
+    }
+
+
+class ExternalApiCacheMetadataRequest(ContractModel):
+    connector_id: NonBlankStr
+    endpoint_url: NonBlankStr
+    query: NonBlankStr
+    source_release_version: NonBlankStr
+    response_text: str | None = None
+    fetched_at: NonBlankStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "connector_id": "pubmed",
+                    "endpoint_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+                    "query": "HbA1c LOINC Observation",
+                    "source_release_version": "fetched:2026-06-11",
+                    "response_text": "{\"count\":\"2\"}",
+                    "metadata": {"workspace_id": "default"},
+                }
+            ]
+        }
+    }
+
+
+class SourceIngestionApprovalPreviewRequest(ContractModel):
+    connector_id: NonBlankStr
+    document_id: NonBlankStr
+    source_url: NonBlankStr
+    source_release_version: NonBlankStr
+    license_accepted: bool = False
+    reviewer_approved: bool = False
+    contains_phi: bool = False
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "connector_id": "pubmed",
+                    "document_id": "pubmed-123",
+                    "source_url": "https://pubmed.ncbi.nlm.nih.gov/123/",
+                    "source_release_version": "fetched:2026-06-11",
+                    "license_accepted": True,
+                    "reviewer_approved": False,
+                    "contains_phi": False,
+                }
+            ]
+        }
+    }
+
+
+class ExternalLinkLaunchRequest(ContractModel):
+    launcher_id: NonBlankStr
+    query: NonBlankStr
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "launcher_id": "pubmed",
+                    "query": "HbA1c unit standard",
+                }
+            ]
+        }
+    }
+
+
+class EtlExportPackageRequest(ContractModel):
+    package: ClinicalPackage
+    include_resources: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "package": {
+                        "package_type": "ojtflow_clinical_package",
+                        "schema_version": "clinical_package.v0",
+                        "workflow_id": "wf_demo",
+                        "raw_input": {
+                            "dataset_ref": "storage://datasets/demo",
+                            "input_hash": "sha256:demo",
+                            "declared_format": "csv",
+                            "detected_format": "csv",
+                        },
+                        "clinical_bundle": {
+                            "resourceType": "Bundle",
+                            "type": "collection",
+                            "entry": [],
+                            "resources": [],
+                        },
+                        "operation_outcome": {"resourceType": "OperationOutcome", "issue": []},
+                    },
+                    "include_resources": False,
+                }
+            ]
+        }
+    }
+
+
 class OcrEvidenceFieldRequest(OcrEvidenceInput):
     """OCR evidence field submitted through the public API."""
 

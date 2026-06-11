@@ -194,6 +194,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F137 | Implemented | Added a data-driven OWASP LLM Top 10 threat model covering all 2025 categories, OJTFlow surfaces, residual risk, monitoring signals, mitigation status, code refs, test refs, docs, admin API, and Settings governance panel. |
 | 2026-06-11 | F138 | Implemented | Added data-driven non-diagnostic/non-treatment disclaimer policy, authenticated runtime disclaimer API, route-aware app-shell banners for Assistant, Workbench, Workflows, Reviews, Retrieval, Audit, Schemas, Settings, and Help, plus docs/tests. |
 | 2026-06-11 | F139-F145 | Implemented | Added Month 7 interoperability adapters for Bulk FHIR NDJSON import/export, HL7 v2 MSH/PID/OBR/OBX parsing and Observation mapping with provenance, DICOM metadata profiling, ImagingStudy-like mapping without pixel processing, DocumentReference-like mapping, API endpoints, docs, and tests. |
+| 2026-06-11 | F146-F155 | Implemented | Added Month 7 analytics and external-data workflow foundation: data-driven OMOP mapping profile, vocabulary candidate catalog, OMOP preview, DQD compatibility notes, cohort/research workflow boundaries, external connector registry, external API cache metadata, source ingestion approval preview, transparent source link launchers, ETL manifest export, API endpoints, docs, and tests. |
 
 ## Feature Backlog
 
@@ -362,16 +363,16 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F143 Add DICOM metadata parser for study, series, instance, modality, laterality, accession, and de-identification status.
 - [x] F144 Add ImagingStudy-like mapping for DICOM metadata, no pixel processing by default.
 - [x] F145 Add DocumentReference mapping for uploaded PDFs, images, notes, and extracted reports.
-- [ ] F146 Add OMOP mapping design for Person, Observation, Measurement, ConditionOccurrence, DrugExposure, VisitOccurrence, and Note.
-- [ ] F147 Add OMOP vocabulary candidate contract that can link FHIR-like resources to standard concept IDs.
-- [ ] F148 Add OMOP export preview with row counts, concept coverage, unmapped fields, and data quality warnings.
-- [ ] F149 Add OHDSI Data Quality Dashboard compatibility notes and future integration path.
-- [ ] F150 Add cohort/research workflow concept draft that remains separate from clinical decision support.
-- [ ] F151 Add external source connector registry with auth requirements, rate limits, license notes, and update cadence.
-- [ ] F152 Add external API call cache with source release/version metadata and invalidation policy.
-- [ ] F153 Add source ingestion approval workflow before newly fetched documents are searchable.
-- [ ] F154 Add external-link launchers for PubMed, ClinicalTrials.gov, openFDA, LOINC, UCUM, RxNav, and FHIR docs with query transparency.
-- [ ] F155 Add provenance-preserving export package for downstream ETL and analytics teams.
+- [x] F146 Add OMOP mapping design for Person, Observation, Measurement, ConditionOccurrence, DrugExposure, VisitOccurrence, and Note.
+- [x] F147 Add OMOP vocabulary candidate contract that can link FHIR-like resources to standard concept IDs.
+- [x] F148 Add OMOP export preview with row counts, concept coverage, unmapped fields, and data quality warnings.
+- [x] F149 Add OHDSI Data Quality Dashboard compatibility notes and future integration path.
+- [x] F150 Add cohort/research workflow concept draft that remains separate from clinical decision support.
+- [x] F151 Add external source connector registry with auth requirements, rate limits, license notes, and update cadence.
+- [x] F152 Add external API call cache with source release/version metadata and invalidation policy.
+- [x] F153 Add source ingestion approval workflow before newly fetched documents are searchable.
+- [x] F154 Add external-link launchers for PubMed, ClinicalTrials.gov, openFDA, LOINC, UCUM, RxNav, and FHIR docs with query transparency.
+- [x] F155 Add provenance-preserving export package for downstream ETL and analytics teams.
 
 ### Month 8: Scale, Quality, Deployment, And Release Readiness
 

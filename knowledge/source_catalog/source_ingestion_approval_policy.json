@@ -1,0 +1,40 @@
+{
+  "policy_id": "source_ingestion_approval_policy_v0",
+  "version": "2026-06-11",
+  "candidate_states": [
+    "candidate",
+    "blocked",
+    "approved_searchable",
+    "rejected"
+  ],
+  "searchable_states": [
+    "approved_searchable"
+  ],
+  "approval_steps": [
+    "Confirm connector is registered and allowed for the workspace.",
+    "Confirm license notes are accepted for the intended use.",
+    "Confirm query and response metadata contain no disallowed PHI.",
+    "Confirm source release/version and fetched_at are recorded.",
+    "Confirm data steward approval before indexing content into retrieval."
+  ],
+  "rejection_handling": [
+    "Keep rejection reason and hashes for audit.",
+    "Do not index rejected content.",
+    "Allow a new candidate when the source release, license, query, or redaction status changes."
+  ],
+  "audit_requirements": [
+    "connector_id",
+    "document_id",
+    "source_url_hash",
+    "source_release_version",
+    "license_accepted",
+    "reviewer_approved",
+    "decision_state",
+    "actor",
+    "decided_at"
+  ],
+  "warnings": [
+    "Newly fetched documents are not searchable by default.",
+    "Approval for source ingestion is separate from approval for clinical or analytics export."
+  ]
+}

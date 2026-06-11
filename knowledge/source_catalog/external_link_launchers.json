@@ -1,0 +1,87 @@
+{
+  "catalog_id": "ojtflow_external_link_launchers_v0",
+  "version": "2026-06-11",
+  "launchers": [
+    {
+      "launcher_id": "pubmed",
+      "display_name": "Search PubMed",
+      "connector_id": "pubmed",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/",
+      "url_template": "https://pubmed.ncbi.nlm.nih.gov/?term={query}",
+      "query_parameter": "term",
+      "supported_query_examples": ["HbA1c unit standard", "FHIR Observation laboratory result"],
+      "transparency_notes": ["The exact encoded query is shown before opening the external site."],
+      "pii_phi_policy": "Do not include PHI or patient-specific facts in external literature searches."
+    },
+    {
+      "launcher_id": "clinicaltrials_gov",
+      "display_name": "Search ClinicalTrials.gov",
+      "connector_id": "clinicaltrials_gov",
+      "source_url": "https://clinicaltrials.gov/",
+      "url_template": "https://clinicaltrials.gov/search?term={query}",
+      "query_parameter": "term",
+      "supported_query_examples": ["diabetes HbA1c", "hypertension trial"],
+      "transparency_notes": ["The launcher creates a transparent browser URL and performs no backend fetch."],
+      "pii_phi_policy": "Use condition or intervention terms only; do not include patient identifiers."
+    },
+    {
+      "launcher_id": "openfda",
+      "display_name": "Search openFDA",
+      "connector_id": "openfda",
+      "source_url": "https://open.fda.gov/",
+      "url_template": "https://open.fda.gov/search/?search={query}",
+      "query_parameter": "search",
+      "supported_query_examples": ["metformin label", "device recall"],
+      "transparency_notes": ["Use the generated URL as a user-visible launch link, not a silent backend call."],
+      "pii_phi_policy": "Do not include PHI in regulatory source queries."
+    },
+    {
+      "launcher_id": "loinc",
+      "display_name": "Search LOINC",
+      "connector_id": "loinc",
+      "source_url": "https://loinc.org/",
+      "url_template": "https://loinc.org/search/?t=1&s={query}",
+      "query_parameter": "s",
+      "supported_query_examples": ["HbA1c", "glucose serum"],
+      "transparency_notes": ["Terminology results remain candidates until reviewed."],
+      "pii_phi_policy": "Terminology searches should use standardizable terms only."
+    },
+    {
+      "launcher_id": "ucum",
+      "display_name": "Open UCUM Service",
+      "connector_id": "ucum",
+      "source_url": "https://ucum.nlm.nih.gov/ucum-service.html",
+      "url_template": "https://ucum.nlm.nih.gov/ucum-service.html?query={query}",
+      "query_parameter": "query",
+      "supported_query_examples": ["mg/dL", "%"],
+      "transparency_notes": ["Remote UCUM validation should be cached with source/version metadata when automated later."],
+      "pii_phi_policy": "Unit queries must not include patient facts."
+    },
+    {
+      "launcher_id": "rxnav",
+      "display_name": "Search RxNav",
+      "connector_id": "rxnav",
+      "source_url": "https://lhncbc.nlm.nih.gov/RxNav/",
+      "url_template": "https://mor.nlm.nih.gov/RxNav/search?searchBy=String&searchTerm={query}",
+      "query_parameter": "searchTerm",
+      "supported_query_examples": ["metformin", "atorvastatin"],
+      "transparency_notes": ["Medication terminology results require review before OMOP drug concept use."],
+      "pii_phi_policy": "Use medication names only; do not include patient context."
+    },
+    {
+      "launcher_id": "hl7_fhir_docs",
+      "display_name": "Search FHIR Docs",
+      "connector_id": "hl7_fhir_docs",
+      "source_url": "https://hl7.org/fhir/",
+      "url_template": "https://hl7.org/fhir/search.html?q={query}",
+      "query_parameter": "q",
+      "supported_query_examples": ["Observation valueQuantity", "Bulk Data NDJSON"],
+      "transparency_notes": ["FHIR docs are used as implementation evidence, not proof of full conformance."],
+      "pii_phi_policy": "FHIR documentation queries should describe standards, not patient data."
+    }
+  ],
+  "warnings": [
+    "Launchers build transparent URLs only; they do not fetch or ingest external content.",
+    "External content becomes searchable only after ingestion approval."
+  ]
+}

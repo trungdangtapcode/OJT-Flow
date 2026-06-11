@@ -1,0 +1,179 @@
+{
+  "profile_id": "ojtflow_omop_preview_v0",
+  "version": "2026-06-11",
+  "target_cdm": "OHDSI OMOP CDM v5.4-compatible preview",
+  "supported_tables": [
+    "person",
+    "observation",
+    "measurement",
+    "condition_occurrence",
+    "drug_exposure",
+    "visit_occurrence",
+    "note"
+  ],
+  "row_rules": [
+    {
+      "target_table": "person",
+      "source_resource_types": ["Patient"],
+      "condition": "resource_type_match",
+      "notes": ["A FHIR-like Patient can become a PERSON row after de-identification and source-value governance."]
+    },
+    {
+      "target_table": "measurement",
+      "source_resource_types": ["Observation"],
+      "condition": "has_numeric_value_quantity",
+      "notes": ["Numeric FHIR-like Observation.valueQuantity rows are previewed as MEASUREMENT rows."]
+    },
+    {
+      "target_table": "observation",
+      "source_resource_types": ["Observation"],
+      "condition": "observation_without_numeric_value_quantity",
+      "notes": ["Non-numeric FHIR-like Observation rows remain OBSERVATION candidates."]
+    },
+    {
+      "target_table": "condition_occurrence",
+      "source_resource_types": ["Condition"],
+      "condition": "resource_type_match",
+      "notes": ["Condition rows need vocabulary review before analytics export."]
+    },
+    {
+      "target_table": "drug_exposure",
+      "source_resource_types": ["MedicationRequest", "MedicationStatement", "MedicationAdministration", "Medication"],
+      "condition": "resource_type_match",
+      "notes": ["Medication resources require RxNorm/RxNav candidate review before export."]
+    },
+    {
+      "target_table": "visit_occurrence",
+      "source_resource_types": ["Encounter"],
+      "condition": "resource_type_match",
+      "notes": ["Encounter rows can become VISIT_OCCURRENCE rows after visit concept and date checks."]
+    },
+    {
+      "target_table": "note",
+      "source_resource_types": ["DocumentReference", "DiagnosticReport"],
+      "condition": "has_document_content",
+      "notes": ["Document and report text should be redacted and approved before NOTE export."]
+    }
+  ],
+  "field_mappings": [
+    {
+      "target_table": "person",
+      "target_field": "person_source_value",
+      "source_resource_type": "Patient",
+      "source_path": "resource.id",
+      "transformation": "copy source identifier as governed source value",
+      "required": true,
+      "review_required": true,
+      "notes": ["Do not infer a stable person_id in the preview layer."]
+    },
+    {
+      "target_table": "measurement",
+      "target_field": "measurement_source_value",
+      "source_resource_type": "Observation",
+      "source_path": "resource.code.text",
+      "transformation": "copy source display text",
+      "required": true,
+      "review_required": false,
+      "notes": ["Source text remains visible even when standard concept mapping is missing."]
+    },
+    {
+      "target_table": "measurement",
+      "target_field": "measurement_date",
+      "source_resource_type": "Observation",
+      "source_path": "resource.effectiveDateTime",
+      "transformation": "copy date-like value without timezone inference",
+      "required": true,
+      "review_required": true,
+      "notes": ["Dates must pass validation before production analytics export."]
+    },
+    {
+      "target_table": "measurement",
+      "target_field": "value_as_number",
+      "source_resource_type": "Observation",
+      "source_path": "resource.valueQuantity.value",
+      "transformation": "copy numeric value",
+      "required": false,
+      "review_required": false,
+      "notes": ["Rows without numeric value are routed to OBSERVATION by the row rule."]
+    },
+    {
+      "target_table": "measurement",
+      "target_field": "unit_source_value",
+      "source_resource_type": "Observation",
+      "source_path": "resource.valueQuantity.unit",
+      "transformation": "copy source unit",
+      "required": false,
+      "review_required": true,
+      "notes": ["UCUM validation and unit_concept_id mapping remain review-gated."]
+    },
+    {
+      "target_table": "measurement",
+      "target_field": "measurement_concept_id",
+      "source_resource_type": "Observation",
+      "source_path": "resource.code.coding",
+      "transformation": "resolve reviewed LOINC/RxNorm/SNOMED candidate to OMOP standard concept",
+      "required": true,
+      "review_required": true,
+      "notes": ["The preview never guesses OMOP concept IDs when vocabulary evidence is missing."]
+    },
+    {
+      "target_table": "observation",
+      "target_field": "observation_source_value",
+      "source_resource_type": "Observation",
+      "source_path": "resource.code.text",
+      "transformation": "copy non-numeric source observation display",
+      "required": true,
+      "review_required": false,
+      "notes": ["Non-numeric observations need concept review before research use."]
+    },
+    {
+      "target_table": "condition_occurrence",
+      "target_field": "condition_source_value",
+      "source_resource_type": "Condition",
+      "source_path": "resource.code.text",
+      "transformation": "copy source condition display",
+      "required": true,
+      "review_required": true,
+      "notes": ["Condition concepts should resolve through SNOMED or ICD vocabulary review."]
+    },
+    {
+      "target_table": "drug_exposure",
+      "target_field": "drug_source_value",
+      "source_resource_type": "MedicationRequest",
+      "source_path": "resource.medicationCodeableConcept.text",
+      "transformation": "copy medication display",
+      "required": true,
+      "review_required": true,
+      "notes": ["Medication concepts should resolve through RxNorm/RxNav review."]
+    },
+    {
+      "target_table": "visit_occurrence",
+      "target_field": "visit_start_date",
+      "source_resource_type": "Encounter",
+      "source_path": "resource.period.start",
+      "transformation": "copy encounter start date",
+      "required": true,
+      "review_required": true,
+      "notes": ["Visit type and date completeness remain required before analytics export."]
+    },
+    {
+      "target_table": "note",
+      "target_field": "note_source_value",
+      "source_resource_type": "DocumentReference",
+      "source_path": "resource.content.0.attachment.url",
+      "transformation": "copy governed artifact reference, not raw note text",
+      "required": true,
+      "review_required": true,
+      "notes": ["Raw document content must pass redaction and approval before NOTE export."]
+    }
+  ],
+  "review_policy": "OMOP export preview is advisory. Production ETL requires vocabulary resolution, de-identification review, DQD validation, and data-steward approval.",
+  "standard_refs": [
+    "OHDSI OMOP Common Data Model: https://ohdsi.github.io/CommonDataModel/",
+    "HL7 FHIR resources: https://hl7.org/fhir/"
+  ],
+  "warnings": [
+    "This profile creates preview counts and governance warnings; it does not produce production OMOP SQL loads.",
+    "OMOP concept IDs must come from a reviewed vocabulary release, not from model inference."
+  ]
+}

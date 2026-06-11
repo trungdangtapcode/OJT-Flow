@@ -1341,6 +1341,164 @@ Response data includes:
 
 ## Interoperability
 
+`GET /api/v1/interoperability/analytics/omop/mapping-profile`
+
+Returns the data-driven OMOP preview mapping profile. Response data includes
+`profile_id`, `target_cdm`, supported target tables, row rules, field mappings,
+review policy, standard refs, and warnings.
+
+`POST /api/v1/interoperability/analytics/omop/preview`
+
+Previews how a `ClinicalPackage` maps into OMOP target tables. Request:
+
+```json
+{
+  "package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0",
+    "workflow_id": "wf_demo",
+    "raw_input": {
+      "dataset_ref": "storage://datasets/demo",
+      "input_hash": "sha256:demo",
+      "declared_format": "csv",
+      "detected_format": "csv"
+    },
+    "clinical_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": [],
+      "resources": []
+    },
+    "operation_outcome": {"resourceType": "OperationOutcome", "issue": []}
+  }
+}
+```
+
+Response data includes `table_previews[]`, `total_rows`,
+`vocabulary_candidates[]`, concept coverage, unmapped fields, data-quality
+warnings, and `review_required`.
+
+`GET /api/v1/interoperability/analytics/omop/dqd-compatibility`
+
+Returns OHDSI Data Quality Dashboard compatibility notes and future integration
+path. OJTFlow preview data is not a replacement for running DQD against a real
+OMOP database.
+
+`GET /api/v1/interoperability/analytics/cohort-research-workflow`
+
+Returns the cohort/research workflow concept, intended use, prohibited uses,
+required approvals, output artifacts, and controls that keep analytics separate
+from clinical decision support.
+
+`GET /api/v1/interoperability/external/connectors`
+
+Returns the governed external source connector registry for PubMed,
+ClinicalTrials.gov, openFDA, LOINC, UCUM, RxNav, and FHIR docs. Each connector
+declares auth requirements, rate-limit policy, license notes, update cadence,
+allowed use, prohibited use, cache policy, and ingestion approval requirements.
+
+`GET /api/v1/interoperability/external/cache-policy`
+
+Returns external API cache key fields, required metadata fields, default TTL,
+stale-while-revalidate window, invalidation triggers, privacy controls, and
+warnings.
+
+`POST /api/v1/interoperability/external/cache/metadata`
+
+Builds deterministic cache metadata for an external API response without
+persisting the response. Request:
+
+```json
+{
+  "connector_id": "pubmed",
+  "endpoint_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+  "query": "HbA1c LOINC Observation",
+  "source_release_version": "fetched:2026-06-11",
+  "response_text": "{\"count\":\"2\"}",
+  "metadata": {"workspace_id": "default"}
+}
+```
+
+Response data includes a cache key, hashed endpoint/query metadata,
+source release version, fetch/expiry timestamps, response hash, and explicit
+`searchable_after_approval=false`.
+
+`GET /api/v1/interoperability/external/ingestion-approval-policy`
+
+Returns the source ingestion approval policy. Newly fetched external documents
+are candidates and are not searchable until the approval decision reaches
+`approved_searchable`.
+
+`POST /api/v1/interoperability/external/ingestion/approval-preview`
+
+Previews whether an external source candidate may become searchable. Request:
+
+```json
+{
+  "connector_id": "pubmed",
+  "document_id": "pubmed-123",
+  "source_url": "https://pubmed.ncbi.nlm.nih.gov/123/",
+  "source_release_version": "fetched:2026-06-11",
+  "license_accepted": true,
+  "reviewer_approved": false,
+  "contains_phi": false
+}
+```
+
+Response data includes `state`, `searchable`, `required_actions[]`, and
+warnings.
+
+`GET /api/v1/interoperability/external/link-launchers`
+
+Returns transparent external link launchers for official healthcare sources.
+Launchers build visible URLs only; they do not fetch, cache, ingest, or index
+external content.
+
+`POST /api/v1/interoperability/external/link-launch`
+
+Builds one transparent external URL. Request:
+
+```json
+{
+  "launcher_id": "pubmed",
+  "query": "HbA1c unit standard"
+}
+```
+
+Response data includes the URL, the encoded query, connector/source metadata,
+and warnings that PHI should not be sent to external sites.
+
+`POST /api/v1/interoperability/export/etl-package`
+
+Builds a provenance-preserving ETL manifest for analytics teams. Request:
+
+```json
+{
+  "package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0",
+    "workflow_id": "wf_demo",
+    "raw_input": {
+      "dataset_ref": "storage://datasets/demo",
+      "input_hash": "sha256:demo",
+      "declared_format": "csv",
+      "detected_format": "csv"
+    },
+    "clinical_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": [],
+      "resources": []
+    },
+    "operation_outcome": {"resourceType": "OperationOutcome", "issue": []}
+  },
+  "include_resources": false
+}
+```
+
+Response data includes `clinical_package_hash`, OMOP preview, resource manifest,
+provenance record count, audit refs, output refs, and warnings.
+
 `POST /api/v1/interoperability/fhir/bulk/import`
 
 Parses FHIR Bulk Data-style NDJSON resources with lightweight validation.
