@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel
+from ojtflow.core.contracts.issue import SourceLocation
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 
@@ -14,6 +15,7 @@ from ojtflow.core.time import utc_now
 ArtifactSource = Literal["upload", "clipboard", "assistant_attachment", "api"]
 RetentionAction = Literal["retain", "review", "delete_after_expiry"]
 ExtractionStepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
+TableSourceKind = Literal["pdf", "excel", "csv", "screenshot", "image", "html", "unknown"]
 
 
 class ArtifactRetentionPolicy(ContractModel):
@@ -88,3 +90,47 @@ class ParsingPipelineTrace(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     started_at: str = Field(default_factory=lambda: utc_now().isoformat())
     completed_at: str | None = None
+
+
+class TableCell(ContractModel):
+    """One extracted table cell with provenance."""
+
+    row_index: int = Field(ge=0)
+    column_index: int = Field(ge=0)
+    value: str = ""
+    row_label: str | None = None
+    column_label: str | None = None
+    location: SourceLocation | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExtractedTable(ContractModel):
+    """Format-neutral extracted table with source-linked cell coordinates."""
+
+    table_id: str = Field(default_factory=lambda: new_id("tbl"))
+    artifact_id: str | None = None
+    trace_id: str | None = None
+    source_kind: TableSourceKind = "unknown"
+    title: str | None = None
+    page: int | None = Field(default=None, ge=1)
+    sheet_name: str | None = None
+    row_count: int = Field(default=0, ge=0)
+    column_count: int = Field(default=0, ge=0)
+    cells: list[TableCell] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TableExtractionProfile(ContractModel):
+    """Summary of tables found during document extraction."""
+
+    profile_id: str = Field(default_factory=lambda: new_id("tblprof"))
+    artifact_id: str | None = None
+    trace_id: str | None = None
+    extractor: str
+    source_kind: TableSourceKind = "unknown"
+    tables: list[ExtractedTable] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: utc_now().isoformat())
+    metadata: dict[str, Any] = Field(default_factory=dict)

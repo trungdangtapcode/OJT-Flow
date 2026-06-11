@@ -131,6 +131,8 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F026 | Implemented | Promoted `openai_vision` to a first-class extractor option. Vision traces now include provider, model, billable cost basis, external-provider flag, and PHI-handling metadata. |
 | 2026-06-11 | F027 | Implemented | Added optional `tesseract` local OCR extractor support behind the same `DocumentExtractor` path, with local/non-billable cost metadata and PHI host-handling trace metadata. |
 | 2026-06-11 | F028 | Started | Added `POST /api/v1/parse/clipboard/images/jobs` so pasted image bytes create the same `UploadedArtifact`, dedupe, job, and trace path as file uploads. Frontend paste UX remains follow-up. |
+| 2026-06-11 | F030 | Implemented | Added table extraction contracts: `TableExtractionProfile`, `ExtractedTable`, and `TableCell`, preserving source kind, page/sheet context, cell coordinates, confidence, and source locations. |
+| 2026-06-11 | F036 | Started | Extended `SourceLocation` with page, bounding box, text span, sheet/table-cell references, and source refs so validation/OCR/table issues can point to exact source regions. Producer/UI wiring remains follow-up. |
 
 ## Feature Backlog
 
@@ -168,13 +170,13 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F027 Add local OCR adapter option for Tesseract or PaddleOCR behind the same extractor contract.
 - [ ] F028 Add image clipboard paste support that creates the same artifact/evidence records as file upload. _(Started: backend clipboard image endpoint creates upload-equivalent artifacts/jobs; frontend paste UX remains.)_
 - [ ] F029 Add multi-page OCR evidence UI with page thumbnails, bounding boxes, confidence, field labels, and source refs.
-- [ ] F030 Add table extraction contracts for PDFs, Excel, CSV, and screenshots, preserving cell coordinates and row provenance.
+- [x] F030 Add table extraction contracts for PDFs, Excel, CSV, and screenshots, preserving cell coordinates and row provenance.
 - [ ] F031 Add spreadsheet workbook parsing with sheet-level profiles, header detection, merged-cell warnings, and hidden-sheet warnings.
 - [ ] F032 Add PDF scanned-vs-digital detection and a clear warning when OCR is required.
 - [ ] F033 Add document redaction preview for PHI-like text before sending content to external LLM/OCR providers.
 - [ ] F034 Add configurable upload retention rules by mode, tenant, source type, and sensitivity class.
 - [ ] F035 Add artifact download/export access controls and audit events.
-- [ ] F036 Add source-linked validation issues where each issue can point to row, cell, page, bounding box, or text span.
+- [ ] F036 Add source-linked validation issues where each issue can point to row, cell, page, bounding box, or text span. _(Started: contract supports row/cell/page/bbox/text-span references; producers and UI links remain.)_
 - [ ] F037 Add document extraction quality scoring based on empty text, low OCR confidence, conflicting extractors, and malformed tables.
 - [ ] F038 Add user-facing extraction explanation: what was read, what was skipped, and what needs review.
 - [ ] F039 Add a file intake wizard that lets users choose "validate data", "extract fields", "profile FHIR", "find standards", or "ask assistant".

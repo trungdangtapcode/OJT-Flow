@@ -150,6 +150,12 @@ normalization metadata to avoid merging incompatible outputs.
 - `ParsingPipelineTrace.steps` can represent multi-stage extraction later:
   scanned-PDF detection, OCR, layout parsing, table extraction, redaction preview,
   and validation handoff.
+- `SourceLocation` now supports row/column, page, bounding box, text span, sheet
+  and table-cell coordinates. Validation issues, OCR evidence, and extracted
+  table cells should point through this common contract.
+- `TableExtractionProfile`, `ExtractedTable`, and `TableCell` define the
+  canonical table output shape for CSV, Excel, PDF, HTML, and screenshots. Actual
+  high-quality table parsers are still follow-up adapters.
 - `UploadedArtifact.retention_policy` is stamped at intake now; tenant/mode
   retention rules will become configurable in a later Month 2 item.
 
