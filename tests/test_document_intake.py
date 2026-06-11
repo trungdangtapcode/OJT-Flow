@@ -120,6 +120,10 @@ def test_openai_vision_is_valid_extractor_choice() -> None:
     assert validate_extractor_choice(Extractor.OPENAI_VISION) == "openai_vision"
 
 
+def test_tesseract_is_valid_extractor_choice() -> None:
+    assert validate_extractor_choice(Extractor.TESSERACT) == "tesseract"
+
+
 @pytest.mark.asyncio
 async def test_upload_parse_job_endpoint_creates_queued_artifact_job() -> None:
     service = _service()

@@ -57,6 +57,7 @@ class Extractor:
     MARKITDOWN = "markitdown"
     MINERU = "mineru"
     OPENAI_VISION = "openai_vision"
+    TESSERACT = "tesseract"
     AUTO = "auto"
 
 
@@ -65,6 +66,7 @@ ALLOWED_EXTRACTORS = {
     Extractor.MARKITDOWN,
     Extractor.MINERU,
     Extractor.OPENAI_VISION,
+    Extractor.TESSERACT,
 }
 MAX_UPLOAD_FILENAME_BYTES = 255
 OCR_SENSITIVE_FORMATS = {"pdf", "docx", "pptx", "xlsx", "xls", "image"}
@@ -113,7 +115,8 @@ def validate_extractor_choice(prefer: str) -> str:
     if normalized not in ALLOWED_EXTRACTORS:
         raise UnsupportedUploadError(
             "Unsupported extractor "
-            f"'{prefer}'. Expected one of: auto, markitdown, mineru, openai_vision."
+            f"'{prefer}'. Expected one of: auto, markitdown, mineru, "
+            "openai_vision, tesseract."
         )
     return normalized
 
@@ -123,7 +126,7 @@ class ExtractionResult:
     """Output of document extraction."""
 
     text: str
-    extractor_used: str       # "markitdown" | "mineru" | "openai_vision"
+    extractor_used: str       # "markitdown" | "mineru" | "openai_vision" | "tesseract"
     source_format: str        # "pdf" | "image" | "docx" | ...
     filename: str
     page_count: int | None = None
@@ -180,12 +183,36 @@ def extract_document(
             )
         return result
 
+    if prefer == Extractor.TESSERACT:
+        result = _extract_tesseract(
+            data=data,
+            filename=safe_filename,
+            source_format=source_format,
+            warnings=warnings,
+            require_installed=True,
+        )
+        if result is None:
+            raise ToolExecutionError(
+                "Tesseract OCR could not extract this file. "
+                "Check image format, pytesseract, Pillow, and tesseract binary setup."
+            )
+        return result
+
     # AUTO: try markitdown first, fall back to minerU
     markitdown_error: Exception | None = None
     try:
         result = _extract_markitdown(data, safe_filename, source_format, list(warnings))
         if source_format == "image" and not result.text.strip():
             fallback_warnings = list(result.warnings)
+            tesseract_result = _extract_tesseract(
+                data=data,
+                filename=safe_filename,
+                source_format=source_format,
+                warnings=fallback_warnings,
+                require_installed=False,
+            )
+            if tesseract_result is not None:
+                return tesseract_result
             vision_result = _extract_openai_vision(
                 data=data,
                 filename=safe_filename,
@@ -318,6 +345,69 @@ def _extract_openai_vision(
             "phi_handling": (
                 "Image bytes are sent to the configured OpenAI-compatible vision "
                 "provider. Use redaction/review policy before enabling on PHI."
+            ),
+        },
+    )
+
+
+def _extract_tesseract(
+    *,
+    data: bytes,
+    filename: str,
+    source_format: str,
+    warnings: list[str],
+    require_installed: bool,
+) -> ExtractionResult | None:
+    """Use local Tesseract OCR for image attachments when installed."""
+
+    if source_format != "image":
+        warning = "Tesseract OCR currently supports image uploads only."
+        warnings.append(warning)
+        if require_installed:
+            raise UnsupportedUploadError(warning)
+        return None
+
+    try:
+        from PIL import Image  # type: ignore[import]
+        import pytesseract  # type: ignore[import]
+    except ImportError as exc:
+        if require_installed:
+            raise ImportError(
+                "Tesseract OCR requires optional dependencies: pillow and pytesseract."
+            ) from exc
+        return None
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            text = pytesseract.image_to_string(image) or ""
+    except Exception as exc:
+        if require_installed:
+            raise ToolExecutionError(f"Tesseract OCR failed for '{filename}': {exc}") from exc
+        warnings.append(f"Tesseract OCR failed: {exc}")
+        return None
+
+    if not text.strip():
+        warnings.append("Tesseract OCR returned empty text.")
+        if not require_installed:
+            return None
+
+    return ExtractionResult(
+        text=text,
+        extractor_used=Extractor.TESSERACT,
+        source_format=source_format,
+        filename=filename,
+        warnings=warnings,
+        metadata={
+            "provider": "local",
+            "engine": "tesseract",
+            "external_provider": False,
+            "cost_tracking": {
+                "billable": False,
+                "basis": "local CPU/GPU execution only",
+            },
+            "phi_handling": (
+                "Image bytes stay on the application host. Validate host storage, "
+                "logs, and retention policy before processing PHI."
             ),
         },
     )
@@ -630,8 +720,14 @@ def available_extractors() -> list[str]:
         available.append(Extractor.MINERU)
     except ImportError:
         pass
+    try:
+        from PIL import Image  # noqa: F401  # type: ignore[import]
+        import pytesseract  # noqa: F401  # type: ignore[import]
+        available.append(Extractor.TESSERACT)
+    except ImportError:
+        pass
     if os.getenv("OJT_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"):
-        available.append("openai_vision")
+        available.append(Extractor.OPENAI_VISION)
     return available
 
 

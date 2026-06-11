@@ -34,7 +34,7 @@ Multipart fields:
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `file` | file | required | Uses configured extension and size limits. |
-| `extractor` | string | `auto` | `auto`, `markitdown`, `mineru`, or `openai_vision`. |
+| `extractor` | string | `auto` | `auto`, `markitdown`, `mineru`, `openai_vision`, or `tesseract`. |
 | `execute_now` | boolean | `true` | `false` leaves a queued durable job. |
 
 Response envelope:
@@ -125,6 +125,9 @@ normalization metadata to avoid merging incompatible outputs.
 - OpenAI vision OCR is selectable as `openai_vision`. Its trace metadata includes
   provider, model, billable cost basis, and PHI-handling warning so external
   provider use is visible in audit/support views.
+- Local Tesseract OCR is selectable as `tesseract` when Pillow, pytesseract, and
+  the Tesseract binary are installed. Its trace metadata marks execution as local
+  and non-billable, with a PHI-handling note for host storage/log policy.
 - `ParsingPipelineTrace.steps` can represent multi-stage extraction later:
   scanned-PDF detection, OCR, layout parsing, table extraction, redaction preview,
   and validation handoff.
