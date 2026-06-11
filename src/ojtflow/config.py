@@ -132,6 +132,10 @@ class Settings(BaseModel):
 
     product_mode: ProductMode = Field(default="local_dev", alias="OJT_PRODUCT_MODE")
     no_mock_data: bool = Field(default=False, alias="OJT_NO_MOCK_DATA")
+    audit_hash_chain_required: bool = Field(
+        default=False,
+        alias="OJT_AUDIT_HASH_CHAIN_REQUIRED",
+    )
     storage_backend: StorageBackend = Field(
         default=DEFAULT_STORAGE_BACKEND,
         alias="OJT_STORAGE_BACKEND",
@@ -498,6 +502,15 @@ class Settings(BaseModel):
 
         return self.no_mock_data or self.product_mode in {"pilot", "production"}
 
+    @property
+    def effective_audit_hash_chain_required(self) -> bool:
+        """Return whether deployment policy requires chained audit records."""
+
+        return self.audit_hash_chain_required or self.product_mode in {
+            "pilot",
+            "production",
+        }
+
 
 def _resolve_path(path: Path, root: Path) -> Path:
     return path if path.is_absolute() else root / path
@@ -510,6 +523,10 @@ def get_settings() -> Settings:
     settings_kwargs = dict(
         OJT_PRODUCT_MODE=_parse_product_mode(os.getenv("OJT_PRODUCT_MODE")),
         OJT_NO_MOCK_DATA=_parse_bool(os.getenv("OJT_NO_MOCK_DATA"), default=False),
+        OJT_AUDIT_HASH_CHAIN_REQUIRED=_parse_bool(
+            os.getenv("OJT_AUDIT_HASH_CHAIN_REQUIRED"),
+            default=False,
+        ),
         OJT_STORAGE_BACKEND=_parse_storage_backend(os.getenv("OJT_STORAGE_BACKEND")),
         OJT_DATABASE_URL=_parse_postgres_dsn(
             os.getenv(

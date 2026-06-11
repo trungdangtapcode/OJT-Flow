@@ -54,6 +54,8 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.storage_backend == "postgres"
     assert settings.postgres_dsn == "postgresql://ojtflow:ojtflow@localhost:5432/ojtflow"
     assert settings.redis_url == "redis://localhost:6379/0"
+    assert settings.audit_hash_chain_required is False
+    assert settings.effective_audit_hash_chain_required is False
     assert settings.google_client_id == ""
     assert settings.google_client_secret == ""
     assert settings.google_redirect_uri == "http://localhost:8000/api/v1/auth/google/callback"
@@ -89,6 +91,21 @@ def test_runtime_resource_paths_are_configurable_and_resolved(monkeypatch, tmp_p
 
     assert settings.resolved_knowledge_dir == knowledge_dir
     assert settings.resolved_migrations_dir == migrations_dir
+
+
+def test_audit_hash_chain_is_required_in_high_risk_product_modes(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_PRODUCT_MODE", "pilot")
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "postgres")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "openai")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.audit_hash_chain_required is False
+    assert settings.effective_audit_hash_chain_required is True
 
 
 def test_runtime_retrieval_settings_are_persisted_and_reloaded(

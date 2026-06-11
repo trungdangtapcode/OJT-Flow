@@ -184,6 +184,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F127 | Implemented | Added data-driven prompt-injection policy contracts, policy loader, assessment/envelope helpers, Assistant LLM-bound untrusted wrappers for user data/documents/retrieved chunks/tool arguments, tool-metadata scanning and planner boundary metadata, authenticated policy API, docs, and focused tests. |
 | 2026-06-11 | F128 | Implemented | Added generated-output validation contracts and policy helpers for Assistant plans, summaries, streamed summaries, and export descriptions; Assistant now validates LLM plans before execution/display and keeps deterministic fallback text when generated summaries fail validation. |
 | 2026-06-11 | F129 | Implemented | Added owner-scoped JSON audit export packages with typed filters, coverage metadata, sanitized generic audit records, optional workflow event inclusion, explicit coverage for workflows/reviews/Assistant tool calls/auth/settings/source ingestion, docs, and focused API tests. |
+| 2026-06-11 | F130 | Implemented | Added deterministic audit hash-chain fields, repository-level chain linking for memory/SQLite/Postgres audit records, Postgres migration 018, high-risk deployment config signal, runtime config exposure, docs, and focused persistence tests. |
 
 ## Feature Backlog
 
@@ -333,7 +334,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F127 Add prompt-injection policy that treats user data, documents, retrieved chunks, and tool metadata as untrusted.
 - [x] F128 Add output validation for LLM-generated plans, summaries, and export descriptions before UI display or storage mutation.
 - [x] F129 Add audit export endpoint for workflows, reviews, assistant tool calls, auth events, setting changes, and source ingestion.
-- [ ] F130 Add immutable audit hash chain for high-risk deployment mode.
+- [x] F130 Add immutable audit hash chain for high-risk deployment mode.
 - [ ] F131 Add admin policy page for review thresholds, PHI handling, external providers, retention, and tool gates.
 - [ ] F132 Add runtime setting history with who changed what, old value, new value, reason, and rollback.
 - [ ] F133 Add secret configuration guide and runtime secret health checks without exposing secret values.

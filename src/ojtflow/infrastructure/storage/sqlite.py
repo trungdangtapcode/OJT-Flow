@@ -6,6 +6,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from ojtflow.core.audit_hash_chain import link_audit_record
 from ojtflow.core.contracts.artifacts import (
     ArtifactAccessEvent,
     ArtifactRetentionPolicy,
@@ -105,6 +106,12 @@ class SQLiteBackboneStore:
                     status text not null,
                     input_hash text,
                     output_hash text,
+                    chain_scope text,
+                    chain_sequence integer,
+                    previous_record_hash text,
+                    record_hash text,
+                    hash_algorithm text,
+                    chain_status text not null default 'pending',
                     workflow_event_refs text not null,
                     metadata_json text not null,
                     timestamp text not null,
@@ -119,6 +126,9 @@ class SQLiteBackboneStore:
 
                 create index if not exists idx_audit_records_session_timestamp
                     on audit_records(assistant_session_id, timestamp desc);
+
+                create index if not exists idx_audit_records_chain_scope_sequence
+                    on audit_records(chain_scope, chain_sequence desc);
 
                 create table if not exists datasets (
                     dataset_id text primary key,
@@ -339,6 +349,12 @@ class SQLiteBackboneStore:
                     on workflows(owner_user_id, updated_at desc)
                 """
             )
+            connection.execute(
+                """
+                create index if not exists idx_audit_records_chain_scope_sequence
+                    on audit_records(chain_scope, chain_sequence desc)
+                """
+            )
 
     def _ensure_audit_record_columns(self, connection: sqlite3.Connection) -> None:
         existing = {
@@ -350,6 +366,12 @@ class SQLiteBackboneStore:
             "actor_type": "text not null default 'system'",
             "input_hash": "text",
             "output_hash": "text",
+            "chain_scope": "text",
+            "chain_sequence": "integer",
+            "previous_record_hash": "text",
+            "record_hash": "text",
+            "hash_algorithm": "text",
+            "chain_status": "text not null default 'pending'",
             "workflow_event_refs": "text not null default '[]'",
             "metadata_json": "text not null default '{}'",
         }
@@ -842,35 +864,68 @@ class SQLiteAuditRepository:
 
     def append(self, record: AuditRecord) -> AuditRecord:
         with self.backbone.connect() as connection:
+            previous = self._latest_scoped_record(connection, record)
+            linked = link_audit_record(record, previous)
             connection.execute(
                 """
                 insert into audit_records (
                     audit_id, owner_user_id, workflow_id, assistant_session_id,
                     assistant_message_id, request_id, action, actor_id, actor_type,
-                    status, input_hash, output_hash, workflow_event_refs, metadata_json,
-                    timestamp, record_json
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, input_hash, output_hash, chain_scope, chain_sequence,
+                    previous_record_hash, record_hash, hash_algorithm, chain_status,
+                    workflow_event_refs, metadata_json, timestamp, record_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    record.audit_id,
-                    record.owner_user_id,
-                    record.workflow_id,
-                    record.assistant_session_id,
-                    record.assistant_message_id,
-                    record.request_id,
-                    record.action,
-                    record.actor_id,
-                    record.actor_type,
-                    record.status,
-                    record.input_hash,
-                    record.output_hash,
-                    json.dumps(record.workflow_event_refs),
-                    json.dumps(record.metadata),
-                    record.timestamp,
-                    record.model_dump_json(),
+                    linked.audit_id,
+                    linked.owner_user_id,
+                    linked.workflow_id,
+                    linked.assistant_session_id,
+                    linked.assistant_message_id,
+                    linked.request_id,
+                    linked.action,
+                    linked.actor_id,
+                    linked.actor_type,
+                    linked.status,
+                    linked.input_hash,
+                    linked.output_hash,
+                    linked.chain_scope,
+                    linked.chain_sequence,
+                    linked.previous_record_hash,
+                    linked.record_hash,
+                    linked.hash_algorithm,
+                    linked.chain_status,
+                    json.dumps(linked.workflow_event_refs),
+                    json.dumps(linked.metadata),
+                    linked.timestamp,
+                    linked.model_dump_json(),
                 ),
             )
-        return record
+        return linked
+
+    def _latest_scoped_record(
+        self,
+        connection: sqlite3.Connection,
+        record: AuditRecord,
+    ) -> AuditRecord | None:
+        if record.owner_user_id is None:
+            where = "owner_user_id is null"
+            params: tuple[object, ...] = ()
+        else:
+            where = "owner_user_id = ?"
+            params = (record.owner_user_id,)
+        row = connection.execute(
+            f"""
+            select record_json from audit_records
+            where {where}
+            order by coalesce(chain_sequence, 0) desc, timestamp desc, audit_id desc
+            limit 1
+            """,
+            params,
+        ).fetchone()
+        if row is None:
+            return None
+        return AuditRecord.model_validate_json(row["record_json"])
 
     def list(
         self,

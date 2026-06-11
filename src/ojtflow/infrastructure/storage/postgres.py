@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover - exercised only when optional dependenc
     psycopg = None
     dict_row = None
 
+from ojtflow.core.audit_hash_chain import link_audit_record
 from ojtflow.core.contracts.artifacts import (
     ArtifactAccessEvent,
     ArtifactRetentionPolicy,
@@ -794,39 +795,75 @@ class PostgresAuditRepository:
     def append(self, record: AuditRecord) -> AuditRecord:
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
+                previous = self._latest_scoped_record(cursor, record)
+                linked = link_audit_record(record, previous)
                 cursor.execute(
                     """
                     insert into ojtflow.audit_records (
                         audit_id, owner_user_id, workflow_id, assistant_session_id,
                         assistant_message_id, request_id, action, actor_id,
                         actor_type, status, input_hash, output_hash,
+                        chain_scope, chain_sequence, previous_record_hash,
+                        record_hash, hash_algorithm, chain_status,
                         workflow_event_refs, metadata, record_json, timestamp
                     ) values (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::jsonb, %s::jsonb, %s::jsonb, %s::timestamptz
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
+                        %s::timestamptz
                     )
                     """,
                     (
-                        record.audit_id,
-                        record.owner_user_id,
-                        record.workflow_id,
-                        record.assistant_session_id,
-                        record.assistant_message_id,
-                        record.request_id,
-                        record.action,
-                        record.actor_id,
-                        record.actor_type,
-                        record.status,
-                        record.input_hash,
-                        record.output_hash,
-                        json.dumps(record.workflow_event_refs),
-                        json.dumps(record.metadata),
-                        record.model_dump_json(),
-                        record.timestamp,
+                        linked.audit_id,
+                        linked.owner_user_id,
+                        linked.workflow_id,
+                        linked.assistant_session_id,
+                        linked.assistant_message_id,
+                        linked.request_id,
+                        linked.action,
+                        linked.actor_id,
+                        linked.actor_type,
+                        linked.status,
+                        linked.input_hash,
+                        linked.output_hash,
+                        linked.chain_scope,
+                        linked.chain_sequence,
+                        linked.previous_record_hash,
+                        linked.record_hash,
+                        linked.hash_algorithm,
+                        linked.chain_status,
+                        json.dumps(linked.workflow_event_refs),
+                        json.dumps(linked.metadata),
+                        linked.model_dump_json(),
+                        linked.timestamp,
                     ),
                 )
             connection.commit()
-        return record
+        return linked
+
+    def _latest_scoped_record(
+        self,
+        cursor,
+        record: AuditRecord,
+    ) -> AuditRecord | None:
+        if record.owner_user_id is None:
+            where = "owner_user_id is null"
+            params: tuple[object, ...] = ()
+        else:
+            where = "owner_user_id = %s"
+            params = (record.owner_user_id,)
+        cursor.execute(
+            f"""
+            select record_json from ojtflow.audit_records
+            where {where}
+            order by chain_sequence desc nulls last, timestamp desc, audit_id desc
+            limit 1
+            """,
+            params,
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return AuditRecord.model_validate(row["record_json"])
 
     def list(
         self,

@@ -1219,6 +1219,12 @@ tool output are not stored in the generic audit record. Payload-like strings
 such as `data`, `message`, `query`, and nested context strings are hashed before
 hashing the audit input fingerprint.
 
+Every generic audit record also includes v0 hash-chain fields written by the
+repository append path: `chain_scope`, `chain_sequence`,
+`previous_record_hash`, `record_hash`, `hash_algorithm`, and `chain_status`.
+The chain is scoped per owner user. Existing pre-F130 records may not have these
+fields; new records are linked going forward.
+
 Example response data:
 
 ```json
@@ -1237,6 +1243,12 @@ Example response data:
     "status": "completed",
     "input_hash": "9f86d081884c7d659a2feaa0c55ad015...",
     "output_hash": "e3b0c44298fc1c149afbf4c8996fb924...",
+    "chain_scope": "owner_user:usr_123",
+    "chain_sequence": 12,
+    "previous_record_hash": "bbf6f78c21058d6b...",
+    "record_hash": "2165bf0330f7f3a2...",
+    "hash_algorithm": "sha256",
+    "chain_status": "linked",
     "metadata": {
       "tool_name": "validate_with_evidence",
       "argument_keys": ["data", "execute_write_actions", "schema_id"],
@@ -1376,6 +1388,9 @@ Response data includes:
 - `persistent_storage`
 - `postgres_configured`
 - `redis_configured`
+- `audit.hash_chain_written`
+- `audit.hash_chain_required`
+- `audit.hash_chain_required_configured`
 - `auth.google_oauth_configured`
 - `auth.cookie_secure`
 - `auth.cookie_effective_secure`

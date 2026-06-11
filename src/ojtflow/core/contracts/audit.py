@@ -29,6 +29,12 @@ class AuditRecord(ContractModel):
     status: str = "completed"
     input_hash: str | None = None
     output_hash: str | None = None
+    chain_scope: str | None = None
+    chain_sequence: int | None = None
+    previous_record_hash: str | None = None
+    record_hash: str | None = None
+    hash_algorithm: str | None = None
+    chain_status: Literal["pending", "linked"] = "pending"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

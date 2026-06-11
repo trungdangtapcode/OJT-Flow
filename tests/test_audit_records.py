@@ -52,6 +52,12 @@ def test_tool_audit_redacts_payload_and_links_workflow_refs() -> None:
     assert record.assistant_session_id == "ses_audit"
     assert len(record.input_hash or "") == 64
     assert len(record.output_hash or "") == 64
+    assert record.chain_scope == "owner_user:usr_audit"
+    assert record.chain_sequence == 1
+    assert record.previous_record_hash is None
+    assert len(record.record_hash or "") == 64
+    assert record.hash_algorithm == "sha256"
+    assert record.chain_status == "linked"
     assert record.metadata["data_char_count"] == 32
 
     public_record = record.model_dump_json()
@@ -76,7 +82,25 @@ def test_sqlite_audit_repository_persists_across_restart(tmp_path: Path) -> None
             workflow_event_refs=["evt_created"],
             input_hash="a" * 64,
             output_hash="b" * 64,
+            timestamp="2026-06-11T00:00:00+00:00",
             metadata={"tool_name": "start_workflow"},
+        )
+    )
+    second = repository.append(
+        AuditRecord(
+            owner_user_id="usr_sqlite_audit",
+            workflow_id="wf_sqlite_audit",
+            assistant_session_id="ses_sqlite_audit",
+            request_id="req_sqlite_audit_2",
+            action="assistant.tool.validate_data",
+            actor_id="usr_sqlite_audit",
+            actor_type="assistant",
+            status="completed",
+            workflow_event_refs=["evt_validation"],
+            input_hash="c" * 64,
+            output_hash="d" * 64,
+            timestamp="2026-06-11T00:00:01+00:00",
+            metadata={"tool_name": "validate_data"},
         )
     )
 
@@ -89,10 +113,18 @@ def test_sqlite_audit_repository_persists_across_restart(tmp_path: Path) -> None
         assistant_session_id="ses_sqlite_audit",
     )
 
-    assert len(records) == 1
-    assert records[0].action == "mcp.tool.start_workflow"
-    assert records[0].workflow_event_refs == ["evt_created"]
-    assert records[0].metadata["tool_name"] == "start_workflow"
+    assert len(records) == 2
+    latest, first = records
+    assert first.action == "mcp.tool.start_workflow"
+    assert first.workflow_event_refs == ["evt_created"]
+    assert first.metadata["tool_name"] == "start_workflow"
+    assert first.chain_scope == "owner_user:usr_sqlite_audit"
+    assert first.chain_sequence == 1
+    assert len(first.record_hash or "") == 64
+    assert latest.action == "assistant.tool.validate_data"
+    assert latest.chain_sequence == 2
+    assert latest.previous_record_hash == first.record_hash
+    assert latest.record_hash == second.record_hash
     assert restarted.list(owner_user_id="usr_other") == []
 
 

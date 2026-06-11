@@ -79,6 +79,11 @@ async def runtime_config(
             "data_dir_configured": bool(settings.data_dir),
             "knowledge_dir_configured": bool(settings.knowledge_dir),
             "migrations_dir_configured": bool(settings.migrations_dir),
+            "audit": {
+                "hash_chain_written": True,
+                "hash_chain_required": settings.effective_audit_hash_chain_required,
+                "hash_chain_required_configured": settings.audit_hash_chain_required,
+            },
             "auth": {
                 "google_oauth_configured": bool(
                     settings.google_client_id and settings.google_client_secret

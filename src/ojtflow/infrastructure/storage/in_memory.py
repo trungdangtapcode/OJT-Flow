@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
+from ojtflow.core.audit_hash_chain import audit_chain_scope, link_audit_record
 from ojtflow.core.contracts.artifacts import (
     ArtifactAccessEvent,
     ArtifactRetentionPolicy,
@@ -324,8 +325,18 @@ class InMemoryAuditRepository:
         self._records: list[AuditRecord] = []
 
     def append(self, record: AuditRecord) -> AuditRecord:
-        self._records.append(deepcopy(record))
-        return deepcopy(record)
+        scope = audit_chain_scope(record)
+        previous = next(
+            (
+                candidate
+                for candidate in reversed(self._records)
+                if (candidate.chain_scope or audit_chain_scope(candidate)) == scope
+            ),
+            None,
+        )
+        linked = link_audit_record(record, previous)
+        self._records.append(deepcopy(linked))
+        return deepcopy(linked)
 
     def list(
         self,
