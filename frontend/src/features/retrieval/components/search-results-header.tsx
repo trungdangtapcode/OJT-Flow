@@ -1,4 +1,7 @@
+import { Bot } from "lucide-react";
+
 import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
 import {
   Card,
   CardContent,
@@ -34,9 +37,11 @@ export function EmptySearchResults() {
 }
 
 export function SearchResultsHeader({
+  assistantHref,
   isStale,
   packageData,
 }: {
+  assistantHref: string | null;
   isStale: boolean;
   packageData: RetrievalPackage;
 }) {
@@ -55,6 +60,14 @@ export function SearchResultsHeader({
         </CardDescription>
       </div>
       <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+        {assistantHref ? (
+          <Button asChild size="sm" variant="outline">
+            <a href={assistantHref}>
+              <Bot className="h-4 w-4" />
+              Ask Assistant
+            </a>
+          </Button>
+        ) : null}
         {isStale ? <Badge variant="warning">pending changes</Badge> : null}
         <Badge variant="muted">{packageData.trace.strategy}</Badge>
         <RuntimeDiversityBadge

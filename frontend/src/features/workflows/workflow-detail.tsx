@@ -1,4 +1,4 @@
-import { FileSearch } from "lucide-react";
+import { Bot, FileSearch } from "lucide-react";
 
 import {
   Card,
@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
 import { StatusBadge } from "../../components/domain/workflow-badges";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import {
@@ -29,6 +30,7 @@ import {
   Output,
   Overview,
 } from "./workflow-detail-sections";
+import { buildAssistantWorkflowContextHref } from "../assistant/assistant-attachments";
 
 export function WorkflowDetail({
   focused = false,
@@ -95,10 +97,18 @@ export function WorkflowDetail({
         <CardHeader className={cn("gap-3", !focused && "gap-2 p-3 sm:p-4")}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardDescription className="font-bold uppercase">Workflow</CardDescription>
-            <StatusBadge
-              className="max-w-full shrink-0 justify-center whitespace-normal text-center leading-tight"
-              status={workflow.status}
-            />
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              <Button asChild size="sm" variant="outline">
+                <a href={buildAssistantWorkflowContextHref(workflow.workflow_id)}>
+                  <Bot className="h-4 w-4" />
+                  Ask Assistant
+                </a>
+              </Button>
+              <StatusBadge
+                className="max-w-full shrink-0 justify-center whitespace-normal text-center leading-tight"
+                status={workflow.status}
+              />
+            </div>
           </div>
           <div className="min-w-0">
             <CardTitle

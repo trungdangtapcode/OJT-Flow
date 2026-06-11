@@ -10079,6 +10079,12 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assistant_tool_catalog = (
         FRONTEND_SRC / "features" / "assistant" / "assistant-tool-catalog-panel.tsx"
     ).read_text(encoding="utf-8")
+    retrieval_search_results = (
+        FRONTEND_SRC / "features" / "retrieval" / "components" / "search-results-panel.tsx"
+    ).read_text(encoding="utf-8")
+    workflow_detail = (
+        FRONTEND_SRC / "features" / "workflows" / "workflow-detail.tsx"
+    ).read_text(encoding="utf-8")
     app_shell = APP_SHELL.read_text(encoding="utf-8")
     api_module = API_MODULE.read_text(encoding="utf-8")
     server_state = (FRONTEND_SRC / "lib" / "server-state.ts").read_text(encoding="utf-8")
@@ -10154,8 +10160,23 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "useAssistantExamplesQuery" in assistant_page
     assert "useExtractFileTextMutation" in assistant_page
     assert "AttachmentPreview" in assistant_page
+    assert "ComposerContextPreview" in assistant_page
+    assert "selectedContextsFromContext" in assistant_page
+    assert "textSnippetsFromContext" in assistant_page
+    assert "filesFromClipboard" in assistant_page
+    assert "multiple" in assistant_page
+    assert "Add text snippet" in assistant_page
+    assert "Context for next message" in assistant_page
     assert "fileFromClipboard" in assistant_attachments
+    assert "assistantContextWithAttachments" in assistant_attachments
     assert "assistantContextWithAttachment" in assistant_attachments
+    assert "AssistantTextSnippet" in assistant_attachments
+    assert "AssistantSelectedContext" in assistant_attachments
+    assert "buildAssistantWorkflowContextHref" in assistant_attachments
+    assert "buildAssistantRetrievalContextHref" in assistant_attachments
+    assert "buildAssistantWorkflowContextHref" in workflow_detail
+    assert "Ask Assistant" in workflow_detail
+    assert "buildAssistantRetrievalContextHref" in retrieval_search_results
     assert "Paste an image" in assistant_page
     assert "handleAttachmentDrop" in assistant_page
     assert "onDrop={handleAttachmentDrop}" in assistant_page

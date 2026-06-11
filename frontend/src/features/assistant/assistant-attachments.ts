@@ -13,9 +13,26 @@ export type AssistantAttachmentSummary = {
   job_id: string | null;
 };
 
+export type AssistantTextSnippet = {
+  snippet_id: string;
+  label: string;
+  text: string;
+  char_count: number;
+  source: "manual";
+};
+
+export type AssistantSelectedContext = {
+  context_id: string;
+  source: "workflow" | "retrieval";
+  label: string;
+  summary: string;
+  refs: Record<string, string | number | boolean | null>;
+};
+
 export type AssistantAttachmentSource = "upload" | "clipboard";
 
 export type AssistantSelectedAttachment = {
+  id: string;
   file: File;
   source: AssistantAttachmentSource;
 };
@@ -42,44 +59,62 @@ export function formatContext(context: Record<string, unknown>) {
   return Object.keys(context).length ? JSON.stringify(context, null, 2) : "";
 }
 
-export function assistantContextWithAttachment(
+export function assistantContextWithAttachments(
   context: Record<string, unknown>,
-  document: ExtractedDocument | null,
+  documents: ExtractedDocument[],
+  snippets: AssistantTextSnippet[] = [],
+  selectedContexts: AssistantSelectedContext[] = [],
 ): Record<string, unknown> {
-  if (!document) return context;
-  const attachment = {
-    filename: document.filename,
-    source_format: document.source_format,
-    extractor_used: document.extractor_used,
-    page_count: document.page_count ?? null,
-    char_count: document.char_count,
-    word_count: document.word_count,
-    warnings: document.warnings,
-    source: document.source ?? null,
-    artifact_id: document.artifact_id ?? null,
-    trace_id: document.trace_id ?? null,
-    job_id: document.job_id ?? null,
-    text_dataset_id: document.text_dataset_id ?? null,
-    text_storage_ref: document.text_storage_ref ?? null,
-  };
+  if (!documents.length && !snippets.length && !selectedContexts.length) return context;
+  const attachments = documents.map(documentAttachment);
+  const existingSelectedContexts = selectedContextsFromContext(context);
+  const existingTextSnippets = textSnippetsFromContext(context);
+  const nextSelectedContexts = [
+    ...existingSelectedContexts,
+    ...selectedContexts.filter(
+      (candidate) =>
+        !existingSelectedContexts.some(
+          (existing) => existing.context_id === candidate.context_id,
+        ),
+    ),
+  ];
+  const nextTextSnippets = [
+    ...existingTextSnippets,
+    ...snippets.filter(
+      (candidate) =>
+        !existingTextSnippets.some(
+          (existing) => existing.snippet_id === candidate.snippet_id,
+        ),
+    ),
+  ];
+  const generatedData = combinedContextData({
+    attachments,
+    snippets: nextTextSnippets,
+  });
   return {
     ...context,
     data:
       typeof context.data === "string" && context.data.trim()
         ? context.data
-        : document.text,
+        : generatedData || undefined,
     input_format:
       typeof context.input_format === "string" && context.input_format.trim()
         ? context.input_format
-        : document.source_format,
+        : inferredInputFormat(documents, nextTextSnippets),
     attachments: [
       ...attachmentSummariesFromContext(context),
-      {
-        ...attachment,
-        text: document.text,
-      },
+      ...attachments,
     ],
+    text_snippets: nextTextSnippets,
+    selected_contexts: nextSelectedContexts,
   };
+}
+
+export function assistantContextWithAttachment(
+  context: Record<string, unknown>,
+  document: ExtractedDocument | null,
+): Record<string, unknown> {
+  return assistantContextWithAttachments(context, document ? [document] : []);
 }
 
 export function attachmentSummariesFromContext(
@@ -125,6 +160,68 @@ export function attachmentSummariesFromContext(
     .filter((item): item is AssistantAttachmentSummary => item !== null);
 }
 
+export function textSnippetsFromContext(
+  context: Record<string, unknown>,
+): AssistantTextSnippet[] {
+  const snippets = context.text_snippets;
+  if (!Array.isArray(snippets)) return [];
+  return snippets
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const record = item as Record<string, unknown>;
+      const text = typeof record.text === "string" ? record.text : "";
+      const label = typeof record.label === "string" ? record.label : "Text snippet";
+      const snippetId =
+        typeof record.snippet_id === "string"
+          ? record.snippet_id
+          : `snippet_${hashText(`${label}:${text}`).slice(0, 10)}`;
+      if (!text.trim()) return null;
+      return {
+        snippet_id: snippetId,
+        label,
+        text,
+        char_count:
+          typeof record.char_count === "number" && Number.isFinite(record.char_count)
+            ? record.char_count
+            : text.length,
+        source: "manual" as const,
+      };
+    })
+    .filter((item): item is AssistantTextSnippet => item !== null);
+}
+
+export function selectedContextsFromContext(
+  context: Record<string, unknown>,
+): AssistantSelectedContext[] {
+  const selected = context.selected_contexts;
+  if (!Array.isArray(selected)) return [];
+  return selected
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const record = item as Record<string, unknown>;
+      const source = record.source === "workflow" || record.source === "retrieval"
+        ? record.source
+        : null;
+      const label = typeof record.label === "string" ? record.label : "";
+      const summary = typeof record.summary === "string" ? record.summary : "";
+      const contextId =
+        typeof record.context_id === "string" ? record.context_id : `${source}:${label}`;
+      const refs = record.refs && typeof record.refs === "object" && !Array.isArray(record.refs)
+        ? compactRefs(record.refs as Record<string, unknown>)
+        : {};
+      return source && label
+        ? {
+            context_id: contextId,
+            source,
+            label,
+            summary,
+            refs,
+          }
+        : null;
+    })
+    .filter((item): item is AssistantSelectedContext => item !== null);
+}
+
 export function validateAssistantAttachment(
   file: File,
   allowedExtensions: string[],
@@ -151,22 +248,105 @@ export function validateAssistantAttachment(
   return null;
 }
 
-export function fileFromClipboard(clipboardData: DataTransfer): File | null {
-  const fileFromList = Array.from(clipboardData.files).find((file) =>
+export function validateAssistantAttachments(
+  files: File[],
+  allowedExtensions: string[],
+  maxUploadBytes: number | null,
+): string | null {
+  for (const file of files) {
+    const error = validateAssistantAttachment(file, allowedExtensions, maxUploadBytes);
+    if (error) return `${file.name || "Attachment"}: ${error}`;
+  }
+  return null;
+}
+
+export function filesFromClipboard(clipboardData: DataTransfer): File[] {
+  const files = Array.from(clipboardData.files).filter((file) =>
     Boolean(file.name || file.type),
   );
-  if (fileFromList) return fileFromList;
+  if (files.length) return files;
   for (const item of Array.from(clipboardData.items)) {
     if (item.kind !== "file") continue;
     const file = item.getAsFile();
     if (!file) continue;
-    if (file.name) return file;
+    if (file.name) return [file];
     const extension = extensionFromMimeType(file.type);
-    return new File([file], `clipboard-image-${Date.now()}${extension}`, {
-      type: file.type,
+    return [
+      new File([file], `clipboard-image-${Date.now()}${extension}`, {
+        type: file.type,
+      }),
+    ];
+  }
+  return [];
+}
+
+export function fileFromClipboard(clipboardData: DataTransfer): File | null {
+  return filesFromClipboard(clipboardData)[0] ?? null;
+}
+
+export function assistantContextFromSearchParams(
+  searchParams: URLSearchParams,
+): {
+  context: Record<string, unknown>;
+  message: string;
+} | null {
+  const selectedContexts: AssistantSelectedContext[] = [];
+  const workflowId = searchParams.get("workflow_id")?.trim();
+  if (workflowId) {
+    selectedContexts.push({
+      context_id: `workflow:${workflowId}`,
+      source: "workflow",
+      label: workflowId,
+      summary: "Selected workflow context from the workflow detail page.",
+      refs: { workflow_id: workflowId },
     });
   }
-  return null;
+  const retrievalQuery = searchParams.get("retrieval_query")?.trim();
+  if (retrievalQuery) {
+    const strategy = searchParams.get("retrieval_strategy")?.trim() || null;
+    const runId = searchParams.get("retrieval_run_id")?.trim() || null;
+    selectedContexts.push({
+      context_id: `retrieval:${hashText(`${retrievalQuery}:${strategy ?? ""}`)}`,
+      source: "retrieval",
+      label: retrievalQuery,
+      summary: "Selected retrieval run context from the Retrieval page.",
+      refs: {
+        retrieval_query: retrievalQuery,
+        retrieval_strategy: strategy,
+        retrieval_run_id: runId,
+      },
+    });
+  }
+  if (!selectedContexts.length) return null;
+  const context = assistantContextWithAttachments({}, [], [], selectedContexts);
+  const message =
+    selectedContexts[0]?.source === "workflow"
+      ? "Inspect this selected workflow context and explain what needs attention."
+      : "Use this selected retrieval context to explain evidence quality and next steps.";
+  return { context, message };
+}
+
+export function buildAssistantWorkflowContextHref(workflowId: string) {
+  return `/assistant?workflow_id=${encodeURIComponent(workflowId)}`;
+}
+
+export function buildAssistantRetrievalContextHref({
+  hitCount,
+  query,
+  runId,
+  strategy,
+}: {
+  hitCount: number;
+  query: string;
+  runId?: string | null;
+  strategy?: string | null;
+}) {
+  const params = new URLSearchParams();
+  params.set("retrieval_query", query);
+  if (strategy) params.set("retrieval_strategy", strategy);
+  if (runId) params.set("retrieval_run_id", runId);
+  params.set("retrieval_hit_count", String(hitCount));
+  return `/assistant?${params.toString()}`;
 }
 
 export async function fileToBase64(file: File): Promise<string> {
@@ -194,4 +374,76 @@ function extensionFromFilename(filename: string) {
   const dotIndex = filename.lastIndexOf(".");
   if (dotIndex < 0) return "";
   return filename.slice(dotIndex).toLowerCase();
+}
+
+function documentAttachment(document: ExtractedDocument) {
+  return {
+    filename: document.filename,
+    source_format: document.source_format,
+    extractor_used: document.extractor_used,
+    page_count: document.page_count ?? null,
+    char_count: document.char_count,
+    word_count: document.word_count,
+    warnings: document.warnings,
+    source: document.source ?? null,
+    artifact_id: document.artifact_id ?? null,
+    trace_id: document.trace_id ?? null,
+    job_id: document.job_id ?? null,
+    text_dataset_id: document.text_dataset_id ?? null,
+    text_storage_ref: document.text_storage_ref ?? null,
+    text: document.text,
+  };
+}
+
+function combinedContextData({
+  attachments,
+  snippets,
+}: {
+  attachments: Array<ReturnType<typeof documentAttachment>>;
+  snippets: AssistantTextSnippet[];
+}) {
+  const sections = [
+    ...snippets.map(
+      (snippet) =>
+        `BEGIN TEXT SNIPPET ${snippet.label}\n${snippet.text}\nEND TEXT SNIPPET ${snippet.label}`,
+    ),
+    ...attachments.map(
+      (attachment) =>
+        `BEGIN ATTACHMENT ${attachment.filename} (${attachment.source_format})\n${attachment.text}\nEND ATTACHMENT ${attachment.filename}`,
+    ),
+  ];
+  return sections.join("\n\n");
+}
+
+function inferredInputFormat(
+  documents: ExtractedDocument[],
+  snippets: AssistantTextSnippet[],
+) {
+  if (documents.length === 1 && snippets.length === 0) return documents[0].source_format;
+  if (!documents.length && snippets.length === 1) return "text";
+  return documents.length || snippets.length ? "multi_context" : undefined;
+}
+
+function compactRefs(record: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [string, string | number | boolean | null] => {
+        const value = entry[1];
+        return (
+          value === null ||
+          typeof value === "string" ||
+          typeof value === "number" ||
+          typeof value === "boolean"
+        );
+      },
+    ),
+  );
+}
+
+function hashText(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }

@@ -1753,11 +1753,16 @@ instead of browser storage or hidden mock data. The browser should create new
 threads as `New chat` and let the backend generate the durable title from the
 first user message, so PHI-safe title rules stay centralized.
 The Assistant composer is the default intake surface for end users: it must
-support starter prompts, typed commands, clipboard image paste, file attachment,
-and drag-and-drop file selection. The browser only validates configured upload
-limits and sends the file through the existing extraction hooks; parsing,
-OCR/vision fallback, artifact persistence, and assistant context generation
-stay behind the API boundary.
+support starter prompts, typed commands, clipboard image paste, multiple file
+attachments, drag-and-drop file selection, manual text snippets, and selected
+workflow/retrieval context. The browser only validates configured upload
+limits, stages user-visible context chips, and sends files through the existing
+extraction hooks; parsing, OCR/vision fallback, artifact persistence, and
+assistant context generation stay behind the API boundary. Workflow detail and
+Retrieval ranked-evidence headers may open `/assistant` with structured
+selected-context query parameters, but the Assistant page remains responsible
+for normalizing those params into the same `selected_contexts` payload used by
+advanced JSON context.
 The assistant workspace should keep desktop scrolling contained: session list,
 message timeline, and composer live inside a contained app-viewport chat
 surface so the LLM stream and tool timeline stay visible instead of fighting

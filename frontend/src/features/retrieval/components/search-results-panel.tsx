@@ -1,4 +1,5 @@
 import { Card } from "../../../components/ui/card";
+import { buildAssistantRetrievalContextHref } from "../../assistant/assistant-attachments";
 import { searchResultsViewModel } from "../model/search-results-view-model";
 import { searchResultsContentProps } from "./search-results-content-props";
 import { SearchResultsContent } from "./search-results-content";
@@ -19,10 +20,22 @@ export function SearchResults(props: SearchResultsProps) {
     submittedSearchPayload: props.submittedSearchPayload,
   });
   const contentProps = searchResultsContentProps({ packageData, props, view });
+  const assistantHref = props.submittedSearchPayload?.query
+    ? buildAssistantRetrievalContextHref({
+        hitCount: packageData.hits.length,
+        query: props.submittedSearchPayload.query,
+        runId: props.runId,
+        strategy: packageData.trace.strategy,
+      })
+    : null;
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <SearchResultsHeader isStale={props.isStale} packageData={packageData} />
+      <SearchResultsHeader
+        assistantHref={assistantHref}
+        isStale={props.isStale}
+        packageData={packageData}
+      />
       <SearchResultsContent {...contentProps} />
     </Card>
   );

@@ -1,14 +1,17 @@
 import * as React from "react";
 import {
   Bot,
+  FileText,
   Loader2,
   Paperclip,
+  Plus,
   PlayCircle,
   RotateCcw,
   Send,
   Settings2,
   Square,
   UserRound,
+  X,
 } from "lucide-react";
 
 import { PageHeader } from "../../components/layout/page-header";
@@ -44,15 +47,22 @@ import type {
 } from "../../types";
 import { cn } from "../../lib/utils";
 import {
-  assistantContextWithAttachment,
+  assistantContextFromSearchParams,
+  assistantContextWithAttachments,
   attachmentSummariesFromContext,
-  fileFromClipboard,
-  fileToBase64,
+  filesFromClipboard,
   formatContext,
+  fileToBase64,
   parseContext,
-  validateAssistantAttachment,
+  selectedContextsFromContext,
+  textSnippetsFromContext,
+  validateAssistantAttachments,
 } from "./assistant-attachments";
-import type { AssistantSelectedAttachment } from "./assistant-attachments";
+import type {
+  AssistantSelectedContext,
+  AssistantSelectedAttachment,
+  AssistantTextSnippet,
+} from "./assistant-attachments";
 import { formatCount } from "./assistant-format";
 import { ChatEmptyState } from "./assistant-empty-state";
 import {
@@ -95,8 +105,12 @@ export function AssistantPage() {
   const appendSessionMessageMutation = useAppendAssistantSessionMessageMutation();
   const [message, setMessage] = React.useState("");
   const [contextText, setContextText] = React.useState("");
-  const [selectedAttachment, setSelectedAttachment] =
-    React.useState<AssistantSelectedAttachment | null>(null);
+  const [selectedAttachments, setSelectedAttachments] = React.useState<
+    AssistantSelectedAttachment[]
+  >([]);
+  const [snippetDraft, setSnippetDraft] = React.useState("");
+  const [snippetLabel, setSnippetLabel] = React.useState("Text snippet");
+  const [textSnippets, setTextSnippets] = React.useState<AssistantTextSnippet[]>([]);
   const [isDraggingFile, setIsDraggingFile] = React.useState(false);
   const [executeWriteActions, setExecuteWriteActions] = React.useState(false);
   const [writeConfirmationAccepted, setWriteConfirmationAccepted] =
@@ -148,6 +162,20 @@ export function AssistantPage() {
     });
   }, [activeSessionQuery.data, assistantMutation.isPending]);
 
+  React.useEffect(() => {
+    const selectedContext = assistantContextFromSearchParams(
+      new URLSearchParams(window.location.search),
+    );
+    if (!selectedContext) return;
+    setMessage((current) => current || selectedContext.message);
+    setContextText((current) => {
+      const parsed = parseContext(current);
+      const base = parsed.error ? {} : parsed.value;
+      return formatContext({ ...base, ...selectedContext.context });
+    });
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, []);
+
   const persistedSessions = React.useMemo(
     () => (sessionsQuery.data ?? []).map(assistantSessionFromSummary),
     [sessionsQuery.data],
@@ -188,7 +216,16 @@ export function AssistantPage() {
   const latestTranscriptItem = transcript[transcript.length - 1] ?? null;
   const latestStreamEventCount = latestTranscriptItem?.stream_events?.length ?? 0;
   const activeToolName = assistantActiveToolName(latestTranscriptItem, toolsQuery.data ?? []);
-  const selectedFile = selectedAttachment?.file ?? null;
+  const selectedFiles = selectedAttachments.map((attachment) => attachment.file);
+  const parsedComposerContext = React.useMemo(() => parseContext(contextText), [contextText]);
+  const selectedContexts = React.useMemo(
+    () => (parsedComposerContext.error ? [] : selectedContextsFromContext(parsedComposerContext.value)),
+    [parsedComposerContext],
+  );
+  const existingContextSnippets = React.useMemo(
+    () => (parsedComposerContext.error ? [] : textSnippetsFromContext(parsedComposerContext.value)),
+    [parsedComposerContext],
+  );
   const uploadExtensions =
     runtimeQuery.data?.upload.allowed_extensions ?? extractorsQuery.data?.supported_extensions ?? [];
   const acceptedUploadExtensions = uploadExtensions.join(",") || undefined;
@@ -212,23 +249,92 @@ export function AssistantPage() {
       }`
     : "configured file types";
 
-  const setAttachmentFromFile = React.useCallback(
-    (file: File | null, source: AssistantSelectedAttachment["source"]) => {
-      if (!file) {
-        setSelectedAttachment(null);
-        setFormError(null);
-        return;
-      }
-      const validationError = validateAssistantAttachment(
-        file,
+  const addAttachmentsFromFiles = React.useCallback(
+    (files: File[], source: AssistantSelectedAttachment["source"]) => {
+      if (!files.length) return;
+      const validationError = validateAssistantAttachments(
+        files,
         uploadExtensions,
         maxUploadBytes,
       );
-      setSelectedAttachment({ file, source });
-      setFormError(validationError);
+      if (validationError) {
+        setFormError(validationError);
+        return;
+      }
+      setSelectedAttachments((current) => [
+        ...current,
+        ...files.map((file) => ({
+          id: crypto.randomUUID(),
+          file,
+          source,
+        })),
+      ]);
+      setFormError(null);
     },
     [maxUploadBytes, uploadExtensions],
   );
+
+  const removeAttachment = React.useCallback((id: string) => {
+    setSelectedAttachments((current) =>
+      current.filter((attachment) => attachment.id !== id),
+    );
+  }, []);
+
+  const addTextSnippet = React.useCallback(() => {
+    const text = snippetDraft.trim();
+    if (!text) {
+      setFormError("Text snippet is empty.");
+      return;
+    }
+    const label = snippetLabel.trim() || "Text snippet";
+    setTextSnippets((current) => [
+      ...current,
+      {
+        snippet_id: `snippet_${crypto.randomUUID()}`,
+        label,
+        text,
+        char_count: text.length,
+        source: "manual",
+      },
+    ]);
+    setSnippetDraft("");
+    setSnippetLabel("Text snippet");
+    setFormError(null);
+  }, [snippetDraft, snippetLabel]);
+
+  const removeTextSnippet = React.useCallback((snippetId: string) => {
+    setTextSnippets((current) =>
+      current.filter((snippet) => snippet.snippet_id !== snippetId),
+    );
+  }, []);
+
+  const removeContextTextSnippet = React.useCallback((snippetId: string) => {
+    setContextText((current) => {
+      const parsed = parseContext(current);
+      if (parsed.error) return current;
+      const nextSnippets = textSnippetsFromContext(parsed.value).filter(
+        (snippet) => snippet.snippet_id !== snippetId,
+      );
+      return formatContext({
+        ...parsed.value,
+        text_snippets: nextSnippets.length ? nextSnippets : undefined,
+      });
+    });
+  }, []);
+
+  const removeSelectedContext = React.useCallback((contextId: string) => {
+    setContextText((current) => {
+      const parsed = parseContext(current);
+      if (parsed.error) return current;
+      const nextContexts = selectedContextsFromContext(parsed.value).filter(
+        (context) => context.context_id !== contextId,
+      );
+      return formatContext({
+        ...parsed.value,
+        selected_contexts: nextContexts.length ? nextContexts : undefined,
+      });
+    });
+  }, []);
 
   const handleAttachmentDragOver = (event: React.DragEvent<HTMLFormElement>) => {
     if (isBusy || !Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -248,7 +354,7 @@ export function AssistantPage() {
     event.preventDefault();
     setIsDraggingFile(false);
     if (isBusy) return;
-    setAttachmentFromFile(event.dataTransfer.files[0] ?? null, "upload");
+    addAttachmentsFromFiles(Array.from(event.dataTransfer.files), "upload");
   };
 
   const handleMemoryPreferenceChange = React.useCallback(
@@ -281,7 +387,12 @@ export function AssistantPage() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const cleanMessage = message.trim();
-    if (!cleanMessage && !selectedFile) {
+    if (
+      !cleanMessage &&
+      !selectedAttachments.length &&
+      !textSnippets.length &&
+      !selectedContexts.length
+    ) {
       setFormError("Enter a command.");
       return;
     }
@@ -291,11 +402,10 @@ export function AssistantPage() {
       return;
     }
     setFormError(null);
-    let extractedDocument: ExtractedDocument | null = null;
-    if (selectedAttachment) {
-      const file = selectedAttachment.file;
-      const validationError = validateAssistantAttachment(
-        file,
+    let extractedDocuments: ExtractedDocument[] = [];
+    if (selectedAttachments.length) {
+      const validationError = validateAssistantAttachments(
+        selectedFiles,
         runtimeQuery.data?.upload.allowed_extensions ?? extractorsQuery.data?.supported_extensions ?? [],
         runtimeQuery.data?.upload.max_upload_bytes ?? null,
       );
@@ -304,33 +414,55 @@ export function AssistantPage() {
         return;
       }
       try {
-        if (selectedAttachment.source === "clipboard" && file.type.startsWith("image/")) {
-          const parseJob = await clipboardParseMutation.mutateAsync({
-            dataBase64: await fileToBase64(file),
-            filename: file.name,
-            mimeType: file.type || "image/png",
-            extractor: "auto",
-            executeNow: true,
-          });
-          extractedDocument = parseJob.extracted_document ?? null;
+        const documents: ExtractedDocument[] = [];
+        for (const attachment of selectedAttachments) {
+          const file = attachment.file;
+          let extractedDocument: ExtractedDocument | null = null;
+          if (attachment.source === "clipboard" && file.type.startsWith("image/")) {
+            const parseJob = await clipboardParseMutation.mutateAsync({
+              dataBase64: await fileToBase64(file),
+              filename: file.name,
+              mimeType: file.type || "image/png",
+              extractor: "auto",
+              executeNow: true,
+            });
+            extractedDocument = parseJob.extracted_document ?? null;
+          }
+          if (!extractedDocument) {
+            extractedDocument = await extractMutation.mutateAsync({
+              file,
+              extractor: "auto",
+            });
+          }
+          documents.push(extractedDocument);
         }
-        if (!extractedDocument) {
-          extractedDocument = await extractMutation.mutateAsync({
-            file,
-            extractor: "auto",
-          });
-        }
+        extractedDocuments = documents;
       } catch (error) {
         setFormError(workflowErrorMessage(error));
         return;
       }
     }
-    const assistantContext = assistantContextWithAttachment(
+    const assistantContext = assistantContextWithAttachments(
       parsedContext.value,
-      extractedDocument,
+      extractedDocuments,
+      textSnippets,
     );
+    const defaultAttachmentMessage =
+      selectedAttachments.length > 1
+        ? `Analyze ${selectedAttachments.length} attached files.`
+        : selectedAttachments.length === 1
+          ? `Analyze the attached file ${selectedAttachments[0].file.name}.`
+          : textSnippets.length > 1
+            ? `Analyze ${textSnippets.length} attached text snippets.`
+            : textSnippets.length === 1
+              ? `Analyze the attached text snippet ${textSnippets[0].label}.`
+              : selectedContexts.length > 1
+                ? `Analyze ${selectedContexts.length} selected contexts.`
+                : selectedContexts.length === 1
+                  ? `Analyze the selected ${selectedContexts[0].source} context ${selectedContexts[0].label}.`
+                  : "Analyze the provided context.";
     const assistantMessage =
-      cleanMessage || `Analyze the attached file ${selectedFile?.name ?? ""}.`.trim();
+      cleanMessage || defaultAttachmentMessage;
     await runAssistantTurn({
       assistantContext,
       assistantMessage,
@@ -399,7 +531,10 @@ export function AssistantPage() {
     });
     if (clearComposer) {
       setMessage("");
-      setSelectedAttachment(null);
+      setSelectedAttachments([]);
+      setTextSnippets([]);
+      setSnippetDraft("");
+      setSnippetLabel("Text snippet");
     }
     try {
       const response = await assistantMutation.mutateAsync({
@@ -727,10 +862,10 @@ export function AssistantPage() {
                     disabled={isBusy}
                     onChange={(event) => setMessage(event.target.value)}
                     onPaste={(event) => {
-                      const file = fileFromClipboard(event.clipboardData);
-                      if (!file) return;
+                      const files = filesFromClipboard(event.clipboardData);
+                      if (!files.length) return;
                       event.preventDefault();
-                      setAttachmentFromFile(file, "clipboard");
+                      addAttachmentsFromFiles(files, "clipboard");
                     }}
                     placeholder="Ask about your data. Paste an image, attach a file, Enter to send, Shift+Enter for newline."
                     value={message}
@@ -741,13 +876,53 @@ export function AssistantPage() {
                       }
                     }}
                   />
-                  {selectedFile ? (
-                    <AttachmentPreview
-                      file={selectedFile}
-                      onRemove={() => setSelectedAttachment(null)}
-                      source={selectedAttachment?.source ?? "upload"}
+                  {selectedAttachments.length ||
+                  textSnippets.length ||
+                  existingContextSnippets.length ||
+                  selectedContexts.length ? (
+                    <ComposerContextPreview
+                      attachments={selectedAttachments}
+                      contextSnippets={existingContextSnippets}
+                      onRemoveAttachment={removeAttachment}
+                      onRemoveContextSnippet={removeContextTextSnippet}
+                      onRemoveSelectedContext={removeSelectedContext}
+                      onRemoveSnippet={removeTextSnippet}
+                      selectedContexts={selectedContexts}
+                      snippets={textSnippets}
                     />
                   ) : null}
+                  <details className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-black">
+                      <Plus className="h-4 w-4 text-primary" />
+                      Add text snippet
+                    </summary>
+                    <div className="mt-3 grid gap-2">
+                      <input
+                        className="min-h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        disabled={isBusy}
+                        onChange={(event) => setSnippetLabel(event.target.value)}
+                        placeholder="Snippet label"
+                        value={snippetLabel}
+                      />
+                      <Textarea
+                        className="min-h-24 resize-y"
+                        disabled={isBusy}
+                        onChange={(event) => setSnippetDraft(event.target.value)}
+                        placeholder="Paste a log, table fragment, note, or exact text you want the assistant to analyze."
+                        value={snippetDraft}
+                      />
+                      <Button
+                        className="w-fit"
+                        disabled={isBusy || !snippetDraft.trim()}
+                        onClick={addTextSnippet}
+                        type="button"
+                        variant="outline"
+                      >
+                        <FileText className="h-4 w-4" />
+                        Add snippet
+                      </Button>
+                    </div>
+                  </details>
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                     <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                       <input
@@ -755,10 +930,13 @@ export function AssistantPage() {
                         className="hidden"
                         disabled={isBusy}
                         onChange={(event) => {
-                          const file = event.target.files?.[0] ?? null;
-                          setAttachmentFromFile(file, "upload");
+                          addAttachmentsFromFiles(
+                            Array.from(event.target.files ?? []),
+                            "upload",
+                          );
                           event.target.value = "";
                         }}
+                        multiple
                         ref={fileInputRef}
                         type="file"
                       />
@@ -840,6 +1018,124 @@ export function AssistantPage() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function ComposerContextPreview({
+  attachments,
+  contextSnippets,
+  onRemoveAttachment,
+  onRemoveContextSnippet,
+  onRemoveSelectedContext,
+  onRemoveSnippet,
+  selectedContexts,
+  snippets,
+}: {
+  attachments: AssistantSelectedAttachment[];
+  contextSnippets: AssistantTextSnippet[];
+  onRemoveAttachment: (id: string) => void;
+  onRemoveContextSnippet: (snippetId: string) => void;
+  onRemoveSelectedContext: (contextId: string) => void;
+  onRemoveSnippet: (snippetId: string) => void;
+  selectedContexts: AssistantSelectedContext[];
+  snippets: AssistantTextSnippet[];
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-black uppercase text-muted-foreground">
+          Context for next message
+        </div>
+        <Badge variant="muted">
+          {formatCount(
+            attachments.length +
+              snippets.length +
+              contextSnippets.length +
+              selectedContexts.length,
+            "item",
+          )}
+        </Badge>
+      </div>
+
+      {selectedContexts.length ? (
+        <div className="grid gap-1.5">
+          {selectedContexts.map((context) => (
+            <div
+              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm"
+              key={context.context_id}
+            >
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge variant="success">{context.source}</Badge>
+                  <span className="break-words font-black">{context.label}</span>
+                </div>
+                {context.summary ? (
+                  <div className="mt-1 break-words text-xs font-semibold text-muted-foreground">
+                    {context.summary}
+                  </div>
+                ) : null}
+              </div>
+              <Button
+                aria-label={`Remove ${context.label} context`}
+                onClick={() => onRemoveSelectedContext(context.context_id)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {attachments.map((attachment) => (
+        <AttachmentPreview
+          file={attachment.file}
+          key={attachment.id}
+          onRemove={() => onRemoveAttachment(attachment.id)}
+          source={attachment.source}
+        />
+      ))}
+
+      {[...contextSnippets, ...snippets].map((snippet) => {
+        const isContextSnippet = contextSnippets.some(
+          (candidate) => candidate.snippet_id === snippet.snippet_id,
+        );
+        return (
+          <div
+            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm"
+            key={`${isContextSnippet ? "context" : "draft"}-${snippet.snippet_id}`}
+          >
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <FileText className="h-4 w-4 shrink-0 text-primary" />
+                <span className="break-words font-black">{snippet.label}</span>
+                <Badge variant={isContextSnippet ? "muted" : "success"}>
+                  {isContextSnippet ? "context JSON" : "draft"}
+                </Badge>
+              </div>
+              <div className="mt-1 text-xs font-semibold text-muted-foreground">
+                {formatCount(snippet.char_count, "char")}
+              </div>
+            </div>
+            <Button
+              aria-label={`Remove ${snippet.label} snippet`}
+              onClick={() =>
+                isContextSnippet
+                  ? onRemoveContextSnippet(snippet.snippet_id)
+                  : onRemoveSnippet(snippet.snippet_id)
+              }
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
 }
