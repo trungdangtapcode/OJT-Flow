@@ -19,16 +19,19 @@ The operational liveness probe `GET /health` is intentionally outside
 `/api/v1` and returns raw JSON (`{"status":"ok"}`) for Docker, load balancers,
 and simple uptime checks.
 
-All `/api/v1` workflow/data endpoints require an authenticated backend session.
-Browser clients use the HTTP-only session cookie set by the Google callback.
-API clients may use:
+Most `/api/v1` workflow, retrieval, artifact, assistant, governance, audit, and
+runtime endpoints require an authenticated backend session. Browser clients use
+the HTTP-only session cookie set by the Google callback. API clients may use:
 
 ```text
 Authorization: Bearer <access_token>
 ```
 
-The exceptions are `GET /api/v1/auth/google/url` and
-`GET /api/v1/auth/google/callback`, which are used to obtain the token.
+The auth bootstrap exceptions are `GET /api/v1/auth/google/url` and
+`GET /api/v1/auth/google/callback`, which are used to obtain the token. Direct
+deterministic tool endpoints that predate workspace auth remain unauthenticated
+in v0 for compatibility: `POST /api/v1/convert`, `POST /api/v1/validate`,
+`POST /api/v1/fhir/profile`, and `POST /api/v1/ocr/evidence`.
 
 Cookie-authenticated write requests (`POST`, `PUT`, `PATCH`, and `DELETE`) must
 include a trusted `Origin` or `Referer` header. Trusted origins come from the
@@ -41,6 +44,22 @@ authenticated user. `POST /api/v1/workflows` and
 from the backend session; clients cannot set or override ownership. A workflow
 owned by another user returns the standard `not_found` envelope rather than
 revealing that the ID exists.
+
+Workspace RBAC is enforced through
+`GovernanceService.require_permission(...)`. Scope mapping is documented in
+`docs/ownership_authorization_v0.md`. In short:
+
+- workflow reads and schema inventory require `data:read`;
+- workflow creation and document-to-workflow creation require `data:transform`;
+- upload/extract/redaction preview actions require `data:profile`;
+- raw artifact download, artifact metadata export, and workflow output export
+  require `data:export`;
+- review queues require `review:read`; review decisions require
+  `review:write`;
+- retrieval search and source inventory require `retrieval:read`;
+- runtime setting writes require `settings:write`;
+- operational diagnostics require `admin:read`; reindex/repair marker writes
+  require `admin:write`.
 
 Default persistence uses Postgres plus local file-backed artifacts:
 
@@ -686,9 +705,9 @@ Response data is a list of schema entries. Each entry includes:
 - `fields`
 - `source_ref`
 
-The endpoint is authenticated and read-only. It does not expose local filesystem
-paths beyond the repository-relative `source_ref` used to identify the approved
-knowledge asset.
+The endpoint is authenticated, read-only, and requires `data:read`. It does not
+expose local filesystem paths beyond the repository-relative `source_ref` used
+to identify the approved knowledge asset.
 
 ## Direct Conversion
 
@@ -1401,7 +1420,7 @@ approximate-nearest-neighbor candidates.
 Persists editable Assistant/LLM runtime settings and reloads cached backend
 service instances after validation. It accepts only planner/runtime control
 fields; API keys, OAuth secrets, database URLs, file paths, and approval
-decisions are not editable through this endpoint.
+decisions are not editable through this endpoint. Requires `settings:write`.
 
 Request:
 
@@ -1448,7 +1467,7 @@ instances after validation. It accepts retrieval-scoped ranking controls and
 embedding provider/model/dimension controls. Changing embeddings requires
 running retrieval reindex before vector search is fully aligned. Secrets,
 database URLs, OAuth settings, file paths, and model API keys are not editable
-through this endpoint.
+through this endpoint. Requires `settings:write`.
 
 Request:
 
@@ -1494,7 +1513,8 @@ Response:
 
 `GET /api/v1/runtime/readiness`
 
-Returns sanitized readiness diagnostics for authenticated operators. This is
+Returns sanitized readiness diagnostics for authenticated operators with
+`admin:read`. This is
 separate from the public raw `GET /health` liveness probe: `/health` should stay
 cheap enough for Docker/load balancer checks, while readiness verifies that the
 backend can reach the runtime spine: storage, migrations, auth/session cache,
@@ -1681,7 +1701,7 @@ Candidate kinds include `missing_artifact_ref`, `missing_dataset_record`,
 Builds the current repair plan and writes a sanitized marker artifact under the
 runtime data directory when candidates exist. This is the first repair command:
 it marks orphaned rows/files for operator review without deleting files or
-mutating workflow/dataset rows.
+mutating workflow/dataset rows. Requires `admin:write`.
 
 Response `status` is `not_required`, `no_action_needed`, or `marked`. When
 marked, response data includes a `marker` with `marker_id`, `marked_at`,
@@ -2330,7 +2350,7 @@ and chunk count. The seeded source inventory includes local schema/governance
 knowledge plus curated healthcare-standard assets under `knowledge/`, including
 the official source catalog, medical concept seed registry, FHIR R4 search
 parameter seed, clinical data standards map, medical search playbook, and public
-dataset ingestion plan.
+dataset ingestion plan. Requires `retrieval:read`.
 
 `GET /api/v1/retrieval/integrity` returns a `RetrievalIntegrityReport` for the
 current retrieval index. Query parameters:
@@ -2344,6 +2364,7 @@ Response data includes `repository`, `status`, `checked_scope`,
 contains `source_id`, `status`, expected/indexed chunk counts, expected/indexed
 hashes, and a message. This endpoint is intended for operational consistency
 checks after deployment, reindexing, or source file changes.
+Requires `admin:read`.
 
 `POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from
 seeded knowledge and configured local corpus directories:
@@ -2357,7 +2378,7 @@ seeded knowledge and configured local corpus directories:
 
 Response data includes repository type, indexed chunk count, embedding provider
 metadata, and local corpus indexing stats. The endpoint requires an
-authenticated session and does not accept arbitrary document text; corpus
+authenticated session, `admin:write`, and does not accept arbitrary document text; corpus
 files must be placed in configured trusted knowledge directories first.
 Large official datasets such as MeSH RDF/XML, RxNorm/RxNav cache exports,
 LOINC downloads, MedlinePlus XML, openFDA downloads, and ClinicalTrials.gov API

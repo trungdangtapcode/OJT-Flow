@@ -56,7 +56,7 @@ async def governance_rbac_policy(
 ) -> dict:
     """Return the active role and permission policy catalog."""
 
-    del authenticated
+    service.require_permission(user=authenticated.user, permission_scope="settings:read")
     return ok(service.role_policy())
 
 
@@ -79,6 +79,7 @@ async def update_organization_workspace_settings(
 ) -> dict:
     """Merge workspace-level settings for the current organization."""
 
+    service.require_permission(user=authenticated.user, permission_scope="settings:write")
     return ok(
         service.update_workspace_settings(
             user=authenticated.user,
@@ -97,6 +98,7 @@ async def create_organization_group(
 ) -> dict:
     """Create a group inside an organization workspace."""
 
+    service.require_permission(user=authenticated.user, permission_scope="users:write")
     return ok(
         service.create_group(
             user=authenticated.user,

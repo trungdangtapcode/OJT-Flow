@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query
 
+from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.config import (
@@ -27,6 +28,7 @@ from ojtflow.interfaces.api.deps import (
     clear_workflow_service_cache,
     get_api_settings,
     get_background_job_service,
+    get_governance_service,
     get_workflow_service,
     require_authentication,
 )
@@ -60,11 +62,12 @@ router = APIRouter(tags=["runtime"])
 @router.get("/runtime/config")
 async def runtime_config(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Return non-secret runtime facts for operations UI."""
 
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="settings:read")
     return ok(
         {
             "status": "ok",
@@ -160,11 +163,12 @@ async def runtime_config(
 async def update_runtime_retrieval_settings(
     request: RuntimeRetrievalSettingsRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Persist operator-tuned retrieval settings and reload cached services."""
 
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="settings:write")
     updates = request.model_dump(exclude_none=True)
     try:
         save_runtime_retrieval_settings(settings, updates)
@@ -189,11 +193,12 @@ async def update_runtime_retrieval_settings(
 async def update_runtime_assistant_settings(
     request: RuntimeAssistantSettingsRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Persist operator-tuned Assistant/LLM settings and reload cached services."""
 
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="settings:write")
     updates = request.model_dump(exclude_none=True)
     try:
         save_runtime_assistant_settings(settings, updates)
@@ -217,12 +222,14 @@ async def update_runtime_assistant_settings(
 @router.get("/runtime/readiness")
 async def runtime_readiness(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     jobs: BackgroundJobService = Depends(get_background_job_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Return sanitized readiness diagnostics for authenticated operators."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     checks: list[dict[str, Any]] = [
         _check(
             "settings",
@@ -300,11 +307,12 @@ async def runtime_readiness(
 @router.get("/runtime/migrations")
 async def runtime_migrations(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Return sanitized Postgres migration manifest/database diagnostics."""
 
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     diagnostics = _migration_diagnostics(settings)
     return ok(diagnostics.model_dump(mode="json"))
 
@@ -312,6 +320,7 @@ async def runtime_migrations(
 @router.get("/runtime/storage-consistency")
 async def runtime_storage_consistency(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
     limit: int = Query(default=100, ge=1, le=500),
@@ -320,6 +329,7 @@ async def runtime_storage_consistency(
 ) -> dict:
     """Return a sanitized workflow, artifact, and knowledge consistency report."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     if settings.storage_backend == "memory":
         report = scan_workflow_artifacts(
             [],
@@ -354,6 +364,7 @@ async def runtime_storage_consistency(
 @router.get("/runtime/storage-repair-plan")
 async def runtime_storage_repair_plan(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
     limit: int = Query(default=100, ge=1, le=500),
@@ -361,6 +372,7 @@ async def runtime_storage_repair_plan(
 ) -> dict:
     """Return a sanitized, non-destructive storage repair plan."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     plan = _storage_repair_plan_for_user(
         service,
         settings,
@@ -385,6 +397,7 @@ async def runtime_storage_repair_plan(
 @router.post("/runtime/storage-repair-markers")
 async def runtime_storage_repair_markers(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
     limit: int = Query(default=100, ge=1, le=500),
@@ -392,6 +405,7 @@ async def runtime_storage_repair_markers(
 ) -> dict:
     """Persist a sanitized marker for current storage repair candidates."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="admin:write")
     plan = _storage_repair_plan_for_user(
         service,
         settings,

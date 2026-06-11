@@ -21,7 +21,7 @@ from ojtflow.core.contracts.retrieval import (
 )
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowInput, WorkflowOutput, WorkflowState
-from ojtflow.core.errors import DependencyUnavailableError
+from ojtflow.core.errors import DependencyUnavailableError, PolicyBlockedError
 from ojtflow.data_tools.hashing import sha256_text
 from ojtflow.interfaces.api.app import create_app
 from ojtflow.interfaces.api.deps import (
@@ -29,6 +29,7 @@ from ojtflow.interfaces.api.deps import (
     clear_workflow_service_cache,
     get_auth_service,
     get_assistant_service,
+    get_governance_service,
     get_medical_evidence_service,
     get_retrieval_judgment_service,
     get_workflow_service,
@@ -108,6 +109,21 @@ class FakeAuthService:
 
     def logout(self, token: str) -> None:
         self.logged_out_token = token
+
+
+class FakeGovernanceService:
+    def __init__(self, allowed_permissions: set[str] | None = None) -> None:
+        self.allowed_permissions = allowed_permissions or set()
+        self.calls: list[tuple[str, str]] = []
+
+    def require_permission(self, *, user: UserRecord, permission_scope: str):
+        self.calls.append((user.user_id, permission_scope))
+        if permission_scope not in self.allowed_permissions:
+            raise PolicyBlockedError(
+                "Current user is not permitted to perform this operation.",
+                details={"permission_scope": permission_scope},
+            )
+        return None
 
 
 async def _client() -> httpx.AsyncClient:
@@ -1045,6 +1061,54 @@ async def test_retrieval_reindex_route_delegates_to_workflow_service(monkeypatch
             "include_corpus": True,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_settings_write_requires_settings_permission(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    governance = FakeGovernanceService(allowed_permissions={"settings:read"})
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_governance_service] = lambda: governance
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.put(
+            "/api/v1/runtime/retrieval-settings",
+            json={"retrieval_candidate_multiplier": 3},
+        )
+
+    assert response.status_code == 403
+    body = _assert_error_envelope(response, expected_code="policy_blocked")
+    assert body["error"]["details"]["permission_scope"] == "settings:write"
+    assert governance.calls == [("usr_api_test", "settings:write")]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_reindex_requires_admin_write_permission(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    governance = FakeGovernanceService(allowed_permissions={"retrieval:read"})
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_governance_service] = lambda: governance
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/api/v1/retrieval/reindex",
+            json={"include_seeded": True, "include_corpus": True},
+        )
+
+    assert response.status_code == 403
+    body = _assert_error_envelope(response, expected_code="policy_blocked")
+    assert body["error"]["details"]["permission_scope"] == "admin:write"
+    assert governance.calls == [("usr_api_test", "admin:write")]
 
 
 @pytest.mark.asyncio

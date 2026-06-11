@@ -22,6 +22,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import Field
 
 from ojtflow.application.document_intake_service import DocumentIntakeService
+from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.artifacts import (
@@ -49,6 +50,7 @@ from ojtflow.interfaces.api.limits import enforce_inline_text_limit
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
     get_document_intake_service,
+    get_governance_service,
     get_workflow_service,
     require_authentication,
 )
@@ -307,11 +309,13 @@ async def create_upload_parse_job(
         description="Run immediately in local sync mode; false leaves a queued durable job.",
     ),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Persist an upload as an artifact and create a traceable file-parse job."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
     extractor = validate_extractor_choice(extractor)
     file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
     artifact = intake.register_upload(
@@ -356,11 +360,13 @@ async def create_batch_upload_parse_jobs(
         description="Optional project identifier shared by all files in this batch.",
     ),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Persist multiple related uploads and create parse jobs under one batch ID."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
     extractor = validate_extractor_choice(extractor)
     if not files:
         raise UnsupportedUploadError("Batch upload must include at least one file.")
@@ -411,11 +417,13 @@ async def create_clipboard_image_parse_job(
     request: ClipboardImageParseRequest,
     http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Persist a pasted clipboard image as an artifact and create a parse job."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
     extractor = validate_extractor_choice(request.extractor)
     image_bytes, filename, mime_type = _read_clipboard_image_bytes(request, settings)
     artifact = intake.register_upload(
@@ -447,10 +455,12 @@ async def create_clipboard_image_parse_job(
 async def list_uploaded_artifacts(
     limit: int = 100,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """List uploaded artifacts owned by the authenticated user."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(
         intake.list_artifacts(
             owner_user_id=authenticated.user.user_id,
@@ -464,10 +474,12 @@ async def get_uploaded_artifact(
     http_request: Request,
     artifact_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Return metadata for one uploaded artifact."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     artifact = intake.get_artifact(
         owner_user_id=authenticated.user.user_id,
         artifact_id=artifact_id,
@@ -488,10 +500,12 @@ async def download_uploaded_artifact(
     http_request: Request,
     artifact_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ):
     """Download raw uploaded artifact bytes after owner-scoped access check."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:export")
     artifact = intake.get_artifact(
         owner_user_id=authenticated.user.user_id,
         artifact_id=artifact_id,
@@ -523,10 +537,12 @@ async def export_uploaded_artifact_metadata(
     http_request: Request,
     artifact_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Export artifact metadata, traces, and access events without raw bytes."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:export")
     artifact = intake.get_artifact(
         owner_user_id=authenticated.user.user_id,
         artifact_id=artifact_id,
@@ -558,10 +574,12 @@ async def export_uploaded_artifact_metadata(
 async def list_uploaded_artifact_traces(
     artifact_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Return extraction traces for one uploaded artifact."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(
         intake.list_traces(
             owner_user_id=authenticated.user.user_id,
@@ -577,10 +595,12 @@ async def list_uploaded_artifact_traces(
 async def list_uploaded_artifact_access_events(
     artifact_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Return artifact access events for the owner."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(
         intake.list_artifact_access_events(
             owner_user_id=authenticated.user.user_id,
@@ -593,11 +613,12 @@ async def list_uploaded_artifact_access_events(
 async def preview_redaction(
     request: RedactionPreviewRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Preview deterministic sensitive-data redaction before external provider use."""
 
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
     enforce_inline_text_limit(request.data, settings)
     return ok(
         build_redaction_preview(
@@ -635,6 +656,7 @@ async def upload_and_start_workflow(
         ),
     ),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
@@ -645,6 +667,7 @@ async def upload_and_start_workflow(
 
     Returns the same `WorkflowState` envelope as `POST /api/v1/workflows`.
     """
+    governance.require_permission(user=authenticated.user, permission_scope="data:transform")
     instruction = _required_form_text("instruction", instruction)
     extractor = validate_extractor_choice(extractor)
     schema_id = _optional_form_text(schema_id)
@@ -676,6 +699,7 @@ async def extract_only(
         ),
     ),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Extract text from a document without running the full workflow.
@@ -692,7 +716,7 @@ async def extract_only(
     """
     from ojtflow.data_tools.extract import extract_document
 
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
     extractor = validate_extractor_choice(extractor)
     file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
 
@@ -714,9 +738,10 @@ async def extract_only(
 @router.get("/parse/extractors")
 async def list_extractors(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
 ) -> dict:
     """Return which extraction engines are installed and available."""
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(
         {
             "available": available_extractors(),

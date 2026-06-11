@@ -11,6 +11,14 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
+from ojtflow.core.contracts.governance import (
+    OrganizationGroupMembershipRecord,
+    OrganizationGroupRecord,
+    OrganizationMembershipRecord,
+    OrganizationRecord,
+    WorkspaceSettingsRecord,
+)
+from ojtflow.core.errors import PolicyBlockedError
 from ojtflow.infrastructure.governance_defaults import load_workspace_defaults
 from ojtflow.infrastructure.governance_rbac import load_rbac_policy
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
@@ -159,6 +167,65 @@ def test_governance_service_bootstraps_default_workspace_once() -> None:
     assert "admin:write" in first.effective_permission_scopes
     assert "users:write" in first.effective_permission_scopes
     assert first.settings.settings["data_policy"]["allow_external_llm_for_phi"] is False
+
+
+def test_governance_service_requires_effective_permission_scope() -> None:
+    repository = InMemoryGovernanceRepository()
+    service = _service(repository)
+    user = _user("usr_viewer")
+    now = datetime.now(timezone.utc).isoformat()
+    organization = OrganizationRecord(
+        organization_id="org_viewer",
+        slug="viewer-workspace",
+        display_name="Viewer Workspace",
+        created_by_user_id=user.user_id,
+        created_at=now,
+        updated_at=now,
+    )
+    membership = OrganizationMembershipRecord(
+        membership_id="mem_viewer",
+        organization_id=organization.organization_id,
+        user_id=user.user_id,
+        role_key="viewer",
+        created_at=now,
+        updated_at=now,
+    )
+    group = OrganizationGroupRecord(
+        group_id="grp_viewer",
+        organization_id=organization.organization_id,
+        slug="viewers",
+        display_name="Viewers",
+        created_at=now,
+        updated_at=now,
+    )
+    group_membership = OrganizationGroupMembershipRecord(
+        group_id=group.group_id,
+        organization_id=organization.organization_id,
+        user_id=user.user_id,
+        created_at=now,
+    )
+    settings = WorkspaceSettingsRecord(
+        organization_id=organization.organization_id,
+        settings={},
+        updated_by_user_id=user.user_id,
+        updated_at=now,
+    )
+    repository.create_default_workspace(
+        organization=organization,
+        membership=membership,
+        group=group,
+        group_membership=group_membership,
+        settings=settings,
+    )
+
+    workspace = service.require_permission(user=user, permission_scope="data:read")
+
+    assert workspace.effective_role_keys == ["viewer"]
+    assert "data:read" in workspace.effective_permission_scopes
+    with pytest.raises(PolicyBlockedError) as exc_info:
+        service.require_permission(user=user, permission_scope="settings:write")
+    assert exc_info.value.details["permission_scope"] == "settings:write"
+    assert exc_info.value.details["role_keys"] == ["viewer"]
 
 
 def test_governance_service_deep_merges_settings_and_creates_groups() -> None:

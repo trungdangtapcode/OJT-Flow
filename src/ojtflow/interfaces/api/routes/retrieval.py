@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
@@ -41,6 +42,7 @@ from ojtflow.infrastructure.retrieval.presets import (
 )
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
+    get_governance_service,
     get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
@@ -162,9 +164,11 @@ class RetrievalJudgmentDeleteEnvelope(ContractModel):
 async def plan_retrieval(
     request: RetrievalSearchRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     enforce_inline_json_limit(request, settings, field_name="retrieval_plan_request")
     plan = service.plan_retrieval(
         _retrieval_query_from_request(request),
@@ -178,9 +182,11 @@ async def search_retrieval(
     request: RetrievalSearchRequest,
     http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     enforce_inline_json_limit(request, settings, field_name="retrieval_request")
     package = service.search_retrieval(
         _retrieval_query_from_request(request),
@@ -220,45 +226,50 @@ def _retrieval_query_from_request(request: RetrievalSearchRequest) -> RetrievalQ
 @router.get("/retrieval/presets", response_model=RetrievalPresetsEnvelope)
 async def list_retrieval_presets(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_retrieval_search_presets(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/search-options", response_model=RetrievalSearchOptionsEnvelope)
 async def get_retrieval_search_options(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_retrieval_search_options(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/source-policies", response_model=RetrievalSourcePoliciesEnvelope)
 async def get_retrieval_source_policies(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_source_trust_policy_catalog(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/corpus/adapters", response_model=RetrievalCorpusAdaptersEnvelope)
 async def get_retrieval_corpus_adapters(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_corpus_adapter_catalog(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/corpus/manifest", response_model=RetrievalCorpusManifestEnvelope)
 async def get_retrieval_corpus_manifest(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     knowledge_root = settings.resolved_knowledge_dir
     return ok(
         build_corpus_ingestion_manifest(
@@ -274,18 +285,20 @@ async def get_retrieval_corpus_manifest(
 )
 async def get_retrieval_corpus_chunking_profiles(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_corpus_chunking_profile_catalog(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/strategies", response_model=RetrievalStrategiesEnvelope)
 async def get_retrieval_strategies(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_retrieval_strategy_catalog(settings.resolved_knowledge_dir))
 
 
@@ -387,9 +400,10 @@ async def delete_retrieval_judgment(
 @router.get("/retrieval/sources", response_model=RetrievalSourcesEnvelope)
 async def list_retrieval_sources(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(service.list_retrieval_sources())
 
 
@@ -397,9 +411,10 @@ async def list_retrieval_sources(
 async def reindex_retrieval(
     request: RetrievalReindexRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="admin:write")
     return ok(
         service.reindex_retrieval(
             include_seeded=request.include_seeded,
@@ -413,9 +428,10 @@ async def retrieval_integrity(
     include_seeded: bool = Query(default=True),
     include_corpus: bool = Query(default=False),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     return ok(
         service.retrieval_integrity_report(
             include_seeded=include_seeded,

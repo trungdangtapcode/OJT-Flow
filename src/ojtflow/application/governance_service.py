@@ -20,7 +20,7 @@ from ojtflow.core.contracts.governance import (
     WorkspaceDetail,
     WorkspaceSettingsRecord,
 )
-from ojtflow.core.errors import NotFoundError
+from ojtflow.core.errors import NotFoundError, PolicyBlockedError
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 
@@ -39,6 +39,9 @@ class GovernanceService:
         self.defaults = defaults
         self.rbac_policy = rbac_policy
         self._roles_by_key = {role.role_key: role for role in rbac_policy.roles}
+        self._permissions_by_scope = {
+            permission.permission_scope: permission for permission in rbac_policy.permissions
+        }
         _validate_configured_roles(
             [
                 defaults.default_role_key,
@@ -51,6 +54,31 @@ class GovernanceService:
         """Return the active role-based access-control catalog."""
 
         return self.rbac_policy
+
+    def require_permission(
+        self,
+        *,
+        user: UserRecord,
+        permission_scope: str,
+    ) -> WorkspaceDetail:
+        """Return the current workspace only when the user has a permission scope."""
+
+        if permission_scope not in self._permissions_by_scope:
+            raise PolicyBlockedError(
+                "Required permission scope is not defined in the active RBAC policy.",
+                details={"permission_scope": permission_scope},
+            )
+        workspace = self.get_or_create_current_workspace(user)
+        if permission_scope in workspace.effective_permission_scopes:
+            return workspace
+        raise PolicyBlockedError(
+            "Current user is not permitted to perform this operation.",
+            details={
+                "permission_scope": permission_scope,
+                "organization_id": workspace.organization.organization_id,
+                "role_keys": workspace.effective_role_keys,
+            },
+        )
 
     def get_or_create_current_workspace(self, user: UserRecord) -> WorkspaceDetail:
         """Return the user's current workspace, creating a default one if needed."""

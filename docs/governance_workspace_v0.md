@@ -6,10 +6,10 @@ F119 introduces the durable tenant/workspace backbone for enterprise use:
 organizations, user memberships, role keys, groups, group membership, and
 workspace-level settings.
 
-This is the foundation for later RBAC and ownership enforcement. F119 creates
-and exposes the model; F120 and F121 will enforce fine-grained permissions and
-resource ownership across workflows, reviews, artifacts, chat, retrieval, and
-admin surfaces.
+This is the foundation for RBAC and ownership enforcement. F119 creates and
+exposes the model; F120 defines the role catalog; F121 applies permission
+checks and owner scoping across workflows, reviews, artifacts, retrieval,
+runtime, audit, and export surfaces.
 
 ## Source Of Truth
 
@@ -46,13 +46,16 @@ All routes require an authenticated backend session and return the standard
   - Creates a default workspace if the user has no organization membership.
 - `GET /api/v1/governance/rbac-policy`
   - Returns the data-driven role and permission catalog.
+  - Requires `settings:read`.
 - `GET /api/v1/organizations`
   - Lists workspaces visible to the user.
 - `PATCH /api/v1/organizations/{organization_id}/settings`
   - Deep-merges a settings patch into the workspace settings document.
   - Increments the settings version.
+  - Requires `settings:write`.
 - `POST /api/v1/organizations/{organization_id}/groups`
   - Creates an organization group for future RBAC and workflow assignment.
+  - Requires `users:write`.
 
 ## Data Model
 
@@ -65,7 +68,8 @@ All routes require an authenticated backend session and return the standard
 
 Role keys are mapped through `knowledge/governance/rbac_roles.json`. Workspace
 responses include `effective_role_keys` and `effective_permission_scopes`.
-Authorization enforcement across product resources remains scoped to F121.
+Authorization enforcement across product resources is documented in
+`docs/ownership_authorization_v0.md`.
 
 ## Verification
 
@@ -78,5 +82,6 @@ python -m pytest tests/test_governance.py tests/test_postgres_migrations.py -q
 - Add new workspace defaults in `knowledge/governance/workspace_defaults.json`
   instead of hardcoding settings in the service.
 - Keep settings as versioned JSON until policy contracts stabilize.
-- Do not enforce cross-resource ownership in this layer; F121 owns that rollout.
+- Keep authorization checks centralized through `GovernanceService` rather than
+  duplicating role logic in routes.
 - Do not store real customer, PHI, or secret values in governance defaults.

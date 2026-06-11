@@ -2,7 +2,7 @@
 
 ## Purpose
 
-F120 defines the enterprise role catalog that F121 will use for ownership and
+F120 defines the enterprise role catalog that F121 uses for ownership and
 authorization enforcement. The v0 policy is data-driven and visible through the
 backend API so the frontend, assistant, MCP tooling, and future admin screens do
 not duplicate role semantics.
@@ -74,12 +74,20 @@ role keys for groups that include the user.
 
 ## Boundary
 
-F120 defines and exposes RBAC policy. It does not enforce resource ownership
-across the product. F121 applies the policy to workflows, reviews, chat
-sessions, artifacts, source inventory, runtime settings, and exports.
+F120 defines and exposes RBAC policy. F121 applies it through
+`GovernanceService.require_permission(...)` at API boundaries for workflows,
+reviews, artifacts, source inventory, runtime settings, audit records, and
+exports. Owned resources are still scoped by backend session user ID.
+
+Detailed enforcement map:
+
+- `docs/ownership_authorization_v0.md`
 
 ## Verification
 
 ```bash
-python -m pytest tests/test_governance.py -q
+python -m pytest tests/test_governance.py \
+  tests/test_api.py::test_runtime_settings_write_requires_settings_permission \
+  tests/test_api.py::test_retrieval_reindex_requires_admin_write_permission \
+  -q
 ```

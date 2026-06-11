@@ -631,3 +631,4 @@ def clear_workflow_service_cache() -> None:
     _build_assistant_memory_service.cache_clear()
     _build_background_job_service.cache_clear()
     _build_document_intake_service.cache_clear()
+    _build_governance_service.cache_clear()

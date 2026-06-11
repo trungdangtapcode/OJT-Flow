@@ -6,6 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
@@ -15,6 +16,7 @@ from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
+    get_governance_service,
     get_workflow_service,
     require_authentication,
 )
@@ -49,9 +51,11 @@ async def start_workflow(
     request: StartWorkflowRequest,
     http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:transform")
     enforce_inline_text_limit(request.data, settings)
     workflow = service.start_workflow(
         instruction=request.instruction,
@@ -72,8 +76,10 @@ async def list_workflows(
     status: WorkflowStatus | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(
         service.list_workflows(
             status=status,
@@ -92,8 +98,10 @@ async def list_workflow_summaries(
     sort: SummarySort = "updated_at",
     direction: SortDirection = "desc",
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(
         service.list_workflow_summaries(
             status=status,
@@ -110,8 +118,10 @@ async def list_workflow_summaries(
 @router.get("/workflows/stats")
 async def workflow_stats(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(service.workflow_stats(owner_user_id=authenticated.user.user_id))
 
 
@@ -119,8 +129,10 @@ async def workflow_stats(
 async def get_workflow(
     workflow_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(service.get_workflow(workflow_id, owner_user_id=authenticated.user.user_id))
 
 
@@ -128,8 +140,10 @@ async def get_workflow(
 async def get_workflow_events(
     workflow_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(service.list_events(workflow_id, owner_user_id=authenticated.user.user_id))
 
 
@@ -137,8 +151,10 @@ async def get_workflow_events(
 async def get_workflow_output(
     workflow_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:export")
     return ok(
         service.get_workflow_output(
             workflow_id,
@@ -152,8 +168,10 @@ async def list_reviews(
     status: str | None = "pending",
     limit: int = Query(default=50, ge=1, le=100),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="review:read")
     return ok(
         service.list_reviews(
             status=status,
@@ -172,8 +190,10 @@ async def list_review_summaries(
     sort: SummarySort = "updated_at",
     direction: SortDirection = "desc",
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="review:read")
     review_status = None if status == "all" else status
     return ok(
         service.list_review_summaries(
@@ -191,7 +211,8 @@ async def list_review_summaries(
 @router.get("/schemas")
 async def list_schemas(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
     return ok(service.list_schemas())

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.core.contracts.auth import AuthenticatedSession
@@ -11,6 +12,7 @@ from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.jobs import BackgroundJob, JobStatus, JobType
 from ojtflow.interfaces.api.deps import (
     get_background_job_service,
+    get_governance_service,
     get_workflow_service,
     require_authentication,
 )
@@ -77,11 +79,13 @@ async def create_retrieval_reindex_job(
     request: RetrievalReindexJobRequest,
     http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     jobs: BackgroundJobService = Depends(get_background_job_service),
     workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
     """Create a retrieval reindex job and run it synchronously by default."""
 
+    governance.require_permission(user=authenticated.user, permission_scope="admin:write")
     job = jobs.create_job(
         owner_user_id=authenticated.user.user_id,
         job_type="retrieval_reindex",
