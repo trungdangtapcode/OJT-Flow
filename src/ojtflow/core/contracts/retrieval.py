@@ -485,6 +485,60 @@ class RetrievalSearchOptions(ContractModel):
     top_k_values: list[int] = Field(default_factory=list)
 
 
+class RetrievalSourceTrustPolicy(ContractModel):
+    """Governance policy for one retrievable healthcare source."""
+
+    source_id: NonBlankStr
+    source_name: NonBlankStr
+    authority: NonBlankStr
+    domain: NonBlankStr
+    standard_system: NonBlankStr
+    clinical_scope: list[NonBlankStr] = Field(default_factory=list)
+    intended_use: list[NonBlankStr] = Field(default_factory=list)
+    prohibited_use: list[NonBlankStr] = Field(default_factory=list)
+    refresh_cadence: NonBlankStr
+    license_constraints: list[NonBlankStr] = Field(default_factory=list)
+    access_mode: NonBlankStr
+    ingestion_mode: NonBlankStr
+    evidence_tier: NonBlankStr
+    requires_reviewer_approval: bool = True
+    source_urls: dict[NonBlankStr, NonBlankStr] = Field(default_factory=dict)
+    policy_notes: list[NonBlankStr] = Field(default_factory=list)
+
+
+class RetrievalSourceTrustPolicyCatalog(ContractModel):
+    """Versioned source governance catalog loaded from trusted data."""
+
+    version: NonBlankStr
+    policies: list[RetrievalSourceTrustPolicy] = Field(default_factory=list)
+
+
+class RetrievalStrategyProfile(ContractModel):
+    """Operator-facing retrieval/RAG strategy preset and runtime contract."""
+
+    strategy_id: NonBlankStr
+    label: NonBlankStr
+    status: NonBlankStr
+    technique_family: NonBlankStr
+    description: NonBlankStr
+    intended_use: list[NonBlankStr] = Field(default_factory=list)
+    avoid_when: list[NonBlankStr] = Field(default_factory=list)
+    query_transformations: list[NonBlankStr] = Field(default_factory=list)
+    retrieval_modes: list[NonBlankStr] = Field(default_factory=list)
+    required_runtime: list[NonBlankStr] = Field(default_factory=list)
+    compatible_filters: list[NonBlankStr] = Field(default_factory=list)
+    risk_controls: list[NonBlankStr] = Field(default_factory=list)
+    roadmap_refs: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalStrategyCatalog(ContractModel):
+    """Versioned retrieval strategy registry loaded from trusted data."""
+
+    version: NonBlankStr
+    strategies: list[RetrievalStrategyProfile] = Field(default_factory=list)
+
+
 class RetrievalConceptCandidate(ContractModel):
     """Controlled-vocabulary concept candidate detected in a retrieval query."""
 

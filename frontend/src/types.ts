@@ -615,6 +615,52 @@ export type RetrievalSearchOptions = {
   top_k_values: number[];
 };
 
+export type RetrievalSourceTrustPolicy = {
+  source_id: string;
+  source_name: string;
+  authority: string;
+  domain: string;
+  standard_system: string;
+  clinical_scope: string[];
+  intended_use: string[];
+  prohibited_use: string[];
+  refresh_cadence: string;
+  license_constraints: string[];
+  access_mode: string;
+  ingestion_mode: string;
+  evidence_tier: string;
+  requires_reviewer_approval: boolean;
+  source_urls: Record<string, string>;
+  policy_notes: string[];
+};
+
+export type RetrievalSourceTrustPolicyCatalog = {
+  version: string;
+  policies: RetrievalSourceTrustPolicy[];
+};
+
+export type RetrievalStrategyProfile = {
+  strategy_id: string;
+  label: string;
+  status: string;
+  technique_family: string;
+  description: string;
+  intended_use: string[];
+  avoid_when: string[];
+  query_transformations: string[];
+  retrieval_modes: string[];
+  required_runtime: string[];
+  compatible_filters: string[];
+  risk_controls: string[];
+  roadmap_refs: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalStrategyCatalog = {
+  version: string;
+  strategies: RetrievalStrategyProfile[];
+};
+
 export type RetrievalJudgmentValue = "relevant" | "partial" | "not_relevant";
 
 export type RetrievalRelevanceJudgment = {
@@ -780,6 +826,9 @@ export type AssistantToolSpec = {
   name: string;
   description: string;
   permission_scope: string;
+  permission_tags: string[];
+  risk_level: string;
+  approval_reason?: string | null;
   requires_approval: boolean;
   input_schema: Record<string, unknown>;
 };

@@ -35,6 +35,8 @@ import type {
   RetrievalSearchOptions,
   RetrievalSearchPreset,
   RetrievalSource,
+  RetrievalSourceTrustPolicyCatalog,
+  RetrievalStrategyCatalog,
   RuntimeAssistantSettingsPayload,
   RuntimeAssistantSettingsUpdate,
   RuntimeConfig,
@@ -507,6 +509,14 @@ export function listRetrievalPresets(): Promise<RetrievalSearchPreset[]> {
 
 export function getRetrievalSearchOptions(): Promise<RetrievalSearchOptions> {
   return request<RetrievalSearchOptions>("/retrieval/search-options");
+}
+
+export function getRetrievalSourcePolicies(): Promise<RetrievalSourceTrustPolicyCatalog> {
+  return request<RetrievalSourceTrustPolicyCatalog>("/retrieval/source-policies");
+}
+
+export function getRetrievalStrategies(): Promise<RetrievalStrategyCatalog> {
+  return request<RetrievalStrategyCatalog>("/retrieval/strategies");
 }
 
 export function listRetrievalJudgments(params: {

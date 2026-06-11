@@ -142,6 +142,9 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F035 | Implemented | Added owner-scoped artifact download, metadata export, and access-event listing APIs backed by append-only memory/SQLite/Postgres artifact access logs and Postgres migration 012. |
 | 2026-06-11 | F040 | Started | Added batch upload parse jobs with shared `batch_id`, `case_id`, and `project_id` metadata. Direct workflow creation from batch outputs remains follow-up. |
 | 2026-06-11 | F029 | Implemented | Added a Workbench OCR evidence review panel backed by `POST /api/v1/ocr/evidence`. Operators can paste multi-page OCR field JSON, normalize it through the backend contract, inspect page-grouped bounding boxes, confidence, source refs, evidence IDs, and review-required flags. |
+| 2026-06-11 | F070 | Implemented | Added `knowledge/source_catalog/source_trust_policies.json`, typed `RetrievalSourceTrustPolicyCatalog`, and `GET /api/v1/retrieval/source-policies` so authoritative healthcare sources carry domain, standard system, intended/prohibited use, refresh cadence, license constraints, ingestion mode, evidence tier, and reviewer policy. |
+| 2026-06-11 | F073 | Implemented | Added data-driven retrieval strategy presets in `knowledge/retrieval/strategy_catalog.json` and `GET /api/v1/retrieval/strategies`, covering lexical-only, vector-only, hybrid RRF, metadata-filtered, high-recall review, and exact-source lookup with runtime requirements and risk controls. |
+| 2026-06-11 | F105 | Implemented | Added data-driven Assistant tool permission policy in `knowledge/assistant/tool_permission_policies.json`, extended tool specs with permission tags, risk level, and approval reason, and surfaced this metadata in the Assistant tool catalog UI. |
 
 ## Feature Backlog
 
@@ -225,10 +228,10 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F067 Add ClinicalTrials.gov API connector for trial summaries and condition/intervention filters.
 - [ ] F068 Add openFDA connector for labels, adverse events, recalls, and device metadata where useful.
 - [ ] F069 Add source inventory lifecycle states: candidate, approved, deprecated, blocked, failed, and needs review.
-- [ ] F070 Add source-level trust policy with domain, standard system, clinical scope, intended use, refresh cadence, and license constraints.
+- [x] F070 Add source-level trust policy with domain, standard system, clinical scope, intended use, refresh cadence, and license constraints.
 - [ ] F071 Add chunking profiles for standards docs, terminology pages, structured API records, PDFs, and internal policies.
 - [ ] F072 Add metadata extraction for resource type, standard system, clinical domain, field names, version, section heading, and source locator.
-- [ ] F073 Add hybrid retrieval strategy presets: lexical-only, vector-only, hybrid RRF, metadata-filtered, high-recall review, and exact-source lookup.
+- [x] F073 Add hybrid retrieval strategy presets: lexical-only, vector-only, hybrid RRF, metadata-filtered, high-recall review, and exact-source lookup.
 - [ ] F074 Add query transformation strategies from RAG research: rewrite, decomposition, step-back query, HyDE optional mode, and multi-query expansion.
 - [ ] F075 Add query router that chooses strategy by query intent, data format, clinical domain, source filters, and risk flags.
 - [ ] F076 Add cross-encoder reranking for local GPU mode with a configurable model, candidate limit, and fallback.
@@ -263,7 +266,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F102 Add retry and continue actions for failed assistant tool calls.
 - [ ] F103 Add strict OpenAI tool schemas with `additionalProperties=false` and required nullable fields where needed.
 - [ ] F104 Add model/provider settings for planning model, synthesis model, vision model, embedding model, and local model endpoint.
-- [ ] F105 Add per-tool permissions: read-only, write-gated, admin-only, external-network, PHI-sensitive, and destructive.
+- [x] F105 Add per-tool permissions: read-only, write-gated, admin-only, external-network, PHI-sensitive, and destructive.
 - [ ] F106 Add user confirmation UI before write-gated assistant actions such as creating workflow, approving review, exporting package, or reindexing corpus.
 - [ ] F107 Add assistant memory only for safe operational preferences, never raw PHI or uploaded content.
 - [ ] F108 Add assistant answer templates for validation report, retrieval answer, standards explanation, workflow status, review summary, and export summary.

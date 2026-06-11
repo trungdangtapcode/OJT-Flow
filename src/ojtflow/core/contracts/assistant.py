@@ -22,6 +22,9 @@ class AssistantToolSpec(ContractModel):
     name: str
     description: str
     permission_scope: str
+    permission_tags: list[str] = Field(default_factory=list)
+    risk_level: str = "low"
+    approval_reason: str | None = None
     requires_approval: bool = False
     input_schema: dict[str, Any] = Field(default_factory=dict)
 

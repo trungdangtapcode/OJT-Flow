@@ -245,6 +245,8 @@ def test_openapi_exposes_core_request_examples() -> None:
     retrieval_support_response_models = [
         ("/api/v1/retrieval/presets", "get", "RetrievalPresetsEnvelope"),
         ("/api/v1/retrieval/search-options", "get", "RetrievalSearchOptionsEnvelope"),
+        ("/api/v1/retrieval/source-policies", "get", "RetrievalSourcePoliciesEnvelope"),
+        ("/api/v1/retrieval/strategies", "get", "RetrievalStrategiesEnvelope"),
         ("/api/v1/retrieval/sources", "get", "RetrievalSourcesEnvelope"),
         ("/api/v1/retrieval/reindex", "post", "RetrievalReindexEnvelope"),
         ("/api/v1/retrieval/integrity", "get", "RetrievalIntegrityEnvelope"),
@@ -276,6 +278,12 @@ def test_openapi_exposes_core_request_examples() -> None:
     )
     assert schemas["RetrievalSearchOptionsEnvelope"]["properties"]["data"]["$ref"] == (
         "#/components/schemas/RetrievalSearchOptions"
+    )
+    assert schemas["RetrievalSourcePoliciesEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalSourceTrustPolicyCatalog"
+    )
+    assert schemas["RetrievalStrategiesEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalStrategyCatalog"
     )
     assert schemas["RetrievalSourcesEnvelope"]["properties"]["data"]["items"]["$ref"] == (
         "#/components/schemas/RetrievalSource"
@@ -1346,6 +1354,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         )
         retrieval_presets = await client.get("/api/v1/retrieval/presets")
         retrieval_search_options = await client.get("/api/v1/retrieval/search-options")
+        retrieval_source_policies = await client.get("/api/v1/retrieval/source-policies")
+        retrieval_strategies = await client.get("/api/v1/retrieval/strategies")
         retrieval_reindex = await client.post(
             "/api/v1/retrieval/reindex",
             json={"include_seeded": True, "include_corpus": True},
@@ -1417,6 +1427,10 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_presets, expected_code="unauthorized")
     assert retrieval_search_options.status_code == 401
     _assert_error_envelope(retrieval_search_options, expected_code="unauthorized")
+    assert retrieval_source_policies.status_code == 401
+    _assert_error_envelope(retrieval_source_policies, expected_code="unauthorized")
+    assert retrieval_strategies.status_code == 401
+    _assert_error_envelope(retrieval_strategies, expected_code="unauthorized")
     assert retrieval_reindex.status_code == 401
     _assert_error_envelope(retrieval_reindex, expected_code="unauthorized")
     assert retrieval_sources.status_code == 401
@@ -3951,6 +3965,28 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         )
         assert option_data["top_k_values"] == [3, 5, 8, 10, 15, 20]
 
+        source_policies = await client.get("/api/v1/retrieval/source-policies")
+        assert source_policies.status_code == 200
+        policy_data = source_policies.json()["data"]
+        assert policy_data["version"] == "source_trust_policies.v1"
+        assert any(
+            policy["source_id"] == "hl7_fhir_r4"
+            and policy["evidence_tier"] == "authoritative_standard"
+            and "FHIR-like profiling" in policy["clinical_scope"]
+            for policy in policy_data["policies"]
+        )
+
+        strategies = await client.get("/api/v1/retrieval/strategies")
+        assert strategies.status_code == 200
+        strategy_data = strategies.json()["data"]
+        assert strategy_data["version"] == "retrieval_strategy_catalog.v1"
+        assert any(
+            strategy["strategy_id"] == "hybrid_rrf"
+            and strategy["status"] == "available"
+            and "source diversity" in strategy["risk_controls"]
+            for strategy in strategy_data["strategies"]
+        )
+
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "request_validation_error"
@@ -4142,6 +4178,9 @@ async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
     start_workflow = next(tool for tool in tools if tool["name"] == "start_workflow")
     assert start_workflow["requires_approval"] is True
     assert start_workflow["permission_scope"] == "data:transform"
+    assert start_workflow["risk_level"] == "high"
+    assert "write-gated" in start_workflow["permission_tags"]
+    assert "Creates durable workflow state" in start_workflow["approval_reason"]
     assert start_workflow["input_schema"]["type"] == "object"
 
 

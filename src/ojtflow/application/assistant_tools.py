@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
@@ -177,6 +178,23 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
 }
 
 
+def _apply_tool_permission_policies(
+    specs: dict[str, AssistantToolSpec],
+    policies: Mapping[str, Mapping[str, Any]],
+) -> dict[str, AssistantToolSpec]:
+    unknown_tools = sorted(set(policies) - set(specs))
+    if unknown_tools:
+        raise ValueError(
+            "Assistant tool permission policy references unknown tool(s): "
+            + ", ".join(unknown_tools)
+        )
+    merged: dict[str, AssistantToolSpec] = {}
+    for name, spec in specs.items():
+        policy = dict(policies.get(name) or {})
+        merged[name] = spec.model_copy(update=policy)
+    return merged
+
+
 class OJTFlowToolExecutor:
     """Execute assistant/MCP tool calls through existing service boundaries."""
 
@@ -184,9 +202,14 @@ class OJTFlowToolExecutor:
         self,
         workflow_service: WorkflowService,
         medical_evidence_service: MedicalEvidenceService,
+        tool_permission_policies: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         self.workflow_service = workflow_service
         self.medical_evidence_service = medical_evidence_service
+        self._tool_specs = _apply_tool_permission_policies(
+            ASSISTANT_TOOL_SPECS,
+            tool_permission_policies or {},
+        )
         self._handlers: dict[
             str,
             Callable[[dict[str, Any], str | None, str | None], dict[str, Any]],
@@ -205,7 +228,7 @@ class OJTFlowToolExecutor:
 
     @property
     def tool_specs(self) -> list[AssistantToolSpec]:
-        return list(ASSISTANT_TOOL_SPECS.values())
+        return list(self._tool_specs.values())
 
     def execute(
         self,
@@ -215,7 +238,7 @@ class OJTFlowToolExecutor:
         owner_user_id: str | None = None,
         request_id: str | None = None,
     ) -> AssistantToolResult:
-        spec = ASSISTANT_TOOL_SPECS.get(plan.tool_name)
+        spec = self._tool_specs.get(plan.tool_name)
         if not spec:
             return AssistantToolResult(
                 tool_name=plan.tool_name,

@@ -22,6 +22,12 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalSearchOptions,
     RetrievalSearchPreset,
     RetrievalSource,
+    RetrievalSourceTrustPolicyCatalog,
+    RetrievalStrategyCatalog,
+)
+from ojtflow.infrastructure.retrieval.catalogs import (
+    load_retrieval_strategy_catalog,
+    load_source_trust_policy_catalog,
 )
 from ojtflow.infrastructure.retrieval.presets import (
     load_retrieval_search_options,
@@ -62,6 +68,16 @@ class RetrievalPresetsEnvelope(ContractModel):
 
 class RetrievalSearchOptionsEnvelope(ContractModel):
     data: RetrievalSearchOptions
+    error: None = None
+
+
+class RetrievalSourcePoliciesEnvelope(ContractModel):
+    data: RetrievalSourceTrustPolicyCatalog
+    error: None = None
+
+
+class RetrievalStrategiesEnvelope(ContractModel):
+    data: RetrievalStrategyCatalog
     error: None = None
 
 
@@ -195,6 +211,24 @@ async def get_retrieval_search_options(
 ) -> dict:
     del authenticated
     return ok(load_retrieval_search_options(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/source-policies", response_model=RetrievalSourcePoliciesEnvelope)
+async def get_retrieval_source_policies(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    del authenticated
+    return ok(load_source_trust_policy_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/strategies", response_model=RetrievalStrategiesEnvelope)
+async def get_retrieval_strategies(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    del authenticated
+    return ok(load_retrieval_strategy_catalog(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/judgments", response_model=RetrievalJudgmentsEnvelope)

@@ -1,0 +1,123 @@
+{
+  "version": "source_trust_policies.v1",
+  "policies": [
+    {
+      "source_id": "hl7_fhir_r4",
+      "source_name": "HL7 FHIR R4 Core Specification",
+      "authority": "HL7 International",
+      "domain": "interoperability",
+      "standard_system": "FHIR",
+      "clinical_scope": ["FHIR-like profiling", "Observation mapping", "search parameter hints"],
+      "intended_use": [
+        "Ground FHIR-like resource shape checks",
+        "Explain profile and search-parameter requirements",
+        "Provide interoperability evidence for review-gated mappings"
+      ],
+      "prohibited_use": [
+        "Do not claim full FHIR compliance without a real FHIR validator",
+        "Do not infer clinical meaning beyond source fields"
+      ],
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "license_constraints": ["Respect HL7 publication terms and cite exact release/version"],
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_spec_chunks_and_profile_json",
+      "evidence_tier": "authoritative_standard",
+      "requires_reviewer_approval": false,
+      "source_urls": {
+        "observation": "https://hl7.org/fhir/r4/observation.html",
+        "search_parameters": "https://www.hl7.org/fhir/R4/searchparameter-registry.html"
+      },
+      "policy_notes": ["Use source version in evidence when possible."]
+    },
+    {
+      "source_id": "ucum",
+      "source_name": "Unified Code for Units of Measure",
+      "authority": "Regenstrief Institute / UCUM maintainers",
+      "domain": "units",
+      "standard_system": "UCUM",
+      "clinical_scope": ["unit validation", "FHIR Quantity hints", "missing-unit review"],
+      "intended_use": [
+        "Ground missing or ambiguous unit warnings",
+        "Support review-gated unit normalization candidates"
+      ],
+      "prohibited_use": ["Do not silently convert units without preserving original value and review state"],
+      "refresh_cadence": "quarterly",
+      "license_constraints": ["Use UCUM terms as published; keep validation adapters versioned"],
+      "access_mode": "public_web_or_nlm_service",
+      "ingestion_mode": "selected_unit_seed_plus_validator_adapter",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://ucum.org/",
+        "nlm_service": "https://ucum.nlm.nih.gov/"
+      },
+      "policy_notes": ["Unit normalization changes must stay review-gated."]
+    },
+    {
+      "source_id": "loinc_core",
+      "source_name": "LOINC",
+      "authority": "Regenstrief Institute",
+      "domain": "laboratory",
+      "standard_system": "LOINC",
+      "clinical_scope": ["lab observation identity", "Observation.code candidates"],
+      "intended_use": [
+        "Generate candidate lab-code evidence",
+        "Support reviewer decisions for lab-name normalization"
+      ],
+      "prohibited_use": ["Do not bulk-ingest licensed files into git", "Do not auto-code lab names without review"],
+      "refresh_cadence": "per_release_or_quarterly",
+      "license_constraints": ["Full downloads and terminology service access may require account/license terms"],
+      "access_mode": "licensed_bulk_or_public_pages",
+      "ingestion_mode": "licensed_bulk_or_selected_public_pages",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://loinc.org/",
+        "example": "https://loinc.org/4548-4"
+      },
+      "policy_notes": ["Keep selected public pages separate from licensed bulk assets."]
+    },
+    {
+      "source_id": "nlm_rxnorm",
+      "source_name": "RxNorm and RxNav API",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "medication",
+      "standard_system": "RxNorm",
+      "clinical_scope": ["drug name lookup", "RxCUI candidates", "medication retrieval routing"],
+      "intended_use": ["Support medication terminology lookup and source-linked reviewer candidates"],
+      "prohibited_use": ["Do not make medication safety recommendations without clinical review"],
+      "refresh_cadence": "monthly_or_api_release",
+      "license_constraints": ["Cache API results with source release metadata"],
+      "access_mode": "public_api",
+      "ingestion_mode": "api_lookup_cache",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "overview": "https://www.nlm.nih.gov/research/umls/rxnorm/",
+        "api_docs": "https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html"
+      },
+      "policy_notes": ["Drug normalization remains a reviewer decision."]
+    },
+    {
+      "source_id": "openfda",
+      "source_name": "openFDA",
+      "authority": "U.S. Food and Drug Administration",
+      "domain": "drug_safety_regulatory",
+      "standard_system": "openFDA",
+      "clinical_scope": ["drug label search", "public adverse event context", "regulatory retrieval"],
+      "intended_use": ["Route regulatory searches and cite public FDA datasets as context"],
+      "prohibited_use": ["Do not treat adverse event counts as causal clinical conclusions"],
+      "refresh_cadence": "weekly_or_before_regulatory_demo",
+      "license_constraints": ["Public data; preserve endpoint, query, and fetch time"],
+      "access_mode": "public_api_or_download",
+      "ingestion_mode": "api_or_endpoint_downloads_out_of_repo",
+      "evidence_tier": "regulatory_context",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "api_docs": "https://open.fda.gov/apis/",
+        "downloads": "https://open.fda.gov/apis/downloads/"
+      },
+      "policy_notes": ["Regulatory context is not clinical decision support."]
+    }
+  ]
+}

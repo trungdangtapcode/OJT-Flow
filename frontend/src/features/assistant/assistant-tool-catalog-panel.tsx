@@ -62,11 +62,28 @@ export function ToolCatalogPanel({
                   <Badge variant={tool.requires_approval ? "warning" : "success"}>
                     {tool.requires_approval ? "approval" : "read/run"}
                   </Badge>
+                  <Badge variant={tool.risk_level === "high" ? "warning" : "muted"}>
+                    {humanize(tool.risk_level)}
+                  </Badge>
                   <Badge variant="muted">{humanize(tool.permission_scope)}</Badge>
                 </div>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
                   {tool.description}
                 </p>
+                {tool.permission_tags.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {tool.permission_tags.slice(0, 6).map((tag) => (
+                      <Badge key={tag} variant="muted">
+                        {humanize(tag)}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+                {tool.approval_reason ? (
+                  <p className="mt-2 text-xs font-semibold leading-5 text-muted-foreground">
+                    {tool.approval_reason}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>

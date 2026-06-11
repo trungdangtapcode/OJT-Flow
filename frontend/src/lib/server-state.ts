@@ -22,6 +22,8 @@ import {
   getRetrievalJudgmentSummary,
   getRetrievalIntegrity,
   getRetrievalSearchOptions,
+  getRetrievalSourcePolicies,
+  getRetrievalStrategies,
   getRuntimeConfig,
   getRuntimeHealth,
   getRuntimeMigrations,
@@ -118,6 +120,8 @@ export const queryKeys = {
   retrievalJudgmentEvaluation: (params: Record<string, unknown>) =>
     ["retrieval-judgment-evaluation", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
+  retrievalSourcePolicies: ["retrieval-source-policies"] as const,
+  retrievalStrategies: ["retrieval-strategies"] as const,
   retrievalPlan: (payload: RetrievalSearchPayload | null) => ["retrieval-plan", payload] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
@@ -319,6 +323,20 @@ export function useRetrievalPresetsQuery() {
 
 export function useRetrievalSearchOptionsQuery() {
   return useQuery({ queryKey: queryKeys.retrievalSearchOptions, queryFn: getRetrievalSearchOptions });
+}
+
+export function useRetrievalSourcePoliciesQuery() {
+  return useQuery({
+    queryKey: queryKeys.retrievalSourcePolicies,
+    queryFn: getRetrievalSourcePolicies,
+  });
+}
+
+export function useRetrievalStrategiesQuery() {
+  return useQuery({
+    queryKey: queryKeys.retrievalStrategies,
+    queryFn: getRetrievalStrategies,
+  });
 }
 
 export function useRetrievalIntegrityQuery(params: {

@@ -1,0 +1,75 @@
+{
+  "version": "assistant_tool_permission_policies.v1",
+  "policies": [
+    {
+      "tool_name": "retrieval_search",
+      "permission_tags": ["read-only", "retrieval", "evidence", "phi-sensitive"],
+      "risk_level": "medium",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "validate_data",
+      "permission_tags": ["read-only", "validation", "phi-sensitive"],
+      "risk_level": "medium",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "validate_with_evidence",
+      "permission_tags": ["read-only", "validation", "retrieval", "evidence", "phi-sensitive"],
+      "risk_level": "medium",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "convert_data",
+      "permission_tags": ["transform", "meaning-changing", "phi-sensitive"],
+      "risk_level": "high",
+      "requires_approval": false,
+      "approval_reason": "Conversion can change representation; destructive writes remain separately gated."
+    },
+    {
+      "tool_name": "fhir_profile",
+      "permission_tags": ["read-only", "profile", "interoperability", "phi-sensitive"],
+      "risk_level": "medium",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "list_workflows",
+      "permission_tags": ["read-only", "workflow", "metadata"],
+      "risk_level": "low",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "list_reviews",
+      "permission_tags": ["read-only", "review", "metadata"],
+      "risk_level": "low",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "get_workflow",
+      "permission_tags": ["read-only", "workflow", "phi-sensitive"],
+      "risk_level": "medium",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "workflow_summary",
+      "permission_tags": ["read-only", "workflow", "review", "evidence"],
+      "risk_level": "low",
+      "requires_approval": false,
+      "approval_reason": null
+    },
+    {
+      "tool_name": "start_workflow",
+      "permission_tags": ["write-gated", "workflow", "transform", "audit", "phi-sensitive"],
+      "risk_level": "high",
+      "requires_approval": true,
+      "approval_reason": "Creates durable workflow state and may produce review-gated transformed output."
+    }
+  ]
+}

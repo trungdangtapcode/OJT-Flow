@@ -22,6 +22,7 @@ from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
+from ojtflow.infrastructure.assistant.policies import load_assistant_tool_permission_policies
 from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
 from ojtflow.infrastructure.retrieval.evaluation_policy import (
@@ -266,6 +267,9 @@ def _build_assistant_service() -> AssistantService:
         OJTFlowToolExecutor(
             workflow_service=_build_workflow_service(),
             medical_evidence_service=_build_medical_evidence_service(),
+            tool_permission_policies=load_assistant_tool_permission_policies(
+                settings.resolved_knowledge_dir
+            ),
         ),
         planner=planner,
         max_tool_calls=settings.llm_max_tool_calls,
