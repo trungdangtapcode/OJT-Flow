@@ -40,7 +40,10 @@ export function LiveToolTimeline({
     <div className="grid gap-2">
       <div className="flex items-center gap-2 text-xs font-black uppercase text-muted-foreground">
         <MessageSquareText className="h-4 w-4 text-primary" />
-        Live tool calls
+        Live timeline
+        <span className="normal-case text-muted-foreground">
+          Planning, tools, results, and answer text in order.
+        </span>
       </div>
       <div className="grid gap-2">
         {timelineItems.map((item) => (
@@ -181,6 +184,17 @@ function chronologicalTimelineItems(
       items.push({
         key: `warning-${index}`,
         node: <LiveTimelineRow detail={event.message} label="Warning" status="warning" />,
+      });
+    } else if (event.type === "cancelled") {
+      items.push({
+        key: `cancelled-${index}`,
+        node: (
+          <LiveTimelineRow
+            detail={event.message}
+            label="Cancelled"
+            status="warning"
+          />
+        ),
       });
     } else if (event.type === "error") {
       items.push({

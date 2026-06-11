@@ -10096,7 +10096,8 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "AI Assistant" in assistant_page
     assert "Advanced context" in assistant_input_panels
     assert "LiveToolTimeline" in assistant_page
-    assert "Live tool calls" in assistant_live_timeline
+    assert "Live timeline" in assistant_live_timeline
+    assert "Planning, tools, results, and answer text in order." in assistant_live_timeline
     assert "ConversationTurn" in assistant_page
     assert "streamed_answer" in assistant_page
     assert "AssistantResponseDetails" in assistant_page
@@ -10184,11 +10185,19 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert 'type: "tool_progress"' in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
+    assert 'type: "cancelled"' in (REPO_ROOT / "frontend/src/types.ts").read_text(
+        encoding="utf-8"
+    )
+    assert 'status: "completed" | "failed" | "cancelled"' in (
+        REPO_ROOT / "frontend/src/types.ts"
+    ).read_text(encoding="utf-8")
     assert "chronologicalTimelineItems" in assistant_live_timeline
     assert "AssistantTextStreamPreview" in assistant_live_timeline
     assert "ToolTimelineCard" in assistant_live_timeline
+    assert "<details" in assistant_live_timeline
     assert "ToolProgressRow" in assistant_live_timeline
     assert "tool_progress" in assistant_live_timeline
+    assert "Cancelled" in assistant_live_timeline
     assert "Search and rerank evidence" in (
         REPO_ROOT / "knowledge" / "assistant" / "tool_progress_policies.json"
     ).read_text(encoding="utf-8")

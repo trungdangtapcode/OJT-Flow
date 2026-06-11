@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -310,7 +311,25 @@ async def assistant_chat_stream(
                 owner_user_id=authenticated.user.user_id,
                 request_id=request_id,
             ):
+                if await http_request.is_disconnected():
+                    status = "cancelled"
+                    record(
+                        {
+                            "type": "cancelled",
+                            "message": "Assistant stream was cancelled by the client.",
+                        }
+                    )
+                    break
                 yield record(event)
+        except asyncio.CancelledError:
+            status = "cancelled"
+            record(
+                {
+                    "type": "cancelled",
+                    "message": "Assistant stream was cancelled by the client.",
+                }
+            )
+            raise
         except Exception as exc:
             status = "failed"
             logger.exception("Assistant stream failed")

@@ -63,7 +63,23 @@ class BackgroundJobService:
             limit=limit,
         )
 
+    def cancel_job(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        job = self.repository.get(owner_user_id=owner_user_id, job_id=job_id)
+        if job.status in {"succeeded", "failed", "cancelled"}:
+            return job
+        return self.repository.mark_cancelled(
+            owner_user_id=owner_user_id,
+            job_id=job_id,
+            error=JobError(
+                code="job_cancelled",
+                message="Job was cancelled by the user.",
+            ),
+        )
+
     def run_sync(self, *, owner_user_id: str, job_id: str, handler: JobHandler) -> BackgroundJob:
+        current = self.repository.get(owner_user_id=owner_user_id, job_id=job_id)
+        if current.status in {"succeeded", "failed", "cancelled"}:
+            return current
         job = self.repository.mark_running(owner_user_id=owner_user_id, job_id=job_id)
         try:
             output = self.runner.run(job, handler)
@@ -82,4 +98,3 @@ class BackgroundJobService:
             job_id=job_id,
             output=output,
         )
-

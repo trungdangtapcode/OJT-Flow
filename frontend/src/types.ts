@@ -1126,7 +1126,7 @@ export type AssistantStreamReplay = {
   stream_id: string;
   session_id: string;
   owner_user_id: string;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "cancelled";
   events: AssistantStreamEvent[];
   created_at: string;
   completed_at: string;
@@ -1217,6 +1217,10 @@ export type AssistantStreamEvent =
     }
   | {
       type: "warning";
+      message: string;
+    }
+  | {
+      type: "cancelled";
       message: string;
     }
   | {

@@ -1765,6 +1765,9 @@ the surrounding page scroll. The message timeline should auto-follow the active
 stream inside that panel rather than moving the whole browser page.
 The stream request must be abortable from the composer, preserving any partial
 transcript and showing a cancellation state rather than leaving a stuck spinner.
+Backend stream replays should persist explicit cancellation as `cancelled`,
+not as `completed`, so support/debug views can distinguish an operator stop
+from a successful final response.
 Long LLM planning must not look frozen: the UI should render backend
 `planning_step` events and streamed `planning_delta` planner text before
 `plan_ready`, so users can see what the model is doing before tools execute.

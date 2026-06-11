@@ -1397,6 +1397,43 @@ class PostgresBackgroundJobRepository:
             raise NotFoundError(f"Background job not found: {job_id}")
         return _postgres_background_job_from_row(row)
 
+    def mark_cancelled(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob:
+        now = utc_now().isoformat()
+        progress = {"current": 0, "total": None, "message": error.message}
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.background_jobs
+                    set status = 'cancelled',
+                        error = %s::jsonb,
+                        progress = %s::jsonb,
+                        completed_at = %s::timestamptz,
+                        updated_at = %s::timestamptz
+                    where owner_user_id = %s and job_id = %s
+                    returning *
+                    """,
+                    (
+                        error.model_dump_json(),
+                        json.dumps(progress),
+                        now,
+                        now,
+                        owner_user_id,
+                        job_id,
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if not row:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return _postgres_background_job_from_row(row)
+
 
 def _postgres_dataset_record_from_row(row) -> DatasetRecord:
     return DatasetRecord(

@@ -612,6 +612,23 @@ class InMemoryBackgroundJobRepository:
         self._jobs[job_id] = deepcopy(job)
         return deepcopy(job)
 
+    def mark_cancelled(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob:
+        job = self._job(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "cancelled"
+        job.error = error
+        job.progress.message = error.message
+        job.completed_at = now
+        job.updated_at = now
+        self._jobs[job_id] = deepcopy(job)
+        return deepcopy(job)
+
     def _job(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
         job = self._jobs.get(job_id)
         if not job or job.owner_user_id != owner_user_id:

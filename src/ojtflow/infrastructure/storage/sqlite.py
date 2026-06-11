@@ -224,7 +224,7 @@ class SQLiteBackboneStore:
                     events_json text not null,
                     created_at text not null,
                     completed_at text not null,
-                    check (status in ('completed', 'failed'))
+                    check (status in ('completed', 'failed', 'cancelled'))
                 );
 
                 create index if not exists idx_assistant_stream_replays_session_created
@@ -1276,6 +1276,22 @@ class SQLiteBackgroundJobRepository:
         job = self.get(owner_user_id=owner_user_id, job_id=job_id)
         now = utc_now().isoformat()
         job.status = "failed"
+        job.error = error
+        job.progress.message = error.message
+        job.completed_at = now
+        job.updated_at = now
+        return self._replace(job)
+
+    def mark_cancelled(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob:
+        job = self.get(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        job.status = "cancelled"
         job.error = error
         job.progress.message = error.message
         job.completed_at = now

@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from ojtflow.application.assistant_session_service import AssistantSessionService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_tools import ASSISTANT_TOOL_SPECS, OJTFlowToolExecutor
 from ojtflow.core.contracts.assistant import (
@@ -18,6 +19,7 @@ from ojtflow.infrastructure.llm.openai import (
     _stream_failure_from_event,
     _stream_final_text_from_event,
 )
+from ojtflow.infrastructure.storage.in_memory import InMemoryAssistantSessionRepository
 
 
 class _FakeToolExecutor:
@@ -488,6 +490,37 @@ async def test_assistant_stream_emits_data_driven_tool_progress_events() -> None
     assert progress_events[1]["stage_id"] == "package_trace"
     assert event_types.index("tool_started") < event_types.index("tool_progress")
     assert event_types.index("tool_progress") < event_types.index("tool_completed")
+
+
+def test_assistant_stream_replay_preserves_cancelled_status() -> None:
+    service = AssistantSessionService(InMemoryAssistantSessionRepository())
+    session = service.create_session(owner_user_id="usr_test")
+
+    replay = service.append_stream_replay(
+        owner_user_id="usr_test",
+        session_id=session.session_id,
+        stream_id="astream_cancelled",
+        status="cancelled",
+        events=[
+            {
+                "type": "stream_opened",
+                "created_at": "2026-06-11T00:00:00+00:00",
+            },
+            {
+                "type": "cancelled",
+                "message": "Assistant stream was cancelled by the client.",
+                "created_at": "2026-06-11T00:00:01+00:00",
+            },
+        ],
+    )
+
+    assert replay.status == "cancelled"
+    persisted = service.list_stream_replays(
+        owner_user_id="usr_test",
+        session_id=session.session_id,
+    )
+    assert persisted[0].status == "cancelled"
+    assert persisted[0].events[-1]["type"] == "cancelled"
 
 
 @pytest.mark.asyncio

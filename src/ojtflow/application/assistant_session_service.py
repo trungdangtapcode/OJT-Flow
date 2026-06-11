@@ -168,11 +168,18 @@ class AssistantSessionService:
         status: str,
     ) -> AssistantStreamReplay:
         completed_at = utc_now().isoformat()
+        replay_status = (
+            "cancelled"
+            if status == "cancelled"
+            else "failed"
+            if status == "failed"
+            else "completed"
+        )
         replay = AssistantStreamReplay(
             stream_id=stream_id,
             session_id=session_id,
             owner_user_id=owner_user_id,
-            status="failed" if status == "failed" else "completed",
+            status=replay_status,
             events=events,
             created_at=_first_event_created_at(events) or completed_at,
             completed_at=completed_at,

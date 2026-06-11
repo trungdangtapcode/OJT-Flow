@@ -129,6 +129,9 @@ Progress stage copy lives in `knowledge/assistant/tool_progress_policies.json`
 and is also exposed through the MCP resource catalog as
 `ojtflow://assistant/tool-progress-policies`. Mid-stream failures are emitted
 as structured `error` events because the HTTP status may already be committed.
+Client disconnects and explicit stop actions are persisted as stream replay
+status `cancelled` with a cancellation event when the backend can record it;
+they are not reported as successful completions.
 In OpenAI mode, synthesis calls the OpenAI Responses API with `stream: true`
 and forwards `response.output_text.delta` chunks to the UI so users see the
 answer as it is generated.

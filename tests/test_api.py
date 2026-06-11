@@ -1122,6 +1122,45 @@ async def test_retrieval_reindex_job_persists_and_runs_synchronously(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_background_job_cancel_route_marks_queued_job_cancelled(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def reindex_retrieval(self, *, include_seeded=True, include_corpus=True):
+            del include_seeded, include_corpus
+            raise AssertionError("Queued cancellation must not run the job")
+
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return FakeWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        created = await client.post(
+            "/api/v1/jobs/retrieval-reindex",
+            json={"include_seeded": True, "include_corpus": False, "execute_now": False},
+        )
+        job = _assert_success_envelope(created)["data"]
+        cancelled = await client.post(f"/api/v1/jobs/{job['job_id']}/cancel")
+        fetched = await client.get(f"/api/v1/jobs/{job['job_id']}")
+
+    assert created.status_code == 200
+    assert job["status"] == "queued"
+    assert cancelled.status_code == 200
+    cancelled_job = _assert_success_envelope(cancelled)["data"]
+    assert cancelled_job["status"] == "cancelled"
+    assert cancelled_job["error"]["code"] == "job_cancelled"
+    assert cancelled_job["progress"]["message"] == "Job was cancelled by the user."
+    assert fetched.json()["data"]["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_retrieval_integrity_route_delegates_to_workflow_service(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     clear_settings_cache()
@@ -1379,6 +1418,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         retrieval_integrity = await client.get("/api/v1/retrieval/integrity")
         jobs = await client.get("/api/v1/jobs")
         job_detail = await client.get("/api/v1/jobs/job_missing")
+        job_cancel = await client.post("/api/v1/jobs/job_missing/cancel")
         retrieval_reindex_job = await client.post(
             "/api/v1/jobs/retrieval-reindex",
             json={"include_seeded": True, "include_corpus": True, "execute_now": True},
@@ -1471,6 +1511,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(jobs, expected_code="unauthorized")
     assert job_detail.status_code == 401
     _assert_error_envelope(job_detail, expected_code="unauthorized")
+    assert job_cancel.status_code == 401
+    _assert_error_envelope(job_cancel, expected_code="unauthorized")
     assert retrieval_reindex_job.status_code == 401
     _assert_error_envelope(retrieval_reindex_job, expected_code="unauthorized")
     assert review.status_code == 401

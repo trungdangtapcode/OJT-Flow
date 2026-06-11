@@ -853,7 +853,10 @@ Returns the user-owned session summary and ordered messages.
 Returns persisted SSE replay artifacts for a user-owned session. Replay
 artifacts are stored separately from chat messages so support staff can inspect
 stream order, tool progress, planner deltas, errors, and final response without
-polluting the normal chat transcript or inflating message counts.
+polluting the normal chat transcript or inflating message counts. Replay
+`status` is one of `completed`, `failed`, or `cancelled`; `cancelled` means the
+client disconnected or explicitly stopped the active stream before a final
+assistant response was produced.
 
 `PATCH /api/v1/assistant/sessions/{session_id}`
 
@@ -908,8 +911,8 @@ Streams the same assistant operation over server-sent events for the browser
 chat UI. The stream emits `planning_started`, `planning_step`, optional
 `planning_delta`, optional fallback `planning_progress`, `plan_ready`,
 `tool_started`, zero or more `tool_progress`, `tool_completed`, optional
-`warning`, `synthesis_started`, zero or more `answer_delta`, optional `error`,
-and `final` events. Tool progress stages are loaded from
+`warning`, `synthesis_started`, zero or more `answer_delta`, optional
+`cancelled`, optional `error`, and `final` events. Tool progress stages are loaded from
 `knowledge/assistant/tool_progress_policies.json`, so labels and progress copy
 are data-driven instead of hardcoded in the browser. When OpenAI is configured,
 planning and answer synthesis use the OpenAI Responses streaming API. Planner
@@ -919,7 +922,9 @@ black-box spinner. If a configured planner cannot stream, the backend still
 emits `planning_progress` heartbeat events between `planning_started` and
 `plan_ready`, including `elapsed_seconds`. If execution fails after response
 headers have been sent, the backend emits a structured `error` event because
-the HTTP status can no longer be changed.
+the HTTP status can no longer be changed. If the browser aborts the stream, the
+backend records a `cancelled` replay status and appends a cancellation event to
+the replay when possible.
 
 ```json
 {
@@ -2114,6 +2119,13 @@ Response data is an owner-scoped list of `BackgroundJob` objects with
 `GET /api/v1/jobs/{job_id}`
 
 Returns one owner-scoped `BackgroundJob` or a structured not-found error.
+
+`POST /api/v1/jobs/{job_id}/cancel`
+
+Cancels a queued or running owner-scoped background job. Terminal jobs
+(`succeeded`, `failed`, or `cancelled`) are returned unchanged. Cancelled jobs
+store `status="cancelled"`, a structured `error.code="job_cancelled"`, a
+progress message, and `completed_at`.
 
 `POST /api/v1/jobs/retrieval-reindex`
 

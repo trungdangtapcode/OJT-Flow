@@ -165,7 +165,7 @@ class AssistantStreamReplay(ContractModel):
     stream_id: str
     session_id: str
     owner_user_id: str
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "failed", "cancelled"]
     events: list[dict[str, Any]] = Field(default_factory=list)
     created_at: str
     completed_at: str

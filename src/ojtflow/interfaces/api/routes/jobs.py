@@ -61,6 +61,17 @@ async def get_job(
     return ok(jobs.get_job(owner_user_id=authenticated.user.user_id, job_id=job_id))
 
 
+@router.post("/jobs/{job_id}/cancel", response_model=JobEnvelope)
+async def cancel_job(
+    job_id: NonBlankStr,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    jobs: BackgroundJobService = Depends(get_background_job_service),
+) -> dict:
+    """Cancel a queued or running user-owned background job."""
+
+    return ok(jobs.cancel_job(owner_user_id=authenticated.user.user_id, job_id=job_id))
+
+
 @router.post("/jobs/retrieval-reindex", response_model=JobEnvelope)
 async def create_retrieval_reindex_job(
     request: RetrievalReindexJobRequest,

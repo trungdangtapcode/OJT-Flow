@@ -29,6 +29,9 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         "008",
         "009",
         "010",
+        "011",
+        "012",
+        "013",
     ]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
@@ -40,6 +43,9 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
     assert migrations[7].name == "assistant_chat_sessions"
     assert migrations[8].name == "background_jobs"
     assert migrations[9].name == "assistant_stream_replays"
+    assert migrations[10].name == "uploaded_artifacts"
+    assert migrations[11].name == "artifact_access_events"
+    assert migrations[12].name == "assistant_stream_replay_cancelled"
     assert all(len(migration.checksum) == 64 for migration in migrations)
 
 
@@ -346,3 +352,13 @@ def test_assistant_stream_replays_migration_has_replay_table_and_indexes() -> No
     assert "assistant_stream_replays_events_array" in sql
     assert "idx_assistant_stream_replays_session_created" in sql
     assert "idx_assistant_stream_replays_owner_created" in sql
+
+
+def test_assistant_stream_replay_cancelled_migration_extends_status_constraint() -> None:
+    sql = (
+        ROOT
+        / "sql/postgres/migrations/013_assistant_stream_replay_cancelled.sql"
+    ).read_text()
+
+    assert "drop constraint if exists assistant_stream_replays_status_check" in sql
+    assert "status in ('completed', 'failed', 'cancelled')" in sql

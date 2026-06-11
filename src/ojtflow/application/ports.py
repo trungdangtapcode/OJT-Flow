@@ -363,6 +363,14 @@ class BackgroundJobRepository(Protocol):
         error: JobError,
     ) -> BackgroundJob: ...
 
+    def mark_cancelled(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob: ...
+
 
 class AssistantPlanner(Protocol):
     @property

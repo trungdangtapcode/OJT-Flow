@@ -153,7 +153,10 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F104 | Implemented | Added reloadable runtime controls for assistant planning/synthesis/vision models, OpenAI-compatible LLM endpoint, planning heartbeat interval, and retrieval embedding provider/model/dimensions, with Settings UI and API contract updates. |
 | 2026-06-11 | F096 | Implemented | Made Assistant the default authenticated landing route after index and OAuth callback, kept Workflows as the operations queue, and added a real composer file drop zone that reuses the existing attachment extraction pipeline. |
 | 2026-06-11 | F097 | Implemented | Moved ChatGPT-like session title generation to the backend: placeholder sessions are renamed on the first user message with PHI-guarded operational summaries, while the frontend creates `New chat` drafts and no longer performs title generation or automatic rename calls. |
+| 2026-06-11 | F098 | Implemented | Completed the Assistant live timeline contract: planning events, streamed planner text, validated plan arguments, data-driven tool progress, collapsible tool results, streamed answer text, warnings, errors, and final response now render in chronological order inside the assistant turn. |
+| 2026-06-11 | F099 | Implemented | Kept Assistant tool calls as inline collapsible cards inside the chat turn instead of a separate tool panel, and relabeled the UI section as a unified live timeline rather than tool-only output. |
 | 2026-06-11 | F100 | Implemented | Added data-driven Assistant tool progress policies, backend `tool_progress` SSE events around actual tool execution, inline frontend progress rows, and an MCP resource exposing the progress policy catalog. |
+| 2026-06-11 | F101 | Implemented | Added backend-aware cancellation: Assistant stream disconnects/stop actions persist replay status `cancelled`, cancellation renders in the live timeline, queued/running background jobs can be cancelled through an owner-scoped API, and Postgres migration 013 updates replay status constraints. |
 | 2026-06-11 | F041 | Implemented | Added `ClinicalPackage` contracts and `WorkflowState.clinical_package`, including raw input identity, FHIR-like bundle, OperationOutcome-like validation issues, evidence, review, audit refs, output refs, provenance, warnings, and handoff context. |
 | 2026-06-11 | F043 | Started | Added `ClinicalFieldProvenance` for generated lab Observation fields with target path, source field/value, row/column/source ref, derivation, and note. Remaining work: apply the same coverage across additional resource builders. |
 | 2026-06-11 | F044 | Implemented | Added `lab_result_v1` to FHIR-like Observation mapping for patient reference, effective date, code text, value quantity, and unit, with review warnings instead of silent semantic normalization. |
@@ -275,10 +278,10 @@ Keep this section updated when roadmap items move from planning into code.
 
 - [x] F096 Make Assistant the default end-user landing page with task starters and file drop zone.
 - [x] F097 Add persistent ChatGPT-like sessions backed by Postgres, with backend-owned title generation.
-- [ ] F098 Stream planning text, tool arguments, tool progress, tool results, and final answer in a single chronological message timeline.
-- [ ] F099 Add collapsible tool cards inline between assistant messages instead of a separate long tool panel.
+- [x] F098 Stream planning text, tool arguments, tool progress, tool results, and final answer in a single chronological message timeline.
+- [x] F099 Add collapsible tool cards inline between assistant messages instead of a separate long tool panel.
 - [x] F100 Add tool-call progress events for long parsing, retrieval, OCR, embedding, and workflow operations.
-- [ ] F101 Add cancellation support for active assistant streams and backend jobs.
+- [x] F101 Add cancellation support for active assistant streams and backend jobs.
 - [ ] F102 Add retry and continue actions for failed assistant tool calls.
 - [x] F103 Add strict OpenAI tool schemas with `additionalProperties=false` and required nullable fields where needed.
 - [x] F104 Add model/provider settings for planning model, synthesis model, vision model, embedding model, and local model endpoint.
