@@ -33,6 +33,7 @@ import {
   getRetrievalSourcePolicies,
   getRetrievalStrategies,
   getRuntimeConfig,
+  getRuntimeAiRiskRegister,
   getRuntimeHealth,
   getRuntimeMigrations,
   getRuntimeReadiness,
@@ -91,6 +92,7 @@ import type {
   RetrievalReindexPayload,
   RetrievalSearchPayload,
   RuntimeAssistantSettingsPayload,
+  AiRiskRegister,
   RuntimeRetrievalSettingsPayload,
   StartWorkflowPayload,
 } from "../types";
@@ -149,6 +151,7 @@ export const queryKeys = {
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
+  runtimeAiRiskRegister: ["runtime-ai-risk-register"] as const,
   runtimeMigrations: ["runtime-migrations"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
   jobs: (params: Record<string, unknown>) => ["jobs", params] as const,
@@ -261,6 +264,13 @@ export function useRuntimeHealthQuery() {
 
 export function useRuntimeConfigQuery() {
   return useQuery({ queryKey: queryKeys.runtimeConfig, queryFn: getRuntimeConfig });
+}
+
+export function useRuntimeAiRiskRegisterQuery() {
+  return useQuery<AiRiskRegister>({
+    queryKey: queryKeys.runtimeAiRiskRegister,
+    queryFn: getRuntimeAiRiskRegister,
+  });
 }
 
 export function useRuntimeReadinessQuery() {

@@ -1,5 +1,6 @@
 import type {
   ApiEnvelope,
+  AiRiskRegister,
   AssistantChatPayload,
   AssistantAnswerTemplate,
   AssistantChatMessage,
@@ -925,6 +926,10 @@ export function createClipboardImageParseJob(payload: {
 
 export function getRuntimeConfig(): Promise<RuntimeConfig> {
   return request<RuntimeConfig>("/runtime/config");
+}
+
+export function getRuntimeAiRiskRegister(): Promise<AiRiskRegister> {
+  return request<AiRiskRegister>("/runtime/ai-risk-register");
 }
 
 export function getRuntimeReadiness(): Promise<RuntimeReadiness> {

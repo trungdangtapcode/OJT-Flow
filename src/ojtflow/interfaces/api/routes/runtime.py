@@ -53,6 +53,7 @@ from ojtflow.infrastructure.storage.consistency import (
     write_storage_repair_marker,
 )
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
+from ojtflow.infrastructure.ai_risk_register import load_ai_risk_register
 from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.application.tool_registry import tool_specs_json
 
@@ -331,6 +332,18 @@ async def runtime_secrets_health(
 
     governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     return ok(_secret_health(settings))
+
+
+@router.get("/runtime/ai-risk-register")
+async def runtime_ai_risk_register(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return the NIST AI RMF-aligned risk register."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(load_ai_risk_register(settings.resolved_ai_risk_register_path))
 
 
 @router.post("/runtime/settings-history/rollback")

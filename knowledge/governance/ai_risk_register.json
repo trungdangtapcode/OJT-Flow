@@ -1,0 +1,143 @@
+{
+  "version": "ai_risk_register.v1",
+  "standard_refs": [
+    "NIST AI RMF 1.0: GOVERN, MAP, MEASURE, MANAGE",
+    "NIST AI RMF Generative AI Profile: content provenance, information integrity, data privacy, information security, human-AI configuration, value-chain risk"
+  ],
+  "intended_system_use": "Governed healthcare data operations assistant for parsing, validating, retrieving trusted evidence, explaining data quality issues, and preparing human-reviewed workflow outputs. The system is not a diagnostic, treatment, triage, or autonomous clinical decision system.",
+  "prohibited_uses": [
+    "Diagnosis, treatment, triage, or patient-specific medical advice.",
+    "Autonomous approval of clinical or destructive workflow actions.",
+    "Bypassing human review gates for meaning-changing transformations.",
+    "Sending PHI to external providers unless explicitly allowed by policy."
+  ],
+  "risks": [
+    {
+      "risk_id": "AIR-001",
+      "title": "Clinical misuse or diagnostic overreach",
+      "intended_use": "Data operations support only.",
+      "limitation": "The assistant may retrieve medical standards but must not provide diagnosis, treatment, or triage.",
+      "nist_ai_rmf_functions": ["GOVERN", "MAP", "MANAGE"],
+      "genai_profile_risk_areas": ["human-AI configuration", "information integrity"],
+      "severity": "critical",
+      "likelihood": "medium",
+      "residual_risk": "medium",
+      "owner_role": "clinical safety owner",
+      "monitoring_signals": ["clinical_advice_prompt", "blocked_output_validation", "human_review_override_request"],
+      "human_oversight": "Clinical or data-steward review is required before workflow output is used operationally.",
+      "controls": [
+        {
+          "control_id": "AIR-001-C1",
+          "title": "Assistant policy blocks diagnosis/treatment claims",
+          "implementation_ref": "src/ojtflow/infrastructure/llm/openai.py",
+          "status": "implemented"
+        },
+        {
+          "control_id": "AIR-001-C2",
+          "title": "Generated output validation keeps deterministic fallback on unsafe output",
+          "implementation_ref": "src/ojtflow/core/policy/generated_output_policy.py",
+          "status": "implemented"
+        }
+      ],
+      "evidence_refs": ["docs/generated_output_validation_v0.md", "docs/api_contract_v0.md"]
+    },
+    {
+      "risk_id": "AIR-002",
+      "title": "PHI disclosure to external providers",
+      "intended_use": "Use external LLM/OCR/embedding/search providers only within configured policy.",
+      "limitation": "Healthcare inputs can contain direct identifiers and sensitive fields.",
+      "nist_ai_rmf_functions": ["GOVERN", "MAP", "MEASURE", "MANAGE"],
+      "genai_profile_risk_areas": ["data privacy", "information security", "value-chain risk"],
+      "severity": "critical",
+      "likelihood": "medium",
+      "residual_risk": "medium",
+      "owner_role": "privacy officer",
+      "monitoring_signals": ["external_provider_block", "phi_classification", "redaction_preview", "audit_record"],
+      "human_oversight": "Administrators must explicitly enable PHI handoff per provider surface.",
+      "controls": [
+        {
+          "control_id": "AIR-002-C1",
+          "title": "External provider policy gate",
+          "implementation_ref": "src/ojtflow/core/policy/external_provider_policy.py",
+          "status": "implemented"
+        },
+        {
+          "control_id": "AIR-002-C2",
+          "title": "PHI classification and redaction policy",
+          "implementation_ref": "src/ojtflow/core/policy/phi_policy.py",
+          "status": "implemented"
+        }
+      ],
+      "evidence_refs": ["docs/external_provider_policy_v0.md", "docs/admin_policy_page_v0.md"]
+    },
+    {
+      "risk_id": "AIR-003",
+      "title": "Prompt injection through user data, documents, retrieved chunks, or tool metadata",
+      "intended_use": "Treat uploaded/clipboard/retrieved content as data, not instructions.",
+      "limitation": "Untrusted text can contain instructions that target the model or tool execution.",
+      "nist_ai_rmf_functions": ["MAP", "MEASURE", "MANAGE"],
+      "genai_profile_risk_areas": ["information security", "information integrity"],
+      "severity": "high",
+      "likelihood": "high",
+      "residual_risk": "medium",
+      "owner_role": "security owner",
+      "monitoring_signals": ["prompt_injection_assessment", "tool_metadata_rejected", "retrieval_trace_sensitive_context"],
+      "human_oversight": "Tool calls remain allowlisted and write actions remain review-gated.",
+      "controls": [
+        {
+          "control_id": "AIR-003-C1",
+          "title": "Prompt-injection policy and untrusted envelopes",
+          "implementation_ref": "src/ojtflow/core/policy/prompt_injection_policy.py",
+          "status": "implemented"
+        }
+      ],
+      "evidence_refs": ["docs/assistant_safety_cases_v0.md"]
+    },
+    {
+      "risk_id": "AIR-004",
+      "title": "Unsupported or weakly grounded evidence",
+      "intended_use": "Ground validation and explanation with trusted standards and source metadata.",
+      "limitation": "Retrieval can miss relevant standards or return incomplete evidence.",
+      "nist_ai_rmf_functions": ["MAP", "MEASURE", "MANAGE"],
+      "genai_profile_risk_areas": ["information integrity", "content provenance"],
+      "severity": "high",
+      "likelihood": "medium",
+      "residual_risk": "medium",
+      "owner_role": "data steward",
+      "monitoring_signals": ["retrieval_quality_signal", "weak_evidence_provenance", "missing_concept_grounding"],
+      "human_oversight": "Weak or missing evidence requires review before relying on output.",
+      "controls": [
+        {
+          "control_id": "AIR-004-C1",
+          "title": "Retrieval quality policy and evidence provenance",
+          "implementation_ref": "knowledge/retrieval/quality_gate_policy.json",
+          "status": "implemented"
+        }
+      ],
+      "evidence_refs": ["docs/retrieval_module_v0.md"]
+    },
+    {
+      "risk_id": "AIR-005",
+      "title": "Cost or abuse spike from high-volume AI/OCR/embedding use",
+      "intended_use": "Keep expensive operations bounded and observable.",
+      "limitation": "LLM, OCR, embedding, and batch ingestion costs can grow quickly under large or automated requests.",
+      "nist_ai_rmf_functions": ["GOVERN", "MEASURE", "MANAGE"],
+      "genai_profile_risk_areas": ["value-chain risk", "information security"],
+      "severity": "high",
+      "likelihood": "medium",
+      "residual_risk": "medium",
+      "owner_role": "platform owner",
+      "monitoring_signals": ["rate_limited", "cost_control_block", "reindex_requested", "batch_upload_rejected"],
+      "human_oversight": "Operators tune limits and review repeated blocks before raising ceilings.",
+      "controls": [
+        {
+          "control_id": "AIR-005-C1",
+          "title": "Rate limiting and abuse/cost controls",
+          "implementation_ref": "knowledge/security/abuse_cost_policy.json",
+          "status": "implemented"
+        }
+      ],
+      "evidence_refs": ["docs/rate_limiting_v0.md", "docs/abuse_cost_controls_v0.md"]
+    }
+  ]
+}

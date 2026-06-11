@@ -1801,6 +1801,42 @@ export type RuntimeAssistantSettingsUpdate = {
   reloaded: boolean;
 };
 
+export type AiRmfFunction = "GOVERN" | "MAP" | "MEASURE" | "MANAGE";
+
+export type AiRiskLevel = "low" | "medium" | "high" | "critical";
+
+export type AiRiskControl = {
+  control_id: string;
+  title: string;
+  implementation_ref: string;
+  status: "implemented" | "partial" | "planned";
+};
+
+export type AiRiskRegisterItem = {
+  risk_id: string;
+  title: string;
+  intended_use: string;
+  limitation: string;
+  nist_ai_rmf_functions: AiRmfFunction[];
+  genai_profile_risk_areas: string[];
+  severity: AiRiskLevel;
+  likelihood: AiRiskLevel;
+  residual_risk: AiRiskLevel;
+  owner_role: string;
+  monitoring_signals: string[];
+  human_oversight: string;
+  controls: AiRiskControl[];
+  evidence_refs: string[];
+};
+
+export type AiRiskRegister = {
+  version: string;
+  standard_refs: string[];
+  intended_system_use: string;
+  prohibited_uses: string[];
+  risks: AiRiskRegisterItem[];
+};
+
 export type RuntimeConfig = {
   status: string;
   product_mode: "local_dev" | "demo" | "pilot" | "production";

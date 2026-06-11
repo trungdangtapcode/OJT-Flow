@@ -1729,6 +1729,80 @@ Response data includes:
 - `checks[].env_vars`
 - `checks[].remediation`
 
+`GET /api/v1/runtime/ai-risk-register`
+
+Returns the data-driven AI risk register for admins. Requires `admin:read`.
+The register is aligned to NIST AI RMF-style governance and is used as an
+operator-visible control map, not as a legal compliance certification.
+
+Response data includes:
+
+- `version`
+- `standard_refs[]`
+- `intended_system_use`
+- `prohibited_uses[]`
+- `risks[].risk_id`
+- `risks[].title`
+- `risks[].intended_use`
+- `risks[].limitation`
+- `risks[].nist_ai_rmf_functions[]`
+- `risks[].genai_profile_risk_areas[]`
+- `risks[].severity`
+- `risks[].likelihood`
+- `risks[].residual_risk`
+- `risks[].owner_role`
+- `risks[].monitoring_signals[]`
+- `risks[].human_oversight`
+- `risks[].controls[]`
+- `risks[].evidence_refs[]`
+
+Example:
+
+```json
+{
+  "data": {
+    "version": "ai_risk_register.v1",
+    "standard_refs": [
+      "NIST AI RMF 1.0: GOVERN, MAP, MEASURE, MANAGE"
+    ],
+    "intended_system_use": "Governed healthcare data operations assistant for parsing, validating, retrieving trusted evidence, explaining data quality issues, and preparing human-reviewed workflow outputs.",
+    "prohibited_uses": [
+      "Diagnosis, treatment, triage, or patient-specific medical advice."
+    ],
+    "risks": [
+      {
+        "risk_id": "AIR-001",
+        "title": "Clinical misuse or diagnostic overreach",
+        "intended_use": "Data operations support only.",
+        "limitation": "The assistant may retrieve medical standards but must not provide diagnosis, treatment, or triage.",
+        "nist_ai_rmf_functions": ["GOVERN", "MAP", "MANAGE"],
+        "genai_profile_risk_areas": ["human-AI configuration", "information integrity"],
+        "severity": "critical",
+        "likelihood": "medium",
+        "residual_risk": "medium",
+        "owner_role": "clinical safety owner",
+        "monitoring_signals": [
+          "clinical_advice_prompt",
+          "blocked_output_validation",
+          "human_review_override_request"
+        ],
+        "human_oversight": "Clinical or data-steward review is required before workflow output is used operationally.",
+        "controls": [
+          {
+            "control_id": "AIR-001-C1",
+            "title": "Assistant policy blocks diagnosis/treatment claims",
+            "implementation_ref": "src/ojtflow/infrastructure/llm/openai.py",
+            "status": "implemented"
+          }
+        ],
+        "evidence_refs": ["docs/generated_output_validation_v0.md"]
+      }
+    ]
+  },
+  "error": null
+}
+```
+
 `GET /api/v1/runtime/readiness`
 
 Returns sanitized readiness diagnostics for authenticated operators with

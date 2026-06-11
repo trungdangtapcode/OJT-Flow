@@ -27,6 +27,7 @@ import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-stri
 import {
   runtimeConfig,
   useExtractorInventoryQuery,
+  useRuntimeAiRiskRegisterQuery,
   useRuntimeConfigQuery,
   useRuntimeHealthQuery,
   useRuntimeMigrationsQuery,
@@ -37,6 +38,8 @@ import {
   workflowErrorMessage,
 } from "../../lib/server-state";
 import type {
+  AiRiskLevel,
+  AiRiskRegister,
   ReadinessCheck,
   RuntimeAssistantSettings,
   RuntimeAssistantSettingsPayload,
@@ -54,6 +57,7 @@ export function SettingsPage() {
   const runtimeConfigQuery = useRuntimeConfigQuery();
   const migrationsQuery = useRuntimeMigrationsQuery();
   const readinessQuery = useRuntimeReadinessQuery();
+  const aiRiskQuery = useRuntimeAiRiskRegisterQuery();
   const schemasQuery = useSchemasQuery();
   const extractorsQuery = useExtractorInventoryQuery();
   const schemaCount = schemasQuery.data?.length ?? 0;
@@ -467,8 +471,200 @@ export function SettingsPage() {
         </div>
 
         <AdminPolicyPanel isLoading={runtimeConfigQuery.isLoading} runtime={runtime} />
+        <AiRiskRegisterPanel
+          error={aiRiskQuery.isError ? workflowErrorMessage(aiRiskQuery.error) : null}
+          isLoading={aiRiskQuery.isLoading}
+          register={aiRiskQuery.data}
+        />
       </div>
     </div>
+  );
+}
+
+function AiRiskRegisterPanel({
+  error,
+  isLoading,
+  register,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  register: AiRiskRegister | undefined;
+}) {
+  const criticalCount = register?.risks.filter((risk) => risk.severity === "critical").length ?? 0;
+  const highCount = register?.risks.filter((risk) => risk.severity === "high").length ?? 0;
+  const implementedControlCount =
+    register?.risks.reduce(
+      (count, risk) =>
+        count + risk.controls.filter((control) => control.status === "implemented").length,
+      0,
+    ) ?? 0;
+  const nistFunctions = Array.from(
+    new Set(register?.risks.flatMap((risk) => risk.nist_ai_rmf_functions) ?? []),
+  );
+
+  return (
+    <Card className="min-w-0 overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              AI risk register
+            </CardTitle>
+            <CardDescription>
+              NIST AI RMF-aligned intended use, limitations, monitoring, and human oversight.
+            </CardDescription>
+          </div>
+          {register ? <Badge variant="success">{register.version}</Badge> : null}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading AI governance register.</div>
+        ) : null}
+        {error ? (
+          <Notice title="AI risk register unavailable" tone="danger">
+            {error}
+          </Notice>
+        ) : null}
+        {register ? (
+          <>
+            <div className="grid gap-2 text-sm sm:grid-cols-4">
+              <ReadinessCounter
+                label="Risks"
+                tone={register.risks.length ? "warning" : "success"}
+                value={register.risks.length}
+              />
+              <ReadinessCounter
+                label="Critical"
+                tone={criticalCount ? "danger" : "success"}
+                value={criticalCount}
+              />
+              <ReadinessCounter
+                label="High"
+                tone={highCount ? "warning" : "success"}
+                value={highCount}
+              />
+              <ReadinessCounter
+                label="Controls"
+                tone={implementedControlCount ? "success" : "warning"}
+                value={implementedControlCount}
+              />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+              <div className="grid gap-3">
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <div className="text-sm font-bold text-foreground">Intended system use</div>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {register.intended_system_use}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-sm font-bold text-foreground">Prohibited uses</div>
+                  <ul className="mt-2 grid gap-2 text-sm leading-6 text-muted-foreground">
+                    {register.prohibited_uses.map((use) => (
+                      <li className="border-l-2 border-amber-300 pl-3" key={use}>
+                        {use}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  {nistFunctions.map((functionName) => (
+                    <Badge key={functionName} variant="muted">
+                      {functionName}
+                    </Badge>
+                  ))}
+                  {register.standard_refs.map((reference) => (
+                    <Badge className="max-w-full" key={reference} variant="default">
+                      {reference}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid max-h-[540px] gap-3 overflow-y-auto pr-1">
+                {register.risks.map((risk) => (
+                  <details
+                    className="group rounded-md border border-border bg-card p-3 text-sm"
+                    key={risk.risk_id}
+                    open={risk.severity === "critical"}
+                  >
+                    <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block break-words font-black">
+                          {risk.risk_id}: {risk.title}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Owner: {risk.owner_role}
+                        </span>
+                      </span>
+                      <span className="flex flex-wrap gap-2">
+                        <Badge variant={riskLevelVariant(risk.severity)}>
+                          severity {risk.severity}
+                        </Badge>
+                        <Badge variant={riskLevelVariant(risk.residual_risk)}>
+                          residual {risk.residual_risk}
+                        </Badge>
+                      </span>
+                    </summary>
+                    <div className="mt-3 grid gap-3 border-t border-border pt-3">
+                      <PolicyItem title="Intended use">{risk.intended_use}</PolicyItem>
+                      <PolicyItem title="Limitation">{risk.limitation}</PolicyItem>
+                      <PolicyItem title="Human oversight">{risk.human_oversight}</PolicyItem>
+                      <div className="grid gap-2">
+                        <div className="text-xs font-bold uppercase text-muted-foreground">
+                          Monitoring signals
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {risk.monitoring_signals.map((signal) => (
+                            <Badge key={signal} variant="muted">
+                              {signal}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="grid gap-2">
+                        <div className="text-xs font-bold uppercase text-muted-foreground">
+                          Controls
+                        </div>
+                        <div className="grid gap-2">
+                          {risk.controls.map((control) => (
+                            <div
+                              className="rounded-md border border-border bg-muted/20 p-2"
+                              key={control.control_id}
+                            >
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="font-bold">{control.title}</span>
+                                <Badge
+                                  variant={
+                                    control.status === "implemented"
+                                      ? "success"
+                                      : control.status === "partial"
+                                        ? "warning"
+                                        : "muted"
+                                  }
+                                >
+                                  {control.status}
+                                </Badge>
+                              </div>
+                              <code className="mt-1 block break-all font-mono text-[11px] text-muted-foreground">
+                                {control.implementation_ref}
+                              </code>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1806,6 +2002,12 @@ function migrationStatusVariant(
   if (status === "applied") return "success";
   if (status === "pending") return "warning";
   return "destructive";
+}
+
+function riskLevelVariant(level: AiRiskLevel): React.ComponentProps<typeof Badge>["variant"] {
+  if (level === "critical") return "destructive";
+  if (level === "high" || level === "medium") return "warning";
+  return "success";
 }
 
 function ReadinessChecks({

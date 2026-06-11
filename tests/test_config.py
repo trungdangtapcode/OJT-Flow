@@ -64,6 +64,9 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.resolved_abuse_cost_policy_path == (
         REPO_ROOT / "knowledge/security/abuse_cost_policy.json"
     )
+    assert settings.resolved_ai_risk_register_path == (
+        REPO_ROOT / "knowledge/governance/ai_risk_register.json"
+    )
     assert settings.google_client_id == ""
     assert settings.google_client_secret == ""
     assert settings.google_redirect_uri == "http://localhost:8000/api/v1/auth/google/callback"
