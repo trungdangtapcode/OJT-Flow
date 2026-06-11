@@ -137,6 +137,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F032 | Implemented | Added PDF scanned-vs-digital profiling with PyMuPDF/pypdf optional analyzers and explicit warnings when OCR is required or no analyzer is installed. |
 | 2026-06-11 | F037 | Implemented | Added deterministic extraction quality scoring based on empty/short text, low extractor confidence, extractor warnings, PDF OCR requirement, and workbook structure warnings. |
 | 2026-06-11 | F038 | Implemented | Added trace-level extraction explanations covering what was read, skipped, needs review, and limitations for user-facing support. |
+| 2026-06-11 | F033 | Implemented | Added deterministic redaction preview with structured CSV sensitive-column masking, SSN/email/phone span detection, `POST /api/v1/parse/redaction-preview`, and trace-level redaction summaries before external provider handoff. |
 
 ## Feature Backlog
 
@@ -177,7 +178,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F030 Add table extraction contracts for PDFs, Excel, CSV, and screenshots, preserving cell coordinates and row provenance.
 - [x] F031 Add spreadsheet workbook parsing with sheet-level profiles, header detection, merged-cell warnings, and hidden-sheet warnings.
 - [x] F032 Add PDF scanned-vs-digital detection and a clear warning when OCR is required.
-- [ ] F033 Add document redaction preview for PHI-like text before sending content to external LLM/OCR providers.
+- [x] F033 Add document redaction preview for PHI-like text before sending content to external LLM/OCR providers.
 - [ ] F034 Add configurable upload retention rules by mode, tenant, source type, and sensitivity class.
 - [ ] F035 Add artifact download/export access controls and audit events.
 - [ ] F036 Add source-linked validation issues where each issue can point to row, cell, page, bounding box, or text span. _(Started: contract supports row/cell/page/bbox/text-span references; producers and UI links remain.)_

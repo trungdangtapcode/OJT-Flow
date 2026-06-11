@@ -26,7 +26,9 @@ from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.jobs import BackgroundJob
+from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
+from ojtflow.data_tools.redaction import build_redaction_preview
 from ojtflow.data_tools.extract import (
     Extractor,
     available_extractors,
@@ -35,6 +37,7 @@ from ojtflow.data_tools.extract import (
     supported_extensions,
     validate_extractor_choice,
 )
+from ojtflow.interfaces.api.limits import enforce_inline_text_limit
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
     get_document_intake_service,
@@ -42,6 +45,7 @@ from ojtflow.interfaces.api.deps import (
     require_authentication,
 )
 from ojtflow.interfaces.api.responses import ok, raise_for_failed_workflow
+from ojtflow.interfaces.api.schemas import RedactionPreviewRequest
 
 router = APIRouter(tags=["parse"])
 
@@ -99,6 +103,11 @@ class ArtifactsEnvelope(ContractModel):
 
 class ParseTracesEnvelope(ContractModel):
     data: list[ParsingPipelineTrace]
+    error: None = None
+
+
+class RedactionPreviewEnvelope(ContractModel):
+    data: RedactionPreview
     error: None = None
 
 
@@ -323,6 +332,24 @@ async def list_uploaded_artifact_traces(
         intake.list_traces(
             owner_user_id=authenticated.user.user_id,
             artifact_id=artifact_id,
+        )
+    )
+
+
+@router.post("/parse/redaction-preview", response_model=RedactionPreviewEnvelope)
+async def preview_redaction(
+    request: RedactionPreviewRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Preview deterministic sensitive-data redaction before external provider use."""
+
+    del authenticated
+    enforce_inline_text_limit(request.data, settings)
+    return ok(
+        build_redaction_preview(
+            request.data,
+            data_format=request.input_format,
         )
     )
 

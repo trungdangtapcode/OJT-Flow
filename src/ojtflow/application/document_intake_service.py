@@ -12,11 +12,13 @@ from ojtflow.core.contracts.artifacts import (
     ParsingPipelineTrace,
     UploadedArtifact,
 )
+from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.jobs import BackgroundJob
 from ojtflow.core.time import utc_now
 from ojtflow.data_tools.document_analysis import build_document_intelligence_profile
 from ojtflow.data_tools.extract import source_format_for_filename
 from ojtflow.data_tools.hashing import sha256_text
+from ojtflow.data_tools.redaction import build_redaction_preview
 
 
 class DocumentIntakeService:
@@ -163,6 +165,10 @@ class DocumentIntakeService:
             extraction_confidence=extractor_confidence,
             extraction_warnings=list(result.warnings),
         )
+        redaction_preview = build_redaction_preview(
+            text,
+            data_format=_redaction_data_format(result.source_format),
+        )
         overall_confidence = min(extractor_confidence, intelligence.quality.score)
         trace_warnings = _dedupe_warnings(
             [*result.warnings, *intelligence.quality.warnings]
@@ -209,6 +215,7 @@ class DocumentIntakeService:
                 "duplicate_of_artifact_id": artifact.duplicate_of_artifact_id,
                 "extraction": dict(result.metadata),
                 "document_intelligence": intelligence.model_dump(mode="json"),
+                "redaction_preview": _redaction_summary(redaction_preview),
             },
             started_at=started_at,
             completed_at=completed_at,
@@ -255,3 +262,25 @@ def _dedupe_warnings(warnings: list[str]) -> list[str]:
             seen.add(warning)
             result.append(warning)
     return result
+
+
+def _redaction_data_format(source_format: str) -> DataFormat | None:
+    if source_format == "csv":
+        return DataFormat.CSV
+    if source_format == "json":
+        return DataFormat.JSON
+    if source_format == "yaml":
+        return DataFormat.YAML
+    if source_format == "markdown":
+        return DataFormat.MARKDOWN
+    return None
+
+
+def _redaction_summary(preview) -> dict[str, object]:
+    return {
+        "match_count": len(preview.matches),
+        "external_provider_block_recommended": preview.external_provider_block_recommended,
+        "warnings": list(preview.warnings),
+        "matches": [match.model_dump(mode="json") for match in preview.matches[:50]],
+        "truncated": len(preview.matches) > 50,
+    }

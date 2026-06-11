@@ -119,6 +119,9 @@ def test_file_parse_job_persists_trace_and_extracted_text_ref() -> None:
     assert intelligence["quality"]["score"] <= 1
     assert intelligence["quality"]["requires_review"] is True
     assert intelligence["explanation"]["read"]
+    redaction = traces[0].metadata["redaction_preview"]
+    assert redaction["match_count"] == 1
+    assert redaction["external_provider_block_recommended"] is True
 
 
 def test_openai_vision_is_valid_extractor_choice() -> None:

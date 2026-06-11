@@ -115,6 +115,25 @@ class ValidateRequest(ContractModel):
     }
 
 
+class RedactionPreviewRequest(ContractModel):
+    data: NonBlankText
+    input_format: DataFormat | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "data": (
+                        "patient_id,ssn,email,value\n"
+                        "P001,123-45-6789,patient@example.com,7.4\n"
+                    ),
+                    "input_format": "csv",
+                }
+            ]
+        }
+    }
+
+
 class FhirProfileRequest(ContractModel):
     data: NonBlankStr
 

@@ -114,6 +114,24 @@ JSON body:
 The response shape is the same as `POST /api/v1/parse/upload/jobs`, with
 `artifact.source` set to `clipboard`.
 
+### Preview Redaction
+
+`POST /api/v1/parse/redaction-preview`
+
+JSON body:
+
+```json
+{
+  "data": "patient_id,ssn,email,value\nP001,123-45-6789,patient@example.com,7.4\n",
+  "input_format": "csv"
+}
+```
+
+Response data includes `redacted_text`, match metadata, and
+`external_provider_block_recommended`. The detector combines structured CSV
+sensitive-column masking with SSN/email/phone regex spans. Parse traces store a
+redaction summary, not a full duplicate of the extracted text.
+
 ### Get Uploaded Artifact
 
 `GET /api/v1/parse/artifacts/{artifact_id}`
@@ -175,6 +193,9 @@ normalization metadata to avoid merging incompatible outputs.
   requirements.
 - Extraction traces include a user-facing explanation: what was read, what was
   skipped, what needs review, and limitations.
+- Redaction preview is available before external provider use. It identifies
+  likely sensitive fields/spans, returns redacted text for operator review, and
+  stores trace-level redaction summary metadata.
 - `SourceLocation` now supports row/column, page, bounding box, text span, sheet
   and table-cell coordinates. Validation issues, OCR evidence, and extracted
   table cells should point through this common contract.
@@ -190,5 +211,4 @@ normalization metadata to avoid merging incompatible outputs.
 - Multi-file batch uploads.
 - Extracted-text deduplication with extractor/version awareness.
 - Frontend paste UX wired to the clipboard image artifact endpoint.
-- Multi-page OCR evidence UI, production table parser adapters, and redaction
-  preview.
+- Multi-page OCR evidence UI and production table parser adapters.
