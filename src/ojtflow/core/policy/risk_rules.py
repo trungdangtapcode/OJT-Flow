@@ -5,6 +5,7 @@ from __future__ import annotations
 from ojtflow.core.contracts.data import TransformationPlan, ValidationReport
 from ojtflow.core.contracts.enums import Severity
 from ojtflow.core.policy.phi_policy import matches_phi_field_policy
+from ojtflow.core.policy.prompt_injection_policy import contains_prompt_injection_text
 
 PROMPT_INJECTION_PATTERNS = (
     "ignore previous",
@@ -37,5 +38,4 @@ def looks_sensitive_field(field_name: str) -> bool:
 def contains_prompt_injection(text: str) -> bool:
     """Flag suspicious instruction-like text embedded in data or retrieved context."""
 
-    lowered = text.lower()
-    return any(pattern in lowered for pattern in PROMPT_INJECTION_PATTERNS)
+    return contains_prompt_injection_text(text)

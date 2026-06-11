@@ -181,6 +181,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F124 | Implemented | Added deterministic PHI redaction policy actions for masking, suppression, token placeholders, and review-gated reveal, with redaction preview API support and external-provider block recommendations. |
 | 2026-06-11 | F125 | Implemented | Added no-raw-PHI logging guard, structured log scanner, development/CI scanner command, and docs for redacting formatted log messages, args, extra fields, key-value payloads, and CSV-shaped log text. |
 | 2026-06-11 | F126 | Implemented | Added versioned external-provider policy contracts, runtime settings, OpenAI LLM/vision OCR/embedding enforcement before HTTP calls, MarkItDown OCR plugin gating, retrieval external-search hint suppression, docs, and focused tests. |
+| 2026-06-11 | F127 | Implemented | Added data-driven prompt-injection policy contracts, policy loader, assessment/envelope helpers, Assistant LLM-bound untrusted wrappers for user data/documents/retrieved chunks/tool arguments, tool-metadata scanning and planner boundary metadata, authenticated policy API, docs, and focused tests. |
 
 ## Feature Backlog
 
@@ -327,7 +328,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F124 Add PHI redaction policy engine with masking, suppression, tokenization placeholder, and review-gated reveal.
 - [x] F125 Add no-raw-PHI logging guard and log scanner for development and CI.
 - [x] F126 Add configurable external-provider policy controlling which data can be sent to OpenAI, OCR, embedding APIs, and external search APIs.
-- [ ] F127 Add prompt-injection policy that treats user data, documents, retrieved chunks, and tool metadata as untrusted.
+- [x] F127 Add prompt-injection policy that treats user data, documents, retrieved chunks, and tool metadata as untrusted.
 - [ ] F128 Add output validation for LLM-generated plans, summaries, and export descriptions before UI display or storage mutation.
 - [ ] F129 Add audit export endpoint for workflows, reviews, assistant tool calls, auth events, setting changes, and source ingestion.
 - [ ] F130 Add immutable audit hash chain for high-risk deployment mode.

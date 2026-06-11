@@ -72,6 +72,13 @@ from ojtflow.core.contracts.phi import (
     PhiFinding,
     PhiPatternRule,
 )
+from ojtflow.core.contracts.prompt_injection import (
+    PromptInjectionAssessment,
+    PromptInjectionFinding,
+    PromptInjectionPolicy,
+    PromptInjectionRule,
+    UntrustedContentEnvelope,
+)
 from ojtflow.core.contracts.redaction import (
     RedactionActionType,
     RedactionMatch,
@@ -135,6 +142,10 @@ __all__ = [
     "PhiFieldRule",
     "PhiFinding",
     "PhiPatternRule",
+    "PromptInjectionAssessment",
+    "PromptInjectionFinding",
+    "PromptInjectionPolicy",
+    "PromptInjectionRule",
     "RedactionActionType",
     "RedactionMatch",
     "RedactionPolicy",
@@ -157,6 +168,7 @@ __all__ = [
     "TransformationPlan",
     "TrustLevel",
     "UnitValidationResult",
+    "UntrustedContentEnvelope",
     "ValidationReport",
     "WorkspaceDefaults",
     "WorkspaceDetail",

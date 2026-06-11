@@ -28,6 +28,9 @@ from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
 from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
 from ojtflow.infrastructure.assistant.policies import load_assistant_tool_permission_policies
+from ojtflow.infrastructure.assistant.prompt_injection import (
+    load_prompt_injection_policy,
+)
 from ojtflow.infrastructure.assistant.progress import load_assistant_tool_progress_policies
 from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
@@ -320,6 +323,9 @@ def _build_assistant_service() -> AssistantService:
         max_tool_calls=settings.llm_max_tool_calls,
         planning_progress_interval_seconds=settings.llm_planning_progress_interval_seconds,
         tool_progress_stages=load_assistant_tool_progress_policies(
+            settings.resolved_knowledge_dir
+        ),
+        prompt_injection_policy=load_prompt_injection_policy(
             settings.resolved_knowledge_dir
         ),
     )

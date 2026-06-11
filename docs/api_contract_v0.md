@@ -863,6 +863,16 @@ Returns governed answer templates from
 MCP client, or evaluator needs the expected sections, evidence requirement, and
 review conditions for a task class.
 
+`GET /api/v1/assistant/prompt-injection-policy`
+
+Returns the data-driven prompt-injection policy from
+`knowledge/assistant/prompt_injection_policy.json`. The Assistant uses this
+policy to wrap user messages, uploaded data, uploaded document metadata, manual
+text snippets, selected workflow/retrieval context, retrieved chunks, tool
+arguments, generated outputs, and model-visible tool metadata as untrusted
+LLM-bound surfaces. Tool metadata is scanned before Assistant service
+construction and cannot grant permissions or override backend policy.
+
 `GET /api/v1/assistant/mcp/resources`
 
 Returns the MCP resource catalog from `knowledge/assistant/mcp_resources.json`.

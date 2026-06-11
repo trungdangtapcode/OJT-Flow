@@ -24,10 +24,12 @@ from ojtflow.core.contracts.mcp import (
     McpRemoteDeploymentPolicy,
     McpResourceCatalog,
 )
+from ojtflow.core.contracts.prompt_injection import PromptInjectionPolicy
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 from ojtflow.infrastructure.assistant_templates import load_assistant_answer_templates
 from ojtflow.infrastructure.assistant_examples import load_assistant_examples
+from ojtflow.infrastructure.assistant.prompt_injection import load_prompt_injection_policy
 from ojtflow.infrastructure.mcp_catalogs import (
     load_mcp_prompt_catalog,
     load_mcp_remote_deployment_policy,
@@ -88,6 +90,20 @@ async def assistant_answer_templates(
         settings.resolved_knowledge_dir
     )
     return ok(templates)
+
+
+@router.get("/assistant/prompt-injection-policy")
+async def assistant_prompt_injection_policy(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return the data-driven Assistant prompt-injection policy."""
+
+    del authenticated
+    policy: PromptInjectionPolicy = load_prompt_injection_policy(
+        settings.resolved_knowledge_dir
+    )
+    return ok(policy)
 
 
 @router.get("/assistant/mcp/resources")
