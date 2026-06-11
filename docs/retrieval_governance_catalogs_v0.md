@@ -31,6 +31,20 @@ catalog is intentionally separate from raw source inventory, because source
 inventory says what exists while source policy says what it is allowed to be
 used for.
 
+The current policy catalog covers:
+
+- FHIR R4 implementation evidence
+- LOINC laboratory terminology candidates
+- UCUM unit validation evidence
+- RxNav/RxNorm medication terminology candidates
+- PubMed/NCBI E-utilities literature metadata and abstracts where allowed
+- ClinicalTrials.gov API v2 trial registry metadata
+- openFDA regulatory labels, adverse-event context, recalls, and device records
+
+External-source records remain governed until approved. PubMed, trial, and
+regulatory data can support source-linked review and explanation, but must not
+be represented as clinical advice or autonomous decision support.
+
 ## Strategy Catalog
 
 `GET /api/v1/retrieval/strategies`
@@ -62,3 +76,7 @@ python -m pytest tests/test_api.py::test_openapi_documents_contract_models tests
 
 The tests verify OpenAPI response models, authentication boundaries, and that
 catalog data loads from `knowledge/`.
+
+Additional catalog consistency checks verify that every external connector in
+`knowledge/source_catalog/external_connector_registry.json` has a matching
+retrieval corpus adapter and source trust policy.

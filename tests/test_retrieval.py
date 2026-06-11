@@ -25,6 +25,7 @@ from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
     load_corpus_chunking_profile_catalog,
+    load_source_trust_policy_catalog,
 )
 from ojtflow.infrastructure.retrieval.corpus import (
     build_corpus_ingestion_manifest,
@@ -3482,15 +3483,31 @@ def test_corpus_adapter_catalog_and_manifest_are_governed() -> None:
     assert catalog.version == "corpus_adapters.v1"
     loinc_adapter = adapters["external_loinc_selected_public_pages_v1"]
     assert loinc_adapter.license.license_id == "loinc_terms"
+    assert loinc_adapter.release_version.startswith("loinc_")
+    assert loinc_adapter.metadata["connector_id"] == "loinc"
+    assert adapters["external_pubmed_eutilities_cache_v1"].metadata["connector_id"] == "pubmed"
+    assert (
+        adapters["external_clinicaltrials_gov_api_v2_cache_v1"].metadata["connector_id"]
+        == "clinicaltrials_gov"
+    )
     assert adapters["external_openfda_api_cache_v1"].lifecycle_state == "candidate"
+    assert adapters["external_openfda_api_cache_v1"].chunk_profile == "api_record_summary_v0"
     fhir_patient_adapter = adapters["external_hl7_fhir_r4_patient_v1"]
     assert fhir_patient_adapter.metadata["resource_type"] == "Patient"
     assert fhir_patient_adapter.source_urls["primary"].endswith("/patient.html")
     assert chunking_profiles["section_window_v0"].boundary_strategy == "markdown_section"
+    assert all(adapter.chunk_profile in chunking_profiles for adapter in catalog.adapters)
     assert manifest.adapter_catalog_version == catalog.version
     assert items["local_medical_search_playbook_v1"].content_hash.startswith("sha256:")
     assert items["local_medical_search_playbook_v1"].reviewer_state == "approved"
     assert items["local_medical_search_playbook_v1"].fetch_time_source == "filesystem_mtime"
+
+    policies = {
+        policy.source_id: policy
+        for policy in load_source_trust_policy_catalog(ROOT / "knowledge").policies
+    }
+    assert policies["ncbi_pubmed_eutilities"].evidence_tier == "literature_context"
+    assert policies["clinicaltrials_gov"].standard_system == "ClinicalTrials.gov"
 
 
 def test_static_retrieval_source_inventory_includes_corpus_governance_metadata() -> None:

@@ -401,7 +401,7 @@
       "standard_system": "LOINC",
       "access_mode": "licensed_bulk_or_public_pages",
       "ingestion_mode": "licensed_bulk_or_selected_public_pages",
-      "release_version": "current_public_snapshot",
+      "release_version": "loinc_2.82_or_configured_license_snapshot",
       "refresh_cadence": "per_release_or_quarterly",
       "reviewer_state": "needs_review",
       "lifecycle_state": "candidate",
@@ -427,7 +427,9 @@
         "Use candidates as review evidence; do not auto-code lab names."
       ],
       "metadata": {
-        "expected_artifacts": ["selected_public_concept_pages", "licensed_bulk_snapshot_optional"]
+        "connector_id": "loinc",
+        "expected_artifacts": ["selected_public_concept_pages", "licensed_bulk_snapshot_optional"],
+        "login_or_license_boundary": "Do not fetch or commit licensed LOINC bulk content unless the deployment license permits it."
       }
     },
     {
@@ -440,7 +442,7 @@
       "standard_system": "UCUM",
       "access_mode": "public_web_or_nlm_service",
       "ingestion_mode": "selected_unit_seed_plus_validator_adapter",
-      "release_version": "current_public_snapshot",
+      "release_version": "ucum_service_4.1.7_or_configured_snapshot",
       "refresh_cadence": "quarterly",
       "reviewer_state": "approved",
       "lifecycle_state": "candidate",
@@ -463,7 +465,9 @@
         "Unit normalization changes must be review-gated."
       ],
       "metadata": {
-        "runtime_registry": "knowledge/terminologies/ucum_units.json"
+        "connector_id": "ucum",
+        "runtime_registry": "knowledge/terminologies/ucum_units.json",
+        "validator_endpoint_family": "FHIR CodeSystem validate-code"
       }
     },
     {
@@ -476,7 +480,7 @@
       "standard_system": "RxNorm",
       "access_mode": "public_api",
       "ingestion_mode": "api_lookup_cache",
-      "release_version": "api_current",
+      "release_version": "monthly_rxnorm_release_or_configured_snapshot",
       "refresh_cadence": "monthly_or_api_release",
       "reviewer_state": "needs_review",
       "lifecycle_state": "candidate",
@@ -499,7 +503,101 @@
         "Medication normalization remains a reviewer decision."
       ],
       "metadata": {
-        "expected_artifacts": ["api_query_cache"]
+        "connector_id": "rxnav",
+        "expected_artifacts": ["api_query_cache"],
+        "endpoint_families": ["RxTerms", "RxNorm", "Approximate match", "Related concepts"],
+        "release_tracking": "Record RxNorm API release metadata or fetch timestamp with every cache entry."
+      }
+    },
+    {
+      "adapter_id": "external_pubmed_eutilities_cache_v1",
+      "source_id": "ncbi_pubmed_eutilities",
+      "title": "PubMed and NCBI E-utilities",
+      "authority": "U.S. National Library of Medicine / NCBI",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "biomedical_literature",
+      "standard_system": "MeSH/PubMed",
+      "access_mode": "public_api_with_optional_api_key",
+      "ingestion_mode": "api_lookup_cache_and_optional_baseline_snapshot",
+      "release_version": "eutilities_current_or_configured_baseline",
+      "refresh_cadence": "daily_for_query_cache_or_release_based_for_baseline",
+      "reviewer_state": "needs_review",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://pubmed.ncbi.nlm.nih.gov/",
+        "eutilities_docs": "https://www.ncbi.nlm.nih.gov/books/NBK25501/",
+        "usage_guidelines": "https://eutils.ncbi.nlm.nih.gov/"
+      },
+      "local_paths": [],
+      "parser": "api_json_or_xml_cache",
+      "chunk_profile": "api_record_summary_v0",
+      "fetch_time_policy": "record_api_fetch_time_query_hash_pmid_and_response_hash",
+      "license": {
+        "license_id": "ncbi_pubmed_terms",
+        "name": "NCBI and publisher source terms",
+        "url": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+        "constraints": [
+          "Respect NCBI usage guidelines and publisher rights",
+          "Cache PMID, DOI, source URL, query, fetch time, and abstract availability",
+          "Do not export PHI in PubMed queries"
+        ]
+      },
+      "governance_notes": [
+        "Literature retrieval supports citation-aware evidence discovery only.",
+        "PubMed abstracts and metadata do not turn OJTFlow into clinical decision support.",
+        "MeSH translations and title/abstract search details must stay visible to reviewers."
+      ],
+      "metadata": {
+        "connector_id": "pubmed",
+        "expected_artifacts": ["esearch_cache", "esummary_cache", "efetch_pubmed_xml_cache"],
+        "record_keys": ["pmid", "doi", "journal", "publication_date", "publication_type", "mesh_headings"],
+        "query_transparency_required": true,
+        "api_key_optional": true
+      }
+    },
+    {
+      "adapter_id": "external_clinicaltrials_gov_api_v2_cache_v1",
+      "source_id": "clinicaltrials_gov",
+      "title": "ClinicalTrials.gov API v2",
+      "authority": "U.S. National Library of Medicine",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "clinical_trials",
+      "standard_system": "ClinicalTrials.gov",
+      "access_mode": "public_api",
+      "ingestion_mode": "api_v2_lookup_cache",
+      "release_version": "api_v2_current_or_configured_snapshot",
+      "refresh_cadence": "daily_for_active_queries_or_before_trial_demo",
+      "reviewer_state": "needs_review",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://clinicaltrials.gov/",
+        "api_docs": "https://clinicaltrials.gov/data-api/about-api",
+        "studies_endpoint": "https://clinicaltrials.gov/api/v2/studies"
+      },
+      "local_paths": [],
+      "parser": "api_json_cache",
+      "chunk_profile": "api_record_summary_v0",
+      "fetch_time_policy": "record_api_fetch_time_query_hash_nct_id_data_timestamp_and_response_hash",
+      "license": {
+        "license_id": "clinicaltrials_gov_terms",
+        "name": "ClinicalTrials.gov public data terms",
+        "url": "https://clinicaltrials.gov/about-site/terms-conditions",
+        "constraints": [
+          "Preserve NCT ID, API endpoint, query, fetch time, and data timestamp when available",
+          "Do not present trial search as an enrollment or treatment recommendation"
+        ]
+      },
+      "governance_notes": [
+        "Trial records are research context, not patient-specific eligibility decisions.",
+        "Use condition/intervention/status filters transparently and keep query terms visible."
+      ],
+      "metadata": {
+        "connector_id": "clinicaltrials_gov",
+        "expected_artifacts": ["study_search_cache", "study_detail_cache"],
+        "record_keys": ["nct_id", "overall_status", "conditions", "interventions", "eligibility", "last_update_submit_date"],
+        "query_transparency_required": true
       }
     },
     {
@@ -523,7 +621,7 @@
       },
       "local_paths": [],
       "parser": "api_json_cache",
-      "chunk_profile": "record_summary_v0",
+      "chunk_profile": "api_record_summary_v0",
       "fetch_time_policy": "record_api_fetch_time_and_response_hash",
       "license": {
         "license_id": "public_us_government_data",
@@ -534,7 +632,10 @@
         "Regulatory context is not clinical decision support."
       ],
       "metadata": {
-        "expected_artifacts": ["drug_label_cache", "adverse_event_context_cache"]
+        "connector_id": "openfda",
+        "expected_artifacts": ["drug_label_cache", "adverse_event_context_cache", "recall_cache", "device_metadata_cache"],
+        "endpoint_families": ["drug_label", "drug_event", "drug_enforcement", "device"],
+        "query_transparency_required": true
       }
     }
   ]

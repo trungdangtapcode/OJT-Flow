@@ -29,6 +29,10 @@ from ojtflow.infrastructure.retrieval.static import (
     StaticKnowledgeRepository,
     StaticRetrievalRepository,
 )
+from ojtflow.infrastructure.retrieval.catalogs import (
+    load_corpus_adapter_catalog,
+    load_source_trust_policy_catalog,
+)
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryDatasetStore,
     InMemoryEventRepository,
@@ -110,6 +114,30 @@ def test_month7_catalogs_are_data_driven_and_cover_requested_scope() -> None:
         "rxnav",
         "hl7_fhir_docs",
     }
+
+
+def test_external_connectors_have_retrieval_governance_coverage() -> None:
+    connectors = load_external_source_connectors(KNOWLEDGE_ROOT)
+    adapters = load_corpus_adapter_catalog(KNOWLEDGE_ROOT)
+    policies = load_source_trust_policy_catalog(KNOWLEDGE_ROOT)
+
+    expected_source_by_connector = {
+        "pubmed": "ncbi_pubmed_eutilities",
+        "clinicaltrials_gov": "clinicaltrials_gov",
+        "openfda": "openfda",
+        "loinc": "loinc_core",
+        "ucum": "ucum",
+        "rxnav": "nlm_rxnorm",
+        "hl7_fhir_docs": "hl7_fhir_r4",
+    }
+    connector_ids = {connector.connector_id for connector in connectors.connectors}
+    adapter_source_ids = {adapter.source_id for adapter in adapters.adapters}
+    policy_source_ids = {policy.source_id for policy in policies.policies}
+
+    assert set(expected_source_by_connector).issubset(connector_ids)
+    for connector_id, source_id in expected_source_by_connector.items():
+        assert source_id in adapter_source_ids, connector_id
+        assert source_id in policy_source_ids, connector_id
 
 
 def test_omop_preview_reports_measurement_rows_and_unresolved_concepts() -> None:

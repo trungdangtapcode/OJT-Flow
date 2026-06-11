@@ -168,6 +168,13 @@ validation, RxNorm medication normalization, PHI review, or literature/trial
 search hints. The plan is returned as first-class API data instead of hidden UI
 copy, so the assistant, retrieval console, exports, and future MCP tools can
 all use the same route guidance.
+
+The governed external medical-source scope now includes LOINC, UCUM, RxNav,
+PubMed/NCBI E-utilities, ClinicalTrials.gov API v2, and openFDA. These sources
+are declared as adapters and trust policies first. Live fetch jobs must preserve
+endpoint, query, source release or fetch timestamp, cache hash, and approval
+state before fetched records become searchable.
+
 Playbook rules are data-driven and can trigger from query profile, detected
 standards, detected concepts, decomposed query-aspect IDs, uploaded dataset
 field names, query tokens, FHIR resource type, quality signals, safety flags,

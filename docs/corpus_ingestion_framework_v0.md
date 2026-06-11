@@ -113,3 +113,32 @@ The adapter catalog includes resource-specific HL7 FHIR R4 hooks for:
 - `AuditEvent`
 
 These are source adapter definitions only. They preserve official source URLs and profile JSON targets, but they do not bulk-copy HL7 specification content into git.
+
+## Medical External Source Adapters
+
+The adapter catalog also covers the Month 4 external medical search scope:
+
+- LOINC selected public pages or licensed deployment snapshot
+- UCUM public unit registry or NLM validator-backed snapshot
+- RxNav/RxNorm API cache
+- PubMed and NCBI E-utilities cache
+- ClinicalTrials.gov API v2 cache
+- openFDA API/download cache
+
+These adapters are governed contracts, not silent live fetchers. Runtime fetch
+jobs must use the external connector registry, cache policy, source ingestion
+approval policy, and source trust policy before any fetched record becomes
+searchable. Patient identifiers and raw PHI must not be exported to these
+external sources unless the deployment policy explicitly allows that surface.
+
+Each external adapter stores or expects:
+
+- connector ID
+- endpoint/source URL
+- source release, API version, or fetch timestamp
+- query hash and response hash
+- record identifiers such as PMID, NCT ID, RxCUI, LOINC code, or FDA endpoint
+- source limitations and prohibited-use notes
+
+The catalog consistency test verifies that every declared external connector
+has both a corpus adapter and a source trust policy entry.

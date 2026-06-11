@@ -99,6 +99,76 @@
       "policy_notes": ["Drug normalization remains a reviewer decision."]
     },
     {
+      "source_id": "ncbi_pubmed_eutilities",
+      "source_name": "PubMed and NCBI E-utilities",
+      "authority": "U.S. National Library of Medicine / NCBI",
+      "domain": "biomedical_literature",
+      "standard_system": "MeSH/PubMed",
+      "clinical_scope": ["citation retrieval", "MeSH subject headings", "abstract metadata", "literature search routing"],
+      "intended_use": [
+        "Generate transparent PubMed follow-up searches",
+        "Cache article metadata and abstracts where allowed",
+        "Support evidence-grounded explanations with citation provenance"
+      ],
+      "prohibited_use": [
+        "Do not export PHI or patient identifiers to PubMed queries",
+        "Do not treat literature retrieval as diagnosis, treatment, or clinical recommendation",
+        "Do not bypass publisher full-text license boundaries"
+      ],
+      "refresh_cadence": "daily_for_query_cache_or_release_based_for_baseline",
+      "license_constraints": [
+        "Respect NCBI usage guidelines and publisher source terms",
+        "Preserve PMID, DOI/source URL, query hash, fetch time, and abstract availability"
+      ],
+      "access_mode": "public_api_with_optional_api_key",
+      "ingestion_mode": "api_lookup_cache_and_optional_baseline_snapshot",
+      "evidence_tier": "literature_context",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://pubmed.ncbi.nlm.nih.gov/",
+        "eutilities_docs": "https://www.ncbi.nlm.nih.gov/books/NBK25501/",
+        "usage_guidelines": "https://eutils.ncbi.nlm.nih.gov/"
+      },
+      "policy_notes": [
+        "Search details, MeSH translations, and query strings must remain visible to reviewers.",
+        "Literature context can support review, but cannot replace clinical judgment."
+      ]
+    },
+    {
+      "source_id": "clinicaltrials_gov",
+      "source_name": "ClinicalTrials.gov API v2",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "clinical_trials",
+      "standard_system": "ClinicalTrials.gov",
+      "clinical_scope": ["trial registry metadata", "conditions", "interventions", "eligibility criteria", "study status"],
+      "intended_use": [
+        "Route transparent trial registry searches",
+        "Cache NCT-linked study summaries and eligibility text",
+        "Support research-context retrieval with source timestamps"
+      ],
+      "prohibited_use": [
+        "Do not present trial search as patient-specific enrollment guidance",
+        "Do not infer treatment suitability from registry metadata alone"
+      ],
+      "refresh_cadence": "daily_for_active_queries_or_before_trial_demo",
+      "license_constraints": [
+        "Preserve NCT ID, API endpoint, query, fetch time, and data timestamp when available"
+      ],
+      "access_mode": "public_api",
+      "ingestion_mode": "api_v2_lookup_cache",
+      "evidence_tier": "registry_context",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://clinicaltrials.gov/",
+        "api_docs": "https://clinicaltrials.gov/data-api/about-api",
+        "studies_endpoint": "https://clinicaltrials.gov/api/v2/studies"
+      },
+      "policy_notes": [
+        "Trial status and eligibility text can change; use fresh source timestamps in evidence.",
+        "Trial records are research context, not clinical decision support."
+      ]
+    },
+    {
       "source_id": "openfda",
       "source_name": "openFDA",
       "authority": "U.S. Food and Drug Administration",
@@ -115,7 +185,9 @@
       "requires_reviewer_approval": true,
       "source_urls": {
         "api_docs": "https://open.fda.gov/apis/",
-        "downloads": "https://open.fda.gov/apis/downloads/"
+        "downloads": "https://open.fda.gov/apis/downloads/",
+        "drug_label": "https://open.fda.gov/apis/drug/label/",
+        "drug_event": "https://open.fda.gov/apis/drug/event/"
       },
       "policy_notes": ["Regulatory context is not clinical decision support."]
     }

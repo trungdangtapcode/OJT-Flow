@@ -207,6 +207,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F074 | Implemented | Added data-driven query transformation rules for rewrite, step-back query, multi-query expansion, and optional HyDE-style hypothetical evidence variants; integrated them into query variant provenance, rule-pack fingerprints, docs, and focused tests. |
 | 2026-06-11 | F075 | Implemented | Added a data-driven query router that selects an auditable retrieval strategy route from query profile, format, resource type, metadata filters, diagnostics, concepts, standards, and tokens; exposed route metadata in query analysis, package handoff, fusion diagnostics, docs, and focused tests. |
 | 2026-06-11 | F091 | Implemented | Added a Retrieval graph query panel backed by authenticated graph context listing and graph neighborhood APIs, with current-run shortcuts for top evidence/node/source, persisted graph records, result counts, warnings, and node/edge/triple result rendering. |
+| 2026-06-11 | F063-F068 | Implemented | Completed governed external medical source adapter coverage for LOINC, UCUM, RxNav/RxNorm, PubMed/NCBI E-utilities, ClinicalTrials.gov API v2, and openFDA with source trust policies, connector IDs, cache/provenance expectations, query transparency boundaries, docs, and catalog consistency tests. |
 
 ## Feature Backlog
 
@@ -283,12 +284,12 @@ Keep this section updated when roadmap items move from planning into code.
 
 - [x] F061 Add a corpus ingestion framework with source adapters, license metadata, release version, fetch time, hash, and reviewer state.
 - [x] F062 Add official source adapters for FHIR specification pages relevant to Patient, Observation, DiagnosticReport, DocumentReference, Provenance, and AuditEvent.
-- [ ] F063 Add official source adapter for LOINC release metadata and selected public guide pages, respecting login/license boundaries.
-- [ ] F064 Add UCUM service metadata ingestion for validation and conversion guidance.
-- [ ] F065 Add RxNav/RxNorm API metadata ingestion and monthly release tracking.
-- [ ] F066 Add PubMed/NCBI E-utilities connector for literature metadata and abstracts where allowed.
-- [ ] F067 Add ClinicalTrials.gov API connector for trial summaries and condition/intervention filters.
-- [ ] F068 Add openFDA connector for labels, adverse events, recalls, and device metadata where useful.
+- [x] F063 Add official source adapter for LOINC release metadata and selected public guide pages, respecting login/license boundaries.
+- [x] F064 Add UCUM service metadata ingestion for validation and conversion guidance.
+- [x] F065 Add RxNav/RxNorm API metadata ingestion and monthly release tracking.
+- [x] F066 Add PubMed/NCBI E-utilities connector for literature metadata and abstracts where allowed.
+- [x] F067 Add ClinicalTrials.gov API connector for trial summaries and condition/intervention filters.
+- [x] F068 Add openFDA connector for labels, adverse events, recalls, and device metadata where useful.
 - [x] F069 Add source inventory lifecycle states: candidate, approved, deprecated, blocked, failed, and needs review.
 - [x] F070 Add source-level trust policy with domain, standard system, clinical scope, intended use, refresh cadence, and license constraints.
 - [x] F071 Add chunking profiles for standards docs, terminology pages, structured API records, PDFs, and internal policies.
