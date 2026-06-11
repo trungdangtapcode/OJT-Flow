@@ -927,6 +927,115 @@ def test_query_analysis_uses_data_driven_expansion_rules(tmp_path, monkeypatch) 
     assert "updated registry variant" in reloaded.query_variants
 
 
+def test_query_analysis_adds_data_driven_transformation_variants() -> None:
+    analysis = analyze_query(
+        RetrievalQuery(
+            query="A1c CSV missing units",
+            fields=["lab_name", "unit"],
+            schema_id="lab_result_v1",
+            detected_format="csv",
+            resource_type="Observation",
+        )
+    )
+
+    transformation_variants = [
+        variant
+        for variant in analysis.query_variant_details
+        if variant.source == "query_transformation_rule"
+    ]
+    strategies = {variant.metadata["strategy"] for variant in transformation_variants}
+
+    assert {"rewrite", "step_back_query", "multi_query_expansion"}.issubset(strategies)
+    assert "hyde" not in strategies
+    assert any("FHIR Observation LOINC UCUM" in item.variant for item in transformation_variants)
+    assert all(variant.metadata["rule_id"] for variant in transformation_variants)
+
+
+def test_query_analysis_uses_data_driven_transformation_rules(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    registry_path = tmp_path / "query_transformation_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_transformation_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_transform",
+                        "strategy": "rewrite",
+                        "reason": "Custom rewrite from test registry.",
+                        "variant_template": "custom rewrite {query} {fields}",
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    },
+                    {
+                        "rule_id": "optional_hyde_transform",
+                        "strategy": "hyde",
+                        "reason": "Custom optional HyDE from test registry.",
+                        "variant_template": "hyde hypothetical {query}",
+                        "enabled": False,
+                        "requires_hyde_enabled": True,
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_QUERY_TRANSFORMATION_RULES_PATH", str(registry_path))
+    monkeypatch.delenv("OJT_RETRIEVAL_ENABLE_HYDE", raising=False)
+
+    analysis = analyze_query(RetrievalQuery(query="cardioxyz intake", fields=["dose"]))
+    variants = [
+        variant
+        for variant in analysis.query_variant_details
+        if variant.source == "query_transformation_rule"
+    ]
+
+    assert [variant.metadata["rule_id"] for variant in variants] == ["custom_transform"]
+    assert variants[0].variant == "custom rewrite cardioxyz intake dose"
+
+    monkeypatch.setenv("OJT_RETRIEVAL_ENABLE_HYDE", "true")
+    with_hyde = analyze_query(RetrievalQuery(query="cardioxyz intake", fields=["dose"]))
+    strategies = {
+        variant.metadata["strategy"]
+        for variant in with_hyde.query_variant_details
+        if variant.source == "query_transformation_rule"
+    }
+
+    assert strategies == {"rewrite", "hyde"}
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_transformation_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "updated_transform",
+                        "strategy": "step_back_query",
+                        "reason": "Updated test registry.",
+                        "variant_template": "updated transform {query}",
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+    reloaded_variants = [
+        variant
+        for variant in reloaded.query_variant_details
+        if variant.source == "query_transformation_rule"
+    ]
+
+    assert [variant.metadata["rule_id"] for variant in reloaded_variants] == [
+        "updated_transform"
+    ]
+    assert reloaded_variants[0].metadata["strategy"] == "step_back_query"
+
+
 def test_query_analysis_uses_data_driven_medical_concepts() -> None:
     analysis = analyze_query(RetrievalQuery(query="serum glucose mg/dL"))
 

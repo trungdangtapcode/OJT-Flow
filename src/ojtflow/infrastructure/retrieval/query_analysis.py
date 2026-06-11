@@ -48,6 +48,12 @@ DEFAULT_QUERY_PROFILE_RULE_REGISTRY = (
 DEFAULT_QUERY_ASPECT_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_aspect_rules.json"
 )
+DEFAULT_QUERY_TRANSFORMATION_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "query_transformation_rules.json"
+)
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
 )
@@ -170,6 +176,34 @@ class QueryAspectRule:
 
 
 @dataclass(frozen=True)
+class QueryTransformationMatch:
+    """Matcher for a data-driven query transformation rule."""
+
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_rule_ids: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    any_profile_ids: tuple[str, ...] = ()
+    any_profile_routes: tuple[str, ...] = ()
+    any_candidate_domains: tuple[str, ...] = ()
+    any_candidate_standards: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class QueryTransformationRule:
+    """One rewrite, step-back, multi-query, or optional HyDE transformation."""
+
+    rule_id: str
+    strategy: str
+    reason: str
+    variant_template: str
+    priority: int
+    enabled: bool
+    requires_hyde_enabled: bool
+    match: QueryTransformationMatch
+
+
+@dataclass(frozen=True)
 class SearchHintTarget:
     """Operator-facing metadata for one external search target."""
 
@@ -249,9 +283,21 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         candidate_domains=candidate_domains,
         candidate_standards=candidate_standards,
     )
+    transformation_variants = _query_transformation_variant_details(
+        query,
+        concepts=concepts,
+        standards=standards,
+        rule_ids=rule_ids,
+        tokens=tokens,
+        candidate_domains=candidate_domains,
+        candidate_standards=candidate_standards,
+        query_profile=query_profile,
+        query_aspects=query_aspects,
+    )
     variant_details = _dedupe_query_variant_details(
         [
             *base_variants,
+            *transformation_variants,
             *(
                 RetrievalQueryVariant(
                     variant=rule.variant,
@@ -1265,6 +1311,183 @@ def _ensure_unique_query_aspect_rule_ids(
         )
 
 
+def _query_transformation_rules() -> tuple[QueryTransformationRule, ...]:
+    path = os.environ.get("OJT_QUERY_TRANSFORMATION_RULES_PATH")
+    return _load_query_transformation_rules(
+        path or str(DEFAULT_QUERY_TRANSFORMATION_RULE_REGISTRY)
+    )
+
+
+def _load_query_transformation_rules(path_text: str) -> tuple[QueryTransformationRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: expected rules list"
+        )
+    rules = tuple(_query_transformation_rule(record, path=path) for record in records)
+    _ensure_unique_query_transformation_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_transformation_rule(record: Any, *, path: Path) -> QueryTransformationRule:
+    if not isinstance(record, dict):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: rule must be an object"
+        )
+    required = ("rule_id", "strategy", "reason", "variant_template", "match")
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: missing {missing_text}"
+        )
+    match = record["match"]
+    if not isinstance(match, dict):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: match must be an object"
+        )
+    transformation_match = QueryTransformationMatch(
+        any_concepts=_query_transformation_text_tuple(match.get("any_concepts"), path=path),
+        any_standards=_query_transformation_text_tuple(match.get("any_standards"), path=path),
+        any_rule_ids=_query_transformation_text_tuple(match.get("any_rule_ids"), path=path),
+        any_tokens=_query_transformation_text_tuple(match.get("any_tokens"), path=path),
+        any_profile_ids=_query_transformation_text_tuple(
+            match.get("any_profile_ids"),
+            path=path,
+        ),
+        any_profile_routes=_query_transformation_text_tuple(
+            match.get("any_profile_routes"),
+            path=path,
+        ),
+        any_candidate_domains=_query_transformation_text_tuple(
+            match.get("any_candidate_domains"),
+            path=path,
+        ),
+        any_candidate_standards=_query_transformation_text_tuple(
+            match.get("any_candidate_standards"),
+            path=path,
+        ),
+    )
+    if not any(transformation_match.__dict__.values()):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: match must include criteria"
+        )
+    return QueryTransformationRule(
+        rule_id=_required_query_transformation_text(
+            record["rule_id"],
+            field="rule_id",
+            path=path,
+        ),
+        strategy=_required_query_transformation_text(
+            record["strategy"],
+            field="strategy",
+            path=path,
+        ),
+        reason=_required_query_transformation_text(
+            record["reason"],
+            field="reason",
+            path=path,
+        ),
+        variant_template=_required_query_transformation_text(
+            record["variant_template"],
+            field="variant_template",
+            path=path,
+        ),
+        priority=_optional_query_transformation_int(
+            record.get("priority"),
+            default=100,
+            path=path,
+        ),
+        enabled=_optional_query_transformation_bool(
+            record.get("enabled"),
+            default=True,
+            path=path,
+            field="enabled",
+        ),
+        requires_hyde_enabled=_optional_query_transformation_bool(
+            record.get("requires_hyde_enabled"),
+            default=False,
+            path=path,
+            field="requires_hyde_enabled",
+        ),
+        match=transformation_match,
+    )
+
+
+def _required_query_transformation_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: {field} cannot be blank"
+        )
+    return text
+
+
+def _optional_query_transformation_int(value: Any, *, default: int, path: Path) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, int):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: priority must be an integer"
+        )
+    if value < 1:
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: priority must be positive"
+        )
+    return value
+
+
+def _optional_query_transformation_bool(
+    value: Any,
+    *,
+    default: bool,
+    path: Path,
+    field: str,
+) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: {field} must be boolean"
+        )
+    return value
+
+
+def _query_transformation_text_tuple(value: Any, *, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: match values must be lists"
+        )
+    return tuple(
+        _required_query_transformation_text(item, field="match value", path=path)
+        for item in value
+    )
+
+
+def _ensure_unique_query_transformation_rule_ids(
+    rules: tuple[QueryTransformationRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
 def _search_hint_target(target: str) -> SearchHintTarget:
     targets = {item.target: item for item in _search_hint_targets()}
     return targets.get(
@@ -1935,6 +2158,134 @@ def _query_aspects(
         )
         for rule in matched
     ]
+
+
+def _query_transformation_variant_details(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
+    query_profile: RetrievalQueryProfile | None,
+    query_aspects: list[RetrievalQueryAspect],
+) -> list[RetrievalQueryVariant]:
+    matched = [
+        rule
+        for rule in _query_transformation_rules()
+        if _query_transformation_enabled(rule)
+        and _query_transformation_rule_matches(
+            rule,
+            concepts=concepts,
+            standards=standards,
+            rule_ids=rule_ids,
+            tokens=tokens,
+            candidate_domains=candidate_domains,
+            candidate_standards=candidate_standards,
+            query_profile=query_profile,
+        )
+    ]
+    matched.sort(key=lambda rule: (rule.priority, rule.rule_id))
+    variants: list[RetrievalQueryVariant] = []
+    for rule in matched:
+        variant = _render_query_transformation_template(
+            rule.variant_template,
+            query=query,
+            concepts=concepts,
+            standards=standards,
+            query_profile=query_profile,
+            query_aspects=query_aspects,
+        )
+        if not variant:
+            continue
+        variants.append(
+            RetrievalQueryVariant(
+                variant=variant,
+                source="query_transformation_rule",
+                reason=rule.reason,
+                metadata={
+                    "rule_id": rule.rule_id,
+                    "strategy": rule.strategy,
+                    "priority": rule.priority,
+                    "requires_hyde_enabled": rule.requires_hyde_enabled,
+                },
+            )
+        )
+    return variants
+
+
+def _query_transformation_rule_matches(
+    rule: QueryTransformationRule,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
+    query_profile: RetrievalQueryProfile | None,
+) -> bool:
+    profile_ids = [query_profile.profile_id] if query_profile else []
+    profile_routes = [query_profile.route] if query_profile else []
+    match = rule.match
+    checks = [
+        _has_intersection(concepts, match.any_concepts),
+        _has_intersection(standards, match.any_standards),
+        _has_intersection(rule_ids, match.any_rule_ids),
+        _has_intersection(tokens, match.any_tokens),
+        _has_intersection(profile_ids, match.any_profile_ids),
+        _has_intersection(profile_routes, match.any_profile_routes),
+        _has_intersection(candidate_domains, match.any_candidate_domains),
+        _has_intersection(candidate_standards, match.any_candidate_standards),
+    ]
+    return any(checks)
+
+
+def _query_transformation_enabled(rule: QueryTransformationRule) -> bool:
+    if rule.requires_hyde_enabled:
+        return _env_flag("OJT_RETRIEVAL_ENABLE_HYDE")
+    return rule.enabled
+
+
+def _render_query_transformation_template(
+    template: str,
+    *,
+    query: RetrievalQuery,
+    concepts: list[str],
+    standards: list[str],
+    query_profile: RetrievalQueryProfile | None,
+    query_aspects: list[RetrievalQueryAspect],
+) -> str:
+    values = {
+        "query": query.query,
+        "fields": " ".join(query.fields),
+        "schema_id": query.schema_id or "",
+        "detected_format": query.detected_format or "",
+        "resource_type": query.resource_type or "",
+        "concepts": " ".join(concepts),
+        "standards": " ".join(standards),
+        "profile_id": query_profile.profile_id if query_profile else "",
+        "profile_label": query_profile.label if query_profile else "",
+        "profile_route": query_profile.route if query_profile else "",
+        "retrieval_mode": query_profile.retrieval_mode if query_profile else "",
+        "aspects": " ".join(aspect.label for aspect in query_aspects),
+        "aspect_terms": " ".join(
+            term for aspect in query_aspects for term in aspect.suggested_terms
+        ),
+    }
+    rendered = template.format_map(_SafeTemplateValues(values))
+    return " ".join(rendered.split())
+
+
+class _SafeTemplateValues(dict):
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _query_aspect_rule_matches(

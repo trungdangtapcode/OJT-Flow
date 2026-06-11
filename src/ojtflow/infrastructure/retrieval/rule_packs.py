@@ -36,6 +36,11 @@ RULE_PACK_SPECS: tuple[tuple[str, Path, str], ...] = (
         "OJT_QUERY_ASPECT_RULES_PATH",
     ),
     (
+        "query_transformations",
+        Path("retrieval/query_transformation_rules.json"),
+        "OJT_QUERY_TRANSFORMATION_RULES_PATH",
+    ),
+    (
         "ranking_boosts",
         Path("retrieval/ranking_boost_rules.json"),
         "OJT_RANKING_BOOST_RULES_PATH",

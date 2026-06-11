@@ -141,6 +141,28 @@ field names, query tokens, FHIR resource type, quality signals, safety flags,
 or required metadata filters. This lets a CSV field such as `unit` select a
 UCUM validation route even when the user never names UCUM explicitly.
 
+## Query Transformations
+
+Query transformations live in
+`knowledge/retrieval/query_transformation_rules.json` and are included in the
+sanitized `handoff_context.retrieval_rule_packs` fingerprint list. The current
+registry emits deterministic `query_transformation_rule` variants for:
+
+- `rewrite`: makes clinical standard, schema, resource, and field context
+  explicit.
+- `step_back_query`: asks the broader healthcare-standard requirements
+  question before evidence lookup.
+- `multi_query_expansion`: combines decomposed query aspects, suggested terms,
+  detected concepts, and standards for high-recall search.
+- `hyde`: optional deterministic HyDE-style hypothetical evidence text for
+  recall experiments. This rule is disabled unless
+  `OJT_RETRIEVAL_ENABLE_HYDE=true`.
+
+The transformations are data-driven and rendered as first-class
+`query_variant_details[]` rows with rule ID, strategy, priority, and reason.
+They do not call an LLM and do not bypass source filters, evidence support
+checks, or human review gates.
+
 ## Search Presets
 
 Operator-facing retrieval examples live in
