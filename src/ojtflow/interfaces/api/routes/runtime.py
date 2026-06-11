@@ -12,9 +12,15 @@ from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.medical_evidence_service import OCR_LOW_CONFIDENCE_THRESHOLD
+from ojtflow.application.runtime_settings_history import (
+    append_runtime_setting_history,
+    list_runtime_setting_history,
+    rollback_runtime_settings_change,
+)
 from ojtflow.config import (
     Settings,
     clear_settings_cache,
+    load_runtime_settings_overrides,
     runtime_assistant_settings,
     runtime_retrieval_settings,
     save_runtime_assistant_settings,
@@ -37,6 +43,7 @@ from ojtflow.interfaces.api.responses import ok
 from ojtflow.interfaces.api.schemas import (
     RuntimeAssistantSettingsRequest,
     RuntimeRetrievalSettingsRequest,
+    RuntimeSettingsRollbackRequest,
 )
 from ojtflow.infrastructure.storage import migrations as migrations_module
 from ojtflow.infrastructure.storage.consistency import (
@@ -197,7 +204,10 @@ async def update_runtime_retrieval_settings(
     """Persist operator-tuned retrieval settings and reload cached services."""
 
     governance.require_permission(user=authenticated.user, permission_scope="settings:write")
-    updates = request.model_dump(exclude_none=True)
+    payload = request.model_dump(exclude_none=True)
+    reason = payload.pop("change_reason", None)
+    updates = payload
+    before = load_runtime_settings_overrides(settings)
     try:
         save_runtime_retrieval_settings(settings, updates)
     except (TypeError, ValueError) as exc:
@@ -205,6 +215,17 @@ async def update_runtime_retrieval_settings(
             "Invalid runtime retrieval settings.",
             details={"reason": str(exc)},
         ) from exc
+    after = load_runtime_settings_overrides(settings)
+    history_entry = append_runtime_setting_history(
+        settings=settings,
+        surface="retrieval",
+        actor_id=authenticated.user.user_id,
+        actor_email=authenticated.user.email,
+        reason=reason,
+        before=before,
+        after=after,
+        keys=set(updates),
+    )
 
     clear_settings_cache()
     clear_workflow_service_cache()
@@ -213,6 +234,7 @@ async def update_runtime_retrieval_settings(
         {
             "settings": runtime_retrieval_settings(fresh_settings),
             "reloaded": True,
+            "history_entry": history_entry,
         }
     )
 
@@ -227,7 +249,10 @@ async def update_runtime_assistant_settings(
     """Persist operator-tuned Assistant/LLM settings and reload cached services."""
 
     governance.require_permission(user=authenticated.user, permission_scope="settings:write")
-    updates = request.model_dump(exclude_none=True)
+    payload = request.model_dump(exclude_none=True)
+    reason = payload.pop("change_reason", None)
+    updates = payload
+    before = load_runtime_settings_overrides(settings)
     try:
         save_runtime_assistant_settings(settings, updates)
     except (TypeError, ValueError) as exc:
@@ -235,6 +260,17 @@ async def update_runtime_assistant_settings(
             "Invalid runtime assistant settings.",
             details={"reason": str(exc)},
         ) from exc
+    after = load_runtime_settings_overrides(settings)
+    history_entry = append_runtime_setting_history(
+        settings=settings,
+        surface="assistant",
+        actor_id=authenticated.user.user_id,
+        actor_email=authenticated.user.email,
+        reason=reason,
+        before=before,
+        after=after,
+        keys=set(updates),
+    )
 
     clear_settings_cache()
     clear_workflow_service_cache()
@@ -243,6 +279,52 @@ async def update_runtime_assistant_settings(
         {
             "settings": runtime_assistant_settings(fresh_settings),
             "reloaded": True,
+            "history_entry": history_entry,
+        }
+    )
+
+
+@router.get("/runtime/settings-history")
+async def runtime_settings_history(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+    """Return runtime setting history entries visible to settings readers."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="settings:read")
+    return ok(list_runtime_setting_history(settings, limit=limit))
+
+
+@router.post("/runtime/settings-history/rollback")
+async def rollback_runtime_settings_history(
+    request: RuntimeSettingsRollbackRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Rollback a previous runtime setting change and record the rollback."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="settings:write")
+    history_entry = rollback_runtime_settings_change(
+        settings=settings,
+        change_id=request.change_id,
+        actor_id=authenticated.user.user_id,
+        actor_email=authenticated.user.email,
+        reason=request.reason,
+    )
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    fresh_settings = await get_api_settings()
+    return ok(
+        {
+            "settings": {
+                "assistant": runtime_assistant_settings(fresh_settings),
+                "retrieval": runtime_retrieval_settings(fresh_settings),
+            },
+            "reloaded": True,
+            "history_entry": history_entry,
         }
     )
 

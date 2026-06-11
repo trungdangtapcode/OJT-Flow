@@ -315,6 +315,7 @@ class RetrievalReindexJobRequest(RetrievalReindexRequest):
 
 
 class RuntimeRetrievalSettingsRequest(ContractModel):
+    change_reason: NonBlankStr | None = None
     embedding_provider: Literal["deterministic", "openai", "huggingface"] | None = None
     embedding_model: NonBlankStr | None = None
     embedding_dimensions: int | None = Field(default=None, ge=1, le=4096)
@@ -329,7 +330,7 @@ class RuntimeRetrievalSettingsRequest(ContractModel):
 
     @model_validator(mode="after")
     def _has_runtime_update(self) -> "RuntimeRetrievalSettingsRequest":
-        if not self.model_dump(exclude_none=True):
+        if not self.model_dump(exclude_none=True, exclude={"change_reason"}):
             raise ValueError("At least one retrieval setting must be provided.")
         if (
             self.retrieval_vector_weight is not None
@@ -363,6 +364,7 @@ class RuntimeRetrievalSettingsRequest(ContractModel):
 
 
 class RuntimeAssistantSettingsRequest(ContractModel):
+    change_reason: NonBlankStr | None = None
     llm_provider: Literal["disabled", "openai"] | None = None
     llm_model: NonBlankStr | None = None
     llm_planning_model: NonBlankStr | None = None
@@ -388,7 +390,7 @@ class RuntimeAssistantSettingsRequest(ContractModel):
 
     @model_validator(mode="after")
     def _has_runtime_update(self) -> "RuntimeAssistantSettingsRequest":
-        if not self.model_dump(exclude_none=True):
+        if not self.model_dump(exclude_none=True, exclude={"change_reason"}):
             raise ValueError("At least one assistant setting must be provided.")
         return self
 
@@ -418,6 +420,11 @@ class RuntimeAssistantSettingsRequest(ContractModel):
             ]
         }
     }
+
+
+class RuntimeSettingsRollbackRequest(ContractModel):
+    change_id: NonBlankStr
+    reason: NonBlankStr | None = None
 
 
 class AssistantChatRequest(ContractModel):

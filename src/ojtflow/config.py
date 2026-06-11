@@ -787,6 +787,35 @@ def save_runtime_assistant_settings(
     return _save_runtime_settings(settings, updates, RUNTIME_ASSISTANT_SETTING_ALIASES)
 
 
+def runtime_settings_history_path(settings: Settings) -> Path:
+    """Return the runtime setting history file path."""
+
+    runtime_path = settings.resolved_runtime_settings_path
+    return runtime_path.with_name(f"{runtime_path.stem}.history.jsonl")
+
+
+def load_runtime_settings_overrides(settings: Settings) -> RuntimeSettingsPayload:
+    """Return sanitized runtime settings overrides."""
+
+    return _load_runtime_settings_overrides(settings.resolved_runtime_settings_path)
+
+
+def replace_runtime_settings_overrides(
+    settings: Settings,
+    values: RuntimeSettingsPayload,
+) -> Settings:
+    """Validate and replace the full runtime settings override payload."""
+
+    sanitized = {
+        key: _coerce_runtime_setting_value(key, value)
+        for key, value in values.items()
+        if key in RUNTIME_SETTING_ALIASES
+    }
+    validated = _validate_runtime_settings(settings, sanitized)
+    _write_runtime_settings_overrides(settings.resolved_runtime_settings_path, sanitized)
+    return validated
+
+
 def _save_runtime_settings(
     settings: Settings,
     updates: RuntimeSettingsPayload,

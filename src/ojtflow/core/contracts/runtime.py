@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel
+from ojtflow.core.ids import new_id
+from ojtflow.core.time import utc_now
 
 
 MigrationStatus = Literal[
@@ -51,3 +53,29 @@ class MigrationDiagnostics(ContractModel):
     bootstrap_code: str | None = None
     bootstrap_summary: str = ""
     migrations: list[MigrationDiagnosticItem] = Field(default_factory=list)
+
+
+RuntimeSettingSurface = Literal["retrieval", "assistant", "rollback"]
+
+
+class RuntimeSettingChange(ContractModel):
+    """Single runtime setting mutation in a history entry."""
+
+    key: str
+    old_value_present: bool = False
+    old_value: Any = None
+    new_value_present: bool = True
+    new_value: Any = None
+
+
+class RuntimeSettingHistoryEntry(ContractModel):
+    """Append-only runtime setting history entry."""
+
+    change_id: str = Field(default_factory=lambda: new_id("rsh"))
+    changed_at: str = Field(default_factory=lambda: utc_now().isoformat())
+    surface: RuntimeSettingSurface
+    actor_id: str
+    actor_email: str | None = None
+    reason: str
+    rollback_of: str | None = None
+    changes: list[RuntimeSettingChange] = Field(default_factory=list)
