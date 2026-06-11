@@ -197,7 +197,7 @@ def test_retrieval_service_suppresses_external_search_handoff_when_policy_blocks
             )
 
         def plan(self, _query: RetrievalQuery):  # pragma: no cover - not used here
-            raise NotImplementedError
+            raise AssertionError("plan should not be called in this test")
 
         def list_sources(self) -> list[RetrievalSource]:  # pragma: no cover
             return []
@@ -211,7 +211,7 @@ def test_retrieval_service_suppresses_external_search_handoff_when_policy_blocks
             include_seeded=True,
             include_corpus=False,
         ):  # pragma: no cover
-            raise NotImplementedError
+            raise AssertionError("integrity_report should not be called in this test")
 
     service = RetrievalService(
         FakeRepository(),  # type: ignore[arg-type]
@@ -239,7 +239,7 @@ def test_retrieval_plan_suppression_updates_counts_when_policy_blocks_phi() -> N
 
     class FakeRepository:
         def search(self, _query: RetrievalQuery):  # pragma: no cover - not used here
-            raise NotImplementedError
+            raise AssertionError("search should not be called in this test")
 
         def plan(self, _query: RetrievalQuery) -> RetrievalPlan:
             return RetrievalPlan(
@@ -312,7 +312,7 @@ def test_retrieval_plan_suppression_updates_counts_when_policy_blocks_phi() -> N
             include_seeded=True,
             include_corpus=False,
         ):  # pragma: no cover
-            raise NotImplementedError
+            raise AssertionError("integrity_report should not be called in this test")
 
     service = RetrievalService(
         FakeRepository(),  # type: ignore[arg-type]

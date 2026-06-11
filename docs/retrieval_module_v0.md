@@ -1441,10 +1441,22 @@ and reports:
 - NDCG@k: graded ranking quality against the ideal judged-source order.
 - reciprocal rank: rank-aware score for the first expected source.
 - selected source count: source diversity after final selection.
+- source diversity@k: unique selected source ratio across the returned hits.
+- unsupported-claim rate: unsupported rows in the evidence support matrix divided
+  by all support rows.
 
 The eval runner reads selected-source metrics from the first-class
 `RetrievalPackage.diversity` contract and falls back to
-`handoff_context.diversity` only for older packages.
+`handoff_context.diversity` only for older packages. Unsupported-claim metrics
+come from `RetrievalPackage.support_matrix`, which keeps evaluation aligned
+with guarded answer synthesis.
+
+The current fixture covers lab validation, FHIR Observation mapping, UCUM unit
+checks, LOINC grounding, PHI review, prompt-injection review, RxNorm grounding,
+diagnosis terminology, PubMed/MeSH routing, ClinicalTrials.gov routing, and
+openFDA routing. The scheduled GitHub Actions workflow
+`.github/workflows/retrieval-evaluation.yml` runs the same evaluator nightly and
+uploads `retrieval-evaluation-summary.json` for trend review.
 
 The release check runs this eval before Docker/E2E. The fixture set is small on
 purpose: it is a smoke benchmark for healthcare grounding regressions, not a

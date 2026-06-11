@@ -200,6 +200,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F158 | Started | Added a data-driven observability dashboard signal contract covering API, workflow, Assistant, retrieval, background jobs, governance/security, and LLM/OCR cost panels. Hosted metrics backend, OpenTelemetry export, and rendered dashboard remain follow-up scope. |
 | 2026-06-11 | F083, F095 | Implemented | Added deterministic retrieval answer synthesis backed only by support matrices, ranked evidence, citations, and Graph-NER path refs. Unsupported evidence now produces explicit refusal or gaps, and stale/deprecated/review-needed/unapproved/version-mismatched sources produce first-class freshness warnings. |
 | 2026-06-11 | F093-F094 | Started | Retrieval packages now include a guarded answer object and graph-path summary after Graph-NER handoff. Remaining work: graph neighborhood persistence/expansion, graph-aware reranking, and full generated-answer claim-to-triple checking. |
+| 2026-06-11 | F085-F086 | Implemented | Expanded retrieval evaluation into a 12-case healthcare benchmark covering lab validation, FHIR Observation mapping, UCUM, LOINC, PHI review, prompt-injection review, RxNorm, diagnosis terminology, PubMed/MeSH routing, ClinicalTrials.gov routing, and openFDA routing; added source-diversity and unsupported-claim-rate metrics; and added a scheduled nightly retrieval benchmark workflow with JSON artifact upload. |
 
 ## Feature Backlog
 
@@ -298,8 +299,8 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F082 Add corrective RAG behavior: if evidence is weak, ask for missing filters, broaden source scope, or trigger reindex suggestion.
 - [x] F083 Add self-checking retrieval answer synthesis that refuses unsupported claims and returns missing-evidence gaps.
 - [x] F084 Add evidence support matrix for each answer claim with source ID, chunk locator, matched terms, score, and reasoning.
-- [ ] F085 Add retrieval benchmark datasets for lab validation, FHIR mapping, UCUM unit checks, PHI review, and external medical search routing.
-- [ ] F086 Add nightly retrieval evaluation job that tracks recall@k, MRR, nDCG, coverage, source diversity, and unsupported-claim rate.
+- [x] F085 Add retrieval benchmark datasets for lab validation, FHIR mapping, UCUM unit checks, PHI review, and external medical search routing.
+- [x] F086 Add nightly retrieval evaluation job that tracks recall@k, MRR, nDCG, coverage, source diversity, and unsupported-claim rate.
 - [ ] F087 Add retrieval regression dashboard in the UI for admins.
 - [ ] F088 Add Graph-NER entity extraction evaluation fixtures for lab names, units, identifiers, medications, diagnoses, procedures, and resource names.
 - [ ] F089 Add graph persistence for extracted entities/triples instead of only returning graph context in retrieval packages.

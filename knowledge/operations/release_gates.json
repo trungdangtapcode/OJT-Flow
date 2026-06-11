@@ -50,7 +50,7 @@
       "evidence": "retrieval evaluation passes configured thresholds",
       "owner": "retrieval",
       "blocking": true,
-      "notes": ["Tracks hit@k, recall@k, MRR, NDCG, and source coverage for deterministic fixtures."]
+      "notes": ["Tracks hit@k, recall@k, MRR, NDCG, coverage, source diversity, and unsupported-claim rate for deterministic fixtures."]
     },
     {
       "gate_id": "performance_smoke",

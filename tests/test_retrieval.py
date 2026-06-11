@@ -3181,16 +3181,29 @@ def test_retrieval_eval_fixture_passes_static_repository() -> None:
     )
 
     assert summary.passed is True
-    assert summary.case_count == 5
+    assert summary.case_count == 12
     assert summary.hit_rate_at_k == 1.0
     assert summary.mean_average_precision_at_k == 1.0
     assert summary.mean_ndcg_at_k == 1.0
     assert summary.mean_reciprocal_rank == 1.0
+    assert summary.mean_source_diversity_at_k == 1.0
+    assert summary.unsupported_claim_rate == 0.0
+    assert summary.total_support_rows > 0
+    assert summary.total_unsupported_claims == 0
     assert summary.mean_coverage_at_k > 0
     assert summary.total_missing_source_ids == 0
     assert all(result.first_relevant_rank == 1 for result in summary.results)
     assert all(result.ndcg_at_k == 1.0 for result in summary.results)
     assert all(result.judged_source_count >= 1 for result in summary.results)
+    assert {
+        "lab_required_fields",
+        "fhir_observation_mapping",
+        "missing_units",
+        "phi_identifier_review",
+        "pubmed_mesh_search_routing",
+        "clinicaltrials_search_routing",
+        "openfda_search_routing",
+    }.issubset({result.case_id for result in summary.results})
 
 
 def test_retrieval_eval_uses_first_class_diversity_contract() -> None:
@@ -3251,6 +3264,66 @@ def test_retrieval_eval_uses_first_class_diversity_contract() -> None:
 
     assert summary.results[0].selected_source_count == 2
     assert summary.results[0].duplicate_selected_source_count == 0
+    assert summary.results[0].source_diversity_at_k == 1.0
+
+
+def test_retrieval_eval_tracks_unsupported_claim_rate() -> None:
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="alpha_claim",
+                source_id="source:alpha",
+                source_type=EvidenceSourceType.DATA_DICTIONARY,
+                title="Alpha evidence",
+                content="alpha validation evidence",
+            )
+        ],
+        RetrievalQuery(query="alpha validation", top_k=1),
+        strategy="test_eval_unsupported_claim_rate",
+    )
+    assert package.support_matrix is not None
+    unsupported_row = package.support_matrix.rows[0].model_copy(
+        update={"support_status": "unsupported"}
+    )
+    package = package.model_copy(
+        update={
+            "support_matrix": package.support_matrix.model_copy(
+                update={
+                    "rows": [unsupported_row],
+                    "strong_count": 0,
+                    "partial_count": 0,
+                    "weak_count": 0,
+                    "unsupported_count": 1,
+                }
+            )
+        }
+    )
+
+    class Repository:
+        def search(self, query):
+            del query
+            return package
+
+    summary = evaluate_retrieval_repository(
+        Repository(),
+        [
+            RetrievalEvalCase(
+                case_id="unsupported_claim_rate",
+                description="Eval should count unsupported evidence support rows.",
+                query="alpha validation",
+                expected_source_ids=["source:alpha"],
+                judgments=[RetrievalEvalJudgment(source_id="source:alpha", rating=3)],
+                top_k=1,
+            )
+        ],
+        max_unsupported_claim_rate=1.0,
+    )
+
+    assert summary.total_support_rows == 1
+    assert summary.total_unsupported_claims == 1
+    assert summary.unsupported_claim_rate == 1.0
+    assert summary.results[0].unsupported_claim_count == 1
+    assert summary.results[0].unsupported_claim_rate == 1.0
 
 
 def test_retrieval_eval_cli_outputs_json_summary() -> None:
@@ -3267,10 +3340,12 @@ def test_retrieval_eval_cli_outputs_json_summary() -> None:
     summary = json.loads(result.stdout)
 
     assert summary["passed"] is True
-    assert summary["case_count"] == 5
+    assert summary["case_count"] == 12
     assert summary["hit_rate_at_k"] == 1.0
     assert summary["mean_average_precision_at_k"] == 1.0
     assert summary["mean_ndcg_at_k"] == 1.0
+    assert summary["mean_source_diversity_at_k"] == 1.0
+    assert summary["unsupported_claim_rate"] == 0.0
 
 
 def _bucket_counts(buckets) -> dict[str, int]:
