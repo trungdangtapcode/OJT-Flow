@@ -10243,6 +10243,15 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "listAssistantTools" in api_module
     assert '"/assistant/tools"' in api_module
     assert "assistantTools" in server_state
+    assert "assistantMemoryPolicy" in server_state
+    assert "assistantMemory" in server_state
+    assert "getAssistantMemoryPolicy" in api_module
+    assert "getAssistantMemory" in api_module
+    assert "upsertAssistantMemoryPreference" in api_module
+    assert "Assistant memory" in assistant_input_panels
+    assert "policy={memoryPolicy}" in assistant_input_panels
+    assert "onMemoryPreferenceChange" in assistant_page
+    assert "localStorage" not in assistant_input_panels
     assert "server allowlisted assistant/MCP tools" in frontend_architecture
     assert "The primary authenticated route is `/assistant`" in frontend_architecture
     assert "drag-and-drop file selection" in frontend_architecture

@@ -18,6 +18,7 @@ from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.config import get_settings
 from ojtflow.core.contracts.mcp import McpPromptSpec, McpResourceSpec
 from ojtflow.core.errors import DependencyUnavailableError
+from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
 from ojtflow.infrastructure.assistant.policies import load_assistant_tool_permission_policies
 from ojtflow.infrastructure.assistant.progress import load_assistant_tool_progress_policies
 from ojtflow.infrastructure.assistant_examples import load_assistant_examples
@@ -87,6 +88,9 @@ def create_server():
                     knowledge_root
                 ).items()
             },
+            "assistant_memory_policy": lambda: load_assistant_memory_policy(
+                knowledge_root
+            ).model_dump(mode="json"),
             "retrieval_strategies": lambda: load_retrieval_strategy_catalog(
                 knowledge_root
             ).model_dump(mode="json"),

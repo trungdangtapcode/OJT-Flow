@@ -22,6 +22,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
     AssistantChatSessionSummary,
+    AssistantMemoryPreference,
     AssistantMessageRole,
     AssistantStreamReplay,
 )
@@ -1211,6 +1212,80 @@ class PostgresAssistantSessionRepository:
         return [_postgres_assistant_stream_replay_from_row(row) for row in rows]
 
 
+class PostgresAssistantMemoryRepository:
+    """Postgres-backed Assistant preference memory."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def list_preferences(
+        self,
+        *,
+        owner_user_id: str,
+    ) -> list[AssistantMemoryPreference]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.assistant_memory_preferences
+                    where owner_user_id = %s
+                    order by key
+                    """,
+                    (owner_user_id,),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_assistant_memory_preference_from_row(row) for row in rows]
+
+    def upsert_preference(
+        self,
+        *,
+        preference: AssistantMemoryPreference,
+    ) -> AssistantMemoryPreference:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.assistant_memory_preferences (
+                        owner_user_id, key, value, category, source,
+                        policy_version, created_at, updated_at
+                    ) values (
+                        %s, %s, %s::jsonb, %s, %s, %s,
+                        %s::timestamptz, %s::timestamptz
+                    )
+                    on conflict(owner_user_id, key) do update set
+                        value = excluded.value,
+                        category = excluded.category,
+                        source = excluded.source,
+                        policy_version = excluded.policy_version,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        preference.owner_user_id,
+                        preference.key,
+                        json.dumps(preference.value),
+                        preference.category,
+                        preference.source,
+                        preference.policy_version,
+                        preference.created_at,
+                        preference.updated_at,
+                    ),
+                )
+            connection.commit()
+        return preference
+
+    def delete_preference(self, *, owner_user_id: str, key: str) -> None:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    delete from ojtflow.assistant_memory_preferences
+                    where owner_user_id = %s and key = %s
+                    """,
+                    (owner_user_id, key),
+                )
+            connection.commit()
+
+
 class PostgresBackgroundJobRepository:
     """Postgres-backed durable background jobs."""
 
@@ -1599,6 +1674,19 @@ def _postgres_assistant_stream_replay_from_row(row) -> AssistantStreamReplay:
         events=events,
         created_at=row["created_at"].isoformat(),
         completed_at=row["completed_at"].isoformat(),
+    )
+
+
+def _postgres_assistant_memory_preference_from_row(row) -> AssistantMemoryPreference:
+    return AssistantMemoryPreference(
+        owner_user_id=row["owner_user_id"],
+        key=row["key"],
+        value=row["value"],
+        category=row["category"],
+        source=row["source"],
+        policy_version=row["policy_version"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
     )
 
 

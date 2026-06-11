@@ -16,6 +16,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
     AssistantChatSessionSummary,
+    AssistantMemoryPreference,
     AssistantMessageRole,
     AssistantStreamReplay,
 )
@@ -229,6 +230,22 @@ class SQLiteBackboneStore:
 
                 create index if not exists idx_assistant_stream_replays_session_created
                     on assistant_stream_replays(session_id, created_at, stream_id);
+
+                create table if not exists assistant_memory_preferences (
+                    owner_user_id text not null,
+                    key text not null,
+                    value_json text not null,
+                    category text not null,
+                    source text not null,
+                    policy_version text not null,
+                    created_at text not null,
+                    updated_at text not null,
+                    primary key (owner_user_id, key),
+                    check (source in ('user', 'system', 'admin'))
+                );
+
+                create index if not exists idx_assistant_memory_owner_updated
+                    on assistant_memory_preferences(owner_user_id, updated_at desc);
 
                 create table if not exists background_jobs (
                     job_id text primary key,
@@ -1160,6 +1177,71 @@ class SQLiteAssistantSessionRepository:
         return [_sqlite_assistant_stream_replay_from_row(row) for row in rows]
 
 
+class SQLiteAssistantMemoryRepository:
+    """SQLite-backed Assistant preference memory."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def list_preferences(
+        self,
+        *,
+        owner_user_id: str,
+    ) -> list[AssistantMemoryPreference]:
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                """
+                select * from assistant_memory_preferences
+                where owner_user_id = ?
+                order by key
+                """,
+                (owner_user_id,),
+            ).fetchall()
+        return [_sqlite_assistant_memory_preference_from_row(row) for row in rows]
+
+    def upsert_preference(
+        self,
+        *,
+        preference: AssistantMemoryPreference,
+    ) -> AssistantMemoryPreference:
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into assistant_memory_preferences (
+                    owner_user_id, key, value_json, category, source,
+                    policy_version, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(owner_user_id, key) do update set
+                    value_json = excluded.value_json,
+                    category = excluded.category,
+                    source = excluded.source,
+                    policy_version = excluded.policy_version,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    preference.owner_user_id,
+                    preference.key,
+                    _json_dump(preference.value),
+                    preference.category,
+                    preference.source,
+                    preference.policy_version,
+                    preference.created_at,
+                    preference.updated_at,
+                ),
+            )
+        return preference
+
+    def delete_preference(self, *, owner_user_id: str, key: str) -> None:
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                delete from assistant_memory_preferences
+                where owner_user_id = ? and key = ?
+                """,
+                (owner_user_id, key),
+            )
+
+
 class SQLiteBackgroundJobRepository:
     """SQLite-backed background job state."""
 
@@ -1469,6 +1551,19 @@ def _sqlite_assistant_stream_replay_from_row(row) -> AssistantStreamReplay:
         events=events if isinstance(events, list) else [],
         created_at=row["created_at"],
         completed_at=row["completed_at"],
+    )
+
+
+def _sqlite_assistant_memory_preference_from_row(row) -> AssistantMemoryPreference:
+    return AssistantMemoryPreference(
+        owner_user_id=row["owner_user_id"],
+        key=row["key"],
+        value=json.loads(row["value_json"]),
+        category=row["category"],
+        source=row["source"],
+        policy_version=row["policy_version"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 

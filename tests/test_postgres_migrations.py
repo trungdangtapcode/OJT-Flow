@@ -32,6 +32,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         "011",
         "012",
         "013",
+        "014",
     ]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
@@ -46,6 +47,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
     assert migrations[10].name == "uploaded_artifacts"
     assert migrations[11].name == "artifact_access_events"
     assert migrations[12].name == "assistant_stream_replay_cancelled"
+    assert migrations[13].name == "assistant_memory_preferences"
     assert all(len(migration.checksum) == 64 for migration in migrations)
 
 

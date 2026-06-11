@@ -4,7 +4,12 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Label, Textarea } from "../../components/ui/form";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
-import type { AssistantToolSpec } from "../../types";
+import type {
+  AssistantMemoryPolicy,
+  AssistantMemorySnapshot,
+  AssistantMemoryValue,
+  AssistantToolSpec,
+} from "../../types";
 import { formatBytes, formatCount } from "./assistant-format";
 
 export function AttachmentPreview({
@@ -84,16 +89,28 @@ export function AttachmentCapabilityBadge({
 export function AssistantControlsPanel({
   contextText,
   executeWriteActions,
+  isMemoryUpdating,
+  memoryMutationKey,
+  memoryPolicy,
+  memorySnapshot,
   onContextTextChange,
   onExecuteWriteActionsChange,
+  onMemoryPreferenceChange,
+  onMemoryPreferenceDelete,
   onWriteConfirmationAcceptedChange,
   writeConfirmationAccepted,
   writeGatedTools,
 }: {
   contextText: string;
   executeWriteActions: boolean;
+  isMemoryUpdating: boolean;
+  memoryMutationKey: string | null;
+  memoryPolicy?: AssistantMemoryPolicy;
+  memorySnapshot?: AssistantMemorySnapshot;
   onContextTextChange: (value: string) => void;
   onExecuteWriteActionsChange: (value: boolean) => void;
+  onMemoryPreferenceChange: (key: string, value: AssistantMemoryValue) => void;
+  onMemoryPreferenceDelete: (key: string) => void;
   onWriteConfirmationAcceptedChange: (value: boolean) => void;
   writeConfirmationAccepted: boolean;
   writeGatedTools: AssistantToolSpec[];
@@ -180,6 +197,14 @@ export function AssistantControlsPanel({
             </label>
           </div>
         ) : null}
+        <AssistantMemoryPanel
+          isUpdating={isMemoryUpdating}
+          mutationKey={memoryMutationKey}
+          onPreferenceChange={onMemoryPreferenceChange}
+          onPreferenceDelete={onMemoryPreferenceDelete}
+          policy={memoryPolicy}
+          snapshot={memorySnapshot}
+        />
         <Label>
           <span className="inline-flex items-center gap-1.5">
             Optional context JSON
@@ -196,5 +221,167 @@ export function AssistantControlsPanel({
         </Label>
       </div>
     </details>
+  );
+}
+
+function AssistantMemoryPanel({
+  isUpdating,
+  mutationKey,
+  onPreferenceChange,
+  onPreferenceDelete,
+  policy,
+  snapshot,
+}: {
+  isUpdating: boolean;
+  mutationKey: string | null;
+  onPreferenceChange: (key: string, value: AssistantMemoryValue) => void;
+  onPreferenceDelete: (key: string) => void;
+  policy?: AssistantMemoryPolicy;
+  snapshot?: AssistantMemorySnapshot;
+}) {
+  const savedValues = new Map(
+    (snapshot?.preferences ?? []).map((preference) => [preference.key, preference.value]),
+  );
+  const definitions = policy?.preferences ?? [];
+  return (
+    <section className="grid gap-3 rounded-md border border-border bg-muted/25 px-3 py-3">
+      <div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-black">
+          Assistant memory
+          <Badge variant="muted">preferences only</Badge>
+        </div>
+        <p className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
+          Stored memory is limited to backend-approved operational preferences. Raw data,
+          uploaded content, patient identifiers, and clinical facts are rejected.
+        </p>
+      </div>
+      {definitions.length ? (
+        <div className="grid gap-2">
+          {definitions.map((definition) => {
+            const hasSavedValue = savedValues.has(definition.key);
+            const value = savedValues.get(definition.key) ?? definition.default_value ?? "";
+            const updating = isUpdating && mutationKey === definition.key;
+            return (
+              <div
+                className="grid gap-2 rounded-md border border-border bg-card px-3 py-2"
+                key={definition.key}
+              >
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="break-words text-sm font-black">
+                      {definition.label}
+                    </div>
+                    <div className="mt-0.5 text-xs font-semibold leading-5 text-muted-foreground">
+                      {definition.description}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-1">
+                    <Badge variant={hasSavedValue ? "success" : "muted"}>
+                      {hasSavedValue ? "saved" : "default"}
+                    </Badge>
+                    <Badge variant="muted">{definition.category}</Badge>
+                  </div>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <MemoryInput
+                    definition={definition}
+                    disabled={updating}
+                    onChange={(nextValue) =>
+                      onPreferenceChange(definition.key, nextValue)
+                    }
+                    value={value}
+                  />
+                  {hasSavedValue ? (
+                    <Button
+                      disabled={updating}
+                      onClick={() => onPreferenceDelete(definition.key)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                  {updating ? (
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      saving
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
+          Assistant memory policy is unavailable from the backend.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MemoryInput({
+  definition,
+  disabled,
+  onChange,
+  value,
+}: {
+  definition: AssistantMemoryPolicy["preferences"][number];
+  disabled: boolean;
+  onChange: (value: AssistantMemoryValue) => void;
+  value: AssistantMemoryValue | "";
+}) {
+  if (definition.value_type === "boolean") {
+    return (
+      <label className="inline-flex min-h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold">
+        <input
+          checked={Boolean(value)}
+          className="h-4 w-4 accent-primary"
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+          type="checkbox"
+        />
+        enabled
+      </label>
+    );
+  }
+  if (definition.value_type === "enum") {
+    return (
+      <select
+        className="h-9 min-w-48 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={String(value)}
+      >
+        {definition.allowed_values.map((option) => (
+          <option key={String(option)} value={String(option)}>
+            {String(option).replaceAll("_", " ")}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (definition.value_type === "number") {
+    return (
+      <input
+        className="h-9 min-w-32 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+        disabled={disabled}
+        maxLength={definition.max_length}
+        onChange={(event) => onChange(Number(event.target.value))}
+        type="number"
+        value={String(value)}
+      />
+    );
+  }
+  return (
+    <input
+      className="h-9 min-w-48 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+      disabled={disabled}
+      maxLength={definition.max_length}
+      onChange={(event) => onChange(event.target.value)}
+      type="text"
+      value={String(value)}
+    />
   );
 }

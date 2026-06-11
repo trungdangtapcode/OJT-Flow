@@ -444,3 +444,19 @@ class AssistantSessionMessageRequest(ContractModel):
     content: str = ""
     workflow_refs: list[str] = Field(default_factory=list)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssistantMemoryPreferenceRequest(ContractModel):
+    value: str | int | float | bool
+    source: Literal["user", "system", "admin"] = "user"
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "value": "detailed",
+                    "source": "user",
+                }
+            ]
+        }
+    }

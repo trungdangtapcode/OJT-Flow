@@ -1051,6 +1051,49 @@ export type AssistantAnswerTemplate = {
   output_constraints: string[];
 };
 
+export type AssistantMemoryValue = string | number | boolean;
+
+export type AssistantMemoryPreferenceDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  category: string;
+  value_type: "string" | "boolean" | "number" | "enum";
+  allowed_values: AssistantMemoryValue[];
+  default_value?: AssistantMemoryValue | null;
+  max_length: number;
+  safety_tags: string[];
+};
+
+export type AssistantMemoryPolicy = {
+  version: string;
+  preferences: AssistantMemoryPreferenceDefinition[];
+  rejected_key_terms: string[];
+  rejected_value_patterns: string[];
+};
+
+export type AssistantMemoryPreference = {
+  owner_user_id: string;
+  key: string;
+  value: AssistantMemoryValue;
+  category: string;
+  source: "user" | "system" | "admin";
+  policy_version: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AssistantMemorySnapshot = {
+  policy_version: string;
+  preferences: AssistantMemoryPreference[];
+  context: Record<string, AssistantMemoryValue>;
+};
+
+export type AssistantMemoryPreferencePayload = {
+  value: AssistantMemoryValue;
+  source?: "user" | "system" | "admin";
+};
+
 export type AssistantToolResult = {
   tool_name: string;
   status: "completed" | "failed" | "requires_approval" | "skipped";

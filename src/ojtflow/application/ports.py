@@ -22,6 +22,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
     AssistantChatSessionSummary,
+    AssistantMemoryPreference,
     AssistantPlan,
     AssistantMessageRole,
     AssistantStreamReplay,
@@ -322,6 +323,27 @@ class AssistantSessionRepository(Protocol):
         owner_user_id: str,
         session_id: str,
     ) -> list[AssistantStreamReplay]: ...
+
+
+class AssistantMemoryRepository(Protocol):
+    def list_preferences(
+        self,
+        *,
+        owner_user_id: str,
+    ) -> list[AssistantMemoryPreference]: ...
+
+    def upsert_preference(
+        self,
+        *,
+        preference: AssistantMemoryPreference,
+    ) -> AssistantMemoryPreference: ...
+
+    def delete_preference(
+        self,
+        *,
+        owner_user_id: str,
+        key: str,
+    ) -> None: ...
 
 
 class BackgroundJobRepository(Protocol):

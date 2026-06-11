@@ -1778,6 +1778,10 @@ after the operator enables write execution. The confirmation surface should be
 data-driven from the backend tool catalog (`requires_approval`, risk level,
 permission scope, and approval reason), reset after each write-enabled turn,
 and block sending while `execute_write_actions=true` is unconfirmed.
+Assistant memory UI must use `/assistant/memory-policy` and `/assistant/memory`
+instead of browser storage. The browser may only render/edit backend-approved
+operational preferences and must describe the PHI boundary clearly: no raw
+uploaded content, patient identifiers, or clinical facts belong in memory.
 Long LLM planning must not look frozen: the UI should render backend
 `planning_step` events and streamed `planning_delta` planner text before
 `plan_ready`, so users can see what the model is doing before tools execute.

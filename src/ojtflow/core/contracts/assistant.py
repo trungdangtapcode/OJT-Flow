@@ -15,6 +15,7 @@ AssistantToolStatus = Literal["completed", "failed", "requires_approval", "skipp
 AssistantFindingSeverity = Literal["info", "warning", "error", "action_required"]
 AssistantMessageRole = Literal["user", "assistant", "system", "tool"]
 AssistantToolProgressEvent = Literal["before_execute", "after_execute"]
+AssistantMemoryValue = str | int | float | bool
 
 
 class AssistantToolSpec(ContractModel):
@@ -132,6 +133,50 @@ class AssistantAnswerTemplate(ContractModel):
     evidence_required: bool = False
     review_required_when: list[NonBlankStr] = Field(default_factory=list)
     output_constraints: list[NonBlankStr] = Field(default_factory=list)
+
+
+class AssistantMemoryPreferenceDefinition(ContractModel):
+    """Policy-defined preference the Assistant may remember for a user."""
+
+    key: NonBlankStr
+    label: NonBlankStr
+    description: NonBlankStr
+    category: NonBlankStr = "operational"
+    value_type: Literal["string", "boolean", "number", "enum"] = "string"
+    allowed_values: list[AssistantMemoryValue] = Field(default_factory=list)
+    default_value: AssistantMemoryValue | None = None
+    max_length: int = Field(default=80, ge=1, le=500)
+    safety_tags: list[NonBlankStr] = Field(default_factory=list)
+
+
+class AssistantMemoryPolicy(ContractModel):
+    """Data-driven allowlist and denial rules for Assistant memory."""
+
+    version: NonBlankStr
+    preferences: list[AssistantMemoryPreferenceDefinition] = Field(default_factory=list)
+    rejected_key_terms: list[NonBlankStr] = Field(default_factory=list)
+    rejected_value_patterns: list[NonBlankStr] = Field(default_factory=list)
+
+
+class AssistantMemoryPreference(ContractModel):
+    """Persisted user preference safe to pass into Assistant planning."""
+
+    owner_user_id: str
+    key: NonBlankStr
+    value: AssistantMemoryValue
+    category: NonBlankStr
+    source: Literal["user", "system", "admin"] = "user"
+    policy_version: NonBlankStr
+    created_at: str = Field(default_factory=lambda: utc_now().isoformat())
+    updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
+
+
+class AssistantMemorySnapshot(ContractModel):
+    """User-safe memory snapshot returned to UI and injected into Assistant context."""
+
+    policy_version: NonBlankStr
+    preferences: list[AssistantMemoryPreference] = Field(default_factory=list)
+    context: dict[str, AssistantMemoryValue] = Field(default_factory=dict)
 
 
 class AssistantChatSessionSummary(ContractModel):

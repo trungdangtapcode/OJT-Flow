@@ -10,6 +10,10 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
+from ojtflow.application.assistant_memory_service import (
+    AssistantMemoryService,
+    merge_assistant_memory_context,
+)
 from ojtflow.application.assistant_session_service import AssistantSessionService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.config import Settings
@@ -26,6 +30,7 @@ from ojtflow.infrastructure.mcp_catalogs import (
 )
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
+    get_assistant_memory_service,
     get_assistant_service,
     get_assistant_session_service,
     require_authentication,
@@ -34,6 +39,7 @@ from ojtflow.interfaces.api.limits import enforce_inline_json_limit
 from ojtflow.interfaces.api.responses import ok
 from ojtflow.interfaces.api.schemas import (
     AssistantChatRequest,
+    AssistantMemoryPreferenceRequest,
     AssistantSessionCreateRequest,
     AssistantSessionMessageRequest,
     AssistantSessionRenameRequest,
@@ -101,6 +107,58 @@ async def assistant_mcp_prompts(
     del authenticated
     catalog: McpPromptCatalog = load_mcp_prompt_catalog(settings.resolved_knowledge_dir)
     return ok(catalog)
+
+
+@router.get("/assistant/memory-policy")
+async def assistant_memory_policy(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: AssistantMemoryService = Depends(get_assistant_memory_service),
+) -> dict:
+    """Return the data-driven allowlist for PHI-safe Assistant memory."""
+
+    del authenticated
+    return ok(service.memory_policy())
+
+
+@router.get("/assistant/memory")
+async def assistant_memory(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: AssistantMemoryService = Depends(get_assistant_memory_service),
+) -> dict:
+    """Return the authenticated user's safe Assistant memory snapshot."""
+
+    return ok(service.snapshot(owner_user_id=authenticated.user.user_id))
+
+
+@router.put("/assistant/memory/{key}")
+async def upsert_assistant_memory(
+    key: str,
+    request: AssistantMemoryPreferenceRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: AssistantMemoryService = Depends(get_assistant_memory_service),
+) -> dict:
+    """Set one PHI-safe operational Assistant preference."""
+
+    return ok(
+        service.upsert_preference(
+            owner_user_id=authenticated.user.user_id,
+            key=key,
+            value=request.value,
+            source=request.source,
+        )
+    )
+
+
+@router.delete("/assistant/memory/{key}")
+async def delete_assistant_memory(
+    key: str,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: AssistantMemoryService = Depends(get_assistant_memory_service),
+) -> dict:
+    """Delete one safe Assistant preference."""
+
+    service.delete_preference(owner_user_id=authenticated.user.user_id, key=key)
+    return ok({"deleted": True, "key": key})
 
 
 @router.get("/assistant/sessions")
@@ -247,14 +305,19 @@ async def assistant_chat(
     http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: AssistantService = Depends(get_assistant_service),
+    memory_service: AssistantMemoryService = Depends(get_assistant_memory_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Use natural language to run allowlisted OJTFlow tools."""
 
     enforce_inline_json_limit(request, settings, field_name="assistant_request")
+    context = merge_assistant_memory_context(
+        request.context,
+        memory_service.assistant_context(owner_user_id=authenticated.user.user_id),
+    )
     result = await service.chat(
         message=request.message,
-        context=request.context,
+        context=context,
         execute_write_actions=request.execute_write_actions,
         owner_user_id=authenticated.user.user_id,
         request_id=getattr(http_request.state, "request_id", None),
@@ -269,6 +332,7 @@ async def assistant_chat_stream(
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: AssistantService = Depends(get_assistant_service),
     session_service: AssistantSessionService = Depends(get_assistant_session_service),
+    memory_service: AssistantMemoryService = Depends(get_assistant_memory_service),
     settings: Settings = Depends(get_api_settings),
 ) -> StreamingResponse:
     """Stream assistant planning, tool calls, answer deltas, and final response."""
@@ -280,6 +344,10 @@ async def assistant_chat_stream(
             owner_user_id=authenticated.user.user_id,
             session_id=session_id,
         )
+    context = merge_assistant_memory_context(
+        request.context,
+        memory_service.assistant_context(owner_user_id=authenticated.user.user_id),
+    )
     stream_id = new_id("astream")
     request_id = getattr(http_request.state, "request_id", None)
 
@@ -306,7 +374,7 @@ async def assistant_chat_stream(
         try:
             async for event in service.chat_stream(
                 message=request.message,
-                context=request.context,
+                context=context,
                 execute_write_actions=request.execute_write_actions,
                 owner_user_id=authenticated.user.user_id,
                 request_id=request_id,

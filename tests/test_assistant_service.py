@@ -1,17 +1,25 @@
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
+from ojtflow.application.assistant_memory_service import (
+    AssistantMemoryService,
+    merge_assistant_memory_context,
+)
 from ojtflow.application.assistant_session_service import AssistantSessionService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_tools import ASSISTANT_TOOL_SPECS, OJTFlowToolExecutor
 from ojtflow.core.contracts.assistant import (
+    AssistantMemoryPolicy,
+    AssistantMemoryPreferenceDefinition,
     AssistantPlan,
     AssistantToolPlan,
     AssistantToolProgressStage,
 )
-from ojtflow.core.errors import ToolExecutionError
+from ojtflow.core.errors import OJTFlowError, ToolExecutionError
+from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
 from ojtflow.infrastructure.llm.openai import (
     OpenAIResponsesPlanner,
     _stream_delta_from_line,
@@ -19,7 +27,13 @@ from ojtflow.infrastructure.llm.openai import (
     _stream_failure_from_event,
     _stream_final_text_from_event,
 )
-from ojtflow.infrastructure.storage.in_memory import InMemoryAssistantSessionRepository
+from ojtflow.infrastructure.storage.in_memory import (
+    InMemoryAssistantMemoryRepository,
+    InMemoryAssistantSessionRepository,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class _FakeToolExecutor:
@@ -587,6 +601,65 @@ def test_assistant_stream_replay_preserves_cancelled_status() -> None:
     )
     assert persisted[0].status == "cancelled"
     assert persisted[0].events[-1]["type"] == "cancelled"
+
+
+def test_assistant_memory_stores_only_safe_operational_preferences() -> None:
+    service = AssistantMemoryService(
+        InMemoryAssistantMemoryRepository(),
+        policy=load_assistant_memory_policy(ROOT / "knowledge"),
+    )
+
+    preference = service.upsert_preference(
+        owner_user_id="usr_test",
+        key="evidence_detail_level",
+        value="detailed",
+    )
+    snapshot = service.snapshot(owner_user_id="usr_test")
+    context = merge_assistant_memory_context(
+        {"assistant_memory": {"preferences": {"evidence_detail_level": "spoofed"}}},
+        service.assistant_context(owner_user_id="usr_test"),
+    )
+
+    assert preference.value == "detailed"
+    assert snapshot.context == {"evidence_detail_level": "detailed"}
+    assert context["assistant_memory"]["preferences"] == {
+        "evidence_detail_level": "detailed"
+    }
+    assert context["assistant_memory"]["safety"] == (
+        "operational_preferences_only_no_phi_no_uploaded_content"
+    )
+
+    with pytest.raises(OJTFlowError, match="not allowed"):
+        service.upsert_preference(
+            owner_user_id="usr_test",
+            key="patient_id",
+            value="P001",
+        )
+
+    phi_policy = AssistantMemoryPolicy(
+        version="assistant_memory.test",
+        preferences=[
+            AssistantMemoryPreferenceDefinition(
+                key="operator_note",
+                label="Operator note",
+                description="Safe operational note.",
+                value_type="string",
+                max_length=80,
+            )
+        ],
+        rejected_key_terms=["patient"],
+        rejected_value_patterns=[r"\b\d{3}-\d{2}-\d{4}\b"],
+    )
+    phi_service = AssistantMemoryService(
+        InMemoryAssistantMemoryRepository(),
+        policy=phi_policy,
+    )
+    with pytest.raises(OJTFlowError, match="operational preferences"):
+        phi_service.upsert_preference(
+            owner_user_id="usr_test",
+            key="operator_note",
+            value="SSN 123-45-6789",
+        )
 
 
 @pytest.mark.asyncio

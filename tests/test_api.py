@@ -4401,6 +4401,11 @@ async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monk
         and "F100" in resource["roadmap_refs"]
         for resource in resources["resources"]
     )
+    assert any(
+        resource["uri"] == "ojtflow://assistant/memory-policy"
+        and "F107" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
 
     assert prompts_response.status_code == 200
     prompts = prompts_response.json()["data"]
@@ -4413,6 +4418,61 @@ async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monk
     assert validation_prompt["recommended_tools"] == ["validate_with_evidence"]
     assert validation_prompt["evidence_required"] is True
     assert any(argument["name"] == "data" for argument in validation_prompt["arguments"])
+
+
+@pytest.mark.asyncio
+async def test_assistant_memory_routes_persist_safe_preferences(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        policy_response = await client.get("/api/v1/assistant/memory-policy")
+        empty_snapshot_response = await client.get("/api/v1/assistant/memory")
+        upsert_response = await client.put(
+            "/api/v1/assistant/memory/evidence_detail_level",
+            json={"value": "detailed"},
+        )
+        snapshot_response = await client.get("/api/v1/assistant/memory")
+        rejected_response = await client.put(
+            "/api/v1/assistant/memory/patient_id",
+            json={"value": "P001"},
+        )
+        deleted_response = await client.delete(
+            "/api/v1/assistant/memory/evidence_detail_level"
+        )
+        after_delete_response = await client.get("/api/v1/assistant/memory")
+
+    assert policy_response.status_code == 200
+    policy = _assert_success_envelope(policy_response)["data"]
+    assert policy["version"] == "assistant_memory.v1"
+    assert any(
+        preference["key"] == "evidence_detail_level"
+        for preference in policy["preferences"]
+    )
+
+    assert empty_snapshot_response.status_code == 200
+    assert _assert_success_envelope(empty_snapshot_response)["data"]["context"] == {}
+
+    assert upsert_response.status_code == 200
+    saved = _assert_success_envelope(upsert_response)["data"]
+    assert saved["key"] == "evidence_detail_level"
+    assert saved["value"] == "detailed"
+
+    snapshot = _assert_success_envelope(snapshot_response)["data"]
+    assert snapshot["context"] == {"evidence_detail_level": "detailed"}
+    assert snapshot["preferences"][0]["policy_version"] == "assistant_memory.v1"
+
+    assert rejected_response.status_code == 400
+    assert rejected_response.json()["error"]["code"] == "ojtflow_error"
+
+    assert deleted_response.status_code == 200
+    assert _assert_success_envelope(deleted_response)["data"] == {
+        "deleted": True,
+        "key": "evidence_detail_level",
+    }
+    assert _assert_success_envelope(after_delete_response)["data"]["context"] == {}
 
 
 @pytest.mark.asyncio

@@ -50,6 +50,18 @@
       "roadmap_refs": ["F100", "F113"]
     },
     {
+      "resource_id": "assistant_memory_policy",
+      "uri": "ojtflow://assistant/memory-policy",
+      "name": "assistant_memory_policy",
+      "title": "Assistant Memory Policy",
+      "description": "Policy-allowlisted operational preferences the Assistant may remember, plus denial rules for PHI and raw content.",
+      "mime_type": "application/json",
+      "provider_key": "assistant_memory_policy",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "memory", "governance"],
+      "roadmap_refs": ["F107", "F113"]
+    },
+    {
       "resource_id": "retrieval_strategies",
       "uri": "ojtflow://retrieval/strategies",
       "name": "retrieval_strategies",

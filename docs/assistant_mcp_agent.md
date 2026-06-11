@@ -61,6 +61,11 @@ Tool execution remains deterministic:
   `execute_write_actions=true`, using the backend tool catalog to list
   write-gated tools and approval reasons.
 - Review approval/rejection tools are not exposed in v0.
+- Assistant memory is limited to data-driven, policy-allowlisted operational
+  preferences from `knowledge/assistant/memory_policy.json`. The API injects
+  these preferences into chat planning and removes caller-provided
+  `assistant_memory` context first. It must never persist raw PHI, uploaded
+  content, patient identifiers, or clinical facts as memory.
 
 ## API Entry Point
 

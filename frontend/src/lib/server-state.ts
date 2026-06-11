@@ -12,11 +12,14 @@ import {
   createRetrievalReindexJob,
   createWorkflow,
   deleteAssistantSession,
+  deleteAssistantMemoryPreference,
   deleteRetrievalJudgment,
   evaluateRetrievalJudgments,
   extractFileText,
   getAssistantSession,
   getAssistantSessionStreamReplays,
+  getAssistantMemory,
+  getAssistantMemoryPolicy,
   getAssistantMcpPrompts,
   getAssistantMcpResources,
   getJob,
@@ -57,6 +60,7 @@ import {
   submitReview,
   updateRuntimeAssistantSettings,
   updateRuntimeRetrievalSettings,
+  upsertAssistantMemoryPreference,
   upsertRetrievalJudgment,
   uploadFileWorkflow,
 } from "../api";
@@ -66,6 +70,10 @@ import type {
   AssistantChatMessage,
   AssistantChatSessionDetail,
   AssistantChatSessionSummary,
+  AssistantMemoryPolicy,
+  AssistantMemoryPreference,
+  AssistantMemoryPreferencePayload,
+  AssistantMemorySnapshot,
   AssistantSessionCreatePayload,
   AssistantSessionMessagePayload,
   AssistantSessionRenamePayload,
@@ -96,6 +104,11 @@ type AssistantStreamMutationPayload = {
 type AppendAssistantSessionMessageInput = {
   sessionId: string;
   payload: AssistantSessionMessagePayload;
+};
+
+type UpsertAssistantMemoryInput = {
+  key: string;
+  payload: AssistantMemoryPreferencePayload;
 };
 
 type RetrievalReindexJobInput = {
@@ -144,6 +157,8 @@ export const queryKeys = {
   assistantAnswerTemplates: ["assistant-answer-templates"] as const,
   assistantMcpPrompts: ["assistant-mcp-prompts"] as const,
   assistantMcpResources: ["assistant-mcp-resources"] as const,
+  assistantMemoryPolicy: ["assistant-memory-policy"] as const,
+  assistantMemory: ["assistant-memory"] as const,
   assistantExamples: ["assistant-examples"] as const,
   assistantSessions: (params: Record<string, unknown>) =>
     ["assistant-sessions", params] as const,
@@ -616,6 +631,40 @@ export function useAssistantMcpPromptsQuery() {
   return useQuery({
     queryKey: queryKeys.assistantMcpPrompts,
     queryFn: getAssistantMcpPrompts,
+  });
+}
+
+export function useAssistantMemoryPolicyQuery() {
+  return useQuery<AssistantMemoryPolicy>({
+    queryKey: queryKeys.assistantMemoryPolicy,
+    queryFn: getAssistantMemoryPolicy,
+  });
+}
+
+export function useAssistantMemoryQuery() {
+  return useQuery<AssistantMemorySnapshot>({
+    queryKey: queryKeys.assistantMemory,
+    queryFn: getAssistantMemory,
+  });
+}
+
+export function useUpsertAssistantMemoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<AssistantMemoryPreference, Error, UpsertAssistantMemoryInput>({
+    mutationFn: ({ key, payload }) => upsertAssistantMemoryPreference(key, payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.assistantMemory });
+    },
+  });
+}
+
+export function useDeleteAssistantMemoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<{ deleted: boolean; key: string }, Error, string>({
+    mutationFn: (key) => deleteAssistantMemoryPreference(key),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.assistantMemory });
+    },
   });
 }
 

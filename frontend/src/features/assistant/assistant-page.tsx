@@ -21,6 +21,8 @@ import {
   useAssistantSessionQuery,
   useAssistantSessionsQuery,
   useAssistantChatStreamMutation,
+  useAssistantMemoryPolicyQuery,
+  useAssistantMemoryQuery,
   useClipboardImageParseJobMutation,
   useAssistantExamplesQuery,
   useAssistantToolsQuery,
@@ -28,7 +30,9 @@ import {
   useDeleteAssistantSessionMutation,
   useExtractorInventoryQuery,
   useExtractFileTextMutation,
+  useDeleteAssistantMemoryMutation,
   useRuntimeConfigQuery,
+  useUpsertAssistantMemoryMutation,
   workflowErrorMessage,
 } from "../../lib/server-state";
 import type {
@@ -78,12 +82,16 @@ export function AssistantPage() {
   const runtimeQuery = useRuntimeConfigQuery();
   const toolsQuery = useAssistantToolsQuery();
   const examplesQuery = useAssistantExamplesQuery();
+  const memoryPolicyQuery = useAssistantMemoryPolicyQuery();
+  const memoryQuery = useAssistantMemoryQuery();
   const extractorsQuery = useExtractorInventoryQuery();
   const assistantMutation = useAssistantChatStreamMutation();
   const clipboardParseMutation = useClipboardImageParseJobMutation();
   const extractMutation = useExtractFileTextMutation();
   const createSessionMutation = useCreateAssistantSessionMutation();
   const deleteSessionMutation = useDeleteAssistantSessionMutation();
+  const upsertMemoryMutation = useUpsertAssistantMemoryMutation();
+  const deleteMemoryMutation = useDeleteAssistantMemoryMutation();
   const appendSessionMessageMutation = useAppendAssistantSessionMessageMutation();
   const [message, setMessage] = React.useState("");
   const [contextText, setContextText] = React.useState("");
@@ -93,6 +101,7 @@ export function AssistantPage() {
   const [executeWriteActions, setExecuteWriteActions] = React.useState(false);
   const [writeConfirmationAccepted, setWriteConfirmationAccepted] =
     React.useState(false);
+  const [memoryMutationKey, setMemoryMutationKey] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [sessionSearch, setSessionSearch] = React.useState("");
   const deferredSessionSearch = React.useDeferredValue(sessionSearch.trim());
@@ -241,6 +250,33 @@ export function AssistantPage() {
     if (isBusy) return;
     setAttachmentFromFile(event.dataTransfer.files[0] ?? null, "upload");
   };
+
+  const handleMemoryPreferenceChange = React.useCallback(
+    (key: string, value: string | number | boolean) => {
+      setMemoryMutationKey(key);
+      upsertMemoryMutation.mutate(
+        { key, payload: { value, source: "user" } },
+        {
+          onError: (error) => setFormError(workflowErrorMessage(error)),
+          onSettled: () => setMemoryMutationKey(null),
+          onSuccess: () => setFormError(null),
+        },
+      );
+    },
+    [upsertMemoryMutation],
+  );
+
+  const handleMemoryPreferenceDelete = React.useCallback(
+    (key: string) => {
+      setMemoryMutationKey(key);
+      deleteMemoryMutation.mutate(key, {
+        onError: (error) => setFormError(workflowErrorMessage(error)),
+        onSettled: () => setMemoryMutationKey(null),
+        onSuccess: () => setFormError(null),
+      });
+    },
+    [deleteMemoryMutation],
+  );
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -746,8 +782,16 @@ export function AssistantPage() {
                       <AssistantControlsPanel
                         contextText={contextText}
                         executeWriteActions={executeWriteActions}
+                        isMemoryUpdating={
+                          upsertMemoryMutation.isPending || deleteMemoryMutation.isPending
+                        }
+                        memoryMutationKey={memoryMutationKey}
+                        memoryPolicy={memoryPolicyQuery.data}
+                        memorySnapshot={memoryQuery.data}
                         onContextTextChange={setContextText}
                         onExecuteWriteActionsChange={setExecuteWriteActions}
+                        onMemoryPreferenceChange={handleMemoryPreferenceChange}
+                        onMemoryPreferenceDelete={handleMemoryPreferenceDelete}
                         onWriteConfirmationAcceptedChange={
                           setWriteConfirmationAccepted
                         }

@@ -818,6 +818,52 @@ Returns the MCP prompt catalog from `knowledge/assistant/mcp_prompts.json`.
 Prompts define standard operator tasks, arguments, recommended tools, evidence
 requirements, and write-action policy. They do not grant execution authority.
 
+`GET /api/v1/assistant/memory-policy`
+
+Returns the data-driven allowlist from `knowledge/assistant/memory_policy.json`.
+Only keys in this policy can be persisted as Assistant memory.
+
+`GET /api/v1/assistant/memory`
+
+Returns the authenticated user's safe operational preference snapshot:
+
+```json
+{
+  "policy_version": "assistant_memory.v1",
+  "preferences": [
+    {
+      "key": "evidence_detail_level",
+      "value": "detailed",
+      "category": "evidence",
+      "source": "user"
+    }
+  ],
+  "context": {
+    "evidence_detail_level": "detailed"
+  }
+}
+```
+
+`PUT /api/v1/assistant/memory/{key}`
+
+Sets one policy-allowlisted operational preference:
+
+```json
+{
+  "value": "detailed",
+  "source": "user"
+}
+```
+
+The backend rejects unknown keys, denied key terms such as patient identifiers,
+and value patterns that look like PHI, uploaded content, clinical facts, or raw
+data. The route is for preferences such as explanation style, evidence detail,
+and default retrieval strategy only.
+
+`DELETE /api/v1/assistant/memory/{key}`
+
+Deletes one stored preference for the authenticated user.
+
 `GET /api/v1/assistant/sessions`
 
 Lists persisted Assistant chat sessions for the authenticated user. Query
@@ -925,6 +971,12 @@ headers have been sent, the backend emits a structured `error` event because
 the HTTP status can no longer be changed. If the browser aborts the stream, the
 backend records a `cancelled` replay status and appends a cancellation event to
 the replay when possible.
+
+Before planning, the API injects the authenticated user's safe Assistant memory
+under `context.assistant_memory`. Caller-provided `assistant_memory` context is
+removed first so clients cannot spoof stored preferences. Memory contains only
+backend-validated operational preferences, never raw uploaded content, patient
+identifiers, or clinical facts.
 
 ```json
 {

@@ -15,6 +15,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
     AssistantChatSessionSummary,
+    AssistantMemoryPreference,
     AssistantMessageRole,
     AssistantStreamReplay,
 )
@@ -516,6 +517,39 @@ class InMemoryAssistantSessionRepository:
         if not session or session.owner_user_id != owner_user_id:
             raise NotFoundError(f"Assistant chat session not found: {session_id}")
         return deepcopy(session)
+
+
+class InMemoryAssistantMemoryRepository:
+    """User-scoped in-memory Assistant preference memory."""
+
+    def __init__(self) -> None:
+        self._preferences: dict[tuple[str, str], AssistantMemoryPreference] = {}
+
+    def list_preferences(
+        self,
+        *,
+        owner_user_id: str,
+    ) -> list[AssistantMemoryPreference]:
+        preferences = [
+            preference
+            for (owner, _), preference in self._preferences.items()
+            if owner == owner_user_id
+        ]
+        preferences.sort(key=lambda preference: preference.key)
+        return [deepcopy(preference) for preference in preferences]
+
+    def upsert_preference(
+        self,
+        *,
+        preference: AssistantMemoryPreference,
+    ) -> AssistantMemoryPreference:
+        self._preferences[(preference.owner_user_id, preference.key)] = deepcopy(
+            preference
+        )
+        return deepcopy(preference)
+
+    def delete_preference(self, *, owner_user_id: str, key: str) -> None:
+        self._preferences.pop((owner_user_id, key), None)
 
 
 class InMemoryBackgroundJobRepository:

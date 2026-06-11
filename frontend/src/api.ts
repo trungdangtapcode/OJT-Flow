@@ -5,6 +5,10 @@ import type {
   AssistantChatMessage,
   AssistantChatSessionDetail,
   AssistantChatSessionSummary,
+  AssistantMemoryPolicy,
+  AssistantMemoryPreference,
+  AssistantMemoryPreferencePayload,
+  AssistantMemorySnapshot,
   AssistantExample,
   AssistantResponse,
   AssistantSessionCreatePayload,
@@ -782,6 +786,33 @@ export function getAssistantMcpResources(): Promise<McpResourceCatalog> {
 
 export function getAssistantMcpPrompts(): Promise<McpPromptCatalog> {
   return request<McpPromptCatalog>("/assistant/mcp/prompts");
+}
+
+export function getAssistantMemoryPolicy(): Promise<AssistantMemoryPolicy> {
+  return request<AssistantMemoryPolicy>("/assistant/memory-policy");
+}
+
+export function getAssistantMemory(): Promise<AssistantMemorySnapshot> {
+  return request<AssistantMemorySnapshot>("/assistant/memory");
+}
+
+export function upsertAssistantMemoryPreference(
+  key: string,
+  payload: AssistantMemoryPreferencePayload,
+): Promise<AssistantMemoryPreference> {
+  return request<AssistantMemoryPreference>(`/assistant/memory/${pathSegment(key)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAssistantMemoryPreference(key: string): Promise<{
+  deleted: boolean;
+  key: string;
+}> {
+  return request(`/assistant/memory/${pathSegment(key)}`, {
+    method: "DELETE",
+  });
 }
 
 export function listAssistantTools(): Promise<AssistantToolSpec[]> {

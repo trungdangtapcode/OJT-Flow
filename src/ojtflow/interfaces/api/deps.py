@@ -9,6 +9,7 @@ from fastapi import Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ojtflow.application.auth_service import AuthService
+from ojtflow.application.assistant_memory_service import AssistantMemoryService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_session_service import AssistantSessionService
 from ojtflow.application.background_job_service import BackgroundJobService
@@ -22,6 +23,7 @@ from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
+from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
 from ojtflow.infrastructure.assistant.policies import load_assistant_tool_permission_policies
 from ojtflow.infrastructure.assistant.progress import load_assistant_tool_progress_policies
 from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
@@ -40,6 +42,7 @@ from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
+    InMemoryAssistantMemoryRepository,
     InMemoryAssistantSessionRepository,
     InMemoryUploadedArtifactRepository,
     InMemoryBackgroundJobRepository,
@@ -49,6 +52,7 @@ from ojtflow.infrastructure.storage.in_memory import (
     InMemoryWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.postgres import (
+    PostgresAssistantMemoryRepository,
     PostgresAssistantSessionRepository,
     PostgresUploadedArtifactRepository,
     PostgresBackboneStore,
@@ -59,6 +63,7 @@ from ojtflow.infrastructure.storage.postgres import (
     PostgresWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.sqlite import (
+    SQLiteAssistantMemoryRepository,
     SQLiteAssistantSessionRepository,
     SQLiteUploadedArtifactRepository,
     SQLiteBackboneStore,
@@ -306,6 +311,31 @@ def _build_assistant_session_service() -> AssistantSessionService:
 
 
 @lru_cache(maxsize=1)
+def _build_assistant_memory_service() -> AssistantMemoryService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryAssistantMemoryRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteAssistantMemoryRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresAssistantMemoryRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return AssistantMemoryService(
+        repository,
+        policy=load_assistant_memory_policy(settings.resolved_knowledge_dir),
+    )
+
+
+@lru_cache(maxsize=1)
 def _build_background_job_service() -> BackgroundJobService:
     settings = get_settings()
     if settings.storage_backend == "memory":
@@ -387,6 +417,12 @@ async def get_assistant_session_service() -> AssistantSessionService:
     """Return persisted Assistant chat session service."""
 
     return _build_assistant_session_service()
+
+
+async def get_assistant_memory_service() -> AssistantMemoryService:
+    """Return persisted PHI-safe Assistant memory service."""
+
+    return _build_assistant_memory_service()
 
 
 async def get_background_job_service() -> BackgroundJobService:
@@ -522,5 +558,6 @@ def clear_workflow_service_cache() -> None:
     _build_retrieval_judgment_service.cache_clear()
     _build_assistant_service.cache_clear()
     _build_assistant_session_service.cache_clear()
+    _build_assistant_memory_service.cache_clear()
     _build_background_job_service.cache_clear()
     _build_document_intake_service.cache_clear()
