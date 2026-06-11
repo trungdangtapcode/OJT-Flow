@@ -7,6 +7,17 @@ export type AssistantAttachmentSummary = {
   extractor_used: string;
   char_count: number;
   warnings: string[];
+  source: string | null;
+  artifact_id: string | null;
+  trace_id: string | null;
+  job_id: string | null;
+};
+
+export type AssistantAttachmentSource = "upload" | "clipboard";
+
+export type AssistantSelectedAttachment = {
+  file: File;
+  source: AssistantAttachmentSource;
 };
 
 export function parseContext(value: string):
@@ -44,6 +55,12 @@ export function assistantContextWithAttachment(
     char_count: document.char_count,
     word_count: document.word_count,
     warnings: document.warnings,
+    source: document.source ?? null,
+    artifact_id: document.artifact_id ?? null,
+    trace_id: document.trace_id ?? null,
+    job_id: document.job_id ?? null,
+    text_dataset_id: document.text_dataset_id ?? null,
+    text_storage_ref: document.text_storage_ref ?? null,
   };
   return {
     ...context,
@@ -86,6 +103,11 @@ export function attachmentSummariesFromContext(
       const warnings = Array.isArray(record.warnings)
         ? record.warnings.filter((warning): warning is string => typeof warning === "string")
         : [];
+      const source = typeof record.source === "string" ? record.source : null;
+      const artifactId =
+        typeof record.artifact_id === "string" ? record.artifact_id : null;
+      const traceId = typeof record.trace_id === "string" ? record.trace_id : null;
+      const jobId = typeof record.job_id === "string" ? record.job_id : null;
       return filename
         ? {
             filename,
@@ -93,6 +115,10 @@ export function attachmentSummariesFromContext(
             extractor_used: extractorUsed,
             char_count: charCount,
             warnings,
+            source,
+            artifact_id: artifactId,
+            trace_id: traceId,
+            job_id: jobId,
           }
         : null;
     })
@@ -141,6 +167,18 @@ export function fileFromClipboard(clipboardData: DataTransfer): File | null {
     });
   }
   return null;
+}
+
+export async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }
 
 function extensionFromMimeType(mimeType: string) {

@@ -83,11 +83,16 @@ Response envelope:
           }
         }
       }
-    }
+    },
+    "extracted_document": null
   },
   "error": null
 }
 ```
+
+`extracted_document` is nullable by design. Job endpoints return artifact and
+trace metadata by default; routes that explicitly request extracted text can
+include it when `execute_now=true` and extraction completed synchronously.
 
 ### Create Batch Upload Parse Jobs
 
@@ -125,12 +130,16 @@ JSON body:
   "filename": "clipboard.png",
   "mime_type": "image/png",
   "extractor": "auto",
-  "execute_now": false
+  "execute_now": true,
+  "include_extracted_document": true
 }
 ```
 
 The response shape is the same as `POST /api/v1/parse/upload/jobs`, with
-`artifact.source` set to `clipboard`.
+`artifact.source` and `extracted_document.source` set to `clipboard` when
+`execute_now=true` and `include_extracted_document=true`. The Assistant frontend
+uses this route for pasted images so clipboard OCR has durable artifact, job,
+and trace IDs before the LLM receives the extracted text.
 
 ### Preview Redaction
 

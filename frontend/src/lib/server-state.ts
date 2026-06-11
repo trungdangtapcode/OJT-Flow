@@ -8,6 +8,7 @@ import {
   archiveAssistantSession,
   chatWithAssistant,
   createAssistantSession,
+  createClipboardImageParseJob,
   createRetrievalReindexJob,
   createWorkflow,
   deleteAssistantSession,
@@ -63,6 +64,7 @@ import type {
   AssistantStreamEvent,
   AssistantStreamReplay,
   BackgroundJob,
+  UploadParseJobResponse,
   RetrievalReindexJobPayload,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentPayload,
@@ -87,6 +89,14 @@ type AppendAssistantSessionMessageInput = {
 
 type RetrievalReindexJobInput = {
   payload: RetrievalReindexJobPayload;
+};
+
+type ClipboardImageParseJobInput = {
+  dataBase64: string;
+  filename: string;
+  mimeType: string;
+  extractor: string;
+  executeNow: boolean;
 };
 
 export const queryKeys = {
@@ -194,6 +204,20 @@ export function useExtractFileTextMutation() {
   return useMutation({
     mutationFn: ({ file, extractor }: { file: File; extractor: string }) =>
       extractFileText(file, { extractor }),
+  });
+}
+
+export function useClipboardImageParseJobMutation() {
+  return useMutation<UploadParseJobResponse, Error, ClipboardImageParseJobInput>({
+    mutationFn: (payload) =>
+      createClipboardImageParseJob({
+        data_base64: payload.dataBase64,
+        filename: payload.filename,
+        mime_type: payload.mimeType,
+        extractor: payload.extractor,
+        execute_now: payload.executeNow,
+        include_extracted_document: true,
+      }),
   });
 }
 

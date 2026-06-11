@@ -156,6 +156,34 @@ class DocumentIntakeService:
     ) -> list[ParsingPipelineTrace]:
         return self.artifacts.list_traces(owner_user_id=owner_user_id, artifact_id=artifact_id)
 
+    def extracted_document_from_trace(
+        self,
+        *,
+        artifact: UploadedArtifact,
+        trace: ParsingPipelineTrace | None,
+    ) -> dict[str, Any] | None:
+        """Build caller-facing extracted text metadata from a completed trace."""
+
+        if trace is None or not trace.text_storage_ref:
+            return None
+        text = self.datasets.get_text(trace.text_storage_ref)
+        return {
+            "filename": artifact.filename,
+            "source_format": trace.source_format,
+            "extractor_used": trace.extractor_chosen,
+            "page_count": trace.page_count,
+            "char_count": len(text),
+            "word_count": len(text.split()),
+            "text": text,
+            "warnings": trace.warnings,
+            "artifact_id": artifact.artifact_id,
+            "job_id": trace.job_id,
+            "trace_id": trace.trace_id,
+            "text_dataset_id": trace.text_dataset_id,
+            "text_storage_ref": trace.text_storage_ref,
+            "source": artifact.source,
+        }
+
     def _run_parse_job(self, job: BackgroundJob) -> dict[str, Any]:
         artifact_id = str(job.input.get("artifact_id") or "")
         prefer_extractor = str(job.input.get("prefer_extractor") or "auto")

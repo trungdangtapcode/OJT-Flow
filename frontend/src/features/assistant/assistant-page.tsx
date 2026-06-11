@@ -19,6 +19,7 @@ import {
   useAssistantSessionQuery,
   useAssistantSessionsQuery,
   useAssistantChatStreamMutation,
+  useClipboardImageParseJobMutation,
   useAssistantExamplesQuery,
   useAssistantToolsQuery,
   useCreateAssistantSessionMutation,
@@ -39,10 +40,12 @@ import {
   assistantContextWithAttachment,
   attachmentSummariesFromContext,
   fileFromClipboard,
+  fileToBase64,
   formatContext,
   parseContext,
   validateAssistantAttachment,
 } from "./assistant-attachments";
+import type { AssistantSelectedAttachment } from "./assistant-attachments";
 import { formatCount } from "./assistant-format";
 import { ChatEmptyState } from "./assistant-empty-state";
 import {
@@ -75,6 +78,7 @@ export function AssistantPage() {
   const examplesQuery = useAssistantExamplesQuery();
   const extractorsQuery = useExtractorInventoryQuery();
   const assistantMutation = useAssistantChatStreamMutation();
+  const clipboardParseMutation = useClipboardImageParseJobMutation();
   const extractMutation = useExtractFileTextMutation();
   const createSessionMutation = useCreateAssistantSessionMutation();
   const renameSessionMutation = useRenameAssistantSessionMutation();
@@ -82,7 +86,8 @@ export function AssistantPage() {
   const appendSessionMessageMutation = useAppendAssistantSessionMessageMutation();
   const [message, setMessage] = React.useState("");
   const [contextText, setContextText] = React.useState("");
-  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [selectedAttachment, setSelectedAttachment] =
+    React.useState<AssistantSelectedAttachment | null>(null);
   const [executeWriteActions, setExecuteWriteActions] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [sessionSearch, setSessionSearch] = React.useState("");
@@ -170,12 +175,14 @@ export function AssistantPage() {
   const latestTranscriptItem = transcript[transcript.length - 1] ?? null;
   const latestStreamEventCount = latestTranscriptItem?.stream_events?.length ?? 0;
   const activeToolName = assistantActiveToolName(latestTranscriptItem, toolsQuery.data ?? []);
+  const selectedFile = selectedAttachment?.file ?? null;
   const uploadExtensions =
     runtimeQuery.data?.upload.allowed_extensions ?? extractorsQuery.data?.supported_extensions ?? [];
   const acceptedUploadExtensions = uploadExtensions.join(",") || undefined;
   const maxUploadBytes = runtimeQuery.data?.upload.max_upload_bytes ?? null;
   const isBusy =
     assistantMutation.isPending ||
+    clipboardParseMutation.isPending ||
     extractMutation.isPending ||
     createSessionMutation.isPending ||
     deleteSessionMutation.isPending;
@@ -195,9 +202,10 @@ export function AssistantPage() {
     }
     setFormError(null);
     let extractedDocument: ExtractedDocument | null = null;
-    if (selectedFile) {
+    if (selectedAttachment) {
+      const file = selectedAttachment.file;
       const validationError = validateAssistantAttachment(
-        selectedFile,
+        file,
         runtimeQuery.data?.upload.allowed_extensions ?? extractorsQuery.data?.supported_extensions ?? [],
         runtimeQuery.data?.upload.max_upload_bytes ?? null,
       );
@@ -206,10 +214,22 @@ export function AssistantPage() {
         return;
       }
       try {
-        extractedDocument = await extractMutation.mutateAsync({
-          file: selectedFile,
-          extractor: "auto",
-        });
+        if (selectedAttachment.source === "clipboard" && file.type.startsWith("image/")) {
+          const parseJob = await clipboardParseMutation.mutateAsync({
+            dataBase64: await fileToBase64(file),
+            filename: file.name,
+            mimeType: file.type || "image/png",
+            extractor: "auto",
+            executeNow: true,
+          });
+          extractedDocument = parseJob.extracted_document ?? null;
+        }
+        if (!extractedDocument) {
+          extractedDocument = await extractMutation.mutateAsync({
+            file,
+            extractor: "auto",
+          });
+        }
       } catch (error) {
         setFormError(workflowErrorMessage(error));
         return;
@@ -287,7 +307,7 @@ export function AssistantPage() {
       streamed_answer: "",
     });
     setMessage("");
-    setSelectedFile(null);
+    setSelectedAttachment(null);
     try {
       const response = await assistantMutation.mutateAsync({
         payload: {
@@ -479,7 +499,9 @@ export function AssistantPage() {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <Badge variant={isBusy ? "warning" : "muted"}>
-                {extractMutation.isPending
+                {clipboardParseMutation.isPending
+                  ? "creating artifact"
+                  : extractMutation.isPending
                   ? "extracting"
                   : assistantMutation.isPending
                     ? "streaming"
@@ -545,7 +567,7 @@ export function AssistantPage() {
                         maxUploadBytes,
                       );
                       event.preventDefault();
-                      setSelectedFile(file);
+                      setSelectedAttachment({ file, source: "clipboard" });
                       setFormError(validationError);
                     }}
                     placeholder="Ask about your data. Paste an image, attach a file, Enter to send, Shift+Enter for newline."
@@ -560,7 +582,8 @@ export function AssistantPage() {
                   {selectedFile ? (
                     <AttachmentPreview
                       file={selectedFile}
-                      onRemove={() => setSelectedFile(null)}
+                      onRemove={() => setSelectedAttachment(null)}
+                      source={selectedAttachment?.source ?? "upload"}
                     />
                   ) : null}
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -574,7 +597,7 @@ export function AssistantPage() {
                           const validationError = file
                             ? validateAssistantAttachment(file, uploadExtensions, maxUploadBytes)
                             : null;
-                          setSelectedFile(file);
+                          setSelectedAttachment(file ? { file, source: "upload" } : null);
                           setFormError(validationError);
                           event.target.value = "";
                         }}
@@ -629,7 +652,11 @@ export function AssistantPage() {
                         ) : (
                           <Send className="h-4 w-4" />
                         )}
-                        {extractMutation.isPending ? "Parsing" : "Send"}
+                        {clipboardParseMutation.isPending
+                          ? "Saving paste"
+                          : extractMutation.isPending
+                            ? "Parsing"
+                            : "Send"}
                       </Button>
                     </div>
                   </div>
@@ -673,6 +700,12 @@ function ConversationTurn({ item }: { item: AssistantTranscriptItem }) {
                         {attachment.warnings.map((warning) => (
                           <span key={warning}>Warning: {warning}</span>
                         ))}
+                      </div>
+                    ) : null}
+                    {attachment.artifact_id ? (
+                      <div className="mt-1 truncate font-mono text-[11px] text-teal-800">
+                        {attachment.source ?? "artifact"} / {attachment.artifact_id}
+                        {attachment.trace_id ? ` / ${attachment.trace_id}` : ""}
                       </div>
                     ) : null}
                   </div>

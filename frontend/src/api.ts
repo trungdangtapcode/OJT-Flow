@@ -42,6 +42,7 @@ import type {
   RuntimeRetrievalSettingsUpdate,
   SchemaEntry,
   StartWorkflowPayload,
+  UploadParseJobResponse,
   WorkflowEvent,
   WorkflowOutputArtifact,
   WorkflowStats,
@@ -824,6 +825,20 @@ export async function extractFileText(
     );
   }
   return envelope.data as ExtractedDocument;
+}
+
+export function createClipboardImageParseJob(payload: {
+  data_base64: string;
+  filename: string;
+  mime_type: string;
+  extractor: string;
+  execute_now: boolean;
+  include_extracted_document?: boolean;
+}): Promise<UploadParseJobResponse> {
+  return request<UploadParseJobResponse>("/parse/clipboard/images/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getRuntimeConfig(): Promise<RuntimeConfig> {

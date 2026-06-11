@@ -270,6 +270,40 @@ async def test_clipboard_image_parse_job_endpoint_creates_artifact() -> None:
     assert body["data"]["artifact"]["source"] == "clipboard"
     assert body["data"]["artifact"]["mime_type"] == "image/png"
     assert body["data"]["artifact"]["filename"] == "clipboard.png"
+    assert body["data"]["extracted_document"] is None
+
+
+@pytest.mark.asyncio
+async def test_clipboard_image_parse_job_endpoint_returns_extracted_document_when_run_now() -> None:
+    service = _service()
+
+    async def _intake_dependency() -> DocumentIntakeService:
+        return service
+
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_document_intake_service] = _intake_dependency
+    transport = httpx.ASGITransport(app=app)
+    payload = {
+        "data_base64": base64.b64encode(b"fake-png-bytes").decode("ascii"),
+        "mime_type": "image/png",
+        "filename": "clipboard.png",
+        "extractor": "auto",
+        "execute_now": True,
+    }
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post("/api/v1/parse/clipboard/images/jobs", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["data"]["job"]["status"] == "succeeded"
+    extracted = body["data"]["extracted_document"]
+    assert extracted["text"] == "patient_id,value,unit\nP001,7.4,%\n"
+    assert extracted["artifact_id"] == body["data"]["artifact"]["artifact_id"]
+    assert extracted["trace_id"] == body["data"]["trace"]["trace_id"]
+    assert extracted["source"] == "clipboard"
 
 
 @pytest.mark.asyncio

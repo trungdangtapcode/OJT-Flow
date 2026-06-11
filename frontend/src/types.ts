@@ -1140,6 +1140,12 @@ export type ExtractedDocument = {
   word_count: number;
   text: string;
   warnings: string[];
+  artifact_id?: string | null;
+  job_id?: string | null;
+  trace_id?: string | null;
+  text_dataset_id?: string | null;
+  text_storage_ref?: string | null;
+  source?: string | null;
 };
 
 export type RuntimeHealth = {
@@ -1179,6 +1185,78 @@ export type BackgroundJob = {
   updated_at: string;
   started_at?: string | null;
   completed_at?: string | null;
+};
+
+export type ArtifactRetentionPolicy = {
+  policy_id: string;
+  sensitivity_class: string;
+  action: string;
+  retain_until?: string | null;
+  reason: string;
+  mode?: string | null;
+  source?: string | null;
+  tenant_id?: string | null;
+};
+
+export type UploadedArtifact = {
+  artifact_id: string;
+  owner_user_id: string;
+  filename: string;
+  mime_type: string;
+  extension: string;
+  byte_size: number;
+  sha256: string;
+  source: string;
+  storage_ref: string;
+  dataset_id?: string | null;
+  duplicate_of_artifact_id?: string | null;
+  retention_policy: ArtifactRetentionPolicy;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ExtractionStepTrace = {
+  step_id: string;
+  extractor: string;
+  status: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  summary: string;
+  warnings: string[];
+  input_ref?: string | null;
+  output_ref?: string | null;
+  confidence?: number | null;
+  metadata: Record<string, unknown>;
+};
+
+export type ParsingPipelineTrace = {
+  trace_id: string;
+  artifact_id: string;
+  owner_user_id: string;
+  job_id?: string | null;
+  source_format: string;
+  requested_extractor: string;
+  extractor_chosen: string;
+  fallback_path: string[];
+  warnings: string[];
+  char_count: number;
+  token_count_estimate: number;
+  confidence: number;
+  text_sha256?: string | null;
+  text_storage_ref?: string | null;
+  text_dataset_id?: string | null;
+  page_count?: number | null;
+  steps: ExtractionStepTrace[];
+  metadata: Record<string, unknown>;
+  started_at: string;
+  completed_at?: string | null;
+};
+
+export type UploadParseJobResponse = {
+  job: BackgroundJob;
+  artifact: UploadedArtifact;
+  trace?: ParsingPipelineTrace | null;
+  extracted_document?: ExtractedDocument | null;
 };
 
 export type RetrievalReindexJobPayload = RetrievalReindexPayload & {

@@ -9,9 +9,11 @@ import { formatBytes, formatCount } from "./assistant-format";
 export function AttachmentPreview({
   file,
   onRemove,
+  source = "upload",
 }: {
   file: File;
   onRemove: () => void;
+  source?: "upload" | "clipboard";
 }) {
   const isImage = file.type.startsWith("image/");
   return (
@@ -29,6 +31,9 @@ export function AttachmentPreview({
           </div>
         </div>
       </div>
+      <Badge variant={source === "clipboard" ? "success" : "muted"}>
+        {source === "clipboard" ? "pasted image" : "attached file"}
+      </Badge>
       <Button
         aria-label="Remove attached file"
         onClick={onRemove}

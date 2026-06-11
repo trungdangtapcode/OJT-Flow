@@ -65,10 +65,28 @@ CLIPBOARD_IMAGE_EXTENSIONS = {
 }
 
 
+class ExtractedDocumentResponse(ContractModel):
+    filename: str
+    source_format: str
+    extractor_used: str
+    page_count: int | None = None
+    char_count: int
+    word_count: int
+    text: str
+    warnings: list[str]
+    artifact_id: str | None = None
+    job_id: str | None = None
+    trace_id: str | None = None
+    text_dataset_id: str | None = None
+    text_storage_ref: str | None = None
+    source: str | None = None
+
+
 class UploadParseJobResponse(ContractModel):
     job: BackgroundJob
     artifact: UploadedArtifact
     trace: ParsingPipelineTrace | None = None
+    extracted_document: ExtractedDocumentResponse | None = None
 
 
 class UploadParseJobEnvelope(ContractModel):
@@ -108,6 +126,10 @@ class ClipboardImageParseRequest(ContractModel):
     execute_now: bool = Field(
         default=True,
         description="Run immediately in local sync mode; false leaves a queued durable job.",
+    )
+    include_extracted_document: bool = Field(
+        default=True,
+        description="Return extracted text in the response when execute_now succeeds.",
     )
 
 
@@ -209,6 +231,29 @@ def _trace_from_job(job: BackgroundJob) -> ParsingPipelineTrace | None:
     return None
 
 
+def _upload_parse_job_response(
+    *,
+    intake: DocumentIntakeService,
+    job: BackgroundJob,
+    artifact: UploadedArtifact,
+    include_extracted_document: bool = False,
+) -> UploadParseJobResponse:
+    trace = _trace_from_job(job)
+    extracted = (
+        intake.extracted_document_from_trace(artifact=artifact, trace=trace)
+        if include_extracted_document
+        else None
+    )
+    return UploadParseJobResponse(
+        job=job,
+        artifact=artifact,
+        trace=trace,
+        extracted_document=(
+            ExtractedDocumentResponse.model_validate(extracted) if extracted else None
+        ),
+    )
+
+
 def _read_clipboard_image_bytes(
     request: ClipboardImageParseRequest,
     settings: Settings,
@@ -284,13 +329,7 @@ async def create_upload_parse_job(
         execute_now=execute_now,
         request_id=getattr(http_request.state, "request_id", None),
     )
-    return ok(
-        UploadParseJobResponse(
-            job=job,
-            artifact=artifact,
-            trace=_trace_from_job(job),
-        )
-    )
+    return ok(_upload_parse_job_response(intake=intake, job=job, artifact=artifact))
 
 
 @router.post("/parse/upload/batch/jobs", response_model=BatchUploadParseEnvelope)
@@ -356,13 +395,7 @@ async def create_batch_upload_parse_jobs(
             execute_now=execute_now,
             request_id=request_id,
         )
-        items.append(
-            UploadParseJobResponse(
-                job=job,
-                artifact=artifact,
-                trace=_trace_from_job(job),
-            )
-        )
+        items.append(_upload_parse_job_response(intake=intake, job=job, artifact=artifact))
     return ok(
         BatchUploadParseResponse(
             batch_id=batch_id,
@@ -401,10 +434,11 @@ async def create_clipboard_image_parse_job(
         request_id=getattr(http_request.state, "request_id", None),
     )
     return ok(
-        UploadParseJobResponse(
+        _upload_parse_job_response(
+            intake=intake,
             job=job,
             artifact=artifact,
-            trace=_trace_from_job(job),
+            include_extracted_document=request.include_extracted_document,
         )
     )
 
