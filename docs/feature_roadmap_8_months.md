@@ -128,6 +128,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F023 | Started | Added owner-scoped raw upload deduplication by SHA-256 and byte size while preserving every upload record. Extracted-text dedupe remains follow-up because it needs extractor/version-aware normalization. |
 | 2026-06-11 | F024 | Implemented | Added `ParsingPipelineTrace` and `ExtractionStepTrace` contracts with extractor, fallback path, warnings, character/token counts, confidence, output refs, and persisted trace list API. |
 | 2026-06-11 | F025 | Implemented | Added a `DocumentExtractor` application port and `LocalDocumentExtractor` adapter around the existing MarkItDown/MinerU/OpenAI-vision extraction pipeline. |
+| 2026-06-11 | F026 | Implemented | Promoted `openai_vision` to a first-class extractor option. Vision traces now include provider, model, billable cost basis, external-provider flag, and PHI-handling metadata. |
 
 ## Feature Backlog
 
@@ -161,7 +162,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F023 Add deduplication by content hash for uploaded documents and extracted text. _(Started: raw upload dedupe is implemented; extracted-text dedupe remains.)_
 - [x] F024 Add a parsing pipeline trace with extractor chosen, fallback path, warnings, token/character counts, and confidence.
 - [x] F025 Add MarkItDown extraction as one extractor option behind a common `DocumentExtractor` port.
-- [ ] F026 Add OpenAI vision OCR as a separate extractor option with explicit cost, model, and PHI handling metadata.
+- [x] F026 Add OpenAI vision OCR as a separate extractor option with explicit cost, model, and PHI handling metadata.
 - [ ] F027 Add local OCR adapter option for Tesseract or PaddleOCR behind the same extractor contract.
 - [ ] F028 Add image clipboard paste support that creates the same artifact/evidence records as file upload.
 - [ ] F029 Add multi-page OCR evidence UI with page thumbnails, bounding boxes, confidence, field labels, and source refs.

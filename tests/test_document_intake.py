@@ -6,7 +6,7 @@ import pytest
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.core.contracts.auth import AuthenticatedSession, SessionRecord, UserRecord
-from ojtflow.data_tools.extract import ExtractionResult
+from ojtflow.data_tools.extract import ExtractionResult, Extractor, validate_extractor_choice
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryBackgroundJobRepository,
     InMemoryDatasetStore,
@@ -25,6 +25,7 @@ class FakeDocumentExtractor:
             source_format="csv",
             filename="lab.csv",
             warnings=["Header row detected automatically."],
+            metadata={"provider": "local", "model": "fake-test-extractor"},
         )
 
 
@@ -112,6 +113,11 @@ def test_file_parse_job_persists_trace_and_extracted_text_ref() -> None:
     assert traces[0].char_count > 0
     assert traces[0].text_storage_ref
     assert traces[0].warnings == ["Header row detected automatically."]
+    assert traces[0].metadata["extraction"]["model"] == "fake-test-extractor"
+
+
+def test_openai_vision_is_valid_extractor_choice() -> None:
+    assert validate_extractor_choice(Extractor.OPENAI_VISION) == "openai_vision"
 
 
 @pytest.mark.asyncio

@@ -34,7 +34,7 @@ Multipart fields:
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `file` | file | required | Uses configured extension and size limits. |
-| `extractor` | string | `auto` | `auto`, `markitdown`, or `mineru`. |
+| `extractor` | string | `auto` | `auto`, `markitdown`, `mineru`, or `openai_vision`. |
 | `execute_now` | boolean | `true` | `false` leaves a queued durable job. |
 
 Response envelope:
@@ -122,6 +122,9 @@ normalization metadata to avoid merging incompatible outputs.
 
 - `DocumentExtractor` is the application port for MarkItDown, MinerU, OpenAI
   vision, and future local OCR adapters.
+- OpenAI vision OCR is selectable as `openai_vision`. Its trace metadata includes
+  provider, model, billable cost basis, and PHI-handling warning so external
+  provider use is visible in audit/support views.
 - `ParsingPipelineTrace.steps` can represent multi-stage extraction later:
   scanned-PDF detection, OCR, layout parsing, table extraction, redaction preview,
   and validation handoff.

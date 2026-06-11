@@ -56,10 +56,16 @@ EXTENSION_FORMAT: dict[str, str] = {
 class Extractor:
     MARKITDOWN = "markitdown"
     MINERU = "mineru"
+    OPENAI_VISION = "openai_vision"
     AUTO = "auto"
 
 
-ALLOWED_EXTRACTORS = {Extractor.AUTO, Extractor.MARKITDOWN, Extractor.MINERU}
+ALLOWED_EXTRACTORS = {
+    Extractor.AUTO,
+    Extractor.MARKITDOWN,
+    Extractor.MINERU,
+    Extractor.OPENAI_VISION,
+}
 MAX_UPLOAD_FILENAME_BYTES = 255
 OCR_SENSITIVE_FORMATS = {"pdf", "docx", "pptx", "xlsx", "xls", "image"}
 
@@ -106,7 +112,8 @@ def validate_extractor_choice(prefer: str) -> str:
     normalized = prefer.strip().lower()
     if normalized not in ALLOWED_EXTRACTORS:
         raise UnsupportedUploadError(
-            f"Unsupported extractor '{prefer}'. Expected one of: auto, markitdown, mineru."
+            "Unsupported extractor "
+            f"'{prefer}'. Expected one of: auto, markitdown, mineru, openai_vision."
         )
     return normalized
 
@@ -116,11 +123,12 @@ class ExtractionResult:
     """Output of document extraction."""
 
     text: str
-    extractor_used: str       # "markitdown" | "mineru"
+    extractor_used: str       # "markitdown" | "mineru" | "openai_vision"
     source_format: str        # "pdf" | "image" | "docx" | ...
     filename: str
     page_count: int | None = None
     warnings: list[str] = field(default_factory=list)
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 def extract_document(
@@ -157,6 +165,21 @@ def extract_document(
     if prefer == Extractor.MARKITDOWN:
         return _extract_markitdown(data, safe_filename, source_format, warnings)
 
+    if prefer == Extractor.OPENAI_VISION:
+        result = _extract_openai_vision(
+            data=data,
+            filename=safe_filename,
+            source_format=source_format,
+            warnings=warnings,
+            require_configured=True,
+        )
+        if result is None:
+            raise ToolExecutionError(
+                "OpenAI vision OCR could not extract this file. "
+                "Check API key, model, MIME type, and provider response."
+            )
+        return result
+
     # AUTO: try markitdown first, fall back to minerU
     markitdown_error: Exception | None = None
     try:
@@ -168,6 +191,7 @@ def extract_document(
                 filename=safe_filename,
                 source_format=source_format,
                 warnings=fallback_warnings,
+                require_configured=False,
             )
             if vision_result is not None:
                 return vision_result
@@ -202,20 +226,25 @@ def _extract_openai_vision(
     filename: str,
     source_format: str,
     warnings: list[str],
+    require_configured: bool = False,
 ) -> ExtractionResult | None:
     """Use OpenAI vision as an OCR fallback for image attachments when configured."""
 
     api_key = _openai_api_key()
     if not api_key:
-        warnings.append(
-            "OpenAI vision OCR fallback is not configured; set OJT_OPENAI_API_KEY."
-        )
+        warning = "OpenAI vision OCR is not configured; set OJT_OPENAI_API_KEY."
+        warnings.append(warning)
+        if require_configured:
+            raise ToolExecutionError(warning)
         return None
     mime_type = _image_mime_type(filename)
     if not mime_type:
-        warnings.append(
-            "OpenAI vision OCR fallback supports PNG, JPEG, WEBP, and non-animated GIF images."
+        warning = (
+            "OpenAI vision OCR supports PNG, JPEG, WEBP, and non-animated GIF images."
         )
+        warnings.append(warning)
+        if require_configured:
+            raise UnsupportedUploadError(warning)
         return None
 
     model = _openai_vision_model()
@@ -255,28 +284,42 @@ def _extract_openai_vision(
                 json=payload,
             )
     except httpx.HTTPError as exc:
-        warnings.append(f"OpenAI vision OCR fallback failed: {exc}")
+        warnings.append(f"OpenAI vision OCR failed: {exc}")
         return None
 
     if response.status_code >= 400:
         warnings.append(
-            "OpenAI vision OCR fallback failed with status "
+            "OpenAI vision OCR failed with status "
             f"{response.status_code}: {response.text[:300]}"
         )
         return None
 
     text = _openai_response_text(response.json()).strip()
     if not text:
-        warnings.append("OpenAI vision OCR fallback returned empty text.")
+        warnings.append("OpenAI vision OCR returned empty text.")
         return None
 
-    warnings.append("markitdown returned empty image text; used OpenAI vision OCR fallback.")
+    if not require_configured:
+        warnings.append("markitdown returned empty image text; used OpenAI vision OCR fallback.")
     return ExtractionResult(
         text=text,
-        extractor_used="openai_vision",
+        extractor_used=Extractor.OPENAI_VISION,
         source_format=source_format,
         filename=filename,
         warnings=warnings,
+        metadata={
+            "provider": "openai",
+            "model": model,
+            "external_provider": True,
+            "cost_tracking": {
+                "billable": True,
+                "basis": "vision model image input plus generated text output",
+            },
+            "phi_handling": (
+                "Image bytes are sent to the configured OpenAI-compatible vision "
+                "provider. Use redaction/review policy before enabling on PHI."
+            ),
+        },
     )
 
 

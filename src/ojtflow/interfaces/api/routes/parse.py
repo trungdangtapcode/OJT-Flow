@@ -135,7 +135,7 @@ async def create_upload_parse_job(
     file: UploadFile = File(..., description="Document file to persist and parse."),
     extractor: str = Form(
         default=Extractor.AUTO,
-        description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
+        description="Extraction engine: 'auto' | 'markitdown' | 'mineru' | 'openai_vision'.",
     ),
     execute_now: bool = Form(
         default=True,
@@ -243,7 +243,7 @@ async def upload_and_start_workflow(
     ),
     extractor: str = Form(
         default=Extractor.AUTO,
-        description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
+        description="Extraction engine: 'auto' | 'markitdown' | 'mineru' | 'openai_vision'.",
     ),
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: WorkflowService = Depends(get_workflow_service),
@@ -281,7 +281,7 @@ async def extract_only(
     file: UploadFile = File(..., description="Document file to extract text from."),
     extractor: str = Form(
         default=Extractor.AUTO,
-        description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
+        description="Extraction engine: 'auto' | 'markitdown' | 'mineru' | 'openai_vision'.",
     ),
     authenticated: AuthenticatedSession = Depends(require_authentication),
     settings: Settings = Depends(get_api_settings),

@@ -168,6 +168,7 @@ class DocumentIntakeService:
                 "filename": artifact.filename,
                 "mime_type": artifact.mime_type,
                 "extension": artifact.extension,
+                "extraction": dict(result.metadata),
             },
         )
         trace = ParsingPipelineTrace(
@@ -191,6 +192,7 @@ class DocumentIntakeService:
                 "original_filename": artifact.filename,
                 "source": artifact.source,
                 "duplicate_of_artifact_id": artifact.duplicate_of_artifact_id,
+                "extraction": dict(result.metadata),
             },
             started_at=started_at,
             completed_at=completed_at,
