@@ -66,6 +66,13 @@ from ojtflow.core.contracts.phi import (
     PhiFinding,
     PhiPatternRule,
 )
+from ojtflow.core.contracts.redaction import (
+    RedactionActionType,
+    RedactionMatch,
+    RedactionPolicy,
+    RedactionPolicyRule,
+    RedactionPreview,
+)
 from ojtflow.core.contracts.review import HumanReview
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.terminology import TerminologyCandidate, UnitValidationResult
@@ -117,6 +124,11 @@ __all__ = [
     "PhiFieldRule",
     "PhiFinding",
     "PhiPatternRule",
+    "RedactionActionType",
+    "RedactionMatch",
+    "RedactionPolicy",
+    "RedactionPolicyRule",
+    "RedactionPreview",
     "RbacPermissionDefinition",
     "RbacPolicy",
     "RbacRoleDefinition",

@@ -13,6 +13,7 @@ from ojtflow.core.contracts.enums import (
     ReviewDecision,
     TrustLevel,
 )
+from ojtflow.core.contracts.redaction import RedactionActionType
 from ojtflow.medical.contracts import OcrEvidenceInput
 
 
@@ -118,6 +119,7 @@ class ValidateRequest(ContractModel):
 class RedactionPreviewRequest(ContractModel):
     data: NonBlankText
     input_format: DataFormat | None = None
+    redaction_action: RedactionActionType | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -128,6 +130,12 @@ class RedactionPreviewRequest(ContractModel):
                         "P001,123-45-6789,patient@example.com,7.4\n"
                     ),
                     "input_format": "csv",
+                    "redaction_action": "mask",
+                },
+                {
+                    "data": "patient_id,ssn\nP001,123-45-6789\n",
+                    "input_format": "csv",
+                    "redaction_action": "tokenize_placeholder",
                 }
             ]
         }

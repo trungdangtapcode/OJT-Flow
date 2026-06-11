@@ -69,6 +69,13 @@ separate endpoint. The `phi_classification` object appears on `DataProfile`,
 `Evidence.locator.phi_classification`. See `docs/phi_classification_v0.md` for
 the contract, policy model, and verification commands.
 
+`POST /api/v1/parse/redaction-preview` accepts optional `redaction_action`
+values `mask`, `suppress`, `tokenize_placeholder`, or `review_gated_reveal`.
+The response includes `policy_id`, `policy_version`, per-match action metadata,
+`action_summary`, `requires_review`, and `reveal_required`. Public callers cannot
+approve raw reveal through this endpoint; review-approved reveal is reserved for
+future governed review workflows. See `docs/phi_redaction_policy_v0.md`.
+
 Default persistence uses Postgres plus local file-backed artifacts:
 
 ```text

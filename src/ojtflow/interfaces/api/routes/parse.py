@@ -624,6 +624,7 @@ async def preview_redaction(
         build_redaction_preview(
             request.data,
             data_format=request.input_format,
+            action_override=request.redaction_action,
         )
     )
 
