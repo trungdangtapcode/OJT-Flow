@@ -1,0 +1,119 @@
+{
+  "version": "remote_mcp_deployment_policy.v1",
+  "status": "design_only",
+  "remote_exposure_allowed": false,
+  "summary": "Remote MCP transports remain blocked until OAuth protected-resource metadata, resource indicators, per-user scoping, rate limits, and audit controls are implemented and verified.",
+  "deployment_modes": ["pilot", "production"],
+  "roadmap_refs": ["F115", "F116", "F119", "F124", "F134"],
+  "required_controls": [
+    {
+      "control_id": "oauth_protected_resource_metadata",
+      "title": "OAuth protected resource metadata",
+      "requirement": "A remote MCP endpoint must behave as an OAuth protected resource and publish RFC 9728 protected resource metadata with authorization server discovery.",
+      "status": "required",
+      "phase": "before_remote",
+      "verification": "Unauthenticated HTTP requests return a 401 WWW-Authenticate header with resource_metadata, and the well-known protected-resource metadata endpoint returns authorization_servers.",
+      "blocks_remote": true,
+      "references": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+        "https://www.rfc-editor.org/rfc/rfc9728"
+      ]
+    },
+    {
+      "control_id": "resource_indicators",
+      "title": "Resource indicators and token audience",
+      "requirement": "MCP clients must request access tokens with the remote MCP resource indicator and the server must reject tokens whose audience/resource does not match this deployment.",
+      "status": "required",
+      "phase": "before_remote",
+      "verification": "Token validation tests reject valid issuer tokens without the configured MCP resource audience and accept only tokens containing the expected resource indicator.",
+      "blocks_remote": true,
+      "references": [
+        "https://www.rfc-editor.org/rfc/rfc8707",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization"
+      ]
+    },
+    {
+      "control_id": "per_user_tool_scoping",
+      "title": "Per-user tool scoping",
+      "requirement": "Every remote MCP call must resolve an authenticated OJTFlow user and apply the same owner, role, tool permission, write gate, and review gate boundaries used by the API Assistant.",
+      "status": "required",
+      "phase": "before_remote",
+      "verification": "Remote MCP contract tests prove user A cannot list, inspect, mutate, or retrieve user B workflows, sessions, artifacts, reviews, judgments, or audit rows.",
+      "blocks_remote": true,
+      "references": ["docs/auth_architecture.md", "docs/assistant_mcp_agent.md"]
+    },
+    {
+      "control_id": "remote_rate_limits",
+      "title": "Remote rate limits and budgets",
+      "requirement": "Remote MCP calls must enforce user and tenant budgets for chat, retrieval, upload/extraction, workflow writes, reindexing, and external provider calls.",
+      "status": "required",
+      "phase": "before_remote",
+      "verification": "Rate-limit tests cover read tools, write tools, high-cost OCR/LLM routes, and reindex/export operations with structured retry-after errors.",
+      "blocks_remote": true,
+      "references": ["docs/feature_roadmap_8_months.md#month-6-governance-security-privacy-and-enterprise-administration"]
+    },
+    {
+      "control_id": "audit_correlation",
+      "title": "Audit correlation",
+      "requirement": "Remote MCP calls must write generic audit records with user, request, client, session, tool, workflow, workflow-event refs, input hash, output hash, and redacted metadata.",
+      "status": "implemented_local",
+      "phase": "before_remote",
+      "verification": "Local Assistant and MCP tool calls are covered by F116 audit records; remote deployment must add client ID, issuer, token subject, resource indicator, and remote transport metadata before exposure.",
+      "blocks_remote": true,
+      "references": ["docs/api_contract_v0.md", "docs/assistant_mcp_agent.md"]
+    },
+    {
+      "control_id": "tool_manifest_review",
+      "title": "Tool manifest review",
+      "requirement": "Remote tool exposure must be generated from the backend allowlist and reviewed for permission scope, PHI sensitivity, external-network use, destructive behavior, and approval requirement.",
+      "status": "required",
+      "phase": "before_remote",
+      "verification": "Catalog validation fails if a remote-exposed tool lacks permission tags, risk level, approval metadata, or allowed-agent scope.",
+      "blocks_remote": true,
+      "references": ["knowledge/assistant/tool_permission_policies.json"]
+    }
+  ],
+  "oauth": {
+    "authorization_model": "oauth_2_1_resource_server",
+    "protected_resource_metadata_required": true,
+    "authorization_server_discovery": ["rfc8414", "openid_connect_discovery"],
+    "dynamic_client_registration": "deny_by_default_until_enterprise_idp_review",
+    "pkce_required_for_public_clients": true,
+    "token_validation": {
+      "issuer_required": true,
+      "audience_required": true,
+      "jwks_required": true,
+      "clock_skew_seconds": 60
+    }
+  },
+  "resource_indicators": {
+    "required": true,
+    "resource_env_var": "OJT_MCP_RESOURCE_INDICATOR",
+    "default_local_resource": "http://localhost:8000/mcp",
+    "token_audience_policy": "exact_match"
+  },
+  "per_user_scoping": {
+    "owner_user_id_required": true,
+    "session_user_binding_required": true,
+    "tool_scope_source": "knowledge/assistant/tool_permission_policies.json",
+    "write_action_policy": "execute_write_actions_and_human_review_gates_required"
+  },
+  "rate_limits": {
+    "policy_status": "required_before_remote",
+    "dimensions": ["tenant_id", "owner_user_id", "client_id", "tool_name", "permission_scope"],
+    "high_cost_scopes": ["external:network", "data:transform", "review:write", "admin:write"]
+  },
+  "audit": {
+    "local_audit_status": "implemented_by_F116",
+    "remote_required_extra_fields": [
+      "client_id",
+      "oauth_issuer",
+      "oauth_subject",
+      "token_audience",
+      "resource_indicator",
+      "transport",
+      "remote_ip_hash"
+    ],
+    "raw_payload_storage": "forbidden"
+  }
+}

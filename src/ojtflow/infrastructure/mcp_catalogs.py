@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from ojtflow.core.contracts.mcp import (
     McpPromptCatalog,
     McpPromptSpec,
+    McpRemoteDeploymentPolicy,
     McpResourceCatalog,
     McpResourceSpec,
 )
@@ -16,6 +17,7 @@ from ojtflow.core.contracts.mcp import (
 
 DEFAULT_MCP_RESOURCE_CATALOG_PATH = Path("assistant/mcp_resources.json")
 DEFAULT_MCP_PROMPT_CATALOG_PATH = Path("assistant/mcp_prompts.json")
+DEFAULT_MCP_REMOTE_POLICY_PATH = Path("assistant/remote_mcp_deployment_policy.json")
 
 
 class _HasKey(Protocol):
@@ -61,6 +63,26 @@ def load_mcp_prompt_catalog(knowledge_root: Path) -> McpPromptCatalog:
         field="name",
     )
     return catalog
+
+
+def load_mcp_remote_deployment_policy(knowledge_root: Path) -> McpRemoteDeploymentPolicy:
+    """Load the remote MCP deployment readiness policy from trusted knowledge data."""
+
+    path = knowledge_root / DEFAULT_MCP_REMOTE_POLICY_PATH
+    if not path.exists():
+        return McpRemoteDeploymentPolicy(
+            version="remote_mcp_policy.empty",
+            status="missing",
+            remote_exposure_allowed=False,
+            summary="Remote MCP deployment policy is not configured.",
+        )
+    policy = McpRemoteDeploymentPolicy.model_validate(_read_json_object(path))
+    _ensure_unique(
+        [_RemoteControlKey(control) for control in policy.required_controls],
+        path=path,
+        field="control_id",
+    )
+    return policy
 
 
 def render_mcp_prompt(prompt: McpPromptSpec, variables: dict[str, str]) -> str:
@@ -120,3 +142,8 @@ class _PromptKey:
 class _PromptNameKey:
     def __init__(self, prompt: McpPromptSpec) -> None:
         self.key = prompt.name
+
+
+class _RemoteControlKey:
+    def __init__(self, control) -> None:
+        self.key = control.control_id

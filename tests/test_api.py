@@ -1390,6 +1390,9 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         assistant_answer_templates = await client.get("/api/v1/assistant/answer-templates")
         assistant_mcp_resources = await client.get("/api/v1/assistant/mcp/resources")
         assistant_mcp_prompts = await client.get("/api/v1/assistant/mcp/prompts")
+        assistant_mcp_remote_policy = await client.get(
+            "/api/v1/assistant/mcp/remote-policy"
+        )
         assistant_stream_replays = await client.get(
             "/api/v1/assistant/sessions/chat_missing/stream-replays"
         )
@@ -1478,6 +1481,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(assistant_mcp_resources, expected_code="unauthorized")
     assert assistant_mcp_prompts.status_code == 401
     _assert_error_envelope(assistant_mcp_prompts, expected_code="unauthorized")
+    assert assistant_mcp_remote_policy.status_code == 401
+    _assert_error_envelope(assistant_mcp_remote_policy, expected_code="unauthorized")
     assert assistant_stream_replays.status_code == 401
     _assert_error_envelope(assistant_stream_replays, expected_code="unauthorized")
     assert assistant_stream.status_code == 401
@@ -4403,6 +4408,7 @@ async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monk
     async with await _client() as client:
         resources_response = await client.get("/api/v1/assistant/mcp/resources")
         prompts_response = await client.get("/api/v1/assistant/mcp/prompts")
+        remote_policy_response = await client.get("/api/v1/assistant/mcp/remote-policy")
 
     assert resources_response.status_code == 200
     resources = resources_response.json()["data"]
@@ -4422,6 +4428,11 @@ async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monk
         and "F107" in resource["roadmap_refs"]
         for resource in resources["resources"]
     )
+    assert any(
+        resource["uri"] == "ojtflow://assistant/mcp/remote-policy"
+        and "F115" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
 
     assert prompts_response.status_code == 200
     prompts = prompts_response.json()["data"]
@@ -4434,6 +4445,15 @@ async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monk
     assert validation_prompt["recommended_tools"] == ["validate_with_evidence"]
     assert validation_prompt["evidence_required"] is True
     assert any(argument["name"] == "data" for argument in validation_prompt["arguments"])
+
+    assert remote_policy_response.status_code == 200
+    remote_policy = remote_policy_response.json()["data"]
+    assert remote_policy["version"] == "remote_mcp_deployment_policy.v1"
+    assert remote_policy["remote_exposure_allowed"] is False
+    assert any(
+        control["control_id"] == "resource_indicators"
+        for control in remote_policy["required_controls"]
+    )
 
 
 @pytest.mark.asyncio

@@ -25,6 +25,7 @@ from ojtflow.infrastructure.assistant_examples import load_assistant_examples
 from ojtflow.infrastructure.assistant_templates import load_assistant_answer_templates
 from ojtflow.infrastructure.mcp_catalogs import (
     load_mcp_prompt_catalog,
+    load_mcp_remote_deployment_policy,
     load_mcp_resource_catalog,
     render_mcp_prompt,
 )
@@ -93,6 +94,9 @@ def create_server():
             "assistant_memory_policy": lambda: load_assistant_memory_policy(
                 knowledge_root
             ).model_dump(mode="json"),
+            "remote_mcp_deployment_policy": lambda: (
+                load_mcp_remote_deployment_policy(knowledge_root).model_dump(mode="json")
+            ),
             "retrieval_strategies": lambda: load_retrieval_strategy_catalog(
                 knowledge_root
             ).model_dump(mode="json"),

@@ -32,10 +32,11 @@ The server also registers data-driven resources from
 `knowledge/assistant/mcp_resources.json` and prompts from
 `knowledge/assistant/mcp_prompts.json`. Resources expose read-only catalogs such
 as Assistant tools, answer templates, retrieval strategies, source trust
-policies, search presets, recent workflows, pending reviews, schemas, and
-knowledge source inventory. Prompts cover standard tasks such as validating lab
-CSV with evidence, profiling FHIR-like data, finding UCUM/unit evidence,
-inspecting pending reviews, summarizing workflows, and preparing export review.
+policies, search presets, the remote MCP deployment policy, recent workflows,
+pending reviews, schemas, and knowledge source inventory. Prompts cover
+standard tasks such as validating lab CSV with evidence, profiling FHIR-like
+data, finding UCUM/unit evidence, inspecting pending reviews, summarizing
+workflows, and preparing export review.
 
 `start_workflow`, `generate_mapping_draft`, and `create_review_task` are
 write-capable and return `requires_approval` unless the caller explicitly
@@ -56,6 +57,10 @@ The server uses the same runtime settings as the API process, including
 Security stance for v0:
 
 - MCP is intended for trusted local/operator use.
+- Remote MCP exposure is blocked by
+  `knowledge/assistant/remote_mcp_deployment_policy.json` until OAuth protected
+  resource metadata, resource indicators, per-user scoping, rate limits, and
+  audit metadata are implemented and verified.
 - Tool execution is allowlisted and typed.
 - Write actions are explicit.
 - Human review decisions are not exposed as MCP tools.

@@ -19,13 +19,18 @@ from ojtflow.application.assistant_service import AssistantService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.assistant import AssistantAnswerTemplate
-from ojtflow.core.contracts.mcp import McpPromptCatalog, McpResourceCatalog
+from ojtflow.core.contracts.mcp import (
+    McpPromptCatalog,
+    McpRemoteDeploymentPolicy,
+    McpResourceCatalog,
+)
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 from ojtflow.infrastructure.assistant_templates import load_assistant_answer_templates
 from ojtflow.infrastructure.assistant_examples import load_assistant_examples
 from ojtflow.infrastructure.mcp_catalogs import (
     load_mcp_prompt_catalog,
+    load_mcp_remote_deployment_policy,
     load_mcp_resource_catalog,
 )
 from ojtflow.interfaces.api.deps import (
@@ -107,6 +112,20 @@ async def assistant_mcp_prompts(
     del authenticated
     catalog: McpPromptCatalog = load_mcp_prompt_catalog(settings.resolved_knowledge_dir)
     return ok(catalog)
+
+
+@router.get("/assistant/mcp/remote-policy")
+async def assistant_mcp_remote_policy(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return the data-driven remote MCP deployment readiness policy."""
+
+    del authenticated
+    policy: McpRemoteDeploymentPolicy = load_mcp_remote_deployment_policy(
+        settings.resolved_knowledge_dir
+    )
+    return ok(policy)
 
 
 @router.get("/assistant/memory-policy")

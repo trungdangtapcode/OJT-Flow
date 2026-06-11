@@ -818,6 +818,15 @@ Returns the MCP prompt catalog from `knowledge/assistant/mcp_prompts.json`.
 Prompts define standard operator tasks, arguments, recommended tools, evidence
 requirements, and write-action policy. They do not grant execution authority.
 
+`GET /api/v1/assistant/mcp/remote-policy`
+
+Returns the remote MCP deployment readiness policy from
+`knowledge/assistant/remote_mcp_deployment_policy.json`. The policy is
+data-driven and currently sets `remote_exposure_allowed=false` until OAuth
+protected-resource metadata, resource indicators, per-user scoping, rate
+limits, audit correlation, and tool manifest review controls are implemented
+and verified.
+
 `GET /api/v1/assistant/memory-policy`
 
 Returns the data-driven allowlist from `knowledge/assistant/memory_policy.json`.

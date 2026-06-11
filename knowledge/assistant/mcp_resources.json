@@ -62,6 +62,18 @@
       "roadmap_refs": ["F107", "F113"]
     },
     {
+      "resource_id": "remote_mcp_deployment_policy",
+      "uri": "ojtflow://assistant/mcp/remote-policy",
+      "name": "remote_mcp_deployment_policy",
+      "title": "Remote MCP Deployment Policy",
+      "description": "Readiness controls for remote MCP OAuth, resource indicators, per-user scoping, rate limits, and audit.",
+      "mime_type": "application/json",
+      "provider_key": "remote_mcp_deployment_policy",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "mcp", "remote", "security", "governance"],
+      "roadmap_refs": ["F115", "F116"]
+    },
+    {
       "resource_id": "retrieval_strategies",
       "uri": "ojtflow://retrieval/strategies",
       "name": "retrieval_strategies",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
@@ -61,3 +63,33 @@ class McpPromptCatalog(ContractModel):
 
     version: NonBlankStr
     prompts: list[McpPromptSpec] = Field(default_factory=list)
+
+
+class McpRemoteDeploymentControl(ContractModel):
+    """One control required before exposing MCP over remote transports."""
+
+    control_id: NonBlankStr
+    title: NonBlankStr
+    requirement: NonBlankStr
+    status: NonBlankStr = "required"
+    phase: NonBlankStr = "before_remote"
+    verification: NonBlankStr
+    blocks_remote: bool = True
+    references: list[NonBlankStr] = Field(default_factory=list)
+
+
+class McpRemoteDeploymentPolicy(ContractModel):
+    """Data-driven remote MCP deployment readiness policy."""
+
+    version: NonBlankStr
+    status: NonBlankStr = "design_only"
+    remote_exposure_allowed: bool = False
+    summary: NonBlankStr
+    deployment_modes: list[NonBlankStr] = Field(default_factory=list)
+    required_controls: list[McpRemoteDeploymentControl] = Field(default_factory=list)
+    oauth: dict[str, Any] = Field(default_factory=dict)
+    resource_indicators: dict[str, Any] = Field(default_factory=dict)
+    per_user_scoping: dict[str, Any] = Field(default_factory=dict)
+    rate_limits: dict[str, Any] = Field(default_factory=dict)
+    audit: dict[str, Any] = Field(default_factory=dict)
+    roadmap_refs: list[NonBlankStr] = Field(default_factory=list)

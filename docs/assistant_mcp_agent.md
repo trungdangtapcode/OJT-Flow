@@ -89,6 +89,10 @@ from `knowledge/assistant/mcp_resources.json`.
 `GET /api/v1/assistant/mcp/prompts` returns the MCP prompt catalog loaded from
 `knowledge/assistant/mcp_prompts.json`.
 
+`GET /api/v1/assistant/mcp/remote-policy` returns the remote MCP deployment
+readiness policy loaded from
+`knowledge/assistant/remote_mcp_deployment_policy.json`.
+
 `GET /api/v1/assistant/sessions`
 
 `POST /api/v1/assistant/sessions`
@@ -290,13 +294,14 @@ fingerprints and sanitized metadata such as tool name, argument keys,
 approval requirement, status, and payload character count; they do not store raw
 uploaded data, chat messages, retrieval queries, or tool output payloads.
 
-The MCP server is for trusted local/operator use in v0. For remote enterprise
-deployment, add OAuth/resource-indicator authorization, per-user tool scoping,
-rate limits, and audit correlation IDs before exposing it outside the local
-runtime.
+The MCP server is for trusted local/operator use in v0. Remote enterprise
+deployment is blocked by the data-driven remote MCP policy until OAuth
+protected-resource metadata, resource indicators, per-user tool scoping, rate
+limits, audit correlation, and tool manifest review are implemented and
+verified.
 
 ## Extension Path
 
 1. Add retention settings and admin export for persisted sessions.
-2. Add remote MCP authorization and per-user owner scoping.
+2. Implement the remote MCP transport/auth gateway described in the policy.
 3. Add eval fixtures for natural-language commands and tool selection quality.
