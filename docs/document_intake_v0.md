@@ -67,7 +67,22 @@ Response envelope:
       "char_count": 120,
       "token_count_estimate": 30,
       "confidence": 0.95,
-      "text_storage_ref": "file:///.../var/datasets/ds_....txt"
+      "text_storage_ref": "file:///.../var/datasets/ds_....txt",
+      "metadata": {
+        "document_intelligence": {
+          "quality": {
+            "score": 0.95,
+            "level": "good",
+            "requires_review": false
+          },
+          "explanation": {
+            "read": ["Read 120 character(s) from lab.csv using markitdown."],
+            "skipped": ["PDF scanned-vs-digital detection did not apply to this file type."],
+            "needs_review": [],
+            "limitations": []
+          }
+        }
+      }
     }
   },
   "error": null
@@ -150,6 +165,16 @@ normalization metadata to avoid merging incompatible outputs.
 - `ParsingPipelineTrace.steps` can represent multi-stage extraction later:
   scanned-PDF detection, OCR, layout parsing, table extraction, redaction preview,
   and validation handoff.
+- Workbook files are profiled with sheet count, visible/hidden sheets, row/column
+  counts, header-row candidates, headers, merged-cell ranges, and sheet warnings.
+- PDF files are profiled for digital/scanned/mixed likelihood when PyMuPDF or
+  pypdf is installed. If no analyzer is available, the trace records a clear
+  warning instead of failing the upload.
+- Extraction traces include a deterministic quality report based on empty text,
+  short text, extractor warnings, low confidence, workbook caveats, and PDF OCR
+  requirements.
+- Extraction traces include a user-facing explanation: what was read, what was
+  skipped, what needs review, and limitations.
 - `SourceLocation` now supports row/column, page, bounding box, text span, sheet
   and table-cell coordinates. Validation issues, OCR evidence, and extracted
   table cells should point through this common contract.
@@ -165,5 +190,5 @@ normalization metadata to avoid merging incompatible outputs.
 - Multi-file batch uploads.
 - Extracted-text deduplication with extractor/version awareness.
 - Frontend paste UX wired to the clipboard image artifact endpoint.
-- OCR page evidence, table coordinate contracts, spreadsheet profiling, and
-  redaction preview.
+- Multi-page OCR evidence UI, production table parser adapters, and redaction
+  preview.

@@ -14,6 +14,7 @@ from ojtflow.core.contracts.artifacts import (
 )
 from ojtflow.core.contracts.jobs import BackgroundJob
 from ojtflow.core.time import utc_now
+from ojtflow.data_tools.document_analysis import build_document_intelligence_profile
 from ojtflow.data_tools.extract import source_format_for_filename
 from ojtflow.data_tools.hashing import sha256_text
 
@@ -148,10 +149,23 @@ class DocumentIntakeService:
             declared_format="text",
             detected_format=result.source_format,
         )
-        confidence = _extraction_confidence(
+        extractor_confidence = _extraction_confidence(
             text=text,
             warnings=result.warnings,
             extractor_used=result.extractor_used,
+        )
+        intelligence = build_document_intelligence_profile(
+            data=data,
+            filename=artifact.filename,
+            source_format=result.source_format,
+            extracted_text=text,
+            extractor_used=result.extractor_used,
+            extraction_confidence=extractor_confidence,
+            extraction_warnings=list(result.warnings),
+        )
+        overall_confidence = min(extractor_confidence, intelligence.quality.score)
+        trace_warnings = _dedupe_warnings(
+            [*result.warnings, *intelligence.quality.warnings]
         )
         fallback_path = _fallback_path(prefer_extractor, result.extractor_used)
         step = ExtractionStepTrace(
@@ -163,12 +177,13 @@ class DocumentIntakeService:
             warnings=list(result.warnings),
             input_ref=artifact.storage_ref,
             output_ref=dataset.storage_ref,
-            confidence=confidence,
+            confidence=extractor_confidence,
             metadata={
                 "filename": artifact.filename,
                 "mime_type": artifact.mime_type,
                 "extension": artifact.extension,
                 "extraction": dict(result.metadata),
+                "quality_score": intelligence.quality.score,
             },
         )
         trace = ParsingPipelineTrace(
@@ -179,10 +194,10 @@ class DocumentIntakeService:
             requested_extractor=prefer_extractor,
             extractor_chosen=result.extractor_used,
             fallback_path=fallback_path,
-            warnings=list(result.warnings),
+            warnings=trace_warnings,
             char_count=len(text),
             token_count_estimate=_estimate_tokens(text),
-            confidence=confidence,
+            confidence=overall_confidence,
             text_sha256=sha256_text(text) if text else None,
             text_storage_ref=dataset.storage_ref,
             text_dataset_id=dataset.dataset_id,
@@ -193,6 +208,7 @@ class DocumentIntakeService:
                 "source": artifact.source,
                 "duplicate_of_artifact_id": artifact.duplicate_of_artifact_id,
                 "extraction": dict(result.metadata),
+                "document_intelligence": intelligence.model_dump(mode="json"),
             },
             started_at=started_at,
             completed_at=completed_at,
@@ -229,3 +245,13 @@ def _step_summary(extractor_used: str, text: str) -> str:
     if text.strip():
         return f"{stem} extracted {len(text)} characters."
     return f"{stem} completed but produced no text."
+
+
+def _dedupe_warnings(warnings: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for warning in warnings:
+        if warning and warning not in seen:
+            seen.add(warning)
+            result.append(warning)
+    return result

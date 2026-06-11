@@ -133,6 +133,10 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F028 | Started | Added `POST /api/v1/parse/clipboard/images/jobs` so pasted image bytes create the same `UploadedArtifact`, dedupe, job, and trace path as file uploads. Frontend paste UX remains follow-up. |
 | 2026-06-11 | F030 | Implemented | Added table extraction contracts: `TableExtractionProfile`, `ExtractedTable`, and `TableCell`, preserving source kind, page/sheet context, cell coordinates, confidence, and source locations. |
 | 2026-06-11 | F036 | Started | Extended `SourceLocation` with page, bounding box, text span, sheet/table-cell references, and source refs so validation/OCR/table issues can point to exact source regions. Producer/UI wiring remains follow-up. |
+| 2026-06-11 | F031 | Implemented | Added workbook profiling for upload traces: sheet count, visible/hidden sheets, row/column counts, header-row candidates, headers, merged-cell ranges, and warnings. Legacy `.xls` receives an explicit conversion/analyzer warning. |
+| 2026-06-11 | F032 | Implemented | Added PDF scanned-vs-digital profiling with PyMuPDF/pypdf optional analyzers and explicit warnings when OCR is required or no analyzer is installed. |
+| 2026-06-11 | F037 | Implemented | Added deterministic extraction quality scoring based on empty/short text, low extractor confidence, extractor warnings, PDF OCR requirement, and workbook structure warnings. |
+| 2026-06-11 | F038 | Implemented | Added trace-level extraction explanations covering what was read, skipped, needs review, and limitations for user-facing support. |
 
 ## Feature Backlog
 
@@ -171,14 +175,14 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F028 Add image clipboard paste support that creates the same artifact/evidence records as file upload. _(Started: backend clipboard image endpoint creates upload-equivalent artifacts/jobs; frontend paste UX remains.)_
 - [ ] F029 Add multi-page OCR evidence UI with page thumbnails, bounding boxes, confidence, field labels, and source refs.
 - [x] F030 Add table extraction contracts for PDFs, Excel, CSV, and screenshots, preserving cell coordinates and row provenance.
-- [ ] F031 Add spreadsheet workbook parsing with sheet-level profiles, header detection, merged-cell warnings, and hidden-sheet warnings.
-- [ ] F032 Add PDF scanned-vs-digital detection and a clear warning when OCR is required.
+- [x] F031 Add spreadsheet workbook parsing with sheet-level profiles, header detection, merged-cell warnings, and hidden-sheet warnings.
+- [x] F032 Add PDF scanned-vs-digital detection and a clear warning when OCR is required.
 - [ ] F033 Add document redaction preview for PHI-like text before sending content to external LLM/OCR providers.
 - [ ] F034 Add configurable upload retention rules by mode, tenant, source type, and sensitivity class.
 - [ ] F035 Add artifact download/export access controls and audit events.
 - [ ] F036 Add source-linked validation issues where each issue can point to row, cell, page, bounding box, or text span. _(Started: contract supports row/cell/page/bbox/text-span references; producers and UI links remain.)_
-- [ ] F037 Add document extraction quality scoring based on empty text, low OCR confidence, conflicting extractors, and malformed tables.
-- [ ] F038 Add user-facing extraction explanation: what was read, what was skipped, and what needs review.
+- [x] F037 Add document extraction quality scoring based on empty text, low OCR confidence, conflicting extractors, and malformed tables.
+- [x] F038 Add user-facing extraction explanation: what was read, what was skipped, and what needs review.
 - [ ] F039 Add a file intake wizard that lets users choose "validate data", "extract fields", "profile FHIR", "find standards", or "ask assistant".
 - [ ] F040 Add batch upload workflow creation for multiple related files with shared case/project metadata.
 

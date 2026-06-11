@@ -16,6 +16,8 @@ ArtifactSource = Literal["upload", "clipboard", "assistant_attachment", "api"]
 RetentionAction = Literal["retain", "review", "delete_after_expiry"]
 ExtractionStepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 TableSourceKind = Literal["pdf", "excel", "csv", "screenshot", "image", "html", "unknown"]
+PdfScanLikelihood = Literal["digital", "scanned", "mixed", "unknown"]
+ExtractionQualityLevel = Literal["good", "review", "poor"]
 
 
 class ArtifactRetentionPolicy(ContractModel):
@@ -90,6 +92,75 @@ class ParsingPipelineTrace(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     started_at: str = Field(default_factory=lambda: utc_now().isoformat())
     completed_at: str | None = None
+
+
+class WorkbookSheetProfile(ContractModel):
+    """Sheet-level spreadsheet profile for workbook intake."""
+
+    sheet_name: str
+    sheet_index: int = Field(ge=0)
+    row_count: int = Field(default=0, ge=0)
+    column_count: int = Field(default=0, ge=0)
+    hidden_state: str = "visible"
+    header_row: int | None = Field(default=None, ge=1)
+    headers: list[str] = Field(default_factory=list)
+    merged_cell_ranges: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WorkbookParsingProfile(ContractModel):
+    """Workbook-level spreadsheet profile."""
+
+    filename: str
+    source_format: str
+    sheet_count: int = Field(default=0, ge=0)
+    visible_sheet_count: int = Field(default=0, ge=0)
+    hidden_sheet_count: int = Field(default=0, ge=0)
+    sheets: list[WorkbookSheetProfile] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PdfContentProfile(ContractModel):
+    """PDF text/image profile used to detect scanned documents."""
+
+    filename: str
+    page_count: int = Field(default=0, ge=0)
+    digital_text_pages: int = Field(default=0, ge=0)
+    image_pages: int = Field(default=0, ge=0)
+    image_only_pages: int = Field(default=0, ge=0)
+    scan_likelihood: PdfScanLikelihood = "unknown"
+    requires_ocr: bool = False
+    analyzer: str = "unavailable"
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ExtractionQualityReport(ContractModel):
+    """Quality score and review guidance for extracted document text."""
+
+    score: float = Field(ge=0, le=1)
+    level: ExtractionQualityLevel
+    requires_review: bool = False
+    factors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ExtractionExplanation(ContractModel):
+    """User-facing explanation of extraction coverage and caveats."""
+
+    read: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+    needs_review: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class DocumentIntelligenceProfile(ContractModel):
+    """Document analysis profile attached to a parse trace."""
+
+    source_format: str
+    workbook: WorkbookParsingProfile | None = None
+    pdf: PdfContentProfile | None = None
+    quality: ExtractionQualityReport
+    explanation: ExtractionExplanation
 
 
 class TableCell(ContractModel):

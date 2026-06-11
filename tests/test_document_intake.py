@@ -115,6 +115,10 @@ def test_file_parse_job_persists_trace_and_extracted_text_ref() -> None:
     assert traces[0].text_storage_ref
     assert traces[0].warnings == ["Header row detected automatically."]
     assert traces[0].metadata["extraction"]["model"] == "fake-test-extractor"
+    intelligence = traces[0].metadata["document_intelligence"]
+    assert intelligence["quality"]["score"] <= 1
+    assert intelligence["quality"]["requires_review"] is True
+    assert intelligence["explanation"]["read"]
 
 
 def test_openai_vision_is_valid_extractor_choice() -> None:
