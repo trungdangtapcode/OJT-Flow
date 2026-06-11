@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -40,6 +41,10 @@ class AnswerPolicy:
     review_statuses: tuple[str, ...]
     stale_version_markers: tuple[str, ...]
     stale_lifecycle_states: tuple[str, ...]
+    graph_guard_enabled: bool
+    graph_guard_required_statuses: tuple[str, ...]
+    graph_guard_clinical_assertion_terms: tuple[str, ...]
+    graph_guard_warning_id: str
     refusal_messages: dict[str, str]
 
 
@@ -119,11 +124,21 @@ def build_retrieval_answer(
     ]
     citations = _citations_from_rows(supported_rows, evidence_by_id)
     claims = [
-        _claim_from_row(row, citations=citations, graph_context=graph_context)
+        _claim_from_row(
+            row,
+            citations=citations,
+            graph_context=graph_context,
+            policy=active_policy,
+        )
         for row in supported_rows
     ]
     unsupported_claims = [
-        _claim_from_row(row, citations=[], graph_context=graph_context)
+        _claim_from_row(
+            row,
+            citations=[],
+            graph_context=graph_context,
+            policy=active_policy,
+        )
         for row in unsupported_rows
     ]
     freshness_warnings = _freshness_warnings(
@@ -144,11 +159,26 @@ def build_retrieval_answer(
         unsupported_rows=unsupported_rows,
         freshness_warnings=freshness_warnings,
     )
+    graph_guard_summary = _claim_triple_guard_summary(claims, unsupported_claims)
+    if graph_guard_summary["review_required_count"] and status == "supported":
+        status = "review_required"
+    if graph_guard_summary["review_required_count"]:
+        gaps = _unique(
+            [
+                *gaps,
+                (
+                    "Graph claim guard flagged "
+                    f"{graph_guard_summary['review_required_count']} clinical "
+                    "claim(s) without graph triple support."
+                ),
+            ]
+        )
     refusal_reason = _refusal_reason(status, active_policy, rows=rows, gaps=gaps)
     confidence = _answer_confidence(
         supported_rows=supported_rows,
         unsupported_rows=unsupported_rows,
         freshness_warnings=freshness_warnings,
+        graph_guard_review_count=int(graph_guard_summary["review_required_count"]),
     )
     return RetrievalAnswer(
         status=status,
@@ -164,6 +194,7 @@ def build_retrieval_answer(
         requires_human_review=(
             status != "supported"
             or bool(freshness_warnings)
+            or bool(graph_guard_summary["review_required_count"])
             or any(row.support_status in active_policy.review_statuses for row in rows)
         ),
         confidence=confidence,
@@ -178,6 +209,7 @@ def build_retrieval_answer(
             "support_row_count": len(rows),
             "supported_row_count": len(supported_rows),
             "unsupported_row_count": len(unsupported_rows),
+            "claim_triple_guard": graph_guard_summary,
             "query": query.query,
         },
     )
@@ -193,6 +225,8 @@ def load_answer_policy(path_text: str) -> AnswerPolicy:
     raw = json.loads(path.read_text(encoding="utf-8"))
     synthesis = raw.get("synthesis") if isinstance(raw, dict) else {}
     freshness = raw.get("freshness") if isinstance(raw, dict) else {}
+    claim_guard = raw.get("claim_triple_guard") if isinstance(raw, dict) else {}
+    claim_guard = claim_guard if isinstance(claim_guard, dict) else {}
     return AnswerPolicy(
         version=str(raw.get("version") or "retrieval_answer_synthesis_policy.v1"),
         supported_statuses=_string_tuple(
@@ -210,6 +244,28 @@ def load_answer_policy(path_text: str) -> AnswerPolicy:
         stale_lifecycle_states=_string_tuple(
             freshness.get("stale_lifecycle_states"),
             default=("deprecated", "blocked", "failed", "needs_review"),
+        ),
+        graph_guard_enabled=_bool_value(claim_guard.get("enabled"), default=True),
+        graph_guard_required_statuses=_string_tuple(
+            claim_guard.get("required_for_support_statuses"),
+            default=("strong",),
+        ),
+        graph_guard_clinical_assertion_terms=_string_tuple(
+            claim_guard.get("clinical_assertion_terms"),
+            default=(
+                "patient",
+                "diagnosis",
+                "medication",
+                "lab",
+                "observation",
+                "unit",
+                "loinc",
+                "rxnorm",
+                "fhir",
+            ),
+        ),
+        graph_guard_warning_id=str(
+            claim_guard.get("warning_id") or "claim_without_graph_triple_support"
         ),
         refusal_messages={
             str(key): str(value)
@@ -234,6 +290,20 @@ def _fallback_policy() -> AnswerPolicy:
         review_statuses=("partial", "weak", "unsupported"),
         stale_version_markers=("deprecated", "stale", "old", "outdated"),
         stale_lifecycle_states=("deprecated", "blocked", "failed", "needs_review"),
+        graph_guard_enabled=True,
+        graph_guard_required_statuses=("strong",),
+        graph_guard_clinical_assertion_terms=(
+            "patient",
+            "diagnosis",
+            "medication",
+            "lab",
+            "observation",
+            "unit",
+            "loinc",
+            "rxnorm",
+            "fhir",
+        ),
+        graph_guard_warning_id="claim_without_graph_triple_support",
         refusal_messages={},
     )
 
@@ -274,6 +344,7 @@ def _claim_from_row(
     *,
     citations: list[RetrievalAnswerCitation],
     graph_context: dict[str, Any],
+    policy: AnswerPolicy,
 ) -> RetrievalAnswerClaim:
     citation_ids = [
         citation.citation_id
@@ -281,6 +352,14 @@ def _claim_from_row(
         if citation.evidence_id == row.evidence_id
     ]
     graph_path_refs = _graph_refs_for_evidence(graph_context, row.evidence_id)
+    graph_guard = _claim_graph_guard(
+        row,
+        graph_path_refs=graph_path_refs,
+        policy=policy,
+    )
+    warnings = list(row.warnings)
+    if graph_guard["status"] == "review_required":
+        warnings.append(policy.graph_guard_warning_id)
     return RetrievalAnswerClaim(
         claim_id=row.claim_id,
         text=row.claim,
@@ -288,7 +367,8 @@ def _claim_from_row(
         evidence_ids=[row.evidence_id],
         citation_ids=citation_ids,
         graph_path_refs=graph_path_refs,
-        warnings=list(row.warnings),
+        graph_guard=graph_guard,
+        warnings=_unique(warnings),
     )
 
 
@@ -464,11 +544,16 @@ def _answer_confidence(
     supported_rows: list[RetrievalEvidenceSupportRow],
     unsupported_rows: list[RetrievalEvidenceSupportRow],
     freshness_warnings: list[RetrievalAnswerFreshnessWarning],
+    graph_guard_review_count: int = 0,
 ) -> float:
     if not supported_rows:
         return 0.0
     base = sum(_row_confidence(row) for row in supported_rows) / len(supported_rows)
-    penalty = 0.08 * len(unsupported_rows) + 0.05 * len(freshness_warnings)
+    penalty = (
+        0.08 * len(unsupported_rows)
+        + 0.05 * len(freshness_warnings)
+        + 0.06 * graph_guard_review_count
+    )
     return round(max(0.0, min(1.0, base - penalty)), 3)
 
 
@@ -531,6 +616,63 @@ def _graph_refs_for_evidence(graph_context: dict[str, Any], evidence_id: str) ->
     return _unique(ref for ref in refs if ref and "None" not in ref)[:8]
 
 
+def _claim_graph_guard(
+    row: RetrievalEvidenceSupportRow,
+    *,
+    graph_path_refs: list[str],
+    policy: AnswerPolicy,
+) -> dict[str, Any]:
+    requires_graph = (
+        policy.graph_guard_enabled
+        and row.support_status in set(policy.graph_guard_required_statuses)
+        and _looks_like_clinical_assertion(
+            row.claim,
+            policy.graph_guard_clinical_assertion_terms,
+        )
+    )
+    status = "not_required"
+    if requires_graph and graph_path_refs:
+        status = "supported"
+    elif requires_graph:
+        status = "review_required"
+    return {
+        "contract": "claim_triple_guard.v0",
+        "enabled": policy.graph_guard_enabled,
+        "status": status,
+        "requires_graph_support": requires_graph,
+        "graph_path_ref_count": len(graph_path_refs),
+        "warning_id": policy.graph_guard_warning_id if status == "review_required" else None,
+        "required_for_support_statuses": list(policy.graph_guard_required_statuses),
+    }
+
+
+def _claim_triple_guard_summary(
+    claims: list[RetrievalAnswerClaim],
+    unsupported_claims: list[RetrievalAnswerClaim],
+) -> dict[str, Any]:
+    all_claims = [*claims, *unsupported_claims]
+    status_counts = Counter(
+        str(claim.graph_guard.get("status") or "unknown")
+        for claim in all_claims
+    )
+    return {
+        "contract": "claim_triple_guard_summary.v0",
+        "claim_count": len(all_claims),
+        "supported_count": status_counts.get("supported", 0),
+        "review_required_count": status_counts.get("review_required", 0),
+        "not_required_count": status_counts.get("not_required", 0),
+        "unknown_count": status_counts.get("unknown", 0),
+    }
+
+
+def _looks_like_clinical_assertion(
+    text: str,
+    clinical_terms: tuple[str, ...],
+) -> bool:
+    normalized = text.casefold()
+    return any(term.casefold() in normalized for term in clinical_terms)
+
+
 def _graph_path_summary(
     graph_context: dict[str, Any],
     claims: list[RetrievalAnswerClaim],
@@ -575,6 +717,12 @@ def _string_tuple(value: Any, *, default: tuple[str, ...]) -> tuple[str, ...]:
         return default
     values = tuple(str(item).strip() for item in value if str(item).strip())
     return values or default
+
+
+def _bool_value(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
 
 
 def _unique(values) -> list[str]:

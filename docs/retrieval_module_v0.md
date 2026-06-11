@@ -105,6 +105,27 @@ Operators can also call `GET /api/v1/retrieval/graph/neighborhood` to expand a
 bounded subgraph by text, node ID, evidence ID, source ID, normalized code,
 FHIR-like resource type, data field, relation, owner, and workflow scope.
 
+GraphRAG-lite reranking is configured by
+`knowledge/retrieval/graph_rag_policy.json` and included in the sanitized
+retrieval rule-pack fingerprint list. After Graph-NER builds the package graph,
+the backend computes a bounded `graph_support` score component for evidence that
+shares query graph targets, evidence triples, or normalized-code paths. The
+score is additive and auditable:
+
+- `hits[].score_components[]` may include `component="graph_support"`.
+- `hits[].source_locator.graph_rag_lite` and
+  `hits[].evidence.locator.graph_rag_lite` show shared query targets, graph
+  edge counts, triple counts, normalized-code targets, and score boost.
+- `handoff_context.graph_rag_lite` and
+  `trace.fusion_diagnostics.graph_rag_lite` show whether graph support changed
+  the final hit order and which evidence had graph support.
+- `support_matrix.rows[].metadata.graph_rag_lite` carries the same support data
+  into answer synthesis and assistant/MCP handoff.
+
+Graph support can promote a weak support row to partial or a partial support row
+to strong only when the configured policy threshold is met. It cannot override
+source trust, freshness, PHI, policy, or human-review gates.
+
 The package also includes a guarded `answer` object. This is deterministic
 retrieval synthesis, not open-ended clinical generation. It is built only from
 the `support_matrix`, ranked evidence, source metadata, and Graph-NER handoff:
@@ -114,17 +135,23 @@ the `support_matrix`, ranked evidence, source metadata, and Graph-NER handoff:
   evidence IDs.
 - `answer.claims[]` links each answer claim to evidence IDs, citation IDs, and
   graph path refs when Graph-NER produced matching evidence triples.
+- `answer.claims[].graph_guard` records the claim-to-triple guard status:
+  `supported`, `review_required`, or `not_required`.
 - `answer.unsupported_claims[]` carries weak or unsupported support rows
   instead of allowing them into confident answer text.
 - `answer.missing_evidence_gaps[]` explains why a package cannot support a
   complete answer.
 - `answer.freshness_warnings[]` flags stale, deprecated, blocked,
   review-needed, unapproved, or version-mismatched sources.
+- `answer.metadata.claim_triple_guard` summarizes how many clinical claims were
+  graph-supported versus review-required.
 
 If no row reaches strong or partial evidence support, the answer is refused and
 the trace receives `retrieval_answer_refused_unsupported`. This keeps Assistant,
 MCP, UI, and export consumers from inventing conclusions outside the retrieved
-evidence package.
+evidence package. If a strong clinical claim lacks graph-triple support, the
+answer is marked review-required instead of silently presenting it as fully
+supported.
 
 The package also includes a `standard_search_plan`. This is a typed,
 healthcare-standard playbook selected from

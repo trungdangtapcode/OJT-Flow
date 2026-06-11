@@ -9,7 +9,14 @@ from pydantic import ValidationError
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.evidence import Evidence
-from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.core.contracts.retrieval import (
+    RetrievalEvidenceSupportMatrix,
+    RetrievalEvidenceSupportRow,
+    RetrievalHit,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalTrace,
+)
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
 from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
@@ -2058,6 +2065,7 @@ def test_knowledge_json_sources_are_valid() -> None:
         ROOT / "knowledge/retrieval/query_route_rules.json",
         ROOT / "knowledge/retrieval/filter_suggestion_rules.json",
         ROOT / "knowledge/retrieval/ranking_boost_rules.json",
+        ROOT / "knowledge/retrieval/graph_rag_policy.json",
         ROOT / "knowledge/retrieval/evaluation_policy.json",
         ROOT / "knowledge/retrieval/search_hint_targets.json",
         ROOT / "knowledge/retrieval/chunking_profiles.json",
@@ -3096,6 +3104,137 @@ def test_retrieval_service_attaches_guarded_answer_with_citations() -> None:
     assert package.handoff_context["answer"]["citations"][0]["evidence_id"] == (
         package.answer.citations[0].evidence_id
     )
+
+
+def test_graph_rag_lite_reranks_evidence_with_query_graph_support() -> None:
+    query = RetrievalQuery(query="HbA1c unit evidence", top_k=2)
+    generic = Evidence(
+        evidence_id="ev_generic",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        source_id="standard:generic_workflow",
+        claim="Operational workflow guidance uses audit review.",
+        source_version="1.0",
+        locator={"chunk_id": "generic"},
+        confidence=0.8,
+    )
+    hba1c = Evidence(
+        evidence_id="ev_hba1c",
+        source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+        source_id="terminology:loinc_hba1c",
+        claim="HbA1c laboratory Observation uses UCUM units and LOINC code.",
+        source_version="1.0",
+        locator={"chunk_id": "hba1c"},
+        confidence=0.72,
+    )
+    package = RetrievalPackage(
+        hits=[
+            RetrievalHit(evidence=generic, score=0.5, matched_terms=["workflow"]),
+            RetrievalHit(evidence=hba1c, score=0.49, matched_terms=["hba1c"]),
+        ],
+        evidence=[generic, hba1c],
+        support_matrix=RetrievalEvidenceSupportMatrix(
+            query_claim=query.query,
+            row_count=2,
+            strong_count=0,
+            partial_count=2,
+            weak_count=0,
+            unsupported_count=0,
+            rows=[
+                RetrievalEvidenceSupportRow(
+                    claim_id="claim:1",
+                    claim=generic.claim,
+                    support_status="partial",
+                    evidence_id=generic.evidence_id,
+                    source_id=generic.source_id,
+                    source_type=generic.source_type,
+                    source_version=generic.source_version,
+                    score=0.5,
+                    confidence=generic.confidence,
+                    reasoning="Initial lexical support.",
+                ),
+                RetrievalEvidenceSupportRow(
+                    claim_id="claim:2",
+                    claim=hba1c.claim,
+                    support_status="partial",
+                    evidence_id=hba1c.evidence_id,
+                    source_id=hba1c.source_id,
+                    source_type=hba1c.source_type,
+                    source_version=hba1c.source_version,
+                    score=0.49,
+                    confidence=hba1c.confidence,
+                    reasoning="Initial lexical support.",
+                ),
+            ],
+        ),
+        trace=RetrievalTrace(
+            strategy="test",
+            final_hit_ids=[generic.evidence_id, hba1c.evidence_id],
+        ),
+    )
+
+    reranked = GraphNERService().augment_package(package, query)
+
+    assert reranked.hits[0].evidence.evidence_id == hba1c.evidence_id
+    assert reranked.handoff_context["graph_rag_lite"]["reranked"] is True
+    assert reranked.trace.fusion_diagnostics["graph_rag_lite"]["supported_evidence_count"] >= 1
+    assert any(
+        component.component == "graph_support"
+        for component in reranked.hits[0].score_components
+    )
+    assert reranked.support_matrix is not None
+    first_row = reranked.support_matrix.rows[0]
+    assert first_row.evidence_id == hba1c.evidence_id
+    assert first_row.metadata["graph_rag_lite"]["score_boost"] > 0
+
+
+def test_retrieval_answer_flags_clinical_claim_without_graph_triple_support() -> None:
+    query = RetrievalQuery(query="FHIR Observation unit evidence", top_k=1)
+    evidence = Evidence(
+        evidence_id="ev_observation",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        source_id="standard:fhir_observation",
+        claim="FHIR Observation lab unit evidence should be reviewed with UCUM support.",
+        source_version="R4",
+        locator={"resource": "Observation"},
+        confidence=0.9,
+    )
+    package = RetrievalPackage(
+        hits=[RetrievalHit(evidence=evidence, score=0.8, matched_terms=["observation"])],
+        evidence=[evidence],
+        support_matrix=RetrievalEvidenceSupportMatrix(
+            query_claim=query.query,
+            row_count=1,
+            strong_count=1,
+            partial_count=0,
+            weak_count=0,
+            unsupported_count=0,
+            rows=[
+                RetrievalEvidenceSupportRow(
+                    claim_id="claim:1",
+                    claim=evidence.claim,
+                    support_status="strong",
+                    evidence_id=evidence.evidence_id,
+                    source_id=evidence.source_id,
+                    source_type=evidence.source_type,
+                    source_version=evidence.source_version,
+                    score=0.8,
+                    confidence=evidence.confidence,
+                    reasoning="Strong lexical and provenance support.",
+                )
+            ],
+        ),
+        trace=RetrievalTrace(strategy="test", final_hit_ids=[evidence.evidence_id]),
+    )
+
+    guarded = RetrievalAnswerSynthesizer().augment_package(package, query)
+
+    assert guarded.answer is not None
+    assert guarded.answer.status == "review_required"
+    assert guarded.answer.requires_human_review is True
+    claim = guarded.answer.claims[0]
+    assert claim.graph_guard["status"] == "review_required"
+    assert "claim_without_graph_triple_support" in claim.warnings
+    assert guarded.answer.metadata["claim_triple_guard"]["review_required_count"] == 1
 
 
 def test_retrieval_answer_refuses_when_no_evidence_supports_query() -> None:

@@ -5,13 +5,21 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from ojtflow.core.contracts.evidence import Evidence
-from ojtflow.core.contracts.retrieval import RetrievalPackage, RetrievalQuery
+from ojtflow.core.contracts.retrieval import (
+    RetrievalEvidenceSupportMatrix,
+    RetrievalEvidenceSupportRow,
+    RetrievalHit,
+    RetrievalPackage,
+    RetrievalQuery,
+    RetrievalScoreComponent,
+)
 
 
 # Reuse the same seed registry (and path override) as deterministic query
@@ -23,6 +31,12 @@ DEFAULT_CONCEPT_REGISTRY = (
 DEFAULT_GRAPH_NER_RULES = (
     Path(__file__).resolve().parents[3] / "knowledge" / "terminologies" / "graph_ner_rules.json"
 )
+DEFAULT_GRAPH_RAG_POLICY = (
+    Path(__file__).resolve().parents[3]
+    / "knowledge"
+    / "retrieval"
+    / "graph_rag_policy.json"
+)
 DEFAULT_FHIR_SEARCH_PARAMETERS = (
     Path(__file__).resolve().parents[3]
     / "knowledge"
@@ -31,6 +45,7 @@ DEFAULT_FHIR_SEARCH_PARAMETERS = (
 )
 CONCEPT_REGISTRY_ENV_VAR = "OJT_MEDICAL_CONCEPT_REGISTRY_PATH"
 GRAPH_NER_RULES_ENV_VAR = "OJT_GRAPH_NER_RULES_PATH"
+GRAPH_RAG_POLICY_ENV_VAR = "OJT_GRAPH_RAG_POLICY_PATH"
 FHIR_SEARCH_PARAMETERS_ENV_VAR = "OJT_FHIR_SEARCH_PARAMETERS_PATH"
 
 
@@ -43,6 +58,23 @@ class AliasRule(NamedTuple):
     alias: str
     confidence: float
     rule_source: str
+
+
+@dataclass(frozen=True)
+class GraphRAGPolicy:
+    """Data-driven policy for GraphRAG-lite evidence scoring."""
+
+    version: str
+    enabled: bool
+    shared_query_target_weight: float
+    evidence_edge_weight: float
+    evidence_triple_weight: float
+    normalized_code_weight: float
+    max_score_boost: float
+    promote_weak_to_partial_min_boost: float
+    promote_partial_to_strong_min_boost: float
+    query_relations: tuple[str, ...]
+    evidence_relations: tuple[str, ...]
 
 
 @lru_cache(maxsize=4)
@@ -98,6 +130,84 @@ def _load_graph_ner_rules(path_text: str) -> tuple[dict[str, Any], ...]:
 
 def _graph_ner_rules_path() -> str:
     return os.environ.get(GRAPH_NER_RULES_ENV_VAR) or str(DEFAULT_GRAPH_NER_RULES)
+
+
+@lru_cache(maxsize=4)
+def _load_graph_rag_policy(path_text: str) -> GraphRAGPolicy:
+    path = Path(path_text)
+    if not path.exists():
+        return _fallback_graph_rag_policy()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        return _fallback_graph_rag_policy()
+    ranking = raw.get("ranking") if isinstance(raw.get("ranking"), dict) else {}
+    promotion = (
+        raw.get("support_promotion")
+        if isinstance(raw.get("support_promotion"), dict)
+        else {}
+    )
+    relations = raw.get("relations") if isinstance(raw.get("relations"), dict) else {}
+    return GraphRAGPolicy(
+        version=str(raw.get("version") or "graph_rag_policy.v1"),
+        enabled=_coerce_bool(raw.get("enabled"), default=True),
+        shared_query_target_weight=_coerce_float(
+            ranking.get("shared_query_target_weight"),
+            default=0.055,
+        ),
+        evidence_edge_weight=_coerce_float(
+            ranking.get("evidence_edge_weight"),
+            default=0.012,
+        ),
+        evidence_triple_weight=_coerce_float(
+            ranking.get("evidence_triple_weight"),
+            default=0.01,
+        ),
+        normalized_code_weight=_coerce_float(
+            ranking.get("normalized_code_weight"),
+            default=0.018,
+        ),
+        max_score_boost=_coerce_float(ranking.get("max_score_boost"), default=0.12),
+        promote_weak_to_partial_min_boost=_coerce_float(
+            promotion.get("weak_to_partial_min_boost"),
+            default=0.04,
+        ),
+        promote_partial_to_strong_min_boost=_coerce_float(
+            promotion.get("partial_to_strong_min_boost"),
+            default=0.07,
+        ),
+        query_relations=_string_tuple(
+            relations.get("query_relations"),
+            default=("mentions_entity", "mentions_field", "requests_resource"),
+        ),
+        evidence_relations=_string_tuple(
+            relations.get("evidence_relations"),
+            default=("supports",),
+        ),
+    )
+
+
+def _graph_rag_policy_path() -> str:
+    return os.environ.get(GRAPH_RAG_POLICY_ENV_VAR) or str(DEFAULT_GRAPH_RAG_POLICY)
+
+
+def _active_graph_rag_policy() -> GraphRAGPolicy:
+    return _load_graph_rag_policy(_graph_rag_policy_path())
+
+
+def _fallback_graph_rag_policy() -> GraphRAGPolicy:
+    return GraphRAGPolicy(
+        version="graph_rag_policy.fallback",
+        enabled=True,
+        shared_query_target_weight=0.055,
+        evidence_edge_weight=0.012,
+        evidence_triple_weight=0.01,
+        normalized_code_weight=0.018,
+        max_score_boost=0.12,
+        promote_weak_to_partial_min_boost=0.04,
+        promote_partial_to_strong_min_boost=0.07,
+        query_relations=("mentions_entity", "mentions_field", "requests_resource"),
+        evidence_relations=("supports",),
+    )
 
 
 @lru_cache(maxsize=4)
@@ -195,11 +305,34 @@ class GraphNERService:
         query: RetrievalQuery,
     ) -> RetrievalPackage:
         graph_context = self.build_graph_context(package.evidence, query)
+        policy = _active_graph_rag_policy()
+        ranked_package, graph_rag_summary = _apply_graph_rag_ranking(
+            package,
+            graph_context=graph_context,
+            policy=policy,
+        )
         handoff_context = {
-            **package.handoff_context,
+            **ranked_package.handoff_context,
             "graph_context": graph_context,
+            "graph_rag_lite": graph_rag_summary,
         }
-        return package.model_copy(update={"handoff_context": handoff_context})
+        trace = ranked_package.trace.model_copy(
+            update={
+                "fusion_diagnostics": {
+                    **ranked_package.trace.fusion_diagnostics,
+                    "graph_rag_lite": graph_rag_summary,
+                },
+                "final_hit_ids": [
+                    hit.evidence.evidence_id for hit in ranked_package.hits
+                ],
+            }
+        )
+        return ranked_package.model_copy(
+            update={
+                "handoff_context": handoff_context,
+                "trace": trace,
+            }
+        )
 
     def build_graph_context(
         self,
@@ -346,6 +479,396 @@ class GraphNERService:
             return
 
 
+def _apply_graph_rag_ranking(
+    package: RetrievalPackage,
+    *,
+    graph_context: dict[str, Any],
+    policy: GraphRAGPolicy,
+) -> tuple[RetrievalPackage, dict[str, Any]]:
+    support_by_evidence = _graph_support_by_evidence(graph_context, policy=policy)
+    if not policy.enabled or not package.hits:
+        return package, _graph_rag_summary(
+            policy=policy,
+            support_by_evidence=support_by_evidence,
+            reranked=False,
+            original_order=[hit.evidence.evidence_id for hit in package.hits],
+            final_order=[hit.evidence.evidence_id for hit in package.hits],
+        )
+
+    original_order = [hit.evidence.evidence_id for hit in package.hits]
+    adjusted_hits = [
+        _apply_graph_support_to_hit(
+            hit,
+            support=support_by_evidence.get(hit.evidence.evidence_id),
+            policy=policy,
+        )
+        for hit in package.hits
+    ]
+    adjusted_hits.sort(key=lambda hit: hit.score, reverse=True)
+    support_matrix = _apply_graph_support_to_matrix(
+        package.support_matrix,
+        hits=adjusted_hits,
+        support_by_evidence=support_by_evidence,
+        policy=policy,
+    )
+    interpretation = _apply_graph_support_to_interpretation(
+        package.interpretation,
+        hits=adjusted_hits,
+    )
+    final_order = [hit.evidence.evidence_id for hit in adjusted_hits]
+    summary = _graph_rag_summary(
+        policy=policy,
+        support_by_evidence=support_by_evidence,
+        reranked=final_order != original_order,
+        original_order=original_order,
+        final_order=final_order,
+    )
+    return (
+        package.model_copy(
+            update={
+                "hits": adjusted_hits,
+                "evidence": [hit.evidence for hit in adjusted_hits],
+                "support_matrix": support_matrix,
+                "interpretation": interpretation,
+            }
+        ),
+        summary,
+    )
+
+
+def _graph_support_by_evidence(
+    graph_context: dict[str, Any],
+    *,
+    policy: GraphRAGPolicy,
+) -> dict[str, dict[str, Any]]:
+    query_targets = _query_graph_targets(graph_context, policy=policy)
+    support: dict[str, dict[str, Any]] = {}
+    for edge in graph_context.get("edges") or []:
+        if not isinstance(edge, dict):
+            continue
+        evidence_id = _edge_evidence_id(edge)
+        if not evidence_id:
+            continue
+        item = support.setdefault(evidence_id, _empty_graph_support(evidence_id))
+        relation = str(edge.get("relation") or "")
+        target = str(edge.get("target") or "")
+        if relation in policy.evidence_relations and target:
+            item["evidence_targets"].add(target)
+            item["edge_count"] += 1
+        if relation == "normalizes_to" and target:
+            item["normalized_code_targets"].add(target)
+            item["normalized_code_count"] += 1
+    for triple in graph_context.get("triples") or []:
+        if not isinstance(triple, dict):
+            continue
+        evidence_id = str(triple.get("evidence_id") or "")
+        if not evidence_id:
+            continue
+        item = support.setdefault(evidence_id, _empty_graph_support(evidence_id))
+        item["triple_count"] += 1
+        subject = str(triple.get("subject") or "")
+        predicate = str(triple.get("predicate") or "")
+        obj = str(triple.get("object") or "")
+        if subject and predicate and obj:
+            item["triple_refs"].append(f"{subject} / {predicate} / {obj}")
+
+    for item in support.values():
+        shared = sorted(query_targets.intersection(item["evidence_targets"]))
+        raw_score = (
+            len(shared) * policy.shared_query_target_weight
+            + item["edge_count"] * policy.evidence_edge_weight
+            + item["triple_count"] * policy.evidence_triple_weight
+            + item["normalized_code_count"] * policy.normalized_code_weight
+        )
+        item["shared_query_targets"] = shared
+        item["score_boost"] = round(min(policy.max_score_boost, raw_score), 6)
+        item["evidence_targets"] = sorted(item["evidence_targets"])
+        item["normalized_code_targets"] = sorted(item["normalized_code_targets"])
+        item["triple_refs"] = item["triple_refs"][:8]
+    return support
+
+
+def _query_graph_targets(
+    graph_context: dict[str, Any],
+    *,
+    policy: GraphRAGPolicy,
+) -> set[str]:
+    targets: set[str] = set()
+    for edge in graph_context.get("edges") or []:
+        if not isinstance(edge, dict):
+            continue
+        if edge.get("source") != "query:current":
+            continue
+        if str(edge.get("relation") or "") not in policy.query_relations:
+            continue
+        target = str(edge.get("target") or "")
+        if target:
+            targets.add(target)
+    return targets
+
+
+def _empty_graph_support(evidence_id: str) -> dict[str, Any]:
+    return {
+        "evidence_id": evidence_id,
+        "score_boost": 0.0,
+        "shared_query_targets": [],
+        "evidence_targets": set(),
+        "normalized_code_targets": set(),
+        "edge_count": 0,
+        "triple_count": 0,
+        "normalized_code_count": 0,
+        "triple_refs": [],
+    }
+
+
+def _edge_evidence_id(edge: dict[str, Any]) -> str | None:
+    evidence_id = edge.get("evidence_id")
+    if evidence_id:
+        return str(evidence_id)
+    source = str(edge.get("source") or "")
+    prefix = "evidence:"
+    if source.startswith(prefix):
+        return source[len(prefix):]
+    return None
+
+
+def _apply_graph_support_to_hit(
+    hit: RetrievalHit,
+    *,
+    support: dict[str, Any] | None,
+    policy: GraphRAGPolicy,
+) -> RetrievalHit:
+    if not support or support.get("score_boost", 0.0) <= 0.0:
+        return hit
+    score_boost = float(support["score_boost"])
+    graph_payload = _serializable_graph_support(support, policy=policy)
+    evidence = hit.evidence.model_copy(
+        update={
+            "confidence": round(min(0.99, (hit.evidence.confidence or 0.0) + score_boost), 4),
+            "locator": {
+                **hit.evidence.locator,
+                "graph_rag_lite": graph_payload,
+            },
+        }
+    )
+    source_locator = {
+        **hit.source_locator,
+        "graph_rag_lite": graph_payload,
+    }
+    match_explanation = {
+        **hit.match_explanation,
+        "graph_rag_lite": graph_payload,
+        "top_score_driver": f"Graph support +{score_boost:.3f}",
+        "support_status": _promoted_support_status(
+            str(hit.match_explanation.get("support_status") or ""),
+            score_boost=score_boost,
+            policy=policy,
+        ),
+    }
+    return hit.model_copy(
+        update={
+            "evidence": evidence,
+            "score": round(hit.score + score_boost, 6),
+            "rerank_score": round(hit.rerank_score + score_boost, 6),
+            "score_components": [
+                *hit.score_components,
+                RetrievalScoreComponent(
+                    component="graph_support",
+                    label="Graph support",
+                    value=round(score_boost, 6),
+                    description=(
+                        "GraphRAG-lite boost from query-to-evidence entity and "
+                        "triple support."
+                    ),
+                    metadata=graph_payload,
+                ),
+            ],
+            "source_locator": source_locator,
+            "match_explanation": match_explanation,
+        }
+    )
+
+
+def _apply_graph_support_to_interpretation(
+    interpretation: Any,
+    *,
+    hits: list[RetrievalHit],
+) -> Any:
+    if interpretation is None or not hits:
+        return interpretation
+    top_hit = hits[0]
+    explanation = (
+        top_hit.match_explanation
+        if isinstance(top_hit.match_explanation, dict)
+        else {}
+    )
+    return interpretation.model_copy(
+        update={
+            "top_evidence_id": top_hit.evidence.evidence_id,
+            "top_source_id": top_hit.evidence.source_id,
+            "top_score_driver": _optional_text(explanation.get("top_score_driver")),
+            "support_status": _optional_text(explanation.get("support_status")),
+            "matched_terms": _string_list(explanation.get("matched_terms"), limit=6),
+            "concept_labels": _string_list(explanation.get("concept_labels"), limit=4),
+            "aspect_labels": _string_list(explanation.get("aspect_labels"), limit=4),
+            "metadata": {
+                **interpretation.metadata,
+                "graph_rag_lite_top_evidence_id": top_hit.evidence.evidence_id,
+            },
+        }
+    )
+
+
+def _promoted_support_status(
+    current: str,
+    *,
+    score_boost: float,
+    policy: GraphRAGPolicy,
+) -> str:
+    normalized = current if current in {"strong", "partial", "weak"} else "weak"
+    if (
+        normalized == "partial"
+        and score_boost >= policy.promote_partial_to_strong_min_boost
+    ):
+        return "strong"
+    if normalized == "weak" and score_boost >= policy.promote_weak_to_partial_min_boost:
+        return "partial"
+    return normalized
+
+
+def _apply_graph_support_to_matrix(
+    matrix: RetrievalEvidenceSupportMatrix | None,
+    *,
+    hits: list[RetrievalHit],
+    support_by_evidence: dict[str, dict[str, Any]],
+    policy: GraphRAGPolicy,
+) -> RetrievalEvidenceSupportMatrix | None:
+    if matrix is None:
+        return None
+    rank_by_evidence = {
+        hit.evidence.evidence_id: rank for rank, hit in enumerate(hits, start=1)
+    }
+    rows = [
+        _apply_graph_support_to_row(
+            row,
+            support=support_by_evidence.get(row.evidence_id),
+            rank=rank_by_evidence.get(row.evidence_id),
+            policy=policy,
+        )
+        for row in matrix.rows
+    ]
+    rows.sort(key=lambda row: int(row.metadata.get("rank") or 9999))
+    status_counts = Counter(row.support_status for row in rows)
+    warnings = list(matrix.warnings)
+    if any(row.metadata.get("graph_rag_lite") for row in rows):
+        warnings.append("graph_rag_lite_support_applied")
+    return matrix.model_copy(
+        update={
+            "row_count": len(rows),
+            "strong_count": status_counts.get("strong", 0),
+            "partial_count": status_counts.get("partial", 0),
+            "weak_count": status_counts.get("weak", 0),
+            "unsupported_count": status_counts.get("unsupported", 0),
+            "rows": rows,
+            "warnings": _unique_strings(warnings),
+        }
+    )
+
+
+def _apply_graph_support_to_row(
+    row: RetrievalEvidenceSupportRow,
+    *,
+    support: dict[str, Any] | None,
+    rank: int | None,
+    policy: GraphRAGPolicy,
+) -> RetrievalEvidenceSupportRow:
+    metadata = {**row.metadata}
+    if rank is not None:
+        metadata["rank"] = rank
+    if not support or support.get("score_boost", 0.0) <= 0.0:
+        return row.model_copy(update={"metadata": metadata})
+    graph_payload = _serializable_graph_support(support, policy=policy)
+    metadata["graph_rag_lite"] = graph_payload
+    promoted_status = _promoted_support_status(
+        row.support_status,
+        score_boost=float(support["score_boost"]),
+        policy=policy,
+    )
+    reasoning = (
+        f"{row.reasoning} GraphRAG-lite linked the evidence to "
+        f"{len(graph_payload['shared_query_targets'])} query graph target(s) and "
+        f"{graph_payload['triple_count']} evidence triple(s)."
+    )
+    return row.model_copy(
+        update={
+            "support_status": promoted_status,
+            "score": round(row.score + float(support["score_boost"]), 6),
+            "confidence": (
+                round(min(1.0, row.confidence + float(support["score_boost"])), 4)
+                if row.confidence is not None
+                else None
+            ),
+            "reasoning": reasoning,
+            "metadata": metadata,
+        }
+    )
+
+
+def _serializable_graph_support(
+    support: dict[str, Any],
+    *,
+    policy: GraphRAGPolicy,
+) -> dict[str, Any]:
+    return {
+        "evidence_id": str(support.get("evidence_id") or ""),
+        "policy_version": policy.version,
+        "score_boost": round(float(support.get("score_boost") or 0.0), 6),
+        "shared_query_targets": list(support.get("shared_query_targets") or []),
+        "evidence_targets": list(support.get("evidence_targets") or []),
+        "normalized_code_targets": list(support.get("normalized_code_targets") or []),
+        "edge_count": int(support.get("edge_count") or 0),
+        "triple_count": int(support.get("triple_count") or 0),
+        "normalized_code_count": int(support.get("normalized_code_count") or 0),
+        "triple_refs": list(support.get("triple_refs") or []),
+    }
+
+
+def _graph_rag_summary(
+    *,
+    policy: GraphRAGPolicy,
+    support_by_evidence: dict[str, dict[str, Any]],
+    reranked: bool,
+    original_order: list[str],
+    final_order: list[str],
+) -> dict[str, Any]:
+    supported = [
+        _serializable_graph_support(item, policy=policy)
+        for item in support_by_evidence.values()
+        if item.get("score_boost", 0.0) > 0.0
+    ]
+    supported.sort(
+        key=lambda item: (item["score_boost"], item["evidence_id"]),
+        reverse=True,
+    )
+    return {
+        "contract": "graph_rag_lite.v0",
+        "policy_version": policy.version,
+        "enabled": policy.enabled,
+        "reranked": reranked,
+        "supported_evidence_count": len(supported),
+        "original_order": original_order,
+        "final_order": final_order,
+        "top_supported_evidence": supported[:8],
+        "weights": {
+            "shared_query_target_weight": policy.shared_query_target_weight,
+            "evidence_edge_weight": policy.evidence_edge_weight,
+            "evidence_triple_weight": policy.evidence_triple_weight,
+            "normalized_code_weight": policy.normalized_code_weight,
+            "max_score_boost": policy.max_score_boost,
+        },
+    }
+
+
 def _entities_from_text(text: str) -> list[dict[str, Any]]:
     entities: list[dict[str, Any]] = []
     entities.extend(_rule_entities_from_text(text))
@@ -483,6 +1006,54 @@ def _coerce_confidence(value: Any, *, default: float) -> float:
     if isinstance(value, (int, float)):
         return max(0.0, min(1.0, float(value)))
     return default
+
+
+def _coerce_float(value: Any, *, default: float) -> float:
+    if isinstance(value, (int, float)):
+        return max(0.0, float(value))
+    return default
+
+
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _string_tuple(value: Any, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return default
+    values = tuple(str(item).strip() for item in value if str(item).strip())
+    return values or default
+
+
+def _optional_text(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _string_list(value: Any, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            result.append(text)
+    return result[:limit]
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        result.append(text)
+        seen.add(text)
+    return result
 
 
 def _edge(

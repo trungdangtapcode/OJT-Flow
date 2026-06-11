@@ -28,7 +28,7 @@ as a confident medical answer.
 - `status`: `supported`, `partial`, `review_required`, or `refused`;
 - `answer_text`: deterministic text built only from supported evidence rows;
 - `claims[]`: answer claims tied to evidence IDs, citation IDs, and Graph-NER
-  path refs;
+  path refs, with `graph_guard` status for claim-to-triple checking;
 - `citations[]`: cited evidence source IDs, versions, and locators;
 - `unsupported_claims[]`: weak or unsupported support rows excluded from
   confident answer text;
@@ -36,6 +36,8 @@ as a confident medical answer.
 - `freshness_warnings[]`: stale, deprecated, review-needed, unapproved, blocked,
   failed, or version-mismatched source warnings;
 - `graph_path_summary`: Graph-NER path coverage for the answer.
+- `metadata.claim_triple_guard`: summary counts for graph-supported,
+  review-required, and not-required claims.
 
 The same payload is mirrored to `handoff_context.answer` for Assistant and MCP
 clients.
@@ -48,6 +50,8 @@ clients.
 - statuses that require human review;
 - source-version markers treated as stale;
 - source lifecycle states treated as stale or blocking;
+- claim-to-triple guard settings, including which support statuses require
+  graph support and which clinical terms count as graph-guard-sensitive;
 - refusal messages.
 
 Use `OJT_RETRIEVAL_ANSWER_POLICY_PATH` to test a replacement policy without
@@ -60,10 +64,12 @@ Focused tests:
 ```bash
 OJT_STORAGE_BACKEND=memory PYTHONPATH=src pytest -q \
   tests/test_retrieval.py::test_retrieval_service_attaches_guarded_answer_with_citations \
+  tests/test_retrieval.py::test_retrieval_answer_flags_clinical_claim_without_graph_triple_support \
   tests/test_retrieval.py::test_retrieval_answer_refuses_when_no_evidence_supports_query \
   tests/test_retrieval.py::test_retrieval_answer_warns_on_deprecated_source_version
 ```
 
 The first test checks cited answer synthesis through the application service.
-The second checks refusal when no evidence supports the query. The third checks
-source freshness warnings.
+The second checks the claim-to-triple guard for strong clinical claims without
+graph support. The third checks refusal when no evidence supports the query. The
+fourth checks source freshness warnings.

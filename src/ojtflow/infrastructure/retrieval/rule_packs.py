@@ -61,6 +61,11 @@ RULE_PACK_SPECS: tuple[tuple[str, Path, str], ...] = (
         "OJT_RETRIEVAL_QUALITY_POLICY_PATH",
     ),
     (
+        "graph_rag",
+        Path("retrieval/graph_rag_policy.json"),
+        "OJT_GRAPH_RAG_POLICY_PATH",
+    ),
+    (
         "corrective_actions",
         Path("retrieval/corrective_action_rules.json"),
         "OJT_CORRECTIVE_ACTION_RULES_PATH",

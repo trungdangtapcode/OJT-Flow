@@ -838,6 +838,7 @@ class RetrievalAnswerClaim(ContractModel):
     evidence_ids: list[NonBlankStr] = Field(default_factory=list)
     citation_ids: list[NonBlankStr] = Field(default_factory=list)
     graph_path_refs: list[NonBlankStr] = Field(default_factory=list)
+    graph_guard: dict[str, Any] = Field(default_factory=dict)
     warnings: list[NonBlankStr] = Field(default_factory=list)
 
 

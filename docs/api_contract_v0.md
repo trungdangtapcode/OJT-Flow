@@ -583,6 +583,18 @@ FHIR-like workflow behavior:
 - `handoff_context.fhir_handoff` records Graph-NER/RAG handoff terms.
 - `handoff_context.retrieval_handoff.graph_context` records extracted evidence
   graph nodes, edges, and triples for retrieval-grounded explanation.
+- `handoff_context.retrieval_handoff.graph_rag_lite` records graph-aware
+  reranking metadata: policy version, whether graph support changed hit order,
+  supported evidence count, score weights, original order, final order, and
+  top graph-supported evidence refs.
+- Retrieval hits may include a `graph_support` score component and
+  `source_locator.graph_rag_lite` / `evidence.locator.graph_rag_lite` payloads
+  with shared query targets, normalized-code targets, graph edge counts, triple
+  counts, and score boost.
+- Retrieval answers include `claims[].graph_guard` and
+  `metadata.claim_triple_guard`; strong clinical claims without graph-triple
+  support are marked `review_required` instead of silently presented as fully
+  supported.
 - The retrieval query receives `resource_type`, so standard evidence such as
   FHIR Observation guidance can be ranked with the workflow context.
 
