@@ -54,6 +54,7 @@ from ojtflow.infrastructure.storage.consistency import (
 )
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
 from ojtflow.infrastructure.ai_risk_register import load_ai_risk_register
+from ojtflow.infrastructure.owasp_llm_threat_model import load_owasp_llm_threat_model
 from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.application.tool_registry import tool_specs_json
 
@@ -344,6 +345,18 @@ async def runtime_ai_risk_register(
 
     governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     return ok(load_ai_risk_register(settings.resolved_ai_risk_register_path))
+
+
+@router.get("/runtime/owasp-llm-threat-model")
+async def runtime_owasp_llm_threat_model(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return the OWASP LLM Top 10 threat model."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(load_owasp_llm_threat_model(settings.resolved_owasp_llm_threat_model_path))
 
 
 @router.post("/runtime/settings-history/rollback")

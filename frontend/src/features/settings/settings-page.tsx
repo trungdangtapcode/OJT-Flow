@@ -31,6 +31,7 @@ import {
   useRuntimeConfigQuery,
   useRuntimeHealthQuery,
   useRuntimeMigrationsQuery,
+  useRuntimeOwaspLlmThreatModelQuery,
   useRuntimeReadinessQuery,
   useRuntimeAssistantSettingsMutation,
   useRuntimeRetrievalSettingsMutation,
@@ -40,6 +41,8 @@ import {
 import type {
   AiRiskLevel,
   AiRiskRegister,
+  OwaspLlmThreatModel,
+  ThreatRiskLevel,
   ReadinessCheck,
   RuntimeAssistantSettings,
   RuntimeAssistantSettingsPayload,
@@ -58,6 +61,7 @@ export function SettingsPage() {
   const migrationsQuery = useRuntimeMigrationsQuery();
   const readinessQuery = useRuntimeReadinessQuery();
   const aiRiskQuery = useRuntimeAiRiskRegisterQuery();
+  const owaspQuery = useRuntimeOwaspLlmThreatModelQuery();
   const schemasQuery = useSchemasQuery();
   const extractorsQuery = useExtractorInventoryQuery();
   const schemaCount = schemasQuery.data?.length ?? 0;
@@ -476,6 +480,11 @@ export function SettingsPage() {
           isLoading={aiRiskQuery.isLoading}
           register={aiRiskQuery.data}
         />
+        <OwaspLlmThreatModelPanel
+          error={owaspQuery.isError ? workflowErrorMessage(owaspQuery.error) : null}
+          isLoading={owaspQuery.isLoading}
+          model={owaspQuery.data}
+        />
       </div>
     </div>
   );
@@ -660,6 +669,175 @@ function AiRiskRegisterPanel({
                   </details>
                 ))}
               </div>
+            </div>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OwaspLlmThreatModelPanel({
+  error,
+  isLoading,
+  model,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  model: OwaspLlmThreatModel | undefined;
+}) {
+  const highOrCriticalCount =
+    model?.categories.filter(
+      (category) =>
+        category.residual_risk === "high" || category.residual_risk === "critical",
+    ).length ?? 0;
+  const mitigationCounts = model?.categories.reduce(
+    (counts, category) => {
+      for (const mitigation of category.mitigations) {
+        counts[mitigation.status] += 1;
+      }
+      return counts;
+    },
+    { implemented: 0, partial: 0, planned: 0 },
+  ) ?? { implemented: 0, partial: 0, planned: 0 };
+
+  return (
+    <Card className="min-w-0 overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              OWASP LLM threat model
+            </CardTitle>
+            <CardDescription>
+              Concrete mitigations mapped to code, tests, monitoring signals, and residual risk.
+            </CardDescription>
+          </div>
+          {model ? <Badge variant="success">{model.standard_ref}</Badge> : null}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading OWASP LLM threat model.</div>
+        ) : null}
+        {error ? (
+          <Notice title="OWASP threat model unavailable" tone="danger">
+            {error}
+          </Notice>
+        ) : null}
+        {model ? (
+          <>
+            <div className="grid gap-2 text-sm sm:grid-cols-4">
+              <ReadinessCounter
+                label="Categories"
+                tone={model.categories.length === 10 ? "success" : "warning"}
+                value={model.categories.length}
+              />
+              <ReadinessCounter
+                label="High residual"
+                tone={highOrCriticalCount ? "warning" : "success"}
+                value={highOrCriticalCount}
+              />
+              <ReadinessCounter
+                label="Implemented"
+                tone={mitigationCounts.implemented ? "success" : "warning"}
+                value={mitigationCounts.implemented}
+              />
+              <ReadinessCounter
+                label="Partial"
+                tone={mitigationCounts.partial ? "warning" : "success"}
+                value={mitigationCounts.partial + mitigationCounts.planned}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              {model.categories.map((category) => (
+                <details
+                  className="rounded-md border border-border bg-card p-3 text-sm"
+                  key={category.category_id}
+                  open={category.residual_risk === "high" || category.category_id === "LLM01"}
+                >
+                  <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block break-words font-black">
+                        {category.category_id}: {category.category_name}
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {category.applicable_surfaces.slice(0, 5).join(" / ")}
+                      </span>
+                    </span>
+                    <span className="flex flex-wrap gap-2">
+                      <Badge variant={riskLevelVariant(category.residual_risk)}>
+                        residual {category.residual_risk}
+                      </Badge>
+                      <Badge variant="muted">{category.mitigations.length} mitigation(s)</Badge>
+                    </span>
+                  </summary>
+                  <div className="mt-3 grid gap-3 border-t border-border pt-3">
+                    <p className="leading-6 text-muted-foreground">{category.risk_statement}</p>
+                    <div className="grid gap-2">
+                      <div className="text-xs font-bold uppercase text-muted-foreground">
+                        Monitoring signals
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {category.monitoring_signals.map((signal) => (
+                          <Badge key={signal} variant="muted">
+                            {signal}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-2 lg:grid-cols-2">
+                      {category.mitigations.map((mitigation) => (
+                        <div
+                          className="grid gap-2 rounded-md border border-border bg-muted/20 p-3"
+                          key={mitigation.mitigation_id}
+                        >
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <span className="font-bold">{mitigation.title}</span>
+                            <Badge
+                              variant={
+                                mitigation.status === "implemented"
+                                  ? "success"
+                                  : mitigation.status === "partial"
+                                    ? "warning"
+                                    : "muted"
+                              }
+                            >
+                              {mitigation.status}
+                            </Badge>
+                          </div>
+                          <p className="leading-6 text-muted-foreground">{mitigation.notes}</p>
+                          <div className="grid gap-1">
+                            <div className="text-[11px] font-bold uppercase text-muted-foreground">
+                              Code refs
+                            </div>
+                            {mitigation.implementation_refs.slice(0, 3).map((ref) => (
+                              <code
+                                className="break-all rounded bg-card px-1.5 py-1 font-mono text-[10px] text-muted-foreground"
+                                key={ref}
+                              >
+                                {ref}
+                              </code>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {mitigation.test_refs.map((ref) => (
+                              <Badge className="max-w-full" key={ref} variant="default">
+                                {ref}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Residual risk: {category.residual_risk_note}
+                    </p>
+                  </div>
+                </details>
+              ))}
             </div>
           </>
         ) : null}
@@ -2004,7 +2182,9 @@ function migrationStatusVariant(
   return "destructive";
 }
 
-function riskLevelVariant(level: AiRiskLevel): React.ComponentProps<typeof Badge>["variant"] {
+function riskLevelVariant(
+  level: AiRiskLevel | ThreatRiskLevel,
+): React.ComponentProps<typeof Badge>["variant"] {
   if (level === "critical") return "destructive";
   if (level === "high" || level === "medium") return "warning";
   return "success";

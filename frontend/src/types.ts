@@ -1837,6 +1837,53 @@ export type AiRiskRegister = {
   risks: AiRiskRegisterItem[];
 };
 
+export type OwaspLlmCategoryId =
+  | "LLM01"
+  | "LLM02"
+  | "LLM03"
+  | "LLM04"
+  | "LLM05"
+  | "LLM06"
+  | "LLM07"
+  | "LLM08"
+  | "LLM09"
+  | "LLM10";
+
+export type OwaspMitigationStatus = "implemented" | "partial" | "planned";
+
+export type ThreatRiskLevel = "low" | "medium" | "high" | "critical";
+
+export type OwaspLlmMitigation = {
+  mitigation_id: string;
+  title: string;
+  status: OwaspMitigationStatus;
+  owner_role: string;
+  implementation_refs: string[];
+  test_refs: string[];
+  notes: string;
+};
+
+export type OwaspLlmThreatCategory = {
+  category_id: OwaspLlmCategoryId;
+  category_name: string;
+  owasp_ref: string;
+  risk_statement: string;
+  applicable_surfaces: string[];
+  mitigations: OwaspLlmMitigation[];
+  monitoring_signals: string[];
+  residual_risk: ThreatRiskLevel;
+  residual_risk_note: string;
+  roadmap_refs: string[];
+  evidence_refs: string[];
+};
+
+export type OwaspLlmThreatModel = {
+  version: string;
+  standard_ref: string;
+  source_url: string;
+  categories: OwaspLlmThreatCategory[];
+};
+
 export type RuntimeConfig = {
   status: string;
   product_mode: "local_dev" | "demo" | "pilot" | "production";

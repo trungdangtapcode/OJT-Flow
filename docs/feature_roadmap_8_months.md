@@ -191,6 +191,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F134 | Implemented | Added data-driven API rate limiting middleware with fixed-window memory/Redis stores, route-category policy for auth, Assistant chat, file upload, retrieval search, reindex, and external-provider-capable routes, 429 envelopes and rate-limit headers, runtime config exposure, docs, and focused tests. |
 | 2026-06-11 | F135 | Implemented | Added data-driven abuse/cost policy for LLM request size, OpenAI vision OCR bytes, MarkItDown OCR plugin bytes, OpenAI embedding request size/input count, and batch ingestion total bytes; enforced limits before expensive provider calls or artifact creation; exposed sanitized runtime facts; and added docs/tests. |
 | 2026-06-11 | F136 | Implemented | Added a data-driven NIST AI RMF-aligned risk register covering intended use, prohibited uses, limitations, severity, residual risk, monitoring signals, human oversight, controls, and evidence refs; exposed it through an admin API and Settings governance panel; added docs/tests. |
+| 2026-06-11 | F137 | Implemented | Added a data-driven OWASP LLM Top 10 threat model covering all 2025 categories, OJTFlow surfaces, residual risk, monitoring signals, mitigation status, code refs, test refs, docs, admin API, and Settings governance panel. |
 
 ## Feature Backlog
 
@@ -347,7 +348,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F134 Add rate limiting for auth, assistant chat, file upload, retrieval search, reindex, and external connectors.
 - [x] F135 Add abuse and cost controls for LLM calls, OCR calls, embedding reindex, and batch ingestion.
 - [x] F136 Add NIST AI RMF-aligned risk register covering intended use, limitations, monitoring, and human oversight.
-- [ ] F137 Add OWASP LLM Top 10 threat model with concrete mitigations mapped to code and tests.
+- [x] F137 Add OWASP LLM Top 10 threat model with concrete mitigations mapped to code and tests.
 - [ ] F138 Add legal/compliance disclaimer surfaces for non-diagnostic, non-treatment, human-reviewed intended use.
 
 ### Month 7: Interoperability, Analytics, And External Data Workflows

@@ -1803,6 +1803,83 @@ Example:
 }
 ```
 
+`GET /api/v1/runtime/owasp-llm-threat-model`
+
+Returns the data-driven OWASP LLM Top 10 threat model for admins. Requires
+`admin:read`. The model maps OWASP LLM risk categories to OJTFlow surfaces,
+monitoring signals, concrete mitigation code, and focused tests.
+
+Response data includes:
+
+- `version`
+- `standard_ref`
+- `source_url`
+- `categories[].category_id`
+- `categories[].category_name`
+- `categories[].owasp_ref`
+- `categories[].risk_statement`
+- `categories[].applicable_surfaces[]`
+- `categories[].mitigations[]`
+- `categories[].monitoring_signals[]`
+- `categories[].residual_risk`
+- `categories[].residual_risk_note`
+- `categories[].roadmap_refs[]`
+- `categories[].evidence_refs[]`
+
+Each mitigation includes:
+
+- `mitigation_id`
+- `title`
+- `status`
+- `owner_role`
+- `implementation_refs[]`
+- `test_refs[]`
+- `notes`
+
+Example:
+
+```json
+{
+  "data": {
+    "version": "owasp_llm_threat_model.v1",
+    "standard_ref": "OWASP Top 10 for LLM Applications 2025",
+    "source_url": "https://genai.owasp.org/llm-top-10/",
+    "categories": [
+      {
+        "category_id": "LLM01",
+        "category_name": "Prompt Injection",
+        "owasp_ref": "https://genai.owasp.org/llmrisk/llm01-prompt-injection/",
+        "risk_statement": "Uploaded data, retrieved chunks, user messages, or tool metadata can try to override system instructions or trigger unauthorized tool use.",
+        "applicable_surfaces": [
+          "assistant_planner",
+          "assistant_synthesis",
+          "retrieval_chunks"
+        ],
+        "mitigations": [
+          {
+            "mitigation_id": "LLM01-M1",
+            "title": "Wrap untrusted content and scan prompt-injection patterns before LLM-bound use",
+            "status": "implemented",
+            "owner_role": "security owner",
+            "implementation_refs": [
+              "src/ojtflow/core/policy/prompt_injection_policy.py"
+            ],
+            "test_refs": ["tests/test_assistant_safety.py"],
+            "notes": "User data and retrieved evidence are marked as untrusted content."
+          }
+        ],
+        "monitoring_signals": ["prompt_injection_assessment"],
+        "residual_risk": "medium",
+        "residual_risk_note": "Instruction separation reduces but cannot eliminate adversarial text risk.",
+        "roadmap_refs": ["F118", "F127"],
+        "evidence_refs": ["docs/assistant_safety_cases_v0.md"]
+      }
+    ]
+  },
+  "error": null
+}
+```
+
 `GET /api/v1/runtime/readiness`
 
 Returns sanitized readiness diagnostics for authenticated operators with

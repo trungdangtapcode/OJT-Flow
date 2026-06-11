@@ -36,6 +36,7 @@ import {
   getRuntimeAiRiskRegister,
   getRuntimeHealth,
   getRuntimeMigrations,
+  getRuntimeOwaspLlmThreatModel,
   getRuntimeReadiness,
   getWorkflow,
   getWorkflowOutput,
@@ -93,6 +94,7 @@ import type {
   RetrievalSearchPayload,
   RuntimeAssistantSettingsPayload,
   AiRiskRegister,
+  OwaspLlmThreatModel,
   RuntimeRetrievalSettingsPayload,
   StartWorkflowPayload,
 } from "../types";
@@ -152,6 +154,7 @@ export const queryKeys = {
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
   runtimeAiRiskRegister: ["runtime-ai-risk-register"] as const,
+  runtimeOwaspLlmThreatModel: ["runtime-owasp-llm-threat-model"] as const,
   runtimeMigrations: ["runtime-migrations"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
   jobs: (params: Record<string, unknown>) => ["jobs", params] as const,
@@ -270,6 +273,13 @@ export function useRuntimeAiRiskRegisterQuery() {
   return useQuery<AiRiskRegister>({
     queryKey: queryKeys.runtimeAiRiskRegister,
     queryFn: getRuntimeAiRiskRegister,
+  });
+}
+
+export function useRuntimeOwaspLlmThreatModelQuery() {
+  return useQuery<OwaspLlmThreatModel>({
+    queryKey: queryKeys.runtimeOwaspLlmThreatModel,
+    queryFn: getRuntimeOwaspLlmThreatModel,
   });
 }
 

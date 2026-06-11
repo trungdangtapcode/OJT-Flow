@@ -31,6 +31,7 @@ import type {
   McpResourceCatalog,
   OcrEvidenceFieldInput,
   OcrEvidenceResponse,
+  OwaspLlmThreatModel,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentEvaluationResult,
   RetrievalIntegrityReport,
@@ -930,6 +931,10 @@ export function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 export function getRuntimeAiRiskRegister(): Promise<AiRiskRegister> {
   return request<AiRiskRegister>("/runtime/ai-risk-register");
+}
+
+export function getRuntimeOwaspLlmThreatModel(): Promise<OwaspLlmThreatModel> {
+  return request<OwaspLlmThreatModel>("/runtime/owasp-llm-threat-model");
 }
 
 export function getRuntimeReadiness(): Promise<RuntimeReadiness> {
