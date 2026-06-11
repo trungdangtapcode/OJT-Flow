@@ -52,9 +52,15 @@ class DocumentIntakeService:
         data: bytes,
         source: str = "upload",
         request_id: str | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> UploadedArtifact:
         """Persist raw upload bytes and return artifact metadata."""
 
+        artifact_metadata = {
+            "request_id": request_id,
+            "source_format": source_format_for_filename(filename),
+        }
+        artifact_metadata.update(metadata or {})
         retention_policy = resolve_artifact_retention_policy(
             product_mode=self.product_mode,
             owner_user_id=owner_user_id,
@@ -70,10 +76,7 @@ class DocumentIntakeService:
             data=data,
             source=source,
             retention_policy=retention_policy,
-            metadata={
-                "request_id": request_id,
-                "source_format": source_format_for_filename(filename),
-            },
+            metadata=artifact_metadata,
         )
 
     def create_parse_job(

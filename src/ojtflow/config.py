@@ -184,6 +184,12 @@ class Settings(BaseModel):
         alias="OJT_UPLOAD_READ_CHUNK_BYTES",
         gt=0,
     )
+    max_batch_upload_files: int = Field(
+        default=20,
+        alias="OJT_MAX_BATCH_UPLOAD_FILES",
+        gt=0,
+        le=100,
+    )
     allowed_upload_extensions: tuple[str, ...] = Field(
         default=DEFAULT_ALLOWED_UPLOAD_EXTENSIONS,
         alias="OJT_ALLOWED_UPLOAD_EXTENSIONS",
@@ -479,6 +485,7 @@ def get_settings() -> Settings:
         OJT_UPLOAD_READ_CHUNK_BYTES=int(
             os.getenv("OJT_UPLOAD_READ_CHUNK_BYTES", str(1024 * 1024))
         ),
+        OJT_MAX_BATCH_UPLOAD_FILES=int(os.getenv("OJT_MAX_BATCH_UPLOAD_FILES", "20")),
         OJT_ALLOWED_UPLOAD_EXTENSIONS=_parse_extensions(
             os.getenv("OJT_ALLOWED_UPLOAD_EXTENSIONS")
         ),

@@ -199,6 +199,49 @@ async def test_upload_parse_job_endpoint_creates_queued_artifact_job() -> None:
 
 
 @pytest.mark.asyncio
+async def test_batch_upload_parse_job_endpoint_preserves_shared_metadata() -> None:
+    service = _service()
+
+    async def _intake_dependency() -> DocumentIntakeService:
+        return service
+
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_document_intake_service] = _intake_dependency
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/api/v1/parse/upload/batch/jobs",
+            data={
+                "extractor": "auto",
+                "execute_now": "false",
+                "case_id": "case-123",
+                "project_id": "project-alpha",
+            },
+            files=[
+                ("files", ("lab-a.csv", b"patient_id,value\nP001,7.4\n", "text/csv")),
+                ("files", ("lab-b.csv", b"patient_id,value\nP002,8.1\n", "text/csv")),
+            ],
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["data"]["case_id"] == "case-123"
+    assert body["data"]["project_id"] == "project-alpha"
+    assert len(body["data"]["items"]) == 2
+    assert all(item["job"]["status"] == "queued" for item in body["data"]["items"])
+    assert {item["artifact"]["metadata"]["batch_id"] for item in body["data"]["items"]} == {
+        body["data"]["batch_id"]
+    }
+    assert all(
+        item["artifact"]["metadata"]["case_id"] == "case-123"
+        for item in body["data"]["items"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_clipboard_image_parse_job_endpoint_creates_artifact() -> None:
     service = _service()
 

@@ -89,6 +89,24 @@ Response envelope:
 }
 ```
 
+### Create Batch Upload Parse Jobs
+
+`POST /api/v1/parse/upload/batch/jobs`
+
+Multipart fields:
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `files` | file[] | required | Multiple related files; limited by `OJT_MAX_BATCH_UPLOAD_FILES`. |
+| `extractor` | string | `auto` | Shared extractor preference for all files. |
+| `execute_now` | boolean | `false` | `false` leaves durable queued jobs. |
+| `case_id` | string | omitted | Optional shared case identifier. |
+| `project_id` | string | omitted | Optional shared project identifier. |
+
+Each file creates one `UploadedArtifact` and one `file_parse` job. The response
+includes one `batch_id`; each artifact metadata record stores `batch_id`,
+`case_id`, and `project_id`.
+
 ### List Uploaded Artifacts
 
 `GET /api/v1/parse/artifacts?limit=100`
@@ -260,7 +278,7 @@ stamps policy and audit metadata; automatic deletion is a later governance task.
 ## Remaining Month 2 Work
 
 - Real queue worker mode for long-running parse jobs.
-- Multi-file batch uploads.
+- Workflow creation directly from batch outputs.
 - Extracted-text deduplication with extractor/version awareness.
 - Frontend paste UX wired to the clipboard image artifact endpoint.
 - Multi-page OCR evidence UI and production table parser adapters.

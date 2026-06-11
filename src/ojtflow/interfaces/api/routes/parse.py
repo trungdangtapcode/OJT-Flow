@@ -35,6 +35,7 @@ from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.jobs import BackgroundJob
 from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
+from ojtflow.core.ids import new_id
 from ojtflow.data_tools.redaction import build_redaction_preview
 from ojtflow.data_tools.extract import (
     Extractor,
@@ -72,6 +73,18 @@ class UploadParseJobResponse(ContractModel):
 
 class UploadParseJobEnvelope(ContractModel):
     data: UploadParseJobResponse
+    error: None = None
+
+
+class BatchUploadParseResponse(ContractModel):
+    batch_id: str
+    case_id: str | None = None
+    project_id: str | None = None
+    items: list[UploadParseJobResponse]
+
+
+class BatchUploadParseEnvelope(ContractModel):
+    data: BatchUploadParseResponse
     error: None = None
 
 
@@ -276,6 +289,86 @@ async def create_upload_parse_job(
             job=job,
             artifact=artifact,
             trace=_trace_from_job(job),
+        )
+    )
+
+
+@router.post("/parse/upload/batch/jobs", response_model=BatchUploadParseEnvelope)
+async def create_batch_upload_parse_jobs(
+    http_request: Request,
+    files: list[UploadFile] = File(..., description="Related document files to persist and parse."),
+    extractor: str = Form(
+        default=Extractor.AUTO,
+        description=(
+            "Extraction engine: 'auto' | 'markitdown' | 'mineru' | "
+            "'openai_vision' | 'tesseract'."
+        ),
+    ),
+    execute_now: bool = Form(
+        default=False,
+        description="Run parse jobs immediately in local sync mode; false leaves queued jobs.",
+    ),
+    case_id: str | None = Form(
+        default=None,
+        description="Optional case identifier shared by all files in this batch.",
+    ),
+    project_id: str | None = Form(
+        default=None,
+        description="Optional project identifier shared by all files in this batch.",
+    ),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Persist multiple related uploads and create parse jobs under one batch ID."""
+
+    extractor = validate_extractor_choice(extractor)
+    if not files:
+        raise UnsupportedUploadError("Batch upload must include at least one file.")
+    if len(files) > settings.max_batch_upload_files:
+        raise UploadTooLargeError(
+            f"Batch upload supports at most {settings.max_batch_upload_files} files."
+        )
+    batch_id = new_id("batch")
+    items: list[UploadParseJobResponse] = []
+    request_id = getattr(http_request.state, "request_id", None)
+    normalized_case_id = _optional_form_text(case_id)
+    normalized_project_id = _optional_form_text(project_id)
+    for file in files:
+        file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
+        artifact = intake.register_upload(
+            owner_user_id=authenticated.user.user_id,
+            filename=filename,
+            mime_type=file.content_type or "application/octet-stream",
+            data=file_bytes,
+            source="upload",
+            request_id=request_id,
+            metadata={
+                "batch_id": batch_id,
+                "case_id": normalized_case_id,
+                "project_id": normalized_project_id,
+            },
+        )
+        job = intake.create_parse_job(
+            owner_user_id=authenticated.user.user_id,
+            artifact_id=artifact.artifact_id,
+            prefer_extractor=extractor,
+            execute_now=execute_now,
+            request_id=request_id,
+        )
+        items.append(
+            UploadParseJobResponse(
+                job=job,
+                artifact=artifact,
+                trace=_trace_from_job(job),
+            )
+        )
+    return ok(
+        BatchUploadParseResponse(
+            batch_id=batch_id,
+            case_id=normalized_case_id,
+            project_id=normalized_project_id,
+            items=items,
         )
     )
 

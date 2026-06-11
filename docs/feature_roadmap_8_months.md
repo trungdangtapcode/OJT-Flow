@@ -123,7 +123,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F009 | Implemented | Added `BackgroundJobService` and sync local runner mode. `/api/v1/jobs/retrieval-reindex` creates a durable job, runs retrieval reindex synchronously by default, records output/errors, and runtime readiness reports the job repository with `queue_backed=false` until a worker queue is added. |
 | 2026-06-11 | F019 | Implemented | Added `OJT_NO_MOCK_DATA` and effective no-mock policy in pilot/production modes. Workbench no longer auto-loads sample patient rows, hides starter fixtures when effective no-mock is enabled, and requires pasted/uploaded data from the user in production-like modes. |
 | 2026-06-11 | F020 | Implemented | Settings validation rejects `OJT_LLM_PROVIDER=disabled` when `OJT_PRODUCT_MODE` is `pilot` or `production`; those modes also reject memory storage. |
-| 2026-06-11 | F021 | Started | Added durable `file_parse` job creation through `POST /api/v1/parse/upload/jobs` with sync local execution or queued mode. Multi-file batch handling and queue-backed workers remain follow-up scope. |
+| 2026-06-11 | F021 | Started | Added durable `file_parse` job creation through `POST /api/v1/parse/upload/jobs` and batch `POST /api/v1/parse/upload/batch/jobs` with sync local execution or queued mode. Queue-backed workers remain follow-up scope. |
 | 2026-06-11 | F022 | Implemented | Added `UploadedArtifact` contracts, owner-scoped artifact repositories for memory/SQLite/Postgres, raw upload storage under `var/uploads/`, artifact list/get APIs, and Postgres migration 011. |
 | 2026-06-11 | F023 | Started | Added owner-scoped raw upload deduplication by SHA-256 and byte size while preserving every upload record. Extracted-text dedupe remains follow-up because it needs extractor/version-aware normalization. |
 | 2026-06-11 | F024 | Implemented | Added `ParsingPipelineTrace` and `ExtractionStepTrace` contracts with extractor, fallback path, warnings, character/token counts, confidence, output refs, and persisted trace list API. |
@@ -140,6 +140,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F033 | Implemented | Added deterministic redaction preview with structured CSV sensitive-column masking, SSN/email/phone span detection, `POST /api/v1/parse/redaction-preview`, and trace-level redaction summaries before external provider handoff. |
 | 2026-06-11 | F034 | Implemented | Added mode/source/sensitivity/tenant-aware artifact retention policy resolution with `OJT_ARTIFACT_RETENTION_RULES`, default mode policies, and per-artifact stamped retention metadata. |
 | 2026-06-11 | F035 | Implemented | Added owner-scoped artifact download, metadata export, and access-event listing APIs backed by append-only memory/SQLite/Postgres artifact access logs and Postgres migration 012. |
+| 2026-06-11 | F040 | Started | Added batch upload parse jobs with shared `batch_id`, `case_id`, and `project_id` metadata. Direct workflow creation from batch outputs remains follow-up. |
 
 ## Feature Backlog
 
@@ -168,7 +169,7 @@ Keep this section updated when roadmap items move from planning into code.
 
 ### Month 2: Document, Image, Clipboard, And File Intelligence
 
-- [ ] F021 Make upload parsing asynchronous for large PDFs, images, spreadsheets, and multi-file batches. _(Started: durable `file_parse` jobs can run immediately or remain queued; batch uploads and real worker mode remain.)_
+- [ ] F021 Make upload parsing asynchronous for large PDFs, images, spreadsheets, and multi-file batches. _(Started: durable `file_parse` jobs can run immediately or remain queued; batch uploads exist; real worker mode remains.)_
 - [x] F022 Add a first-class `UploadedArtifact` contract with file hash, MIME type, extension, byte size, source, user, and retention policy.
 - [ ] F023 Add deduplication by content hash for uploaded documents and extracted text. _(Started: raw upload dedupe is implemented; extracted-text dedupe remains.)_
 - [x] F024 Add a parsing pipeline trace with extractor chosen, fallback path, warnings, token/character counts, and confidence.
@@ -187,7 +188,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F037 Add document extraction quality scoring based on empty text, low OCR confidence, conflicting extractors, and malformed tables.
 - [x] F038 Add user-facing extraction explanation: what was read, what was skipped, and what needs review.
 - [ ] F039 Add a file intake wizard that lets users choose "validate data", "extract fields", "profile FHIR", "find standards", or "ask assistant".
-- [ ] F040 Add batch upload workflow creation for multiple related files with shared case/project metadata.
+- [ ] F040 Add batch upload workflow creation for multiple related files with shared case/project metadata. _(Started: batch parse jobs and shared metadata exist; direct workflow creation from batch outputs remains.)_
 
 ### Month 3: Healthcare Standards And Clinical Package Layer
 
