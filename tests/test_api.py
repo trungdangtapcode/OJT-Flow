@@ -4169,6 +4169,8 @@ async def test_assistant_chat_runs_retrieval_tool_without_llm_tokens(monkeypatch
     assert body["tool_calls"][0]["output"]["evidence"]
     assert body["findings"][0]["title"] == "Trusted evidence retrieved"
     assert body["evidence_summary"][0]["source_id"]
+    assert body["evidence_summary"][0]["evidence_id"]
+    assert isinstance(body["evidence_summary"][0]["locator"], dict)
     assert body["evidence_summary"][0]["match_explanation"]["version"] == 1
     assert body["evidence_summary"][0]["match_explanation"]["support_status"] in {
         "strong",

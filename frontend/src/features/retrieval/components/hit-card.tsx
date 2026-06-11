@@ -1,4 +1,5 @@
 import { useHitCardCopyReport } from "../hooks/use-hit-card-copy-report";
+import { evidenceAnchorId } from "../../../lib/evidence-links";
 import { hitCardViewModel } from "../model/hit-card-view-model";
 import { HitCardEvidenceSection } from "./hit-card-evidence-section";
 import { RelevanceJudgmentControl } from "./relevance-judgment-control";
@@ -39,7 +40,10 @@ export function HitCard({
   });
 
   return (
-    <article className="grid min-w-0 gap-3 rounded-md border border-border bg-card p-3 shadow-sm">
+    <article
+      className="grid min-w-0 scroll-mt-24 gap-3 rounded-md border border-border bg-card p-3 shadow-sm"
+      id={evidenceAnchorId(evidence.evidence_id)}
+    >
       <HitCardHeader
         evidence={evidence}
         evidenceCopied={evidenceCopied}

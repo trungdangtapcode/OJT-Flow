@@ -12,6 +12,10 @@ import type {
   RetrievalStandardSearchPlan,
   RetrievalStandardSearchStep,
 } from "../../types";
+import {
+  assistantEvidenceAnchorId,
+  workflowEvidenceHref,
+} from "../../lib/evidence-links";
 
 export type AssistantBadgeVariant = ComponentProps<typeof Badge>["variant"];
 
@@ -56,6 +60,106 @@ export type AssistantEvidenceMatchExplanation = {
   supportStatus: "strong" | "partial" | "weak";
   topScoreDriver: string | null;
 };
+
+export type AssistantEvidenceJumpAction = {
+  detail: string;
+  href: string;
+  label: string;
+  source: "assistant" | "workflow";
+};
+
+export function evidenceJumpActionsForSummary(
+  item: AssistantEvidenceSummary,
+  toolCalls: AssistantToolResult[],
+): AssistantEvidenceJumpAction[] {
+  const evidence = evidenceForSummary(item, toolCalls);
+  if (!evidence) return [];
+  return evidenceJumpActions(evidence, workflowIdForEvidence(evidence, toolCalls));
+}
+
+export function evidenceJumpActions(
+  evidence: Evidence,
+  workflowId: string | null = null,
+): AssistantEvidenceJumpAction[] {
+  const actions: AssistantEvidenceJumpAction[] = [
+    {
+      detail: evidenceLocatorSummary(evidence),
+      href: `#${assistantEvidenceAnchorId(evidence.evidence_id)}`,
+      label: "Show evidence",
+      source: "assistant",
+    },
+  ];
+  if (workflowId) {
+    actions.push({
+      detail: "Open persisted workflow evidence.",
+      href: workflowEvidenceHref(workflowId, evidence.evidence_id),
+      label: "Open workflow evidence",
+      source: "workflow",
+    });
+  }
+  return actions;
+}
+
+export function evidenceLocatorSummary(evidence: Evidence): string {
+  const locator = recordValue(evidence.locator);
+  const parts = [
+    optionalStringValue(locator.source_ref),
+    optionalStringValue(locator.section_heading),
+    optionalStringValue(locator.resource_type),
+    optionalStringValue(locator.standard_system),
+    locator.page !== undefined ? `page ${String(locator.page)}` : null,
+    locator.row !== undefined ? `row ${String(locator.row)}` : null,
+    locator.column !== undefined ? `column ${String(locator.column)}` : null,
+    locator.field !== undefined ? `field ${String(locator.field)}` : null,
+    locator.chunk_index !== undefined ? `chunk ${String(locator.chunk_index)}` : null,
+  ].filter((item): item is string => Boolean(item));
+  return parts.length ? parts.slice(0, 4).join(" / ") : "Evidence locator";
+}
+
+export function workflowIdForToolCall(call: AssistantToolResult): string | null {
+  return (
+    optionalStringValue(call.output.workflow_id) ??
+    optionalStringValue(recordValue(call.output.workflow).workflow_id) ??
+    optionalStringValue(call.arguments.workflow_id)
+  );
+}
+
+function workflowIdForEvidence(
+  evidence: Evidence,
+  toolCalls: AssistantToolResult[],
+): string | null {
+  for (const call of toolCalls) {
+    const evidenceIds = toolEvidence(call).map((item) => item.evidence_id);
+    if (evidenceIds.includes(evidence.evidence_id)) return workflowIdForToolCall(call);
+  }
+  return null;
+}
+
+function evidenceForSummary(
+  item: AssistantEvidenceSummary,
+  toolCalls: AssistantToolResult[],
+): Evidence | null {
+  const evidenceId = optionalStringValue(item.evidence_id);
+  const allEvidence = toolCalls.flatMap(toolEvidence);
+  if (evidenceId) {
+    const exact = allEvidence.find((evidence) => evidence.evidence_id === evidenceId);
+    if (exact) return exact;
+  }
+  return (
+    allEvidence.find((evidence) => evidence.source_id === item.source_id) ??
+    (evidenceId
+      ? {
+          evidence_id: evidenceId,
+          source_id: item.source_id,
+          source_type: item.source_type ?? "unknown",
+          claim: item.claim,
+          trust_level: item.trust_level,
+          confidence: item.confidence ?? null,
+          locator: item.locator ?? {},
+        }
+      : null)
+  );
+}
 
 export function assistantEvidenceMatchExplanation(
   item: AssistantEvidenceSummary,

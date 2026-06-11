@@ -88,10 +88,13 @@ class AssistantFinding(ContractModel):
 class AssistantEvidenceSummary(ContractModel):
     """Compact evidence item for assistant answers."""
 
+    evidence_id: str | None = None
     source_id: str
+    source_type: str | None = None
     claim: str
     trust_level: str
     confidence: float | None = None
+    locator: dict[str, Any] = Field(default_factory=dict)
     match_explanation: dict[str, Any] = Field(default_factory=dict)
 
 

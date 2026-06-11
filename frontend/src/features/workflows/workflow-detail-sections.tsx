@@ -17,6 +17,11 @@ import {
   useWorkflowOutputQuery,
   workflowErrorMessage,
 } from "../../lib/server-state";
+import {
+  evidenceAnchorId,
+  validationIssueAnchorId,
+  workflowEventAnchorId,
+} from "../../lib/evidence-links";
 import { formatDate, humanize } from "../../lib/utils";
 import type {
   HumanReview,
@@ -131,7 +136,11 @@ export function Issues({ workflow, compact = false }: { workflow: WorkflowState;
       <CardContent className="pt-4">
         <div className="grid gap-3 md:hidden">
           {issues.map((issue) => (
-            <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3" key={issue.issue_id}>
+            <div
+              className="grid scroll-mt-24 gap-2 rounded-md border border-border bg-muted/20 p-3"
+              id={validationIssueAnchorId(issue.issue_id)}
+              key={issue.issue_id}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <SeverityBadge severity={issue.severity} />
                 <IssueRowBadge issue={issue} />
@@ -159,7 +168,7 @@ export function Issues({ workflow, compact = false }: { workflow: WorkflowState;
           </THead>
           <TBody>
             {issues.map((issue) => (
-              <TR key={issue.issue_id}>
+              <TR id={validationIssueAnchorId(issue.issue_id)} key={issue.issue_id}>
                 <TD><SeverityBadge severity={issue.severity} /></TD>
                 <TD className="font-medium">{issue.kind}</TD>
                 <TD>{issueField(issue) ?? "-"}</TD>
@@ -462,7 +471,11 @@ export function Audit({ events }: { events: WorkflowEvent[] }) {
       <CardContent className="pt-4">
         <ol className="relative grid gap-0 before:absolute before:left-[5px] before:top-3 before:h-[calc(100%-1.5rem)] before:w-px before:bg-border">
           {events.map((event) => (
-            <li className="relative grid grid-cols-[12px_minmax(0,1fr)] gap-3" key={event.event_id}>
+            <li
+              className="relative grid scroll-mt-24 grid-cols-[12px_minmax(0,1fr)] gap-3"
+              id={workflowEventAnchorId(event.event_id)}
+              key={event.event_id}
+            >
               <span className="mt-4 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-card" />
               <div className="min-w-0 border-b border-border py-3 last:border-b-0">
                 <div className="break-words font-bold">{event.event_type}</div>
@@ -518,7 +531,10 @@ function issueRow(issue: ValidationIssue) {
 
 function EvidenceCard({ evidence }: { evidence: WorkflowState["retrieved_context"][number] }) {
   return (
-    <article className="grid min-w-0 gap-3 rounded-md border border-border bg-card p-3 shadow-sm">
+    <article
+      className="grid min-w-0 scroll-mt-24 gap-3 rounded-md border border-border bg-card p-3 shadow-sm"
+      id={evidenceAnchorId(evidence.evidence_id)}
+    >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words font-extrabold leading-5" title={evidence.source_id}>

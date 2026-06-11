@@ -10079,11 +10079,23 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assistant_tool_catalog = (
         FRONTEND_SRC / "features" / "assistant" / "assistant-tool-catalog-panel.tsx"
     ).read_text(encoding="utf-8")
+    evidence_links = (FRONTEND_SRC / "lib" / "evidence-links.ts").read_text(
+        encoding="utf-8"
+    )
+    hash_scroll_hook = (FRONTEND_SRC / "lib" / "use-hash-target-scroll.ts").read_text(
+        encoding="utf-8"
+    )
+    retrieval_hit_card = (
+        FRONTEND_SRC / "features" / "retrieval" / "components" / "hit-card.tsx"
+    ).read_text(encoding="utf-8")
     retrieval_search_results = (
         FRONTEND_SRC / "features" / "retrieval" / "components" / "search-results-panel.tsx"
     ).read_text(encoding="utf-8")
     workflow_detail = (
         FRONTEND_SRC / "features" / "workflows" / "workflow-detail.tsx"
+    ).read_text(encoding="utf-8")
+    workflow_detail_sections = (
+        FRONTEND_SRC / "features" / "workflows" / "workflow-detail-sections.tsx"
     ).read_text(encoding="utf-8")
     app_shell = APP_SHELL.read_text(encoding="utf-8")
     api_module = API_MODULE.read_text(encoding="utf-8")
@@ -10132,6 +10144,22 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
         REPO_ROOT / "src/ojtflow/application/assistant_service.py"
     ).read_text(encoding="utf-8")
     assert "toolSearchHints" in assistant_response_model
+    assert "evidenceJumpActionsForSummary" in assistant_response_model
+    assert "workflowEvidenceHref" in assistant_response_model
+    assert "evidenceLocatorSummary" in assistant_response_model
+    assert "AssistantEvidenceJumpActions" in assistant_response_details
+    assert "Show evidence" in assistant_response_model
+    assert "assistantEvidenceAnchorId" in assistant_response_details
+    assert "evidenceAnchorId" in evidence_links
+    assert "workflowEventAnchorId" in evidence_links
+    assert "validationIssueAnchorId" in evidence_links
+    assert "useHashTargetScroll" in hash_scroll_hook
+    assert "useHashTargetScroll" in workflow_detail
+    assert "useHashTargetScroll" in retrieval_search_results
+    assert "evidenceAnchorId(evidence.evidence_id)" in workflow_detail_sections
+    assert "workflowEventAnchorId(event.event_id)" in workflow_detail_sections
+    assert "validationIssueAnchorId(issue.issue_id)" in workflow_detail_sections
+    assert "evidenceAnchorId(evidence.evidence_id)" in retrieval_hit_card
     assert "selected_unit_candidates" in assistant_response_details
     assert "scope_endpoints" in assistant_response_details
     assert "ExternalLink" in assistant_response_details

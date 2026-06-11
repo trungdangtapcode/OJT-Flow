@@ -1021,13 +1021,28 @@ def _evidence_summary(tool_results: list) -> list[AssistantEvidenceSummary]:
             seen.add(evidence_id)
             summaries.append(
                 AssistantEvidenceSummary(
+                    evidence_id=(
+                        str(item.get("evidence_id"))
+                        if item.get("evidence_id") is not None
+                        else None
+                    ),
                     source_id=str(item.get("source_id") or "unknown"),
+                    source_type=(
+                        str(item.get("source_type"))
+                        if item.get("source_type") is not None
+                        else None
+                    ),
                     claim=str(item.get("claim") or ""),
                     trust_level=str(item.get("trust_level") or "unknown"),
                     confidence=(
                         item.get("confidence")
                         if isinstance(item.get("confidence"), (int, float))
                         else None
+                    ),
+                    locator=(
+                        item.get("locator")
+                        if isinstance(item.get("locator"), dict)
+                        else {}
                     ),
                     match_explanation=(
                         item.get("match_explanation")

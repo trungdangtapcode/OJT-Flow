@@ -1125,10 +1125,13 @@ export type AssistantFinding = {
 };
 
 export type AssistantEvidenceSummary = {
+  evidence_id?: string | null;
   source_id: string;
+  source_type?: string | null;
   claim: string;
   trust_level: string;
   confidence?: number | null;
+  locator?: Record<string, unknown>;
   match_explanation?: Record<string, unknown>;
 };
 

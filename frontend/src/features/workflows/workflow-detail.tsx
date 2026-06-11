@@ -10,6 +10,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { StatusBadge } from "../../components/domain/workflow-badges";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { useHashTargetScroll } from "../../lib/use-hash-target-scroll";
 import {
   useReviewDecisionMutation,
   useWorkflowEventsQuery,
@@ -42,6 +43,11 @@ export function WorkflowDetail({
   const workflowQuery = useWorkflowQuery(workflowId);
   const eventsQuery = useWorkflowEventsQuery(workflowId);
   const reviewMutation = useReviewDecisionMutation(workflowId);
+  useHashTargetScroll([
+    workflowId,
+    workflowQuery.data?.updated_at ?? "",
+    eventsQuery.data?.length ?? 0,
+  ]);
 
   if (!workflowId) {
     return (

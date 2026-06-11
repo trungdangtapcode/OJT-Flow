@@ -1735,8 +1735,9 @@ in `assistant-input-panels.tsx`; the starter-task empty state lives in
 summaries, planning-start copy, and completed-tool lookup live in
 `assistant-live-timeline-model.ts`; final assistant response rendering lives in
 `assistant-response-details.tsx`; and response/tool-output interpretation,
-badge policy, evidence extraction, standards-plan coercion, search-hint
-coercion, and source-diversity coercion live in `assistant-response-model.ts`.
+badge policy, evidence extraction, evidence jump actions, standards-plan
+coercion, search-hint coercion, and source-diversity coercion live in
+`assistant-response-model.ts`.
 New assistant behavior should be added to the smallest matching module first,
 not directly to the route file.
 The chat UI should call `/assistant/chat/stream` through the server-state
@@ -1773,6 +1774,13 @@ transcript and showing a cancellation state rather than leaving a stuck spinner.
 Backend stream replays should persist explicit cancellation as `cancelled`,
 not as `completed`, so support/debug views can distinguish an operator stop
 from a successful final response.
+Assistant evidence summaries and tool evidence cards should expose "Show
+evidence" actions. These actions use shared anchor helpers from
+`frontend/src/lib/evidence-links.ts`, while async pages use `useHashTargetScroll` after
+workflow/retrieval data loads so deep links can land on rendered evidence,
+validation issue, or workflow-event cards. Workflow and Retrieval evidence cards
+must keep stable IDs derived from backend evidence IDs; never use list indexes
+as evidence jump targets.
 Failed Assistant tool calls should expose inline recovery controls in the same
 chat turn. `Retry` must send structured `assistant_recovery.retry_tool` context
 with the original tool name and arguments; `Continue without retry` must send

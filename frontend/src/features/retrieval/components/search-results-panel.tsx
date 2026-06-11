@@ -1,5 +1,6 @@
 import { Card } from "../../../components/ui/card";
 import { buildAssistantRetrievalContextHref } from "../../assistant/assistant-attachments";
+import { useHashTargetScroll } from "../../../lib/use-hash-target-scroll";
 import { searchResultsViewModel } from "../model/search-results-view-model";
 import { searchResultsContentProps } from "./search-results-content-props";
 import { SearchResultsContent } from "./search-results-content";
@@ -8,6 +9,7 @@ import type { SearchResultsProps } from "./search-results-panel-types";
 
 export function SearchResults(props: SearchResultsProps) {
   const { packageData } = props;
+  useHashTargetScroll([packageData?.trace.final_hit_ids.join("|") ?? ""]);
   if (!packageData) {
     return <EmptySearchResults />;
   }

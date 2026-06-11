@@ -13,6 +13,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Notice } from "../../components/ui/notice";
 import { cn, humanize } from "../../lib/utils";
+import { assistantEvidenceAnchorId } from "../../lib/evidence-links";
 import type {
   AssistantEvidenceSummary,
   AssistantFinding,
@@ -30,6 +31,9 @@ import {
   assistantEvidenceMatchExplanation,
   assistantStandardSearchMatchReasons,
   badgeVariant,
+  evidenceJumpActions,
+  evidenceJumpActionsForSummary,
+  evidenceLocatorSummary,
   findingBadgeVariant,
   matchSupportBadgeVariant,
   stringArrayValue,
@@ -38,7 +42,9 @@ import {
   toolEvidenceBuckets,
   toolSearchHints,
   toolStandardSearchPlan,
+  workflowIdForToolCall,
 } from "./assistant-response-model";
+import type { AssistantEvidenceJumpAction } from "./assistant-response-model";
 import type { AssistantSearchHint } from "./assistant-response-model";
 
 export function AssistantResponseDetails({ response }: { response: AssistantResponse }) {
@@ -59,7 +65,10 @@ export function AssistantResponseDetails({ response }: { response: AssistantResp
         <FindingsPanel findings={response.findings} />
       ) : null}
       {response.evidence_summary.length > 0 ? (
-        <EvidenceSummaryPanel evidence={response.evidence_summary} />
+        <EvidenceSummaryPanel
+          evidence={response.evidence_summary}
+          toolCalls={response.tool_calls}
+        />
       ) : null}
       {response.tool_calls.length > 0 ? (
         <div className="grid gap-3">
@@ -111,7 +120,13 @@ function FindingsPanel({ findings }: { findings: AssistantFinding[] }) {
   );
 }
 
-function EvidenceSummaryPanel({ evidence }: { evidence: AssistantEvidenceSummary[] }) {
+function EvidenceSummaryPanel({
+  evidence,
+  toolCalls,
+}: {
+  evidence: AssistantEvidenceSummary[];
+  toolCalls: AssistantToolResult[];
+}) {
   return (
     <div className="grid gap-2">
       <div className="text-xs font-black uppercase text-muted-foreground">Evidence summary</div>
@@ -126,6 +141,9 @@ function EvidenceSummaryPanel({ evidence }: { evidence: AssistantEvidenceSummary
           </div>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.claim}</p>
           <AssistantEvidenceMatchStrip item={item} />
+          <AssistantEvidenceJumpActions
+            actions={evidenceJumpActionsForSummary(item, toolCalls)}
+          />
         </div>
       ))}
     </div>
@@ -190,6 +208,7 @@ function ToolResultCard({ call }: { call: AssistantToolResult }) {
   const standardSearchPlan = toolStandardSearchPlan(call);
   const searchHints = toolSearchHints(call);
   const diversity = toolDiversitySummary(call);
+  const workflowId = workflowIdForToolCall(call);
   return (
     <details className="overflow-hidden rounded-md border border-border bg-muted/20">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/35 px-3 py-2">
@@ -234,12 +253,27 @@ function ToolResultCard({ call }: { call: AssistantToolResult }) {
 
         {evidence.length > 0 ? (
           <div className="grid gap-2">
-            {evidence.slice(0, 3).map((item) => (
-              <div className="rounded-md border border-border bg-card p-3" key={item.evidence_id}>
-                <div className="text-sm font-black">{item.source_id}</div>
+            {evidence.slice(0, 5).map((item) => (
+              <div
+                className="grid scroll-mt-24 gap-2 rounded-md border border-border bg-card p-3"
+                id={assistantEvidenceAnchorId(item.evidence_id)}
+                key={item.evidence_id}
+              >
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="break-words text-sm font-black">{item.source_id}</div>
+                    <div className="mt-0.5 break-words text-xs font-semibold text-muted-foreground">
+                      {evidenceLocatorSummary(item)}
+                    </div>
+                  </div>
+                  <Badge variant="muted">{item.evidence_id}</Badge>
+                </div>
                 <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground">
                   {item.claim}
                 </p>
+                <AssistantEvidenceJumpActions
+                  actions={evidenceJumpActions(item, workflowId)}
+                />
               </div>
             ))}
           </div>
@@ -250,6 +284,37 @@ function ToolResultCard({ call }: { call: AssistantToolResult }) {
         )}
       </div>
     </details>
+  );
+}
+
+function AssistantEvidenceJumpActions({
+  actions,
+}: {
+  actions: AssistantEvidenceJumpAction[];
+}) {
+  if (!actions.length) return null;
+  return (
+    <div className="mt-2 flex min-w-0 flex-wrap gap-2">
+      {actions.map((action) => (
+        <Button
+          asChild
+          className="max-w-full"
+          key={`${action.source}-${action.href}`}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <a href={action.href} title={action.detail}>
+            {action.source === "assistant" ? (
+              <Route className="h-4 w-4" />
+            ) : (
+              <ExternalLink className="h-4 w-4" />
+            )}
+            {action.label}
+          </a>
+        </Button>
+      ))}
+    </div>
   );
 }
 
