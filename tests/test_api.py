@@ -248,6 +248,11 @@ def test_openapi_exposes_core_request_examples() -> None:
         ("/api/v1/retrieval/source-policies", "get", "RetrievalSourcePoliciesEnvelope"),
         ("/api/v1/retrieval/corpus/adapters", "get", "RetrievalCorpusAdaptersEnvelope"),
         ("/api/v1/retrieval/corpus/manifest", "get", "RetrievalCorpusManifestEnvelope"),
+        (
+            "/api/v1/retrieval/corpus/chunking-profiles",
+            "get",
+            "RetrievalCorpusChunkingProfilesEnvelope",
+        ),
         ("/api/v1/retrieval/strategies", "get", "RetrievalStrategiesEnvelope"),
         ("/api/v1/retrieval/sources", "get", "RetrievalSourcesEnvelope"),
         ("/api/v1/retrieval/reindex", "post", "RetrievalReindexEnvelope"),
@@ -1362,6 +1367,9 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         retrieval_source_policies = await client.get("/api/v1/retrieval/source-policies")
         retrieval_corpus_adapters = await client.get("/api/v1/retrieval/corpus/adapters")
         retrieval_corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
+        retrieval_corpus_chunking_profiles = await client.get(
+            "/api/v1/retrieval/corpus/chunking-profiles"
+        )
         retrieval_strategies = await client.get("/api/v1/retrieval/strategies")
         retrieval_reindex = await client.post(
             "/api/v1/retrieval/reindex",
@@ -1446,6 +1454,11 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_corpus_adapters, expected_code="unauthorized")
     assert retrieval_corpus_manifest.status_code == 401
     _assert_error_envelope(retrieval_corpus_manifest, expected_code="unauthorized")
+    assert retrieval_corpus_chunking_profiles.status_code == 401
+    _assert_error_envelope(
+        retrieval_corpus_chunking_profiles,
+        expected_code="unauthorized",
+    )
     assert retrieval_strategies.status_code == 401
     _assert_error_envelope(retrieval_strategies, expected_code="unauthorized")
     assert retrieval_reindex.status_code == 401
@@ -4015,6 +4028,12 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             and adapter["lifecycle_state"] == "candidate"
             for adapter in adapter_data["adapters"]
         )
+        assert any(
+            adapter["adapter_id"] == "external_hl7_fhir_r4_patient_v1"
+            and adapter["metadata"]["resource_type"] == "Patient"
+            and adapter["source_urls"]["primary"].endswith("/patient.html")
+            for adapter in adapter_data["adapters"]
+        )
 
         corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
         assert corpus_manifest.status_code == 200
@@ -4027,6 +4046,17 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             and item["content_hash"].startswith("sha256:")
             and item["reviewer_state"] == "approved"
             for item in manifest_data["items"]
+        )
+
+        chunking_profiles = await client.get("/api/v1/retrieval/corpus/chunking-profiles")
+        assert chunking_profiles.status_code == 200
+        profile_data = chunking_profiles.json()["data"]
+        assert profile_data["version"] == "corpus_chunking_profiles.v1"
+        assert any(
+            profile["profile_id"] == "section_window_v0"
+            and profile["boundary_strategy"] == "markdown_section"
+            and "section_heading" in profile["metadata_fields"]
+            for profile in profile_data["profiles"]
         )
 
         strategies = await client.get("/api/v1/retrieval/strategies")

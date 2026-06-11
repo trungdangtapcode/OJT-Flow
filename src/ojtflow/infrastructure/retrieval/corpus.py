@@ -11,12 +11,16 @@ from pathlib import Path
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
+    CorpusChunkingProfile,
     CorpusIngestionItem,
     CorpusIngestionManifest,
     CorpusLicenseMetadata,
     CorpusSourceAdapter,
 )
-from ojtflow.infrastructure.retrieval.catalogs import load_corpus_adapter_catalog
+from ojtflow.infrastructure.retrieval.catalogs import (
+    load_corpus_adapter_catalog,
+    load_corpus_chunking_profile_catalog,
+)
 from ojtflow.infrastructure.retrieval.engine import KnowledgeChunk
 
 
@@ -43,6 +47,14 @@ class CorpusIndexResult:
                 self.manifest.model_dump(mode="json") if self.manifest is not None else None
             ),
         }
+
+
+@dataclass(frozen=True)
+class _ChunkRecord:
+    text: str
+    section_heading: str | None = None
+    start_char: int = 0
+    end_char: int = 0
 
 
 def build_corpus_ingestion_manifest(
@@ -98,6 +110,10 @@ def load_local_corpus_chunks(
     files_indexed = 0
     skipped_files: list[str] = []
     manifest = build_corpus_ingestion_manifest(corpus_dirs, knowledge_root=knowledge_root)
+    chunking_profiles = {
+        profile.profile_id: profile
+        for profile in load_corpus_chunking_profile_catalog(knowledge_root).profiles
+    }
     manifest_by_path = {
         item.path: item
         for item in manifest.items
@@ -140,6 +156,7 @@ def load_local_corpus_chunks(
                     max_chars=max_chars,
                     overlap_chars=overlap_chars,
                     manifest_item=manifest_item,
+                    chunking_profiles=chunking_profiles,
                 )
             )
 
@@ -160,6 +177,7 @@ def _chunks_for_file(
     max_chars: int,
     overlap_chars: int,
     manifest_item: CorpusIngestionItem | None = None,
+    chunking_profiles: dict[str, CorpusChunkingProfile] | None = None,
 ) -> list[KnowledgeChunk]:
     relative = _display_path(path, knowledge_root)
     title = _title_from_text(path, text)
@@ -181,11 +199,34 @@ def _chunks_for_file(
         standard_system = manifest_item.standard_system
         source_version = manifest_item.release_version
         metadata.update(_metadata_from_manifest_item(manifest_item))
-    text_chunks = _chunk_text(text, max_chars=max_chars, overlap_chars=overlap_chars)
+    profile = _chunking_profile_for_item(manifest_item, chunking_profiles or {})
+    effective_max_chars = min(max_chars, profile.max_chars) if profile else max_chars
+    effective_overlap_chars = (
+        min(overlap_chars, profile.overlap_chars) if profile else overlap_chars
+    )
+    chunk_records = _chunk_records(
+        text,
+        max_chars=effective_max_chars,
+        overlap_chars=effective_overlap_chars,
+        profile=profile,
+    )
 
     chunks: list[KnowledgeChunk] = []
-    for index, chunk_text in enumerate(text_chunks):
+    for index, record in enumerate(chunk_records):
+        chunk_text = record.text
         chunk_hash = sha256(f"{relative}:{index}:{chunk_text}".encode("utf-8")).hexdigest()[:16]
+        locator = {
+            "path": relative,
+            "chunk_index": index,
+            "start_char": record.start_char,
+            "end_char": record.end_char,
+        }
+        if record.section_heading:
+            locator["section_heading"] = record.section_heading
+        chunk_metadata = {
+            **metadata,
+            **_metadata_from_chunk_record(record, profile=profile),
+        }
         chunks.append(
             KnowledgeChunk(
                 chunk_id=f"chunk_corpus_{chunk_hash}",
@@ -197,8 +238,8 @@ def _chunks_for_file(
                 trust_level=TrustLevel.APPROVED,
                 clinical_domain=clinical_domain,
                 standard_system=standard_system,
-                locator={"path": relative, "chunk_index": index},
-                metadata=metadata,
+                locator=locator,
+                metadata=chunk_metadata,
             )
         )
     return chunks
@@ -256,6 +297,9 @@ def _manifest_item_for_file(
             "authority": adapter.authority if adapter else None,
             "access_mode": adapter.access_mode if adapter else "local_file",
             "ingestion_mode": adapter.ingestion_mode if adapter else "operator_local_file",
+            "chunk_profile": adapter.chunk_profile if adapter else "paragraph_window_v0",
+            "parser": adapter.parser if adapter else "plain_text",
+            "resource_type": adapter.metadata.get("resource_type") if adapter else None,
             "origin": "local_corpus",
             "extension": path.suffix.lower(),
         },
@@ -270,6 +314,9 @@ def _metadata_from_manifest_item(item: CorpusIngestionItem) -> dict:
         "authority": item.metadata.get("authority"),
         "access_mode": item.metadata.get("access_mode"),
         "ingestion_mode": item.metadata.get("ingestion_mode"),
+        "chunk_profile": item.metadata.get("chunk_profile"),
+        "parser": item.metadata.get("parser"),
+        "resource_type": item.metadata.get("resource_type"),
         "release_version": item.release_version,
         "fetched_at": item.fetched_at,
         "fetch_time_source": item.fetch_time_source,
@@ -283,6 +330,137 @@ def _metadata_from_manifest_item(item: CorpusIngestionItem) -> dict:
         "source_url": item.source_url,
         "warnings": list(item.warnings),
     }
+
+
+def _chunking_profile_for_item(
+    item: CorpusIngestionItem | None,
+    profiles: dict[str, CorpusChunkingProfile],
+) -> CorpusChunkingProfile | None:
+    profile_id = None
+    if item is not None:
+        profile_id = item.metadata.get("chunk_profile")
+    if not isinstance(profile_id, str) or not profile_id:
+        profile_id = "paragraph_window_v0"
+    return profiles.get(profile_id)
+
+
+def _chunk_records(
+    text: str,
+    *,
+    max_chars: int,
+    overlap_chars: int,
+    profile: CorpusChunkingProfile | None,
+) -> list[_ChunkRecord]:
+    strategy = profile.boundary_strategy if profile else "paragraph"
+    if strategy == "markdown_section":
+        return _markdown_section_chunk_records(
+            text,
+            max_chars=max_chars,
+            overlap_chars=overlap_chars,
+        )
+    return _paragraph_chunk_records(
+        text,
+        max_chars=max_chars,
+        overlap_chars=overlap_chars,
+    )
+
+
+def _paragraph_chunk_records(
+    text: str,
+    *,
+    max_chars: int,
+    overlap_chars: int,
+) -> list[_ChunkRecord]:
+    chunks = _chunk_text(text, max_chars=max_chars, overlap_chars=overlap_chars)
+    return [
+        _record_for_text_chunk(text, chunk_text, cursor=0)
+        for chunk_text in chunks
+    ]
+
+
+def _markdown_section_chunk_records(
+    text: str,
+    *,
+    max_chars: int,
+    overlap_chars: int,
+) -> list[_ChunkRecord]:
+    heading_matches = list(re.finditer(r"(?m)^(#{1,6})\s+(.+?)\s*$", text))
+    if not heading_matches:
+        return _paragraph_chunk_records(
+            text,
+            max_chars=max_chars,
+            overlap_chars=overlap_chars,
+        )
+    records: list[_ChunkRecord] = []
+    for index, match in enumerate(heading_matches):
+        section_start = match.start()
+        section_end = (
+            heading_matches[index + 1].start()
+            if index + 1 < len(heading_matches)
+            else len(text)
+        )
+        heading = match.group(2).strip()
+        section_text = text[section_start:section_end].strip()
+        for chunk_text in _chunk_text(
+            section_text,
+            max_chars=max_chars,
+            overlap_chars=overlap_chars,
+        ):
+            start_offset = section_text.find(chunk_text[: min(len(chunk_text), 80)])
+            start_char = section_start + max(start_offset, 0)
+            records.append(
+                _ChunkRecord(
+                    text=chunk_text,
+                    section_heading=heading,
+                    start_char=start_char,
+                    end_char=start_char + len(chunk_text),
+                )
+            )
+    return records
+
+
+def _record_for_text_chunk(text: str, chunk_text: str, *, cursor: int) -> _ChunkRecord:
+    start = text.find(chunk_text[: min(len(chunk_text), 80)], cursor)
+    if start < 0:
+        start = 0
+    return _ChunkRecord(
+        text=chunk_text,
+        start_char=start,
+        end_char=start + len(chunk_text),
+    )
+
+
+def _metadata_from_chunk_record(
+    record: _ChunkRecord,
+    *,
+    profile: CorpusChunkingProfile | None,
+) -> dict:
+    metadata = {
+        "chunk_start_char": record.start_char,
+        "chunk_end_char": record.end_char,
+        "field_names": _field_names_for(record.text),
+    }
+    if profile is not None:
+        metadata["chunk_profile"] = profile.profile_id
+        metadata["chunk_boundary_strategy"] = profile.boundary_strategy
+    if record.section_heading:
+        metadata["section_heading"] = record.section_heading
+    return metadata
+
+
+def _field_names_for(text: str) -> list[str]:
+    candidates: set[str] = set()
+    for match in re.finditer(r"`([a-zA-Z][a-zA-Z0-9_]{1,60})`", text):
+        candidates.add(match.group(1))
+    first_line = text.splitlines()[0] if text.splitlines() else ""
+    if "," in first_line and len(first_line) < 300:
+        for item in first_line.split(","):
+            candidate = item.strip()
+            if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{1,60}", candidate):
+                candidates.add(candidate)
+    for match in re.finditer(r"\b([a-z][a-z0-9]+(?:_[a-z0-9]+)+)\b", text):
+        candidates.add(match.group(1))
+    return sorted(candidates)[:30]
 
 
 def _iter_supported_corpus_files(corpus_dirs: tuple[Path, ...]) -> list[Path]:

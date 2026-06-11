@@ -24,6 +24,7 @@ import {
   getRetrievalJudgmentSummary,
   getRetrievalIntegrity,
   getRetrievalCorpusAdapters,
+  getRetrievalCorpusChunkingProfiles,
   getRetrievalCorpusManifest,
   getRetrievalSearchOptions,
   getRetrievalSourcePolicies,
@@ -126,6 +127,7 @@ export const queryKeys = {
     ["retrieval-judgment-evaluation", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
   retrievalCorpusAdapters: ["retrieval-corpus-adapters"] as const,
+  retrievalCorpusChunkingProfiles: ["retrieval-corpus-chunking-profiles"] as const,
   retrievalCorpusManifest: ["retrieval-corpus-manifest"] as const,
   retrievalSourcePolicies: ["retrieval-source-policies"] as const,
   retrievalStrategies: ["retrieval-strategies"] as const,
@@ -346,6 +348,13 @@ export function useRetrievalCorpusManifestQuery() {
   return useQuery({
     queryKey: queryKeys.retrievalCorpusManifest,
     queryFn: getRetrievalCorpusManifest,
+  });
+}
+
+export function useRetrievalCorpusChunkingProfilesQuery() {
+  return useQuery({
+    queryKey: queryKeys.retrievalCorpusChunkingProfiles,
+    queryFn: getRetrievalCorpusChunkingProfiles,
   });
 }
 

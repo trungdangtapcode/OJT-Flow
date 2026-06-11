@@ -13,6 +13,7 @@ from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
+    CorpusChunkingProfileCatalog,
     CorpusIngestionManifest,
     RetrievalJudgmentEvaluationResult,
     RetrievalIntegrityReport,
@@ -29,6 +30,7 @@ from ojtflow.core.contracts.retrieval import (
 )
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
+    load_corpus_chunking_profile_catalog,
     load_retrieval_strategy_catalog,
     load_source_trust_policy_catalog,
 )
@@ -87,6 +89,11 @@ class RetrievalCorpusAdaptersEnvelope(ContractModel):
 
 class RetrievalCorpusManifestEnvelope(ContractModel):
     data: CorpusIngestionManifest
+    error: None = None
+
+
+class RetrievalCorpusChunkingProfilesEnvelope(ContractModel):
+    data: CorpusChunkingProfileCatalog
     error: None = None
 
 
@@ -258,6 +265,18 @@ async def get_retrieval_corpus_manifest(
             knowledge_root=knowledge_root,
         )
     )
+
+
+@router.get(
+    "/retrieval/corpus/chunking-profiles",
+    response_model=RetrievalCorpusChunkingProfilesEnvelope,
+)
+async def get_retrieval_corpus_chunking_profiles(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    del authenticated
+    return ok(load_corpus_chunking_profile_catalog(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/strategies", response_model=RetrievalStrategiesEnvelope)

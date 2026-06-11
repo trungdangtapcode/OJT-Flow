@@ -11,12 +11,17 @@ The framework has two layers:
    - Contract: `CorpusAdapterCatalog`
    - Purpose: declares approved/candidate source adapters, licenses, release versions, access modes, ingestion modes, reviewer state, lifecycle state, source URLs, and local file paths.
 
-2. **Ingestion manifest**
+2. **Chunking profile catalog**
+   - File: `knowledge/retrieval/chunking_profiles.json`
+   - Contract: `CorpusChunkingProfileCatalog`
+   - Purpose: declares section, paragraph, terminology-card, API-record, PDF-page, and internal-policy chunking strategies with metadata fields and lifecycle state.
+
+3. **Ingestion manifest**
    - Endpoint: `GET /api/v1/retrieval/corpus/manifest`
    - Contract: `CorpusIngestionManifest`
    - Purpose: records observed local corpus files with hash, size, observed fetch time, matching adapter, license metadata, reviewer state, lifecycle state, and warnings.
 
-The retrieval repositories consume the manifest when loading local corpus files. Chunks inherit manifest metadata, and `/api/v1/retrieval/sources` exposes reviewer/license/hash fields when the backend has them.
+The retrieval repositories consume the manifest and chunking profiles when loading local corpus files. Chunks inherit manifest metadata, section headings, field-name hints, source locator offsets, and profile identifiers. `/api/v1/retrieval/sources` exposes reviewer/license/hash/profile fields when the backend has them.
 
 ## Lifecycle States
 
@@ -67,6 +72,14 @@ GET /api/v1/retrieval/corpus/manifest
 
 Returns the observed local corpus manifest for `knowledge/corpus`.
 
+### List Chunking Profiles
+
+```http
+GET /api/v1/retrieval/corpus/chunking-profiles
+```
+
+Returns the active chunking profile registry.
+
 ### Reindex Retrieval
 
 ```http
@@ -81,8 +94,22 @@ Add a new source by editing data first:
 
 1. Add an adapter entry in `knowledge/source_catalog/corpus_adapters.json`.
 2. Include license constraints and lifecycle/reviewer state.
-3. Add local paths only for curated files committed to the repository.
-4. Keep bulk datasets in ignored runtime storage, not git.
-5. Add a parser/fetcher later only when the adapter contract is stable.
+3. Select a chunk profile from `knowledge/retrieval/chunking_profiles.json`.
+4. Add local paths only for curated files committed to the repository.
+5. Keep bulk datasets in ignored runtime storage, not git.
+6. Add a parser/fetcher later only when the adapter contract is stable.
 
 This keeps parsing, governance, retrieval ranking, and storage concerns separated.
+
+## FHIR R4 Source Adapters
+
+The adapter catalog includes resource-specific HL7 FHIR R4 hooks for:
+
+- `Patient`
+- `Observation`
+- `DiagnosticReport`
+- `DocumentReference`
+- `Provenance`
+- `AuditEvent`
+
+These are source adapter definitions only. They preserve official source URLs and profile JSON targets, but they do not bulk-copy HL7 specification content into git.

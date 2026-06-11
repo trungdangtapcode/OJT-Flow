@@ -17,6 +17,7 @@ import type {
   AuthSessionResponse,
   BackgroundJob,
   CorpusAdapterCatalog,
+  CorpusChunkingProfileCatalog,
   CorpusIngestionManifest,
   ExtractedDocument,
   ExtractorInventory,
@@ -526,6 +527,10 @@ export function getRetrievalCorpusAdapters(): Promise<CorpusAdapterCatalog> {
 
 export function getRetrievalCorpusManifest(): Promise<CorpusIngestionManifest> {
   return request<CorpusIngestionManifest>("/retrieval/corpus/manifest");
+}
+
+export function getRetrievalCorpusChunkingProfiles(): Promise<CorpusChunkingProfileCatalog> {
+  return request<CorpusChunkingProfileCatalog>("/retrieval/corpus/chunking-profiles");
 }
 
 export function getRetrievalStrategies(): Promise<RetrievalStrategyCatalog> {

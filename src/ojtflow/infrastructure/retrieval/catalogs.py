@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
+    CorpusChunkingProfile,
+    CorpusChunkingProfileCatalog,
     CorpusSourceAdapter,
     RetrievalSourceTrustPolicy,
     RetrievalSourceTrustPolicyCatalog,
@@ -17,6 +19,7 @@ from ojtflow.core.contracts.retrieval import (
 
 
 DEFAULT_CORPUS_ADAPTER_CATALOG_PATH = Path("source_catalog/corpus_adapters.json")
+DEFAULT_CORPUS_CHUNKING_PROFILE_CATALOG_PATH = Path("retrieval/chunking_profiles.json")
 DEFAULT_SOURCE_POLICY_PATH = Path("source_catalog/source_trust_policies.json")
 DEFAULT_STRATEGY_CATALOG_PATH = Path("retrieval/strategy_catalog.json")
 
@@ -65,6 +68,25 @@ def load_corpus_adapter_catalog(knowledge_root: Path) -> CorpusAdapterCatalog:
         [_AdapterSourceKey(adapter) for adapter in catalog.adapters],
         path=path,
         field="source_id",
+    )
+    return catalog
+
+
+def load_corpus_chunking_profile_catalog(knowledge_root: Path) -> CorpusChunkingProfileCatalog:
+    """Load data-driven corpus chunking profiles from trusted knowledge data."""
+
+    path = knowledge_root / DEFAULT_CORPUS_CHUNKING_PROFILE_CATALOG_PATH
+    if not path.exists():
+        return CorpusChunkingProfileCatalog(
+            version="corpus_chunking_profiles.empty",
+            profiles=[],
+        )
+    raw = _read_json_object(path)
+    catalog = CorpusChunkingProfileCatalog.model_validate(raw)
+    _ensure_unique(
+        [_ChunkingProfileKey(profile) for profile in catalog.profiles],
+        path=path,
+        field="profile_id",
     )
     return catalog
 
@@ -122,6 +144,11 @@ class _AdapterKey:
 class _AdapterSourceKey:
     def __init__(self, adapter: CorpusSourceAdapter) -> None:
         self.key = adapter.source_id
+
+
+class _ChunkingProfileKey:
+    def __init__(self, profile: CorpusChunkingProfile) -> None:
+        self.key = profile.profile_id
 
 
 class _StrategyKey:

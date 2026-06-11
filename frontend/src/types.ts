@@ -716,6 +716,25 @@ export type CorpusAdapterCatalog = {
   adapters: CorpusSourceAdapter[];
 };
 
+export type CorpusChunkingProfile = {
+  profile_id: string;
+  label: string;
+  description: string;
+  boundary_strategy: string;
+  max_chars: number;
+  overlap_chars: number;
+  preferred_extensions: string[];
+  metadata_fields: string[];
+  intended_sources: string[];
+  lifecycle_state: CorpusLifecycleState;
+  governance_notes: string[];
+};
+
+export type CorpusChunkingProfileCatalog = {
+  version: string;
+  profiles: CorpusChunkingProfile[];
+};
+
 export type CorpusIngestionItem = {
   item_id: string;
   source_id: string;
@@ -937,6 +956,8 @@ export type RetrievalSource = {
   lifecycle_state?: CorpusLifecycleState | null;
   content_hash?: string | null;
   canonical_source_id?: string | null;
+  chunk_profile?: string | null;
+  resource_type?: string | null;
 };
 
 export type RetrievalIntegrityItem = {

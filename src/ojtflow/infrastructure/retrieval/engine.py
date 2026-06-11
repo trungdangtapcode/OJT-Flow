@@ -3533,6 +3533,8 @@ def sources_from_chunks(chunks: list[KnowledgeChunk]) -> list[RetrievalSource]:
                 lifecycle_state=source_metadata.get("lifecycle_state"),
                 content_hash=source_metadata.get("content_hash"),
                 canonical_source_id=source_metadata.get("canonical_source_id"),
+                chunk_profile=source_metadata.get("chunk_profile"),
+                resource_type=source_metadata.get("resource_type"),
             )
         )
     return sources
@@ -3551,6 +3553,8 @@ def _source_inventory_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
             "lifecycle_state",
             "content_hash",
             "canonical_source_id",
+            "chunk_profile",
+            "resource_type",
         )
         if metadata.get(key) is not None
     }

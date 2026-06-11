@@ -231,7 +231,7 @@ Keep this section updated when roadmap items move from planning into code.
 ### Month 4: Retrieval, RAG, Corpus, And Graph-NER
 
 - [x] F061 Add a corpus ingestion framework with source adapters, license metadata, release version, fetch time, hash, and reviewer state.
-- [ ] F062 Add official source adapters for FHIR specification pages relevant to Patient, Observation, DiagnosticReport, DocumentReference, Provenance, and AuditEvent.
+- [x] F062 Add official source adapters for FHIR specification pages relevant to Patient, Observation, DiagnosticReport, DocumentReference, Provenance, and AuditEvent.
 - [ ] F063 Add official source adapter for LOINC release metadata and selected public guide pages, respecting login/license boundaries.
 - [ ] F064 Add UCUM service metadata ingestion for validation and conversion guidance.
 - [ ] F065 Add RxNav/RxNorm API metadata ingestion and monthly release tracking.
@@ -240,8 +240,8 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F068 Add openFDA connector for labels, adverse events, recalls, and device metadata where useful.
 - [x] F069 Add source inventory lifecycle states: candidate, approved, deprecated, blocked, failed, and needs review.
 - [x] F070 Add source-level trust policy with domain, standard system, clinical scope, intended use, refresh cadence, and license constraints.
-- [ ] F071 Add chunking profiles for standards docs, terminology pages, structured API records, PDFs, and internal policies.
-- [ ] F072 Add metadata extraction for resource type, standard system, clinical domain, field names, version, section heading, and source locator.
+- [x] F071 Add chunking profiles for standards docs, terminology pages, structured API records, PDFs, and internal policies.
+- [x] F072 Add metadata extraction for resource type, standard system, clinical domain, field names, version, section heading, and source locator.
 - [x] F073 Add hybrid retrieval strategy presets: lexical-only, vector-only, hybrid RRF, metadata-filtered, high-recall review, and exact-source lookup.
 - [ ] F074 Add query transformation strategies from RAG research: rewrite, decomposition, step-back query, HyDE optional mode, and multi-query expansion.
 - [ ] F075 Add query router that chooses strategy by query intent, data format, clinical domain, source filters, and risk flags.

@@ -481,6 +481,29 @@ class CorpusAdapterCatalog(ContractModel):
     adapters: list[CorpusSourceAdapter] = Field(default_factory=list)
 
 
+class CorpusChunkingProfile(ContractModel):
+    """Data-driven chunking behavior for one family of corpus artifacts."""
+
+    profile_id: NonBlankStr
+    label: NonBlankStr
+    description: NonBlankStr
+    boundary_strategy: NonBlankStr
+    max_chars: int = Field(ge=200, le=8000)
+    overlap_chars: int = Field(ge=0, le=2000)
+    preferred_extensions: list[NonBlankStr] = Field(default_factory=list)
+    metadata_fields: list[NonBlankStr] = Field(default_factory=list)
+    intended_sources: list[NonBlankStr] = Field(default_factory=list)
+    lifecycle_state: CorpusLifecycleState = "approved"
+    governance_notes: list[NonBlankStr] = Field(default_factory=list)
+
+
+class CorpusChunkingProfileCatalog(ContractModel):
+    """Versioned chunking profile registry loaded from trusted knowledge data."""
+
+    version: NonBlankStr
+    profiles: list[CorpusChunkingProfile] = Field(default_factory=list)
+
+
 class CorpusIngestionItem(ContractModel):
     """One observed ingestion artifact with governance and consistency metadata."""
 
@@ -815,6 +838,8 @@ class RetrievalSource(ContractModel):
     lifecycle_state: CorpusLifecycleState | None = None
     content_hash: str | None = None
     canonical_source_id: str | None = None
+    chunk_profile: str | None = None
+    resource_type: str | None = None
 
 
 class RetrievalIntegrityItem(ContractModel):

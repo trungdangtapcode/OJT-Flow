@@ -21,7 +21,7 @@
       },
       "local_paths": ["knowledge/corpus/clinical_data_standards_map.md"],
       "parser": "markdown",
-      "chunk_profile": "paragraph_window_v0",
+      "chunk_profile": "section_window_v0",
       "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
       "license": {
         "license_id": "project_internal",
@@ -56,7 +56,7 @@
       },
       "local_paths": ["knowledge/corpus/medical_search_playbook.md"],
       "parser": "markdown",
-      "chunk_profile": "paragraph_window_v0",
+      "chunk_profile": "section_window_v0",
       "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
       "license": {
         "license_id": "project_internal",
@@ -90,7 +90,7 @@
       },
       "local_paths": ["knowledge/corpus/public_dataset_ingestion_plan.md"],
       "parser": "markdown",
-      "chunk_profile": "paragraph_window_v0",
+      "chunk_profile": "section_window_v0",
       "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
       "license": {
         "license_id": "project_internal",
@@ -124,7 +124,7 @@
       },
       "local_paths": ["knowledge/corpus/laboratory_semantic_retrieval.md"],
       "parser": "markdown",
-      "chunk_profile": "paragraph_window_v0",
+      "chunk_profile": "section_window_v0",
       "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
       "license": {
         "license_id": "project_internal",
@@ -173,6 +173,222 @@
       ],
       "metadata": {
         "expected_artifacts": ["selected_html_sections", "profile_json"]
+      }
+    },
+    {
+      "adapter_id": "external_hl7_fhir_r4_patient_v1",
+      "source_id": "hl7_fhir_r4_patient",
+      "title": "HL7 FHIR R4 Patient Resource",
+      "authority": "HL7 International",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "interoperability",
+      "standard_system": "FHIR",
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_resource_spec_page",
+      "release_version": "4.0.1",
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://hl7.org/fhir/R4/patient.html",
+        "json_profile": "https://hl7.org/fhir/R4/patient.profile.json"
+      },
+      "local_paths": [],
+      "parser": "fhir_resource_spec_page",
+      "chunk_profile": "section_window_v0",
+      "fetch_time_policy": "record_http_fetch_time_per_snapshot",
+      "license": {
+        "license_id": "hl7_terms",
+        "name": "HL7 publication terms",
+        "url": "https://www.hl7.org/legal/ippolicy.cfm",
+        "constraints": ["Cite FHIR R4 4.0.1 and preserve source URL per extracted section"]
+      },
+      "governance_notes": ["Use for patient identity, demographic, and PHI-sensitive field evidence."],
+      "metadata": {
+        "resource_type": "Patient",
+        "fhir_release": "R4",
+        "expected_artifacts": ["resource_content_sections", "profile_json"]
+      }
+    },
+    {
+      "adapter_id": "external_hl7_fhir_r4_observation_v1",
+      "source_id": "hl7_fhir_r4_observation",
+      "title": "HL7 FHIR R4 Observation Resource",
+      "authority": "HL7 International",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "laboratory",
+      "standard_system": "FHIR",
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_resource_spec_page",
+      "release_version": "4.0.1",
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://hl7.org/fhir/R4/observation.html",
+        "json_profile": "https://hl7.org/fhir/R4/observation.profile.json"
+      },
+      "local_paths": [],
+      "parser": "fhir_resource_spec_page",
+      "chunk_profile": "section_window_v0",
+      "fetch_time_policy": "record_http_fetch_time_per_snapshot",
+      "license": {
+        "license_id": "hl7_terms",
+        "name": "HL7 publication terms",
+        "url": "https://www.hl7.org/legal/ippolicy.cfm",
+        "constraints": ["Cite FHIR R4 4.0.1 and preserve source URL per extracted section"]
+      },
+      "governance_notes": ["Use for lab values, code, value[x], subject, effective time, and interpretation evidence."],
+      "metadata": {
+        "resource_type": "Observation",
+        "fhir_release": "R4",
+        "expected_artifacts": ["resource_content_sections", "profile_json"]
+      }
+    },
+    {
+      "adapter_id": "external_hl7_fhir_r4_diagnostic_report_v1",
+      "source_id": "hl7_fhir_r4_diagnostic_report",
+      "title": "HL7 FHIR R4 DiagnosticReport Resource",
+      "authority": "HL7 International",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "laboratory",
+      "standard_system": "FHIR",
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_resource_spec_page",
+      "release_version": "4.0.1",
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://hl7.org/fhir/R4/diagnosticreport.html",
+        "json_profile": "https://hl7.org/fhir/R4/diagnosticreport.profile.json"
+      },
+      "local_paths": [],
+      "parser": "fhir_resource_spec_page",
+      "chunk_profile": "section_window_v0",
+      "fetch_time_policy": "record_http_fetch_time_per_snapshot",
+      "license": {
+        "license_id": "hl7_terms",
+        "name": "HL7 publication terms",
+        "url": "https://www.hl7.org/legal/ippolicy.cfm",
+        "constraints": ["Cite FHIR R4 4.0.1 and preserve source URL per extracted section"]
+      },
+      "governance_notes": ["Use for grouped lab reports and result references."],
+      "metadata": {
+        "resource_type": "DiagnosticReport",
+        "fhir_release": "R4",
+        "expected_artifacts": ["resource_content_sections", "profile_json"]
+      }
+    },
+    {
+      "adapter_id": "external_hl7_fhir_r4_document_reference_v1",
+      "source_id": "hl7_fhir_r4_document_reference",
+      "title": "HL7 FHIR R4 DocumentReference Resource",
+      "authority": "HL7 International",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "document",
+      "standard_system": "FHIR",
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_resource_spec_page",
+      "release_version": "4.0.1",
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://hl7.org/fhir/R4/documentreference.html",
+        "json_profile": "https://hl7.org/fhir/R4/documentreference.profile.json"
+      },
+      "local_paths": [],
+      "parser": "fhir_resource_spec_page",
+      "chunk_profile": "section_window_v0",
+      "fetch_time_policy": "record_http_fetch_time_per_snapshot",
+      "license": {
+        "license_id": "hl7_terms",
+        "name": "HL7 publication terms",
+        "url": "https://www.hl7.org/legal/ippolicy.cfm",
+        "constraints": ["Cite FHIR R4 4.0.1 and preserve source URL per extracted section"]
+      },
+      "governance_notes": ["Use for uploaded document references, attachment metadata, and source provenance."],
+      "metadata": {
+        "resource_type": "DocumentReference",
+        "fhir_release": "R4",
+        "expected_artifacts": ["resource_content_sections", "profile_json"]
+      }
+    },
+    {
+      "adapter_id": "external_hl7_fhir_r4_provenance_v1",
+      "source_id": "hl7_fhir_r4_provenance",
+      "title": "HL7 FHIR R4 Provenance Resource",
+      "authority": "HL7 International",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "governance",
+      "standard_system": "FHIR",
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_resource_spec_page",
+      "release_version": "4.0.1",
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://hl7.org/fhir/R4/provenance.html",
+        "json_profile": "https://hl7.org/fhir/R4/provenance.profile.json"
+      },
+      "local_paths": [],
+      "parser": "fhir_resource_spec_page",
+      "chunk_profile": "section_window_v0",
+      "fetch_time_policy": "record_http_fetch_time_per_snapshot",
+      "license": {
+        "license_id": "hl7_terms",
+        "name": "HL7 publication terms",
+        "url": "https://www.hl7.org/legal/ippolicy.cfm",
+        "constraints": ["Cite FHIR R4 4.0.1 and preserve source URL per extracted section"]
+      },
+      "governance_notes": ["Use for generated package provenance, source lineage, and reviewer attribution."],
+      "metadata": {
+        "resource_type": "Provenance",
+        "fhir_release": "R4",
+        "expected_artifacts": ["resource_content_sections", "profile_json"]
+      }
+    },
+    {
+      "adapter_id": "external_hl7_fhir_r4_audit_event_v1",
+      "source_id": "hl7_fhir_r4_audit_event",
+      "title": "HL7 FHIR R4 AuditEvent Resource",
+      "authority": "HL7 International",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "governance",
+      "standard_system": "FHIR",
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_resource_spec_page",
+      "release_version": "4.0.1",
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://hl7.org/fhir/R4/auditevent.html",
+        "json_profile": "https://hl7.org/fhir/R4/auditevent.profile.json"
+      },
+      "local_paths": [],
+      "parser": "fhir_resource_spec_page",
+      "chunk_profile": "section_window_v0",
+      "fetch_time_policy": "record_http_fetch_time_per_snapshot",
+      "license": {
+        "license_id": "hl7_terms",
+        "name": "HL7 publication terms",
+        "url": "https://www.hl7.org/legal/ippolicy.cfm",
+        "constraints": ["Cite FHIR R4 4.0.1 and preserve source URL per extracted section"]
+      },
+      "governance_notes": ["Use for audit event export planning and tool/workflow traceability."],
+      "metadata": {
+        "resource_type": "AuditEvent",
+        "fhir_release": "R4",
+        "expected_artifacts": ["resource_content_sections", "profile_json"]
       }
     },
     {
