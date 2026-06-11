@@ -64,6 +64,15 @@ runtime defaults: the Assistant form starts empty, and selecting an example
 only fills the message/context fields for the user to edit before execution.
 Do not bury demo payloads in React state or backend control flow.
 
+`GET /api/v1/assistant/answer-templates` returns governed answer structures
+loaded from `knowledge/assistant/answer_templates.json`.
+
+`GET /api/v1/assistant/mcp/resources` returns the MCP resource catalog loaded
+from `knowledge/assistant/mcp_resources.json`.
+
+`GET /api/v1/assistant/mcp/prompts` returns the MCP prompt catalog loaded from
+`knowledge/assistant/mcp_prompts.json`.
+
 `GET /api/v1/assistant/sessions`
 
 `POST /api/v1/assistant/sessions`
@@ -212,6 +221,24 @@ standards evidence. It accepts the same governed source scope as
 exact approved source such as a specific FHIR profile, schema, guideline, or
 terminology entry. `workflow_summary` is the primary workflow inspection tool
 for chat clients.
+
+Exposed MCP resources are registered from `knowledge/assistant/mcp_resources.json`.
+The v0 catalog includes read-only resources for the Assistant tool catalog,
+answer templates, starter examples, retrieval strategy catalog, source trust
+policies, retrieval presets, retrieval search options, recent workflows,
+pending reviews, schema catalog, and knowledge source inventory. Unknown
+provider keys fail server creation.
+
+Exposed MCP prompts are registered from `knowledge/assistant/mcp_prompts.json`.
+The v0 catalog includes standard tasks for validating lab CSV with evidence,
+profiling FHIR-like JSON, finding UCUM/unit evidence, inspecting pending
+reviews, summarizing a workflow, and preparing export review. Prompts do not
+grant execution authority; tool calls still run through the allowlisted backend
+executor and write gates.
+
+Retrieval tool outputs include `support_matrix` and copy the same object into
+`handoff_context.support_matrix`. Assistant and MCP clients should use it for
+source-backed answer claims instead of inferring support from free text.
 
 The MCP server is for trusted local/operator use in v0. For remote enterprise
 deployment, add OAuth/resource-indicator authorization, per-user tool scoping,

@@ -21,6 +21,8 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalCoverageItem,
     RetrievalDiversitySelection,
     RetrievalDiversitySummary,
+    RetrievalEvidenceSupportMatrix,
+    RetrievalEvidenceSupportRow,
     RetrievalEvidenceBucket,
     RetrievalFacetBucket,
     RetrievalFacets,
@@ -559,6 +561,7 @@ def rank_chunks(
         trace_warning_count=len(trace_warnings),
         remediation_summary=remediation_summary,
     )
+    support_matrix = evidence_support_matrix_from_hits(top_hits, query)
     strategy_recommendations = strategy_recommendations_from_context(
         query_analysis=query_analysis,
         quality_signals=quality_signals,
@@ -585,6 +588,7 @@ def rank_chunks(
         recommended_action_summary=recommended_action_summary,
         remediation_summary=remediation_summary,
         interpretation=interpretation,
+        support_matrix=support_matrix,
         strategy_recommendations=strategy_recommendations,
         standard_search_plan=standard_search_plan,
         diversity=diversity_summary,
@@ -607,6 +611,7 @@ def rank_chunks(
             "recommended_action_summary": recommended_action_summary.model_dump(mode="json"),
             "remediation_summary": remediation_summary,
             "interpretation": interpretation.model_dump(mode="json"),
+            "support_matrix": support_matrix.model_dump(mode="json"),
             "strategy_recommendations": [
                 recommendation.model_dump(mode="json")
                 for recommendation in strategy_recommendations
@@ -668,6 +673,117 @@ def attach_hit_match_explanations(
     for hit in hits:
         matched_buckets = buckets_by_evidence_id.get(hit.evidence.evidence_id, [])
         hit.match_explanation = hit_match_explanation(hit, matched_buckets)
+
+
+def evidence_support_matrix_from_hits(
+    hits: list[RetrievalHit],
+    query: RetrievalQuery,
+) -> RetrievalEvidenceSupportMatrix:
+    """Build claim-to-evidence support rows for assistant and MCP synthesis."""
+
+    rows = [
+        _evidence_support_row_from_hit(hit, index=index)
+        for index, hit in enumerate(hits, start=1)
+    ]
+    status_counts = Counter(row.support_status for row in rows)
+    warnings: list[str] = []
+    if not rows:
+        warnings.append("no_ranked_evidence")
+    if any(row.support_status in {"weak", "unsupported"} for row in rows):
+        warnings.append("weak_evidence_support_present")
+    return RetrievalEvidenceSupportMatrix(
+        query_claim=query.query,
+        row_count=len(rows),
+        strong_count=status_counts.get("strong", 0),
+        partial_count=status_counts.get("partial", 0),
+        weak_count=status_counts.get("weak", 0),
+        unsupported_count=status_counts.get("unsupported", 0),
+        rows=rows,
+        warnings=warnings,
+    )
+
+
+def _evidence_support_row_from_hit(
+    hit: RetrievalHit,
+    *,
+    index: int,
+) -> RetrievalEvidenceSupportRow:
+    explanation = hit.match_explanation if isinstance(hit.match_explanation, dict) else {}
+    support_status = _support_status_from_hit(hit) or "weak"
+    warnings = _support_row_warnings(hit, explanation)
+    return RetrievalEvidenceSupportRow(
+        claim_id=f"claim:{index}",
+        claim=hit.evidence.claim,
+        support_status=_support_status_value(support_status),
+        evidence_id=hit.evidence.evidence_id,
+        source_id=hit.evidence.source_id,
+        source_type=hit.evidence.source_type,
+        source_version=hit.evidence.source_version,
+        source_locator=_support_source_locator(hit),
+        matched_terms=_unique_strings(hit.matched_terms)[:12],
+        score=hit.score,
+        confidence=hit.evidence.confidence,
+        reasoning=_support_row_reasoning(hit, explanation, warnings),
+        warnings=warnings,
+        metadata={
+            "rank": index,
+            "bucket_ids": _nonblank_strings(explanation.get("bucket_ids"), limit=8),
+            "bucket_labels": _nonblank_strings(explanation.get("bucket_labels"), limit=8),
+            "concept_labels": _nonblank_strings(explanation.get("concept_labels"), limit=8),
+            "aspect_labels": _nonblank_strings(explanation.get("aspect_labels"), limit=8),
+            "top_score_driver": _top_score_driver(explanation),
+        },
+    )
+
+
+def _support_source_locator(hit: RetrievalHit) -> dict[str, Any]:
+    locator = dict(hit.evidence.locator)
+    locator.update(hit.source_locator)
+    return locator
+
+
+def _support_status_value(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"strong", "partial", "weak", "unsupported"}:
+        return normalized
+    return "weak"
+
+
+def _support_row_warnings(
+    hit: RetrievalHit,
+    explanation: dict[str, Any],
+) -> list[str]:
+    warnings: list[str] = []
+    if not hit.matched_terms:
+        warnings.append("no_exact_matched_terms")
+    if int(explanation.get("provenance_count") or 0) == 0:
+        warnings.append("thin_source_provenance")
+    if hit.evidence.confidence is not None and hit.evidence.confidence < 0.7:
+        warnings.append("low_confidence_evidence")
+    if _support_status_from_hit(hit) in {"weak", "unsupported"}:
+        warnings.append("manual_evidence_review_recommended")
+    return _unique_strings(warnings)
+
+
+def _support_row_reasoning(
+    hit: RetrievalHit,
+    explanation: dict[str, Any],
+    warnings: list[str],
+) -> str:
+    pieces: list[str] = []
+    top_score_driver = _top_score_driver(explanation)
+    if top_score_driver:
+        pieces.append(f"Ranked by {top_score_driver}.")
+    if hit.matched_terms:
+        pieces.append(
+            "Matched query terms: " + ", ".join(_unique_strings(hit.matched_terms)[:6]) + "."
+        )
+    bucket_labels = _nonblank_strings(explanation.get("bucket_labels"), limit=4)
+    if bucket_labels:
+        pieces.append("Evidence bucket coverage: " + ", ".join(bucket_labels) + ".")
+    if warnings:
+        pieces.append("Review warning(s): " + ", ".join(warnings) + ".")
+    return " ".join(pieces) or "Selected as ranked evidence; inspect source locator before use."
 
 
 def hit_match_explanation(

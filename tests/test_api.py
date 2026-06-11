@@ -1341,6 +1341,9 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         )
         assistant_tools = await client.get("/api/v1/assistant/tools")
         assistant_examples = await client.get("/api/v1/assistant/examples")
+        assistant_answer_templates = await client.get("/api/v1/assistant/answer-templates")
+        assistant_mcp_resources = await client.get("/api/v1/assistant/mcp/resources")
+        assistant_mcp_prompts = await client.get("/api/v1/assistant/mcp/prompts")
         assistant_stream_replays = await client.get(
             "/api/v1/assistant/sessions/chat_missing/stream-replays"
         )
@@ -1417,6 +1420,12 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(assistant_tools, expected_code="unauthorized")
     assert assistant_examples.status_code == 401
     _assert_error_envelope(assistant_examples, expected_code="unauthorized")
+    assert assistant_answer_templates.status_code == 401
+    _assert_error_envelope(assistant_answer_templates, expected_code="unauthorized")
+    assert assistant_mcp_resources.status_code == 401
+    _assert_error_envelope(assistant_mcp_resources, expected_code="unauthorized")
+    assert assistant_mcp_prompts.status_code == 401
+    _assert_error_envelope(assistant_mcp_prompts, expected_code="unauthorized")
     assert assistant_stream_replays.status_code == 401
     _assert_error_envelope(assistant_stream_replays, expected_code="unauthorized")
     assert assistant_stream.status_code == 401
@@ -3913,6 +3922,15 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         assert retrieval_data["remediation_summary"]
         assert retrieval_data["interpretation"]["summary"]
         assert retrieval_data["interpretation"]["top_source_id"]
+        assert retrieval_data["support_matrix"]["version"] == (
+            "retrieval_evidence_support_matrix.v1"
+        )
+        assert retrieval_data["support_matrix"]["row_count"] == len(retrieval_data["hits"])
+        assert retrieval_data["support_matrix"]["rows"][0]["evidence_id"] == (
+            retrieval_data["hits"][0]["evidence"]["evidence_id"]
+        )
+        assert retrieval_data["support_matrix"]["rows"][0]["source_locator"]
+        assert retrieval_data["support_matrix"]["rows"][0]["reasoning"]
         assert retrieval_data["handoff_context"]["recommended_action_summary"] == (
             retrieval_data["recommended_action_summary"]
         )
@@ -3921,6 +3939,9 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         )
         assert retrieval_data["handoff_context"]["interpretation"] == (
             retrieval_data["interpretation"]
+        )
+        assert retrieval_data["handoff_context"]["support_matrix"] == (
+            retrieval_data["support_matrix"]
         )
         assert retrieval_data["strategy_recommendations"]
         assert retrieval_data["handoff_context"]["strategy_recommendations"] == (
@@ -4202,6 +4223,59 @@ async def test_assistant_examples_endpoint_returns_data_driven_starters(monkeypa
         "review_work_queue",
     }
     assert all("data" not in example["context"] for example in examples)
+
+
+@pytest.mark.asyncio
+async def test_assistant_answer_templates_endpoint_returns_data_driven_contracts(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.get("/api/v1/assistant/answer-templates")
+
+    assert response.status_code == 200
+    templates = response.json()["data"]
+    retrieval = next(
+        template for template in templates if template["template_id"] == "retrieval_answer"
+    )
+    assert retrieval["evidence_required"] is True
+    assert "retrieval_search" in retrieval["tool_names"]
+    assert any(section["section_id"] == "gaps" for section in retrieval["sections"])
+
+
+@pytest.mark.asyncio
+async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        resources_response = await client.get("/api/v1/assistant/mcp/resources")
+        prompts_response = await client.get("/api/v1/assistant/mcp/prompts")
+
+    assert resources_response.status_code == 200
+    resources = resources_response.json()["data"]
+    assert resources["version"] == "mcp_resources.v1"
+    assert any(
+        resource["uri"] == "ojtflow://retrieval/strategies"
+        and "F113" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
+
+    assert prompts_response.status_code == 200
+    prompts = prompts_response.json()["data"]
+    assert prompts["version"] == "mcp_prompts.v1"
+    validation_prompt = next(
+        prompt
+        for prompt in prompts["prompts"]
+        if prompt["prompt_id"] == "validate_lab_csv_with_evidence"
+    )
+    assert validation_prompt["recommended_tools"] == ["validate_with_evidence"]
+    assert validation_prompt["evidence_required"] is True
+    assert any(argument["name"] == "data" for argument in validation_prompt["arguments"])
 
 
 @pytest.mark.asyncio

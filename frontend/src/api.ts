@@ -1,6 +1,7 @@
 import type {
   ApiEnvelope,
   AssistantChatPayload,
+  AssistantAnswerTemplate,
   AssistantChatMessage,
   AssistantChatSessionDetail,
   AssistantChatSessionSummary,
@@ -18,6 +19,8 @@ import type {
   ExtractedDocument,
   ExtractorInventory,
   MigrationDiagnostics,
+  McpPromptCatalog,
+  McpResourceCatalog,
   OcrEvidenceFieldInput,
   OcrEvidenceResponse,
   RetrievalJudgmentEvaluationPayload,
@@ -752,6 +755,18 @@ export async function streamAssistantChat(
 
 export function listAssistantExamples(): Promise<AssistantExample[]> {
   return request<AssistantExample[]>("/assistant/examples");
+}
+
+export function listAssistantAnswerTemplates(): Promise<AssistantAnswerTemplate[]> {
+  return request<AssistantAnswerTemplate[]>("/assistant/answer-templates");
+}
+
+export function getAssistantMcpResources(): Promise<McpResourceCatalog> {
+  return request<McpResourceCatalog>("/assistant/mcp/resources");
+}
+
+export function getAssistantMcpPrompts(): Promise<McpPromptCatalog> {
+  return request<McpPromptCatalog>("/assistant/mcp/prompts");
 }
 
 export function listAssistantTools(): Promise<AssistantToolSpec[]> {

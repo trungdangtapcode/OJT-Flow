@@ -787,6 +787,26 @@ Example response data:
 ]
 ```
 
+`GET /api/v1/assistant/answer-templates`
+
+Returns governed answer templates from
+`knowledge/assistant/answer_templates.json`. Use this endpoint when a UI,
+MCP client, or evaluator needs the expected sections, evidence requirement, and
+review conditions for a task class.
+
+`GET /api/v1/assistant/mcp/resources`
+
+Returns the MCP resource catalog from `knowledge/assistant/mcp_resources.json`.
+Resources are read-only operational catalogs such as assistant tools, retrieval
+strategies, source trust policies, workflows, reviews, schemas, and knowledge
+source inventory.
+
+`GET /api/v1/assistant/mcp/prompts`
+
+Returns the MCP prompt catalog from `knowledge/assistant/mcp_prompts.json`.
+Prompts define standard operator tasks, arguments, recommended tools, evidence
+requirements, and write-action policy. They do not grant execution authority.
+
 `GET /api/v1/assistant/sessions`
 
 Lists persisted Assistant chat sessions for the authenticated user. Query

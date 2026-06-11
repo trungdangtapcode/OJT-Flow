@@ -17,6 +17,8 @@ import {
   extractFileText,
   getAssistantSession,
   getAssistantSessionStreamReplays,
+  getAssistantMcpPrompts,
+  getAssistantMcpResources,
   getJob,
   getExtractorInventory,
   getRetrievalJudgmentSummary,
@@ -32,6 +34,7 @@ import {
   getWorkflowOutput,
   getWorkflowStats,
   listAssistantTools,
+  listAssistantAnswerTemplates,
   listAssistantExamples,
   listAssistantSessions,
   listJobs,
@@ -132,6 +135,9 @@ export const queryKeys = {
   jobs: (params: Record<string, unknown>) => ["jobs", params] as const,
   job: (jobId: string | null) => ["job", jobId] as const,
   assistantTools: ["assistant-tools"] as const,
+  assistantAnswerTemplates: ["assistant-answer-templates"] as const,
+  assistantMcpPrompts: ["assistant-mcp-prompts"] as const,
+  assistantMcpResources: ["assistant-mcp-resources"] as const,
   assistantExamples: ["assistant-examples"] as const,
   assistantSessions: (params: Record<string, unknown>) =>
     ["assistant-sessions", params] as const,
@@ -563,6 +569,27 @@ export function useAppendAssistantSessionMessageMutation() {
 
 export function useAssistantToolsQuery() {
   return useQuery({ queryKey: queryKeys.assistantTools, queryFn: listAssistantTools });
+}
+
+export function useAssistantAnswerTemplatesQuery() {
+  return useQuery({
+    queryKey: queryKeys.assistantAnswerTemplates,
+    queryFn: listAssistantAnswerTemplates,
+  });
+}
+
+export function useAssistantMcpResourcesQuery() {
+  return useQuery({
+    queryKey: queryKeys.assistantMcpResources,
+    queryFn: getAssistantMcpResources,
+  });
+}
+
+export function useAssistantMcpPromptsQuery() {
+  return useQuery({
+    queryKey: queryKeys.assistantMcpPrompts,
+    queryFn: getAssistantMcpPrompts,
+  });
 }
 
 export function useOcrEvidenceMutation() {

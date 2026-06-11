@@ -13,9 +13,16 @@ from ojtflow.application.assistant_session_service import AssistantSessionServic
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
+from ojtflow.core.contracts.assistant import AssistantAnswerTemplate
+from ojtflow.core.contracts.mcp import McpPromptCatalog, McpResourceCatalog
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
+from ojtflow.infrastructure.assistant_templates import load_assistant_answer_templates
 from ojtflow.infrastructure.assistant_examples import load_assistant_examples
+from ojtflow.infrastructure.mcp_catalogs import (
+    load_mcp_prompt_catalog,
+    load_mcp_resource_catalog,
+)
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
     get_assistant_service,
@@ -55,6 +62,44 @@ async def assistant_examples(
 
     del authenticated
     return ok(load_assistant_examples(settings.resolved_knowledge_dir))
+
+
+@router.get("/assistant/answer-templates")
+async def assistant_answer_templates(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return governed Assistant answer templates visible to this user."""
+
+    del authenticated
+    templates: list[AssistantAnswerTemplate] = load_assistant_answer_templates(
+        settings.resolved_knowledge_dir
+    )
+    return ok(templates)
+
+
+@router.get("/assistant/mcp/resources")
+async def assistant_mcp_resources(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return data-driven MCP resource specs visible to this user."""
+
+    del authenticated
+    catalog: McpResourceCatalog = load_mcp_resource_catalog(settings.resolved_knowledge_dir)
+    return ok(catalog)
+
+
+@router.get("/assistant/mcp/prompts")
+async def assistant_mcp_prompts(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return data-driven MCP prompt specs visible to this user."""
+
+    del authenticated
+    catalog: McpPromptCatalog = load_mcp_prompt_catalog(settings.resolved_knowledge_dir)
+    return ok(catalog)
 
 
 @router.get("/assistant/sessions")

@@ -24,7 +24,18 @@ plus standards evidence. Use `workflow_summary` when the client already has a
 workflow ID and wants a compact operator view.
 `retrieval_search` returns the same retrieval package contract as the API,
 including `quality_summary`, `recommended_actions[]`, and
-`recommended_action_summary` for corrective retrieval triage.
+`recommended_action_summary` for corrective retrieval triage. It also returns
+`support_matrix` for claim-to-evidence support and copies it into
+`handoff_context.support_matrix`.
+
+The server also registers data-driven resources from
+`knowledge/assistant/mcp_resources.json` and prompts from
+`knowledge/assistant/mcp_prompts.json`. Resources expose read-only catalogs such
+as Assistant tools, answer templates, retrieval strategies, source trust
+policies, search presets, recent workflows, pending reviews, schemas, and
+knowledge source inventory. Prompts cover standard tasks such as validating lab
+CSV with evidence, profiling FHIR-like data, finding UCUM/unit evidence,
+inspecting pending reviews, summarizing workflows, and preparing export review.
 
 `start_workflow` is write-capable and returns `requires_approval` unless the
 caller explicitly passes `execute_write_actions=true`. The server does not

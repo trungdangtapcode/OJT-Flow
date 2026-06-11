@@ -145,6 +145,10 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F070 | Implemented | Added `knowledge/source_catalog/source_trust_policies.json`, typed `RetrievalSourceTrustPolicyCatalog`, and `GET /api/v1/retrieval/source-policies` so authoritative healthcare sources carry domain, standard system, intended/prohibited use, refresh cadence, license constraints, ingestion mode, evidence tier, and reviewer policy. |
 | 2026-06-11 | F073 | Implemented | Added data-driven retrieval strategy presets in `knowledge/retrieval/strategy_catalog.json` and `GET /api/v1/retrieval/strategies`, covering lexical-only, vector-only, hybrid RRF, metadata-filtered, high-recall review, and exact-source lookup with runtime requirements and risk controls. |
 | 2026-06-11 | F105 | Implemented | Added data-driven Assistant tool permission policy in `knowledge/assistant/tool_permission_policies.json`, extended tool specs with permission tags, risk level, and approval reason, and surfaced this metadata in the Assistant tool catalog UI. |
+| 2026-06-11 | F108 | Implemented | Added data-driven Assistant answer template contracts in `knowledge/assistant/answer_templates.json` and `GET /api/v1/assistant/answer-templates`, covering validation reports, retrieval answers, standards explanations, workflow status, review summaries, and export summaries with evidence/review constraints. |
+| 2026-06-11 | F084 | Implemented | Added `RetrievalPackage.support_matrix` and `handoff_context.support_matrix`, giving retrieval/assistant/MCP clients a deterministic claim-to-evidence matrix with source IDs, locators, matched terms, scores, reasoning, warnings, and support status. |
+| 2026-06-11 | F113 | Implemented | Added data-driven MCP resource catalog contracts in `knowledge/assistant/mcp_resources.json`, authenticated catalog API, and local FastMCP resource registration for assistant/retrieval governance resources. |
+| 2026-06-11 | F114 | Implemented | Added data-driven MCP prompt catalog contracts in `knowledge/assistant/mcp_prompts.json`, authenticated catalog API, and local FastMCP prompt registration for standard healthcare operator tasks. |
 
 ## Feature Backlog
 
@@ -242,7 +246,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F081 Add source-aware diversity selection that can be tuned per query route.
 - [ ] F082 Add corrective RAG behavior: if evidence is weak, ask for missing filters, broaden source scope, or trigger reindex suggestion.
 - [ ] F083 Add self-checking retrieval answer synthesis that refuses unsupported claims and returns missing-evidence gaps.
-- [ ] F084 Add evidence support matrix for each answer claim with source ID, chunk locator, matched terms, score, and reasoning.
+- [x] F084 Add evidence support matrix for each answer claim with source ID, chunk locator, matched terms, score, and reasoning.
 - [ ] F085 Add retrieval benchmark datasets for lab validation, FHIR mapping, UCUM unit checks, PHI review, and external medical search routing.
 - [ ] F086 Add nightly retrieval evaluation job that tracks recall@k, MRR, nDCG, coverage, source diversity, and unsupported-claim rate.
 - [ ] F087 Add retrieval regression dashboard in the UI for admins.
@@ -269,13 +273,13 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F105 Add per-tool permissions: read-only, write-gated, admin-only, external-network, PHI-sensitive, and destructive.
 - [ ] F106 Add user confirmation UI before write-gated assistant actions such as creating workflow, approving review, exporting package, or reindexing corpus.
 - [ ] F107 Add assistant memory only for safe operational preferences, never raw PHI or uploaded content.
-- [ ] F108 Add assistant answer templates for validation report, retrieval answer, standards explanation, workflow status, review summary, and export summary.
+- [x] F108 Add assistant answer templates for validation report, retrieval answer, standards explanation, workflow status, review summary, and export summary.
 - [ ] F109 Add assistant attachment support for multiple files, pasted images, text snippets, and selected workflow/retrieval context.
 - [ ] F110 Add assistant "show evidence" action that jumps to the exact source row, page box, chunk, or workflow event.
 - [ ] F111 Add assistant "create review task" action for unresolved data quality or terminology decisions.
 - [ ] F112 Add assistant "generate mapping draft" action that creates a review-gated transform plan instead of directly transforming data.
-- [ ] F113 Add MCP resources for workflows, reviews, retrieval sources, schemas, and knowledge source inventory.
-- [ ] F114 Add MCP prompts for standard tasks such as validate lab CSV, profile FHIR, find UCUM evidence, and inspect pending reviews.
+- [x] F113 Add MCP resources for workflows, reviews, retrieval sources, schemas, and knowledge source inventory.
+- [x] F114 Add MCP prompts for standard tasks such as validate lab CSV, profile FHIR, find UCUM evidence, and inspect pending reviews.
 - [ ] F115 Add remote MCP deployment design with OAuth/resource indicators, per-user scoping, rate limits, and audit.
 - [ ] F116 Add MCP tool-call audit events linked to assistant chat sessions and workflow events.
 - [ ] F117 Add agent evaluation fixtures for natural-language tool selection and final answer faithfulness.

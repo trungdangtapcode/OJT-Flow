@@ -645,6 +645,42 @@ class RetrievalInterpretation(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+RetrievalSupportStatus = Literal["strong", "partial", "weak", "unsupported"]
+
+
+class RetrievalEvidenceSupportRow(ContractModel):
+    """One auditable support row connecting a claim to ranked evidence."""
+
+    claim_id: NonBlankStr
+    claim: NonBlankStr
+    support_status: RetrievalSupportStatus
+    evidence_id: NonBlankStr
+    source_id: NonBlankStr
+    source_type: EvidenceSourceType
+    source_version: NonBlankStr | None = None
+    source_locator: dict[str, Any] = Field(default_factory=dict)
+    matched_terms: list[NonBlankStr] = Field(default_factory=list)
+    score: float
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    reasoning: NonBlankStr
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalEvidenceSupportMatrix(ContractModel):
+    """Evidence support matrix for retrieval answers and downstream synthesis."""
+
+    version: NonBlankStr = "retrieval_evidence_support_matrix.v1"
+    query_claim: NonBlankStr
+    row_count: int = Field(ge=0)
+    strong_count: int = Field(ge=0)
+    partial_count: int = Field(ge=0)
+    weak_count: int = Field(ge=0)
+    unsupported_count: int = Field(ge=0)
+    rows: list[RetrievalEvidenceSupportRow] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+
+
 class RetrievalPackage(ContractModel):
     """Evidence package returned to workflow state and API callers."""
 
@@ -659,6 +695,7 @@ class RetrievalPackage(ContractModel):
     recommended_action_summary: RetrievalRecommendedActionSummary | None = None
     remediation_summary: NonBlankStr | None = None
     interpretation: RetrievalInterpretation | None = None
+    support_matrix: RetrievalEvidenceSupportMatrix | None = None
     strategy_recommendations: list[RetrievalStrategyRecommendation] = Field(default_factory=list)
     standard_search_plan: RetrievalStandardSearchPlan | None = None
     diversity: RetrievalDiversitySummary | None = None

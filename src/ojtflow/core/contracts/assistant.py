@@ -87,6 +87,28 @@ class AssistantExample(ContractModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class AssistantAnswerTemplateSection(ContractModel):
+    """One named section in a governed Assistant answer template."""
+
+    section_id: NonBlankStr
+    title: NonBlankStr
+    purpose: NonBlankStr
+    required: bool = True
+
+
+class AssistantAnswerTemplate(ContractModel):
+    """Data-driven response template for a class of Assistant task."""
+
+    template_id: NonBlankStr
+    label: NonBlankStr
+    description: NonBlankStr
+    tool_names: list[NonBlankStr] = Field(default_factory=list)
+    sections: list[AssistantAnswerTemplateSection] = Field(default_factory=list)
+    evidence_required: bool = False
+    review_required_when: list[NonBlankStr] = Field(default_factory=list)
+    output_constraints: list[NonBlankStr] = Field(default_factory=list)
+
+
 class AssistantChatSessionSummary(ContractModel):
     """Persisted Assistant chat session summary."""
 

@@ -303,6 +303,37 @@ export type RetrievalInterpretation = {
   metadata: Record<string, unknown>;
 };
 
+export type RetrievalSupportStatus = "strong" | "partial" | "weak" | "unsupported";
+
+export type RetrievalEvidenceSupportRow = {
+  claim_id: string;
+  claim: string;
+  support_status: RetrievalSupportStatus;
+  evidence_id: string;
+  source_id: string;
+  source_type: string;
+  source_version?: string | null;
+  source_locator: Record<string, unknown>;
+  matched_terms: string[];
+  score: number;
+  confidence?: number | null;
+  reasoning: string;
+  warnings: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalEvidenceSupportMatrix = {
+  version: string;
+  query_claim: string;
+  row_count: number;
+  strong_count: number;
+  partial_count: number;
+  weak_count: number;
+  unsupported_count: number;
+  rows: RetrievalEvidenceSupportRow[];
+  warnings: string[];
+};
+
 export type RetrievalStandardSearchStep = {
   step_id: string;
   label: string;
@@ -536,6 +567,7 @@ export type RetrievalPackage = {
   recommended_action_summary?: RetrievalRecommendedActionSummary | null;
   remediation_summary?: string | null;
   interpretation?: RetrievalInterpretation | null;
+  support_matrix?: RetrievalEvidenceSupportMatrix | null;
   strategy_recommendations?: RetrievalStrategyRecommendation[];
   standard_search_plan?: RetrievalStandardSearchPlan | null;
   diversity?: RetrievalDiversitySummary | null;
@@ -659,6 +691,52 @@ export type RetrievalStrategyProfile = {
 export type RetrievalStrategyCatalog = {
   version: string;
   strategies: RetrievalStrategyProfile[];
+};
+
+export type McpResourceSpec = {
+  resource_id: string;
+  uri: string;
+  name: string;
+  title: string;
+  description: string;
+  mime_type: string;
+  provider_key: string;
+  permission_scope: string;
+  tags: string[];
+  roadmap_refs: string[];
+};
+
+export type McpResourceCatalog = {
+  version: string;
+  resources: McpResourceSpec[];
+};
+
+export type McpPromptArgument = {
+  name: string;
+  description: string;
+  required: boolean;
+  default?: string | null;
+  value_hint?: string | null;
+};
+
+export type McpPromptSpec = {
+  prompt_id: string;
+  name: string;
+  title: string;
+  description: string;
+  task_type: string;
+  template: string;
+  arguments: McpPromptArgument[];
+  recommended_tools: string[];
+  evidence_required: boolean;
+  write_actions_allowed: boolean;
+  tags: string[];
+  roadmap_refs: string[];
+};
+
+export type McpPromptCatalog = {
+  version: string;
+  prompts: McpPromptSpec[];
 };
 
 export type RetrievalJudgmentValue = "relevant" | "partial" | "not_relevant";
@@ -839,6 +917,24 @@ export type AssistantExample = {
   description: string;
   message: string;
   context: Record<string, unknown>;
+};
+
+export type AssistantAnswerTemplateSection = {
+  section_id: string;
+  title: string;
+  purpose: string;
+  required: boolean;
+};
+
+export type AssistantAnswerTemplate = {
+  template_id: string;
+  label: string;
+  description: string;
+  tool_names: string[];
+  sections: AssistantAnswerTemplateSection[];
+  evidence_required: boolean;
+  review_required_when: string[];
+  output_constraints: string[];
 };
 
 export type AssistantToolResult = {
