@@ -307,6 +307,9 @@ class RetrievalReindexJobRequest(RetrievalReindexRequest):
 
 
 class RuntimeRetrievalSettingsRequest(ContractModel):
+    embedding_provider: Literal["deterministic", "openai", "huggingface"] | None = None
+    embedding_model: NonBlankStr | None = None
+    embedding_dimensions: int | None = Field(default=None, ge=1, le=4096)
     retrieval_framework: Literal["custom", "llamaindex"] | None = None
     retrieval_candidate_multiplier: int | None = Field(default=None, ge=1, le=20)
     retrieval_min_candidates: int | None = Field(default=None, ge=1, le=200)
@@ -334,6 +337,9 @@ class RuntimeRetrievalSettingsRequest(ContractModel):
         "json_schema_extra": {
             "examples": [
                 {
+                    "embedding_provider": "openai",
+                    "embedding_model": "text-embedding-3-small",
+                    "embedding_dimensions": 384,
                     "retrieval_framework": "llamaindex",
                     "retrieval_candidate_multiplier": 4,
                     "retrieval_min_candidates": 12,
@@ -351,8 +357,17 @@ class RuntimeRetrievalSettingsRequest(ContractModel):
 class RuntimeAssistantSettingsRequest(ContractModel):
     llm_provider: Literal["disabled", "openai"] | None = None
     llm_model: NonBlankStr | None = None
+    llm_planning_model: NonBlankStr | None = None
+    llm_synthesis_model: NonBlankStr | None = None
+    llm_vision_model: NonBlankStr | None = None
+    llm_base_url: NonBlankStr | None = None
     llm_timeout_seconds: float | None = Field(default=None, gt=0, le=300)
     llm_max_tool_calls: int | None = Field(default=None, ge=1, le=12)
+    llm_planning_progress_interval_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        le=30,
+    )
 
     @model_validator(mode="after")
     def _has_runtime_update(self) -> "RuntimeAssistantSettingsRequest":
@@ -366,8 +381,13 @@ class RuntimeAssistantSettingsRequest(ContractModel):
                 {
                     "llm_provider": "openai",
                     "llm_model": "gpt-4.1-mini",
+                    "llm_planning_model": "gpt-4.1-mini",
+                    "llm_synthesis_model": "gpt-4.1",
+                    "llm_vision_model": "gpt-4.1-mini",
+                    "llm_base_url": "https://api.openai.com/v1",
                     "llm_timeout_seconds": 30.0,
                     "llm_max_tool_calls": 4,
+                    "llm_planning_progress_interval_seconds": 2.0,
                 }
             ]
         }

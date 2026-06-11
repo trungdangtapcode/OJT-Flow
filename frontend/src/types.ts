@@ -1682,6 +1682,9 @@ export type MigrationDiagnostics = {
 };
 
 export type RuntimeRetrievalSettings = {
+  embedding_provider: "deterministic" | "openai" | "huggingface";
+  embedding_model: string;
+  embedding_dimensions: number;
   retrieval_framework: "custom" | "llamaindex";
   retrieval_candidate_multiplier: number;
   retrieval_min_candidates: number;
@@ -1714,8 +1717,13 @@ export type RuntimeRetrievalRulePack = {
 export type RuntimeAssistantSettings = {
   llm_provider: "disabled" | "openai";
   llm_model: string;
+  llm_planning_model: string;
+  llm_synthesis_model: string;
+  llm_vision_model: string;
+  llm_base_url: string;
   llm_timeout_seconds: number;
   llm_max_tool_calls: number;
+  llm_planning_progress_interval_seconds: number;
 };
 
 export type RuntimeAssistantSettingsPayload = Partial<RuntimeAssistantSettings>;
@@ -1755,10 +1763,15 @@ export type RuntimeConfig = {
   llm?: {
     provider: string;
     model: string;
+    planning_model?: string;
+    synthesis_model?: string;
+    vision_model?: string;
     openai_configured: boolean;
+    base_url?: string;
     base_url_configured: boolean;
     timeout_seconds: number;
     max_tool_calls: number;
+    planning_progress_interval_seconds?: number;
     runtime_settings_configured?: boolean;
     runtime_settings?: RuntimeAssistantSettings;
   };

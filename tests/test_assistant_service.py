@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -603,6 +604,8 @@ async def test_openai_responses_planner_builds_structured_plan_request(monkeypat
     planner = OpenAIResponsesPlanner(
         api_key="test-key",
         model="chat-latest",
+        planning_model="gpt-4.1-mini",
+        synthesis_model="gpt-4.1",
         base_url="https://api.openai.com/v1",
         timeout_seconds=9.0,
     )
@@ -617,14 +620,26 @@ async def test_openai_responses_planner_builds_structured_plan_request(monkeypat
     assert plan.tool_calls[0].tool_name == "retrieval_search"
     assert captured["url"] == "https://api.openai.com/v1/responses"
     assert captured["headers"]["Authorization"] == "Bearer test-key"
-    assert captured["json"]["model"] == "chat-latest"
+    assert captured["json"]["model"] == "gpt-4.1-mini"
     assert captured["json"]["text"]["format"]["type"] == "json_schema"
+    assert captured["json"]["text"]["format"]["strict"] is True
     tool_call_schema = captured["json"]["text"]["format"]["schema"]["properties"][
         "tool_calls"
     ]["items"]
     assert "arguments_json" in tool_call_schema["properties"]
     assert "arguments" not in tool_call_schema["properties"]
     assert tool_call_schema["additionalProperties"] is False
+    visible_tools = json.loads(captured["json"]["input"][1]["content"][0]["text"])[
+        "available_tools"
+    ]
+    retrieval_schema = next(
+        tool["input_schema"] for tool in visible_tools if tool["name"] == "retrieval_search"
+    )
+    assert retrieval_schema["additionalProperties"] is False
+    assert set(retrieval_schema["required"]) == set(retrieval_schema["properties"])
+    assert retrieval_schema["properties"]["query"]["type"] == "string"
+    assert "null" in retrieval_schema["properties"]["schema_id"]["type"]
+    assert "null" in retrieval_schema["properties"]["fields"]["type"]
 
 
 def test_openai_responses_stream_parser_handles_current_events() -> None:
@@ -697,7 +712,9 @@ async def test_openai_responses_planner_synthesizes_answer_from_tool_results(
     )
     planner = OpenAIResponsesPlanner(
         api_key="test-key",
-        model="gpt-5-mini",
+        model="chat-latest",
+        planning_model="gpt-4.1-mini",
+        synthesis_model="gpt-5-mini",
         base_url="https://api.openai.com/v1",
         timeout_seconds=9.0,
     )

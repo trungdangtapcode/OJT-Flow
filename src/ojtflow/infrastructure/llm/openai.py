@@ -44,18 +44,26 @@ class OpenAIResponsesPlanner:
         self,
         *,
         api_key: str,
-        model: str,
+        model: str | None = None,
+        planning_model: str | None = None,
+        synthesis_model: str | None = None,
         base_url: str,
         timeout_seconds: float,
     ) -> None:
         self.api_key = api_key
-        self.model = model
+        shared_model = model or planning_model or synthesis_model
+        if not shared_model:
+            raise ValueError("OpenAIResponsesPlanner requires a model name.")
+        self.planning_model = planning_model or shared_model
+        self.synthesis_model = synthesis_model or shared_model
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
     @property
     def model_name(self) -> str:
-        return self.model
+        if self.planning_model == self.synthesis_model:
+            return self.planning_model
+        return f"{self.planning_model} / {self.synthesis_model}"
 
     async def plan(
         self,
@@ -70,7 +78,7 @@ class OpenAIResponsesPlanner:
                 "OpenAI LLM planner requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
         payload = _plan_payload(
-            model=self.model,
+            model=self.planning_model,
             message=message,
             context=context,
             tools=tools,
@@ -125,7 +133,7 @@ class OpenAIResponsesPlanner:
             "message": f"{len(tools)} allowlisted backend tool(s) available.",
         }
         payload = _plan_payload(
-            model=self.model,
+            model=self.planning_model,
             message=message,
             context=context,
             tools=tools,
@@ -215,7 +223,7 @@ class OpenAIResponsesPlanner:
                 "OpenAI LLM synthesis requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
         payload = {
-            "model": self.model,
+            "model": self.synthesis_model,
             "input": [
                 {
                     "role": "system",
@@ -284,7 +292,7 @@ class OpenAIResponsesPlanner:
                 "OpenAI LLM synthesis requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
         payload = {
-            "model": self.model,
+            "model": self.synthesis_model,
             "stream": True,
             "input": [
                 {
@@ -415,7 +423,7 @@ def _plan_payload(
                                 "message": message,
                                 "context": context,
                                 "available_tools": [
-                                    tool.model_dump(mode="json") for tool in tools
+                                    _planner_visible_tool_spec(tool) for tool in tools
                                 ],
                                 "max_tool_calls": max_tool_calls,
                             },
@@ -429,6 +437,7 @@ def _plan_payload(
             "format": {
                 "type": "json_schema",
                 "name": "ojtflow_assistant_plan",
+                "strict": True,
                 "schema": _assistant_plan_schema(
                     max_tool_calls,
                     tool_names=[tool.name for tool in tools],
@@ -436,6 +445,68 @@ def _plan_payload(
             }
         },
     }
+
+
+def _planner_visible_tool_spec(tool: AssistantToolSpec) -> dict[str, Any]:
+    payload = tool.model_dump(mode="json")
+    payload["input_schema"] = _strict_nullable_object_schema(tool.input_schema)
+    return payload
+
+
+def _strict_nullable_object_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        }
+    return _strict_nullable_schema(schema, nullable=False)
+
+
+def _strict_nullable_schema(schema: dict[str, Any], *, nullable: bool) -> dict[str, Any]:
+    normalized = dict(schema)
+    schema_type = normalized.get("type")
+    if schema_type == "object" or (
+        isinstance(schema_type, list) and "object" in schema_type
+    ):
+        properties = normalized.get("properties")
+        if not isinstance(properties, dict):
+            properties = {}
+        original_required = set(normalized.get("required") or [])
+        normalized["properties"] = {
+            str(name): _strict_nullable_schema(
+                prop if isinstance(prop, dict) else {},
+                nullable=str(name) not in original_required,
+            )
+            for name, prop in properties.items()
+        }
+        normalized["required"] = list(normalized["properties"].keys())
+        normalized["additionalProperties"] = False
+    elif schema_type == "array" or (
+        isinstance(schema_type, list) and "array" in schema_type
+    ):
+        item_schema = normalized.get("items")
+        normalized["items"] = _strict_nullable_schema(
+            item_schema if isinstance(item_schema, dict) else {},
+            nullable=False,
+        )
+    if nullable:
+        normalized = _schema_with_null(normalized)
+    return normalized
+
+
+def _schema_with_null(schema: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(schema)
+    schema_type = normalized.get("type")
+    if isinstance(schema_type, list):
+        if "null" not in schema_type:
+            normalized["type"] = [*schema_type, "null"]
+    elif isinstance(schema_type, str):
+        normalized["type"] = [schema_type, "null"]
+    else:
+        normalized["type"] = ["string", "null"]
+    return normalized
 
 
 def _assistant_plan_from_text(raw_text: str) -> AssistantPlan:

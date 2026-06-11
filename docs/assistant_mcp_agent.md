@@ -34,18 +34,26 @@ User/API/MCP client
 
 The LLM is optional. `OJT_LLM_PROVIDER=disabled` keeps local behavior
 deterministic and token-free. `OJT_LLM_PROVIDER=openai` asks the OpenAI
-Responses API for a JSON tool plan using `OJT_LLM_MODEL` and
-`OJT_OPENAI_API_KEY` or `OPENAI_API_KEY`.
+Responses API for a strict JSON tool plan using `OJT_LLM_PLANNING_MODEL` and
+then synthesizes the final answer with `OJT_LLM_SYNTHESIS_MODEL`. Both default
+to the backwards-compatible `OJT_LLM_MODEL` value. `OJT_LLM_VISION_MODEL`
+controls OpenAI-compatible OCR/vision extraction for image-heavy uploads.
 
-Operators can change non-secret planner settings from Settings -> Assistant
-runtime or with `PUT /api/v1/runtime/assistant-settings`. Runtime changes are
-stored in `OJT_RUNTIME_SETTINGS_PATH`, reload the cached Assistant service, and
-do not expose or accept API keys. Secrets stay in environment/config management.
+Operators can change non-secret planner, synthesis, vision, timeout, and
+OpenAI-compatible endpoint settings from Settings -> Assistant runtime or with
+`PUT /api/v1/runtime/assistant-settings`. Embedding provider/model/dimension
+settings live under Settings -> Retrieval runtime because they require retrieval
+reindexing. Runtime changes are stored in `OJT_RUNTIME_SETTINGS_PATH`, reload
+cached services, and do not expose or accept API keys. Secrets stay in
+environment/config management.
 
 Tool execution remains deterministic:
 
 - Unknown tool names are skipped.
 - OpenAI planner output is constrained to the configured backend tool names.
+- Planner-visible tool schemas set `additionalProperties=false`, require all
+  declared fields, and represent optional inputs as nullable values so OpenAI
+  strict structured outputs do not silently omit tool arguments.
 - Tool arguments are normalized by backend code.
 - Workflow ownership is enforced by the API route through authenticated user ID.
 - `start_workflow` requires `execute_write_actions=true`.

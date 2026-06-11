@@ -70,6 +70,7 @@ OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDING_DIMENSIONS = 384
 OPENAI_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
 OPENAI_LLM_MODEL = "chat-latest"
+OPENAI_VISION_MODEL = "gpt-4.1-mini"
 HUGGINGFACE_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 HUGGINGFACE_EMBEDDING_DIMENSIONS = 384
 HUGGINGFACE_RERANK_MODEL = "BAAI/bge-reranker-base"
@@ -88,6 +89,9 @@ DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/api/v1/auth/google/callback
 DEFAULT_GOOGLE_FRONTEND_REDIRECT_URI = "http://localhost:5173/auth/callback"
 LOCAL_OAUTH_REDIRECT_HOSTS = {"localhost", "127.0.0.1", "::1"}
 RUNTIME_RETRIEVAL_SETTING_ALIASES = {
+    "embedding_provider": "OJT_EMBEDDING_PROVIDER",
+    "embedding_model": "OJT_EMBEDDING_MODEL",
+    "embedding_dimensions": "OJT_EMBEDDING_DIMENSIONS",
     "retrieval_framework": "OJT_RETRIEVAL_FRAMEWORK",
     "retrieval_candidate_multiplier": "OJT_RETRIEVAL_CANDIDATE_MULTIPLIER",
     "retrieval_min_candidates": "OJT_RETRIEVAL_MIN_CANDIDATES",
@@ -100,6 +104,10 @@ RUNTIME_RETRIEVAL_SETTING_ALIASES = {
 RUNTIME_ASSISTANT_SETTING_ALIASES = {
     "llm_provider": "OJT_LLM_PROVIDER",
     "llm_model": "OJT_LLM_MODEL",
+    "llm_planning_model": "OJT_LLM_PLANNING_MODEL",
+    "llm_synthesis_model": "OJT_LLM_SYNTHESIS_MODEL",
+    "llm_vision_model": "OJT_LLM_VISION_MODEL",
+    "llm_base_url": "OJT_LLM_BASE_URL",
     "llm_timeout_seconds": "OJT_LLM_TIMEOUT_SECONDS",
     "llm_max_tool_calls": "OJT_LLM_MAX_TOOL_CALLS",
     "llm_planning_progress_interval_seconds": "OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS",
@@ -223,6 +231,9 @@ class Settings(BaseModel):
     )
     llm_provider: LLMProvider = Field(default="disabled", alias="OJT_LLM_PROVIDER")
     llm_model: str = Field(default=OPENAI_LLM_MODEL, alias="OJT_LLM_MODEL")
+    llm_planning_model: str | None = Field(default=None, alias="OJT_LLM_PLANNING_MODEL")
+    llm_synthesis_model: str | None = Field(default=None, alias="OJT_LLM_SYNTHESIS_MODEL")
+    llm_vision_model: str | None = Field(default=None, alias="OJT_LLM_VISION_MODEL")
     llm_base_url: str = Field(
         default=OPENAI_EMBEDDING_BASE_URL,
         alias="OJT_LLM_BASE_URL",
@@ -329,6 +340,20 @@ class Settings(BaseModel):
         gt=0,
         le=1,
     )
+
+    @model_validator(mode="after")
+    def _normalize_llm_models(self) -> "Settings":
+        if not self.llm_planning_model:
+            self.llm_planning_model = self.llm_model
+        if not self.llm_synthesis_model:
+            self.llm_synthesis_model = self.llm_model
+        if not self.llm_vision_model:
+            self.llm_vision_model = (
+                OPENAI_VISION_MODEL
+                if self.llm_model == OPENAI_LLM_MODEL
+                else self.llm_model
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_retrieval_chunking(self) -> "Settings":
@@ -512,6 +537,15 @@ def get_settings() -> Settings:
         ),
         OJT_LLM_PROVIDER=_parse_llm_provider(os.getenv("OJT_LLM_PROVIDER")),
         OJT_LLM_MODEL=_parse_llm_model(os.getenv("OJT_LLM_MODEL")),
+        OJT_LLM_PLANNING_MODEL=_parse_optional_llm_model(
+            os.getenv("OJT_LLM_PLANNING_MODEL")
+        ),
+        OJT_LLM_SYNTHESIS_MODEL=_parse_optional_llm_model(
+            os.getenv("OJT_LLM_SYNTHESIS_MODEL")
+        ),
+        OJT_LLM_VISION_MODEL=_parse_optional_llm_model(
+            os.getenv("OJT_LLM_VISION_MODEL", os.getenv("OJT_OPENAI_VISION_MODEL"))
+        ),
         OJT_LLM_BASE_URL=_parse_openai_base_url(
             os.getenv("OJT_LLM_BASE_URL"),
             setting_name="OpenAI LLM base URL",
@@ -585,6 +619,9 @@ def runtime_retrieval_settings(settings: Settings) -> RuntimeRetrievalSettingsPa
     """Return the retrieval settings that operators may change at runtime."""
 
     return {
+        "embedding_provider": settings.embedding_provider,
+        "embedding_model": settings.embedding_model,
+        "embedding_dimensions": settings.embedding_dimensions,
         "retrieval_framework": settings.retrieval_framework,
         "retrieval_candidate_multiplier": settings.retrieval_candidate_multiplier,
         "retrieval_min_candidates": settings.retrieval_min_candidates,
@@ -602,8 +639,15 @@ def runtime_assistant_settings(settings: Settings) -> RuntimeAssistantSettingsPa
     return {
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model,
+        "llm_planning_model": settings.llm_planning_model or settings.llm_model,
+        "llm_synthesis_model": settings.llm_synthesis_model or settings.llm_model,
+        "llm_vision_model": settings.llm_vision_model or OPENAI_VISION_MODEL,
+        "llm_base_url": settings.llm_base_url,
         "llm_timeout_seconds": settings.llm_timeout_seconds,
         "llm_max_tool_calls": settings.llm_max_tool_calls,
+        "llm_planning_progress_interval_seconds": (
+            settings.llm_planning_progress_interval_seconds
+        ),
     }
 
 
@@ -718,6 +762,14 @@ def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float 
         if not isinstance(value, str):
             raise ValueError("llm_model must be a string")
         return _parse_llm_model(value)
+    if key in {"llm_planning_model", "llm_synthesis_model", "llm_vision_model"}:
+        if not isinstance(value, str):
+            raise ValueError(f"{key} must be a string")
+        return _parse_llm_model(value)
+    if key == "llm_base_url":
+        if not isinstance(value, str):
+            raise ValueError("llm_base_url must be a string")
+        return _parse_openai_base_url(value, setting_name="OpenAI LLM base URL")
     if key == "llm_timeout_seconds":
         if isinstance(value, bool):
             raise ValueError("llm_timeout_seconds must be a number")
@@ -726,6 +778,28 @@ def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float 
         if isinstance(value, bool):
             raise ValueError("llm_max_tool_calls must be an integer")
         return int(value)
+    if key == "llm_planning_progress_interval_seconds":
+        if isinstance(value, bool):
+            raise ValueError("llm_planning_progress_interval_seconds must be a number")
+        return float(value)
+    if key == "embedding_provider":
+        if not isinstance(value, str):
+            raise ValueError("embedding_provider must be a string")
+        return _parse_embedding_provider(value)
+    if key == "embedding_model":
+        if not isinstance(value, str):
+            raise ValueError("embedding_model must be a string")
+        normalized = value.strip()
+        if not _valid_model_identifier(normalized):
+            raise ValueError("embedding_model must be a non-blank model id")
+        return normalized
+    if key == "embedding_dimensions":
+        if isinstance(value, bool):
+            raise ValueError("embedding_dimensions must be an integer")
+        parsed_dimensions = int(value)
+        if parsed_dimensions <= 0:
+            raise ValueError("embedding_dimensions must be greater than zero")
+        return parsed_dimensions
     if key == "retrieval_framework":
         if not isinstance(value, str):
             raise ValueError("retrieval_framework must be a string")
@@ -1081,6 +1155,12 @@ def _parse_llm_model(value: str | None) -> str:
     raise ValueError(
         f"Invalid LLM model environment value: {value}. Expected a non-blank model id"
     )
+
+
+def _parse_optional_llm_model(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    return _parse_llm_model(value)
 
 
 def _parse_embedding_model(value: str | None, *, provider: str | None = None) -> str:

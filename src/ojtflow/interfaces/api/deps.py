@@ -260,6 +260,8 @@ def _build_assistant_service() -> AssistantService:
         planner = OpenAIResponsesPlanner(
             api_key=settings.openai_api_key,
             model=settings.llm_model,
+            planning_model=settings.llm_planning_model,
+            synthesis_model=settings.llm_synthesis_model,
             base_url=settings.llm_base_url,
             timeout_seconds=settings.llm_timeout_seconds,
         )

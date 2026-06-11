@@ -165,20 +165,21 @@ during settings load.
 
 `OJT_LLM_PROVIDER` supports `disabled` and `openai`. Disabled mode keeps the
 assistant deterministic and token-free. OpenAI mode uses the Responses API to
-produce a structured tool plan, but the backend still executes only known
-allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest`; set it to a pinned
-snapshot when release reproducibility is more important than tracking the
-current model alias. `OJT_LLM_BASE_URL` must be an HTTP(S) OpenAI-compatible API
-base URL. `OJT_LLM_MAX_TOOL_CALLS` bounds assistant tool execution per request.
-`OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS` controls how often the streaming
-assistant emits planning heartbeat events while an LLM planner call is still
-pending.
+produce a strict structured tool plan, but the backend still executes only known
+allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest` and remains the
+compatibility fallback. `OJT_LLM_PLANNING_MODEL`, `OJT_LLM_SYNTHESIS_MODEL`, and
+`OJT_LLM_VISION_MODEL` can pin planner, answer synthesis, and OCR/vision models
+separately. `OJT_LLM_BASE_URL` must be an HTTP(S) OpenAI-compatible API base URL
+and can point to a local compatible endpoint. `OJT_LLM_MAX_TOOL_CALLS` bounds
+assistant tool execution per request. `OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS`
+controls how often the streaming assistant emits planning heartbeat events while
+an LLM planner call is still pending.
 
 `OJT_MARKITDOWN_OCR_ENABLED` controls whether MarkItDown runs with OCR plugins
 for OCR-sensitive uploads such as scanned PDFs, images, and image-heavy Office
 files when an OpenAI-compatible API key is configured. `OJT_OPENAI_VISION_MODEL`
-can override the image/OCR model; otherwise the extractor uses `OJT_LLM_MODEL`
-and maps `chat-latest` to a vision-capable OpenAI model.
+is still accepted as a legacy alias, but new deployments should use
+`OJT_LLM_VISION_MODEL`.
 
 `OJT_PYTHON_EXTRAS` is a Docker build-time setting, not a runtime secret. Keep
 the default `parsing` for the standard API image, or build with
@@ -1148,16 +1149,26 @@ Example:
     "llm": {
       "provider": "openai",
       "model": "chat-latest",
+      "planning_model": "chat-latest",
+      "synthesis_model": "chat-latest",
+      "vision_model": "gpt-4.1-mini",
       "openai_configured": true,
+      "base_url": "https://api.openai.com/v1",
       "base_url_configured": true,
       "timeout_seconds": 30.0,
       "max_tool_calls": 4,
+      "planning_progress_interval_seconds": 2.0,
       "runtime_settings_configured": true,
       "runtime_settings": {
         "llm_provider": "openai",
         "llm_model": "chat-latest",
+        "llm_planning_model": "chat-latest",
+        "llm_synthesis_model": "chat-latest",
+        "llm_vision_model": "gpt-4.1-mini",
+        "llm_base_url": "https://api.openai.com/v1",
         "llm_timeout_seconds": 30.0,
-        "llm_max_tool_calls": 4
+        "llm_max_tool_calls": 4,
+        "llm_planning_progress_interval_seconds": 2.0
       }
     },
     "retrieval": {
@@ -1174,6 +1185,9 @@ Example:
       "hnsw_ef_search": 100,
       "runtime_settings_configured": true,
       "runtime_settings": {
+        "embedding_provider": "openai",
+        "embedding_model": "text-embedding-3-small",
+        "embedding_dimensions": 384,
         "retrieval_framework": "llamaindex",
         "retrieval_candidate_multiplier": 4,
         "retrieval_min_candidates": 12,
@@ -1213,8 +1227,13 @@ Request:
 {
   "llm_provider": "openai",
   "llm_model": "gpt-4.1-mini",
+  "llm_planning_model": "gpt-4.1-mini",
+  "llm_synthesis_model": "gpt-4.1",
+  "llm_vision_model": "gpt-4.1-mini",
+  "llm_base_url": "https://api.openai.com/v1",
   "llm_timeout_seconds": 30.0,
-  "llm_max_tool_calls": 4
+  "llm_max_tool_calls": 4,
+  "llm_planning_progress_interval_seconds": 2.0
 }
 ```
 
@@ -1226,8 +1245,13 @@ Response:
     "settings": {
       "llm_provider": "openai",
       "llm_model": "gpt-4.1-mini",
+      "llm_planning_model": "gpt-4.1-mini",
+      "llm_synthesis_model": "gpt-4.1",
+      "llm_vision_model": "gpt-4.1-mini",
+      "llm_base_url": "https://api.openai.com/v1",
       "llm_timeout_seconds": 30.0,
-      "llm_max_tool_calls": 4
+      "llm_max_tool_calls": 4,
+      "llm_planning_progress_interval_seconds": 2.0
     },
     "reloaded": true
   },
@@ -1238,7 +1262,9 @@ Response:
 `PUT /api/v1/runtime/retrieval-settings`
 
 Persists editable retrieval runtime settings and reloads cached backend service
-instances after validation. It accepts only retrieval-scoped keys; secrets,
+instances after validation. It accepts retrieval-scoped ranking controls and
+embedding provider/model/dimension controls. Changing embeddings requires
+running retrieval reindex before vector search is fully aligned. Secrets,
 database URLs, OAuth settings, file paths, and model API keys are not editable
 through this endpoint.
 
@@ -1246,6 +1272,9 @@ Request:
 
 ```json
 {
+  "embedding_provider": "openai",
+  "embedding_model": "text-embedding-3-small",
+  "embedding_dimensions": 384,
   "retrieval_framework": "llamaindex",
   "retrieval_candidate_multiplier": 4,
   "retrieval_min_candidates": 12,
@@ -1263,6 +1292,9 @@ Response:
 {
   "data": {
     "settings": {
+      "embedding_provider": "openai",
+      "embedding_model": "text-embedding-3-small",
+      "embedding_dimensions": 384,
       "retrieval_framework": "llamaindex",
       "retrieval_candidate_multiplier": 4,
       "retrieval_min_candidates": 12,

@@ -24,6 +24,7 @@ from pathlib import Path
 
 import httpx
 
+from ojtflow.config import OPENAI_VISION_MODEL, get_settings
 from ojtflow.core.errors import ToolExecutionError, UnsupportedUploadError
 
 
@@ -431,9 +432,17 @@ def _openai_api_key() -> str | None:
 
 
 def _openai_vision_model() -> str:
-    model = os.getenv("OJT_OPENAI_VISION_MODEL") or os.getenv("OJT_LLM_MODEL") or "gpt-4.1-mini"
+    try:
+        model = get_settings().llm_vision_model
+    except Exception:
+        model = (
+            os.getenv("OJT_LLM_VISION_MODEL")
+            or os.getenv("OJT_OPENAI_VISION_MODEL")
+            or os.getenv("OJT_LLM_MODEL")
+            or OPENAI_VISION_MODEL
+        )
     if model == "chat-latest":
-        return "gpt-4.1-mini"
+        return OPENAI_VISION_MODEL
     return model
 
 

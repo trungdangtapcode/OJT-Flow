@@ -100,10 +100,17 @@ async def runtime_config(
             "llm": {
                 "provider": settings.llm_provider,
                 "model": settings.llm_model,
+                "planning_model": settings.llm_planning_model,
+                "synthesis_model": settings.llm_synthesis_model,
+                "vision_model": settings.llm_vision_model,
                 "openai_configured": bool(settings.openai_api_key),
+                "base_url": settings.llm_base_url,
                 "base_url_configured": bool(settings.llm_base_url),
                 "timeout_seconds": settings.llm_timeout_seconds,
                 "max_tool_calls": settings.llm_max_tool_calls,
+                "planning_progress_interval_seconds": (
+                    settings.llm_planning_progress_interval_seconds
+                ),
                 "runtime_settings_configured": bool(settings.runtime_settings_path),
                 "runtime_settings": runtime_assistant_settings(settings),
             },
@@ -759,6 +766,9 @@ def _llm_configuration_check(settings: Settings) -> dict[str, Any]:
             {
                 "provider": settings.llm_provider,
                 "model": settings.llm_model,
+                "planning_model": settings.llm_planning_model,
+                "synthesis_model": settings.llm_synthesis_model,
+                "vision_model": settings.llm_vision_model,
                 "api_key_configured": False,
             },
         )
@@ -769,9 +779,15 @@ def _llm_configuration_check(settings: Settings) -> dict[str, Any]:
         {
             "provider": settings.llm_provider,
             "model": settings.llm_model,
+            "planning_model": settings.llm_planning_model,
+            "synthesis_model": settings.llm_synthesis_model,
+            "vision_model": settings.llm_vision_model,
             "real_ai_enabled": settings.llm_provider != "disabled",
             "timeout_seconds": settings.llm_timeout_seconds,
             "max_tool_calls": settings.llm_max_tool_calls,
+            "planning_progress_interval_seconds": (
+                settings.llm_planning_progress_interval_seconds
+            ),
         },
     )
 

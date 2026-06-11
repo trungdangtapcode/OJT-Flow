@@ -614,6 +614,9 @@ function MigrationAdminPanel({
 }
 
 type RetrievalSettingsFormState = {
+  embeddingProvider: "deterministic" | "openai" | "huggingface";
+  embeddingModel: string;
+  embeddingDimensions: string;
   framework: "custom" | "llamaindex";
   candidateMultiplier: string;
   minCandidates: string;
@@ -627,8 +630,13 @@ type RetrievalSettingsFormState = {
 type AssistantSettingsFormState = {
   provider: "disabled" | "openai";
   model: string;
+  planningModel: string;
+  synthesisModel: string;
+  visionModel: string;
+  baseUrl: string;
   timeoutSeconds: string;
   maxToolCalls: string;
+  planningProgressIntervalSeconds: string;
 };
 
 function AssistantSettingsForm({
@@ -648,8 +656,15 @@ function AssistantSettingsForm({
     setForm({
       provider: settings.llm_provider,
       model: settings.llm_model,
+      planningModel: settings.llm_planning_model,
+      synthesisModel: settings.llm_synthesis_model,
+      visionModel: settings.llm_vision_model,
+      baseUrl: settings.llm_base_url,
       timeoutSeconds: String(settings.llm_timeout_seconds),
       maxToolCalls: String(settings.llm_max_tool_calls),
+      planningProgressIntervalSeconds: String(
+        settings.llm_planning_progress_interval_seconds,
+      ),
     });
   }, [runtime]);
 
@@ -720,7 +735,7 @@ function AssistantSettingsForm({
               </Notice>
             ) : null}
 
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <Label>
                 Planner
                 <Select
@@ -737,12 +752,48 @@ function AssistantSettingsForm({
                 </Select>
               </Label>
               <Label>
-                Model
+                Default model
                 <Input
                   onChange={(event) => updateField("model", event.target.value)}
-                  placeholder="gpt-4.1-mini"
+                  placeholder="chat-latest"
                   type="text"
                   value={form.model}
+                />
+              </Label>
+              <Label>
+                Planning model
+                <Input
+                  onChange={(event) => updateField("planningModel", event.target.value)}
+                  placeholder="chat-latest"
+                  type="text"
+                  value={form.planningModel}
+                />
+              </Label>
+              <Label>
+                Synthesis model
+                <Input
+                  onChange={(event) => updateField("synthesisModel", event.target.value)}
+                  placeholder="chat-latest"
+                  type="text"
+                  value={form.synthesisModel}
+                />
+              </Label>
+              <Label>
+                Vision model
+                <Input
+                  onChange={(event) => updateField("visionModel", event.target.value)}
+                  placeholder="gpt-4.1-mini"
+                  type="text"
+                  value={form.visionModel}
+                />
+              </Label>
+              <Label>
+                OpenAI-compatible endpoint
+                <Input
+                  onChange={(event) => updateField("baseUrl", event.target.value)}
+                  placeholder="https://api.openai.com/v1"
+                  type="url"
+                  value={form.baseUrl}
                 />
               </Label>
               <Label>
@@ -764,6 +815,19 @@ function AssistantSettingsForm({
                   onChange={(event) => updateField("maxToolCalls", event.target.value)}
                   type="number"
                   value={form.maxToolCalls}
+                />
+              </Label>
+              <Label>
+                Planning heartbeat seconds
+                <Input
+                  min={0.25}
+                  max={30}
+                  onChange={(event) =>
+                    updateField("planningProgressIntervalSeconds", event.target.value)
+                  }
+                  step={0.25}
+                  type="number"
+                  value={form.planningProgressIntervalSeconds}
                 />
               </Label>
             </div>
@@ -808,6 +872,9 @@ function RetrievalSettingsForm({
     const settings = runtimeRetrievalSettingsFromRuntime(runtime);
     if (!settings) return;
     setForm({
+      embeddingProvider: settings.embedding_provider,
+      embeddingModel: settings.embedding_model,
+      embeddingDimensions: String(settings.embedding_dimensions),
       framework: settings.retrieval_framework,
       candidateMultiplier: String(settings.retrieval_candidate_multiplier),
       minCandidates: String(settings.retrieval_min_candidates),
@@ -878,7 +945,40 @@ function RetrievalSettingsForm({
               </Notice>
             ) : null}
 
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <Label>
+                Embedding provider
+                <Select
+                  onChange={(event) => {
+                    const provider = retrievalEmbeddingProvider(event.target.value);
+                    updateField("embeddingProvider", provider);
+                  }}
+                  value={form.embeddingProvider}
+                >
+                  <option value="deterministic">Deterministic</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="huggingface">Hugging Face</option>
+                </Select>
+              </Label>
+              <Label>
+                Embedding model
+                <Input
+                  onChange={(event) => updateField("embeddingModel", event.target.value)}
+                  placeholder="text-embedding-3-small"
+                  type="text"
+                  value={form.embeddingModel}
+                />
+              </Label>
+              <Label>
+                Embedding dimensions
+                <Input
+                  min={1}
+                  max={4096}
+                  onChange={(event) => updateField("embeddingDimensions", event.target.value)}
+                  type="number"
+                  value={form.embeddingDimensions}
+                />
+              </Label>
               <Label>
                 Framework
                 <Select
@@ -970,8 +1070,8 @@ function RetrievalSettingsForm({
                 />
                 Source diversity
               </label>
-              <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground sm:col-span-2">
-                Source diversity changes final evidence selection after hybrid retrieval and reranking. Disable it only when strict score order is required for debugging or benchmarking.
+              <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground sm:col-span-2 xl:col-span-3">
+                Embedding changes require retrieval reindexing before vector search is fully aligned. Source diversity changes final evidence selection after hybrid retrieval and reranking.
               </div>
             </div>
 
@@ -1059,6 +1159,9 @@ function runtimeRetrievalSettingsFromRuntime(
   if (!retrieval) return null;
   const framework = retrieval.framework === "llamaindex" ? "llamaindex" : "custom";
   if (
+    typeof runtime?.embedding?.provider !== "string" ||
+    typeof runtime.embedding.model !== "string" ||
+    !isFiniteNumber(runtime.embedding.dimensions) ||
     !isFiniteNumber(retrieval.candidate_multiplier) ||
     !isFiniteNumber(retrieval.min_candidates) ||
     !isFiniteNumber(retrieval.vector_weight) ||
@@ -1070,6 +1173,9 @@ function runtimeRetrievalSettingsFromRuntime(
     return null;
   }
   return {
+    embedding_provider: retrievalEmbeddingProvider(runtime.embedding.provider),
+    embedding_model: runtime.embedding.model,
+    embedding_dimensions: runtime.embedding.dimensions,
     retrieval_framework: framework,
     retrieval_candidate_multiplier: retrieval.candidate_multiplier,
     retrieval_min_candidates: retrieval.min_candidates,
@@ -1079,6 +1185,13 @@ function runtimeRetrievalSettingsFromRuntime(
     retrieval_diversity_lambda: retrieval.diversity_lambda,
     retrieval_hnsw_ef_search: retrieval.hnsw_ef_search,
   };
+}
+
+function retrievalEmbeddingProvider(
+  value: string,
+): "deterministic" | "openai" | "huggingface" {
+  if (value === "openai" || value === "huggingface") return value;
+  return "deterministic";
 }
 
 function runtimeAssistantSettingsFromRuntime(
@@ -1100,8 +1213,31 @@ function runtimeAssistantSettingsFromRuntime(
   return {
     llm_provider: provider,
     llm_model: llm.model,
+    llm_planning_model:
+      typeof llm.planning_model === "string" && llm.planning_model.trim()
+        ? llm.planning_model
+        : llm.model,
+    llm_synthesis_model:
+      typeof llm.synthesis_model === "string" && llm.synthesis_model.trim()
+        ? llm.synthesis_model
+        : llm.model,
+    llm_vision_model:
+      typeof llm.vision_model === "string" && llm.vision_model.trim()
+        ? llm.vision_model
+        : llm.model === "chat-latest"
+          ? "gpt-4.1-mini"
+          : llm.model,
+    llm_base_url:
+      typeof llm.base_url === "string" && llm.base_url.trim()
+        ? llm.base_url
+        : "https://api.openai.com/v1",
     llm_timeout_seconds: llm.timeout_seconds,
     llm_max_tool_calls: llm.max_tool_calls,
+    llm_planning_progress_interval_seconds: isFiniteNumber(
+      llm.planning_progress_interval_seconds,
+    )
+      ? llm.planning_progress_interval_seconds
+      : 2,
   };
 }
 
@@ -1109,26 +1245,58 @@ function runtimeAssistantPayloadFromForm(
   form: AssistantSettingsFormState,
 ): RuntimeAssistantSettingsPayload {
   const llm_model = form.model.trim();
+  const llm_planning_model = form.planningModel.trim();
+  const llm_synthesis_model = form.synthesisModel.trim();
+  const llm_vision_model = form.visionModel.trim();
+  const llm_base_url = form.baseUrl.trim();
   if (!llm_model) {
-    throw new Error("Model must not be blank.");
+    throw new Error("Default model must not be blank.");
+  }
+  if (!llm_planning_model || !llm_synthesis_model || !llm_vision_model) {
+    throw new Error("Planning, synthesis, and vision models must not be blank.");
+  }
+  if (!llm_base_url) {
+    throw new Error("OpenAI-compatible endpoint must not be blank.");
   }
   return {
     llm_provider: form.provider,
     llm_model,
+    llm_planning_model,
+    llm_synthesis_model,
+    llm_vision_model,
+    llm_base_url,
     llm_timeout_seconds: numberField(form.timeoutSeconds, "Timeout seconds", 1, 300),
     llm_max_tool_calls: integerField(form.maxToolCalls, "Max tool calls", 1, 12),
+    llm_planning_progress_interval_seconds: numberField(
+      form.planningProgressIntervalSeconds,
+      "Planning heartbeat seconds",
+      0.25,
+      30,
+    ),
   };
 }
 
 function runtimeRetrievalPayloadFromForm(
   form: RetrievalSettingsFormState,
 ): RuntimeRetrievalSettingsPayload {
+  const embedding_model = form.embeddingModel.trim();
+  if (!embedding_model) {
+    throw new Error("Embedding model must not be blank.");
+  }
   const retrieval_vector_weight = numberField(form.vectorWeight, "Vector weight", 0, 1);
   const retrieval_bm25_weight = numberField(form.bm25Weight, "BM25 weight", 0, 1);
   if (retrieval_vector_weight + retrieval_bm25_weight <= 0) {
     throw new Error("Vector and BM25 weights cannot both be zero.");
   }
   return {
+    embedding_provider: form.embeddingProvider,
+    embedding_model,
+    embedding_dimensions: integerField(
+      form.embeddingDimensions,
+      "Embedding dimensions",
+      1,
+      4096,
+    ),
     retrieval_framework: form.framework,
     retrieval_candidate_multiplier: integerField(
       form.candidateMultiplier,

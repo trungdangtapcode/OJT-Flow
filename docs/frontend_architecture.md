@@ -1740,10 +1740,11 @@ answer deltas into the current assistant bubble instead of waiting for a single
 final response. It must still support the non-streaming `/assistant/chat`
 contract for API clients, but the product UI should prefer the stream path.
 The page should expose ChatGPT-style chat sessions so users can separate
-investigations, switch between prior local transcripts, and start a clean
-thread without losing the current composer context. Until the backend exposes a
-durable assistant-session contract, these sessions are frontend state only and
-must not use browser storage or hidden mock data.
+investigations, switch between prior transcripts, and start a clean thread
+without losing the current composer context. Sessions and messages are
+backend-owned through `/assistant/sessions`; the browser may keep optimistic
+drafts while a stream is running, but persisted history must come from the API
+instead of browser storage or hidden mock data.
 The assistant workspace should keep desktop scrolling contained: session list,
 message timeline, and composer live inside a contained app-viewport chat
 surface so the LLM stream and tool timeline stay visible instead of fighting

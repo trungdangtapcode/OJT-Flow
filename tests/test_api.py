@@ -1696,6 +1696,9 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
             response = await client.put(
                 "/api/v1/runtime/retrieval-settings",
                 json={
+                    "embedding_provider": "openai",
+                    "embedding_model": "text-embedding-3-small",
+                    "embedding_dimensions": 384,
                     "retrieval_framework": "llamaindex",
                     "retrieval_candidate_multiplier": 3,
                     "retrieval_min_candidates": 9,
@@ -1711,6 +1714,9 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
         assert response.status_code == 200
         data = _assert_success_envelope(response)["data"]
         assert data["reloaded"] is True
+        assert data["settings"]["embedding_provider"] == "openai"
+        assert data["settings"]["embedding_model"] == "text-embedding-3-small"
+        assert data["settings"]["embedding_dimensions"] == 384
         assert data["settings"]["retrieval_framework"] == "llamaindex"
         assert data["settings"]["retrieval_candidate_multiplier"] == 3
         assert data["settings"]["retrieval_min_candidates"] == 9
@@ -1725,6 +1731,9 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
         assert saved == data["settings"]
 
         config = _assert_success_envelope(runtime_config)["data"]
+        assert config["embedding"]["provider"] == "openai"
+        assert config["embedding"]["model"] == "text-embedding-3-small"
+        assert config["embedding"]["dimensions"] == 384
         assert config["retrieval"]["framework"] == "llamaindex"
         assert config["retrieval"]["candidate_multiplier"] == 3
         assert config["retrieval"]["runtime_settings"] == data["settings"]
@@ -1751,8 +1760,13 @@ async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
                 json={
                     "llm_provider": "openai",
                     "llm_model": "gpt-4.1-mini",
+                    "llm_planning_model": "gpt-4.1-mini",
+                    "llm_synthesis_model": "gpt-4.1",
+                    "llm_vision_model": "gpt-4.1-mini",
+                    "llm_base_url": "https://api.openai.com/v1",
                     "llm_timeout_seconds": 45.0,
                     "llm_max_tool_calls": 6,
+                    "llm_planning_progress_interval_seconds": 1.25,
                 },
             )
             runtime_config = await client.get("/api/v1/runtime/config")
@@ -1762,8 +1776,13 @@ async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
         assert data["reloaded"] is True
         assert data["settings"]["llm_provider"] == "openai"
         assert data["settings"]["llm_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_planning_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_synthesis_model"] == "gpt-4.1"
+        assert data["settings"]["llm_vision_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_base_url"] == "https://api.openai.com/v1"
         assert data["settings"]["llm_timeout_seconds"] == 45.0
         assert data["settings"]["llm_max_tool_calls"] == 6
+        assert data["settings"]["llm_planning_progress_interval_seconds"] == 1.25
 
         assert runtime_path.exists()
         saved = json.loads(runtime_path.read_text(encoding="utf-8"))
@@ -1772,8 +1791,13 @@ async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
         config = _assert_success_envelope(runtime_config)["data"]
         assert config["llm"]["provider"] == "openai"
         assert config["llm"]["model"] == "gpt-4.1-mini"
+        assert config["llm"]["planning_model"] == "gpt-4.1-mini"
+        assert config["llm"]["synthesis_model"] == "gpt-4.1"
+        assert config["llm"]["vision_model"] == "gpt-4.1-mini"
+        assert config["llm"]["base_url"] == "https://api.openai.com/v1"
         assert config["llm"]["timeout_seconds"] == 45.0
         assert config["llm"]["max_tool_calls"] == 6
+        assert config["llm"]["planning_progress_interval_seconds"] == 1.25
         assert config["llm"]["runtime_settings"] == data["settings"]
         assert "openai_api_key" not in runtime_config.text
     finally:

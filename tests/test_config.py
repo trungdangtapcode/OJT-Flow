@@ -62,6 +62,9 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.embedding_model == "deterministic-hash-v0"
     assert settings.llm_provider == "disabled"
     assert settings.llm_model == "chat-latest"
+    assert settings.llm_planning_model == "chat-latest"
+    assert settings.llm_synthesis_model == "chat-latest"
+    assert settings.llm_vision_model == "gpt-4.1-mini"
     assert settings.llm_max_tool_calls == 4
     assert settings.retrieval_hnsw_ef_search == 100
     assert settings.retrieval_candidate_multiplier == 4
@@ -101,6 +104,9 @@ def test_runtime_retrieval_settings_are_persisted_and_reloaded(
         updated = save_runtime_retrieval_settings(
             settings,
             {
+                "embedding_provider": "openai",
+                "embedding_model": "text-embedding-3-small",
+                "embedding_dimensions": 384,
                 "retrieval_framework": "llamaindex",
                 "retrieval_candidate_multiplier": 3,
                 "retrieval_min_candidates": 9,
@@ -121,6 +127,9 @@ def test_runtime_retrieval_settings_are_persisted_and_reloaded(
         updated
     )
     assert runtime_retrieval_settings(reloaded) == runtime_retrieval_settings(updated)
+    assert reloaded.embedding_provider == "openai"
+    assert reloaded.embedding_model == "text-embedding-3-small"
+    assert reloaded.embedding_dimensions == 384
     assert reloaded.retrieval_framework == "llamaindex"
     assert reloaded.retrieval_candidate_multiplier == 3
     assert reloaded.retrieval_min_candidates == 9
@@ -146,8 +155,13 @@ def test_runtime_assistant_settings_are_persisted_and_preserved(
             {
                 "llm_provider": "openai",
                 "llm_model": "gpt-4.1-mini",
+                "llm_planning_model": "gpt-4.1-mini",
+                "llm_synthesis_model": "gpt-4.1",
+                "llm_vision_model": "gpt-4.1-mini",
+                "llm_base_url": "https://api.openai.com/v1",
                 "llm_timeout_seconds": 45.0,
                 "llm_max_tool_calls": 6,
+                "llm_planning_progress_interval_seconds": 1.25,
             },
         )
         retrieval_updated = save_runtime_retrieval_settings(
@@ -166,15 +180,24 @@ def test_runtime_assistant_settings_are_persisted_and_preserved(
     saved = json.loads(runtime_path.read_text(encoding="utf-8"))
     assert saved["llm_provider"] == "openai"
     assert saved["llm_model"] == "gpt-4.1-mini"
+    assert saved["llm_planning_model"] == "gpt-4.1-mini"
+    assert saved["llm_synthesis_model"] == "gpt-4.1"
+    assert saved["llm_vision_model"] == "gpt-4.1-mini"
+    assert saved["llm_base_url"] == "https://api.openai.com/v1"
     assert saved["llm_timeout_seconds"] == 45.0
     assert saved["llm_max_tool_calls"] == 6
+    assert saved["llm_planning_progress_interval_seconds"] == 1.25
     assert saved["retrieval_framework"] == "llamaindex"
     assert saved["retrieval_candidate_multiplier"] == 2
     assert runtime_assistant_settings(reloaded) == runtime_assistant_settings(assistant_updated)
     assert reloaded.llm_provider == "openai"
     assert reloaded.llm_model == "gpt-4.1-mini"
+    assert reloaded.llm_planning_model == "gpt-4.1-mini"
+    assert reloaded.llm_synthesis_model == "gpt-4.1"
+    assert reloaded.llm_vision_model == "gpt-4.1-mini"
     assert reloaded.llm_timeout_seconds == 45.0
     assert reloaded.llm_max_tool_calls == 6
+    assert reloaded.llm_planning_progress_interval_seconds == 1.25
     assert reloaded.retrieval_framework == "llamaindex"
     assert runtime_retrieval_settings(reloaded) == runtime_retrieval_settings(retrieval_updated)
 
@@ -616,6 +639,9 @@ def test_rerank_settings_accept_huggingface_provider(monkeypatch) -> None:
 def test_llm_settings_accept_openai_provider(monkeypatch) -> None:
     monkeypatch.setenv("OJT_LLM_PROVIDER", " OPENAI ")
     monkeypatch.setenv("OJT_LLM_MODEL", " chat-latest ")
+    monkeypatch.setenv("OJT_LLM_PLANNING_MODEL", " gpt-4.1-mini ")
+    monkeypatch.setenv("OJT_LLM_SYNTHESIS_MODEL", " gpt-4.1 ")
+    monkeypatch.setenv("OJT_LLM_VISION_MODEL", " gpt-4.1-mini ")
     monkeypatch.setenv("OJT_LLM_BASE_URL", " https://api.openai.com/v1/ ")
     monkeypatch.setenv("OJT_LLM_TIMEOUT_SECONDS", " 12.5 ")
     monkeypatch.setenv("OJT_LLM_MAX_TOOL_CALLS", " 3 ")
@@ -629,6 +655,9 @@ def test_llm_settings_accept_openai_provider(monkeypatch) -> None:
 
     assert settings.llm_provider == "openai"
     assert settings.llm_model == "chat-latest"
+    assert settings.llm_planning_model == "gpt-4.1-mini"
+    assert settings.llm_synthesis_model == "gpt-4.1"
+    assert settings.llm_vision_model == "gpt-4.1-mini"
     assert settings.llm_base_url == "https://api.openai.com/v1"
     assert settings.llm_timeout_seconds == 12.5
     assert settings.llm_max_tool_calls == 3
