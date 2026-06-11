@@ -37,6 +37,23 @@ ClinicalProvenanceDerivation = Literal[
     "unmapped",
 ]
 
+ClinicalSemanticNormalizationGateType = Literal[
+    "lab_name",
+    "unit",
+    "date",
+    "patient_identifier",
+    "diagnosis",
+    "medication",
+    "procedure",
+]
+
+ClinicalSemanticNormalizationGateStatus = Literal[
+    "review_required",
+    "approved",
+    "rejected",
+    "not_applicable",
+]
+
 
 class ClinicalPackageRawInput(ContractModel):
     """Raw workflow input identity inside a clinical package."""
@@ -114,6 +131,30 @@ class ClinicalProvenanceRecord(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ClinicalSemanticNormalizationGate(ContractModel):
+    """Review gate for semantic normalization that may change clinical meaning."""
+
+    gate_id: NonBlankStr = Field(default_factory=lambda: new_id("norm"))
+    gate_type: ClinicalSemanticNormalizationGateType
+    source_field: NonBlankStr
+    source_value: Any | None = None
+    target_resource_type: NonBlankStr
+    target_path: NonBlankStr
+    location: SourceLocation | None = None
+    candidate_id: NonBlankStr | None = None
+    unit_validation_id: NonBlankStr | None = None
+    proposed_system: NonBlankStr | None = None
+    proposed_code: str | None = None
+    proposed_display: str | None = None
+    proposed_value: Any | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    status: ClinicalSemanticNormalizationGateStatus = "review_required"
+    requires_review: bool = True
+    blocks_automatic_change: bool = True
+    reason: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ClinicalPackage(ContractModel):
     """Canonical OJTFlow envelope around FHIR-like resources and governance state."""
 
@@ -128,6 +169,9 @@ class ClinicalPackage(ContractModel):
     evidence: list[Evidence] = Field(default_factory=list)
     terminology_candidates: list[TerminologyCandidate] = Field(default_factory=list)
     unit_validations: list[UnitValidationResult] = Field(default_factory=list)
+    semantic_normalization_gates: list[ClinicalSemanticNormalizationGate] = Field(
+        default_factory=list
+    )
     provenance: list[ClinicalProvenanceRecord] = Field(default_factory=list)
     review: dict[str, Any] | None = None
     audit_event_refs: list[NonBlankStr] = Field(default_factory=list)

@@ -28,6 +28,8 @@ The package includes:
 - `evidence`: retrieval/FHIR/profile evidence linked to the workflow
 - `terminology_candidates`: review-gated LOINC/RxNorm/etc. candidates
 - `unit_validations`: UCUM-like unit validation results
+- `semantic_normalization_gates`: review gates for meaning-changing
+  normalization
 - `provenance`: internal Provenance-like activity records
 - `review`: human review state when present
 - `audit_event_refs`: workflow audit event IDs
@@ -103,6 +105,30 @@ This is not a full terminology server. Candidates and unit results are scaffold
 contracts for review and downstream evidence retrieval. Semantic replacement is
 not automatic.
 
+## Semantic Normalization Gates
+
+`clinical_package.semantic_normalization_gates[]` records every proposed
+meaning-changing normalization that must be reviewed before automatic
+application. V0 emits gates for:
+
+- lab names before adding/replacing `Observation.code.coding`
+- units before applying UCUM `valueQuantity.code`
+- dates before canonicalizing source text to clinical effective dates
+- patient IDs before identity normalization, deduplication, or crosswalk mapping
+- diagnoses before assigning SNOMED CT-like `Condition.code.coding`
+- medications before assigning RxNorm `MedicationStatement` coding
+- procedures before assigning SNOMED CT-like `Procedure.code.coding`
+
+Each gate carries source field/value, row/column/source ref, target resource and
+path, proposed system/code/display/value when available, confidence, review
+status, and a reason. The mapper also writes all gate IDs into the package
+`map` provenance record and exposes gate counts/types in `handoff_context`.
+
+These gates do not block raw-source package export by themselves. They block
+automatic semantic replacement. This keeps source-preserving clinical packages
+usable while forcing review before any code, unit, date, or identity change that
+could alter clinical meaning.
+
 ## OperationOutcome-Like Issues
 
 Validation issues are copied into:
@@ -153,6 +179,8 @@ It separates:
   terminology, and reviewer state
 - unit validation by source unit, normalized unit, standard system, confidence,
   and review requirement
+- semantic normalization gates by field, target resource path, proposed
+  standard, review state, and reason
 - package summary, resource counts, OperationOutcome-like issues, and package
   warnings
 - raw source fields and values mapped to generated FHIR-like resource fields
@@ -166,6 +194,6 @@ treated as HL7 FHIR compliant until a real target validator accepts it.
 Run:
 
 ```bash
-python -m pytest tests/test_workflow_service.py::test_clean_lab_workflow_builds_clinical_package_with_field_provenance tests/test_workflow_service.py::test_clinical_package_export_builds_bundle_and_reloads_losslessly tests/test_workflow_service.py::test_review_gated_lab_workflow_clinical_package_carries_review_and_issues tests/test_workflow_service.py::test_fhir_like_workflow_adds_profile_evidence_and_handoff_context -q
+python -m pytest tests/test_workflow_service.py::test_clean_lab_workflow_builds_clinical_package_with_field_provenance tests/test_workflow_service.py::test_clinical_package_adds_rxnorm_and_snomed_candidates_for_extra_fields tests/test_workflow_service.py::test_clinical_package_adds_procedure_normalization_gate_without_candidate tests/test_workflow_service.py::test_clinical_package_export_builds_bundle_and_reloads_losslessly tests/test_workflow_service.py::test_review_gated_lab_workflow_clinical_package_carries_review_and_issues tests/test_workflow_service.py::test_fhir_like_workflow_adds_profile_evidence_and_handoff_context -q
 npm --prefix frontend run build
 ```

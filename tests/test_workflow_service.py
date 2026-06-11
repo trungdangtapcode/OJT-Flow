@@ -180,10 +180,30 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
     assert len(package.unit_validations) == 1
     assert package.unit_validations[0].status == "valid"
     assert package.unit_validations[0].normalized_unit == "%"
+    gate_types = {gate.gate_type for gate in package.semantic_normalization_gates}
+    assert {"lab_name", "unit", "date", "patient_identifier"}.issubset(gate_types)
+    assert all(gate.requires_review for gate in package.semantic_normalization_gates)
+    assert all(gate.blocks_automatic_change for gate in package.semantic_normalization_gates)
+    lab_gate = next(
+        gate
+        for gate in package.semantic_normalization_gates
+        if gate.gate_type == "lab_name"
+    )
+    assert lab_gate.proposed_system == "LOINC"
+    assert lab_gate.proposed_code == "4548-4"
+    unit_gate = next(
+        gate for gate in package.semantic_normalization_gates if gate.gate_type == "unit"
+    )
+    assert unit_gate.proposed_system == "UCUM"
+    assert unit_gate.proposed_code == "%"
     assert package.output_refs == [workflow.output.transformation.output_ref]
     assert package.audit_event_refs == workflow.audit_event_refs
     assert package.handoff_context["terminology_candidate_count"] == 1
     assert package.handoff_context["unit_validation_count"] == 1
+    assert package.handoff_context["semantic_normalization_gate_count"] == len(
+        package.semantic_normalization_gates
+    )
+    assert set(package.handoff_context["semantic_normalization_gate_types"]) == gate_types
     assert package.handoff_context["fhir_compliance"] == "fhir_like_not_validated"
     assert package.handoff_context["fhir_profile_registry_version"] == (
         "fhir_like_resource_profiles.v0"
@@ -192,7 +212,14 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
         "ojtflow_fhir_like_observation_lab_v0"
     )
     assert "DiagnosticReport" in package.handoff_context["fhir_search_parameters_by_resource"]
+    map_provenance = next(
+        item for item in package.provenance if item.activity == "map"
+    )
+    assert set(map_provenance.metadata["semantic_normalization_gate_ids"]) == {
+        gate.gate_id for gate in package.semantic_normalization_gates
+    }
     assert "FHIR-like package has not been validated" in package.warnings[0]
+    assert any("Semantic normalization candidates require human review" in warning for warning in package.warnings)
 
 
 def test_clinical_package_export_builds_bundle_and_reloads_losslessly() -> None:
@@ -278,6 +305,44 @@ def test_clinical_package_adds_rxnorm_and_snomed_candidates_for_extra_fields() -
     assert snomed.metadata["implementation_status"] == "placeholder_contract"
     assert "license" in snomed.metadata["license_note"].lower()
     assert snomed.requires_review is True
+    gates = {
+        gate.gate_type: gate
+        for gate in workflow.clinical_package.semantic_normalization_gates
+    }
+    assert gates["medication"].proposed_system == "RxNorm"
+    assert gates["medication"].candidate_id == rxnorm.candidate_id
+    assert gates["diagnosis"].proposed_system == "SNOMED CT"
+    assert gates["diagnosis"].candidate_id == snomed.candidate_id
+
+
+def test_clinical_package_adds_procedure_normalization_gate_without_candidate() -> None:
+    service = make_service()
+    text = (
+        "date,patient_id,lab_name,value,unit,procedure\n"
+        "2026-01-01,P001,HbA1c,7.4,%,unmapped procedure text\n"
+    )
+
+    workflow = service.start_workflow(
+        instruction="Create review gates for procedure normalization.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    assert workflow.clinical_package is not None
+    procedure_gate = next(
+        gate
+        for gate in workflow.clinical_package.semantic_normalization_gates
+        if gate.gate_type == "procedure"
+    )
+    assert procedure_gate.source_field == "procedure"
+    assert procedure_gate.target_resource_type == "Procedure"
+    assert procedure_gate.target_path == "Procedure.code.coding"
+    assert procedure_gate.candidate_id is None
+    assert procedure_gate.metadata["candidate_status"] == "not_found"
+    assert procedure_gate.requires_review is True
 
 
 def test_review_gated_lab_workflow_clinical_package_carries_review_and_issues() -> None:

@@ -1,4 +1,4 @@
-import { GitCompare, Stethoscope, Tags } from "lucide-react";
+import { GitCompare, ShieldCheck, Stethoscope, Tags } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import {
@@ -15,6 +15,7 @@ import { humanize } from "../../lib/utils";
 import type {
   ClinicalPackage,
   ClinicalResourceRecord,
+  ClinicalSemanticNormalizationGate,
   TerminologyCandidate,
   UnitValidationResult,
   ValidationIssue,
@@ -32,16 +33,18 @@ export function ClinicalPackagePanel({ workflow }: { workflow: WorkflowState }) 
   }
 
   const resources = clinicalPackage.clinical_bundle.resources;
+  const semanticNormalizationGates = clinicalPackage.semantic_normalization_gates ?? [];
   return (
     <div className="grid min-w-0 gap-4">
       <Notice title="FHIR-like output boundary">
         This package is an OJTFlow clinical package with FHIR-like resources. It is not HL7 FHIR compliant until a target FHIR validator accepts it.
       </Notice>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <ClinicalMetric label="Resources" value={resources.length} />
         <ClinicalMetric label="Terminology" value={clinicalPackage.terminology_candidates.length} />
         <ClinicalMetric label="Units" value={clinicalPackage.unit_validations.length} />
+        <ClinicalMetric label="Norm gates" value={semanticNormalizationGates.length} />
         <ClinicalMetric label="Issues" value={clinicalPackage.operation_outcome.issue.length} />
         <ClinicalMetric label="Provenance" value={clinicalPackage.provenance.length} />
       </div>
@@ -50,6 +53,8 @@ export function ClinicalPackagePanel({ workflow }: { workflow: WorkflowState }) 
         <TerminologyEvidencePanel clinicalPackage={clinicalPackage} />
         <PackageResourceSummary clinicalPackage={clinicalPackage} />
       </div>
+
+      <SemanticNormalizationGatePanel clinicalPackage={clinicalPackage} />
 
       <ClinicalPackageDiff resources={resources} />
 
@@ -72,6 +77,118 @@ export function ClinicalPackagePanel({ workflow }: { workflow: WorkflowState }) 
         </Card>
       ) : null}
     </div>
+  );
+}
+
+function SemanticNormalizationGatePanel({
+  clinicalPackage,
+}: {
+  clinicalPackage: ClinicalPackage;
+}) {
+  const gates = clinicalPackage.semantic_normalization_gates ?? [];
+  const gateCounts = gates.reduce<Record<string, number>>((counts, gate) => {
+    counts[gate.gate_type] = (counts[gate.gate_type] ?? 0) + 1;
+    return counts;
+  }, {});
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-card/70 p-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <ShieldCheck className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <CardTitle>Semantic normalization gates</CardTitle>
+            <CardDescription>
+              Clinical meaning changes that require reviewer approval before automatic application.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4">
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(gateCounts).map(([gateType, count]) => (
+            <Badge key={gateType} variant="muted">
+              {humanize(gateType)}: {count}
+            </Badge>
+          ))}
+          {!gates.length ? <Badge variant="success">No semantic gates</Badge> : null}
+        </div>
+        {gates.length ? (
+          <Table wrapperClassName="max-h-[24rem] overflow-auto">
+            <THead>
+              <TR>
+                <TH>Gate</TH>
+                <TH>Source</TH>
+                <TH>Proposed semantic target</TH>
+                <TH>Review state</TH>
+                <TH>Reason</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {gates.map((gate) => (
+                <SemanticNormalizationGateRow gate={gate} key={gate.gate_id} />
+              ))}
+            </TBody>
+          </Table>
+        ) : (
+          <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+            No semantic normalization changes were proposed for this package.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SemanticNormalizationGateRow({
+  gate,
+}: {
+  gate: ClinicalSemanticNormalizationGate;
+}) {
+  const proposedParts = [
+    gate.proposed_system,
+    gate.proposed_code,
+    gate.proposed_display,
+    gate.proposed_value !== null && gate.proposed_value !== undefined
+      ? `value ${formatUnknownValue(gate.proposed_value)}`
+      : null,
+  ].filter((part): part is string => Boolean(part));
+  return (
+    <TR>
+      <TD className="min-w-44">
+        <div className="font-bold">{humanize(gate.gate_type)}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{gate.target_resource_type}</div>
+      </TD>
+      <TD className="min-w-56">
+        <div className="font-medium">{gate.source_field}</div>
+        <div className="max-w-64 break-words text-muted-foreground">
+          {formatUnknownValue(gate.source_value)}
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground">{formatLocation(gate.location)}</div>
+      </TD>
+      <TD className="min-w-72">
+        <div className="break-words font-medium">
+          {proposedParts.length ? proposedParts.join(" / ") : "No candidate"}
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground">{gate.target_path}</div>
+      </TD>
+      <TD className="min-w-44">
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant={gate.requires_review ? "warning" : "success"}>
+            {humanize(gate.status)}
+          </Badge>
+          {gate.blocks_automatic_change ? <Badge variant="warning">Blocks auto-change</Badge> : null}
+          {typeof gate.confidence === "number" ? (
+            <Badge variant="muted">{formatConfidence(gate.confidence)}</Badge>
+          ) : null}
+        </div>
+      </TD>
+      <TD className="min-w-72 text-muted-foreground">
+        <div>{gate.reason}</div>
+        <div className="mt-1 text-xs">{gate.gate_id}</div>
+      </TD>
+    </TR>
   );
 }
 

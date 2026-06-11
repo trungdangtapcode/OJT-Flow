@@ -8,10 +8,18 @@ meaning. V0 now emits review-gated terminology and unit contracts inside
 
 - `clinical_package.terminology_candidates`
 - `clinical_package.unit_validations`
+- `clinical_package.semantic_normalization_gates`
 
 The app still preserves source text. It does not automatically replace lab
 names with LOINC codes, source units with normalized UCUM codes, medication
 text with RxNorm RxCUIs, or diagnosis/finding text with SNOMED CT concepts.
+
+Semantic normalization gates make that policy machine-readable. Each gate links
+the source value to the target FHIR-like path that would change meaning, such as
+`Observation.code.coding`, `Observation.valueQuantity.code`,
+`Patient.identifier[0].value`, `Condition.code.coding`,
+`MedicationStatement.medicationCodeableConcept.coding`, or
+`Procedure.code.coding`.
 
 ## LOINC Candidates
 
@@ -92,10 +100,24 @@ The output is `UnitValidationResult` with:
 The registry is intentionally labeled as a seed list. Production validation
 requires an official UCUM service or full UCUM library.
 
+## Review Gate Behavior
+
+For `lab_result_v1`, OJTFlow emits review gates for lab names, units, dates,
+patient identifiers, diagnoses, medications, and procedures when those fields
+are present. A gate can reference a terminology candidate, a unit validation
+result, or a missing-candidate condition. Missing candidates are still useful:
+they explicitly prevent unreviewed code assignment when the configured
+terminology registry has no match.
+
+The gate contract is intentionally separate from raw package export approval.
+Source-preserving packages can move through downstream review/export flows, but
+automatic semantic replacement remains blocked until a reviewer approves the
+specific gate.
+
 ## Verification
 
 Run:
 
 ```bash
-python -m pytest tests/test_workflow_service.py::test_clean_lab_workflow_builds_clinical_package_with_field_provenance tests/test_workflow_service.py::test_clinical_package_adds_rxnorm_and_snomed_candidates_for_extra_fields tests/test_workflow_service.py::test_review_gated_lab_workflow_clinical_package_carries_review_and_issues -q
+python -m pytest tests/test_workflow_service.py::test_clean_lab_workflow_builds_clinical_package_with_field_provenance tests/test_workflow_service.py::test_clinical_package_adds_rxnorm_and_snomed_candidates_for_extra_fields tests/test_workflow_service.py::test_clinical_package_adds_procedure_normalization_gate_without_candidate tests/test_workflow_service.py::test_review_gated_lab_workflow_clinical_package_carries_review_and_issues -q
 ```

@@ -1522,6 +1522,35 @@ export type UnitValidationResult = {
   metadata: Record<string, unknown>;
 };
 
+export type ClinicalSemanticNormalizationGate = {
+  gate_id: string;
+  gate_type:
+    | "lab_name"
+    | "unit"
+    | "date"
+    | "patient_identifier"
+    | "diagnosis"
+    | "medication"
+    | "procedure";
+  source_field: string;
+  source_value?: unknown | null;
+  target_resource_type: string;
+  target_path: string;
+  location?: ValidationIssue["location"] | null;
+  candidate_id?: string | null;
+  unit_validation_id?: string | null;
+  proposed_system?: string | null;
+  proposed_code?: string | null;
+  proposed_display?: string | null;
+  proposed_value?: unknown | null;
+  confidence?: number | null;
+  status: "review_required" | "approved" | "rejected" | "not_applicable";
+  requires_review: boolean;
+  blocks_automatic_change: boolean;
+  reason: string;
+  metadata: Record<string, unknown>;
+};
+
 export type ClinicalPackage = {
   package_type: "ojtflow_clinical_package";
   schema_version: string;
@@ -1547,6 +1576,7 @@ export type ClinicalPackage = {
   evidence: Evidence[];
   terminology_candidates: TerminologyCandidate[];
   unit_validations: UnitValidationResult[];
+  semantic_normalization_gates: ClinicalSemanticNormalizationGate[];
   provenance: Array<Record<string, unknown>>;
   review?: HumanReview | null;
   audit_event_refs: string[];

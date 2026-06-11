@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ojtflow.clinical.normalization_gates import build_semantic_normalization_gates
 from ojtflow.clinical.terminology import terminology_candidates_for_lab_records
 from ojtflow.core.contracts.clinical import (
     ClinicalBundle,
@@ -38,9 +39,15 @@ def build_clinical_package(
     warnings: list[str] = []
     terminology_candidates = []
     unit_validations = []
+    semantic_normalization_gates = []
     if schema_id == "lab_result_v1":
         resources = _lab_result_resources(parsed, workflow)
         terminology_candidates, unit_validations = terminology_candidates_for_lab_records(parsed)
+        semantic_normalization_gates = build_semantic_normalization_gates(
+            parsed=parsed,
+            terminology_candidates=terminology_candidates,
+            unit_validations=unit_validations,
+        )
         if not resources:
             warnings.append("No lab_result_v1 records were available for FHIR-like mapping.")
     elif _is_fhir_like_payload(parsed):
@@ -68,6 +75,7 @@ def build_clinical_package(
         evidence=evidence,
         terminology_candidates=terminology_candidates,
         unit_validations=unit_validations,
+        semantic_normalization_gates=semantic_normalization_gates,
         provenance=_package_provenance(
             workflow=workflow,
             resources=resources,
@@ -76,6 +84,9 @@ def build_clinical_package(
                 item.candidate_id for item in terminology_candidates
             ],
             unit_validation_ids=[item.validation_id for item in unit_validations],
+            semantic_normalization_gate_ids=[
+                item.gate_id for item in semantic_normalization_gates
+            ],
             output_refs=output_refs,
         ),
         review=workflow.review.model_dump(mode="json") if workflow.review else None,
@@ -92,17 +103,24 @@ def build_clinical_package(
             ),
             "terminology_candidate_count": len(terminology_candidates),
             "unit_validation_count": len(unit_validations),
+            "semantic_normalization_gate_count": len(semantic_normalization_gates),
+            "semantic_normalization_gate_types": sorted(
+                {item.gate_type for item in semantic_normalization_gates}
+            ),
             "terminology_candidates": [
                 item.model_dump(mode="json") for item in terminology_candidates
             ],
             "unit_validations": [
                 item.model_dump(mode="json") for item in unit_validations
             ],
+            "semantic_normalization_gates": [
+                item.model_dump(mode="json") for item in semantic_normalization_gates
+            ],
             "fhir_like": True,
             "fhir_compliance": "fhir_like_not_validated",
             **fhir_profile_context,
         },
-        warnings=[*warnings, *_package_warnings(resources)],
+        warnings=[*warnings, *_package_warnings(resources, semantic_normalization_gates)],
     )
 
 
@@ -600,6 +618,7 @@ def _package_provenance(
     evidence_ids: list[str],
     terminology_candidate_ids: list[str],
     unit_validation_ids: list[str],
+    semantic_normalization_gate_ids: list[str],
     output_refs: list[str],
 ) -> list[ClinicalProvenanceRecord]:
     input_ref = workflow.input.dataset_ref if workflow.input else None
@@ -635,6 +654,7 @@ def _package_provenance(
             metadata={
                 "terminology_candidate_ids": terminology_candidate_ids,
                 "unit_validation_ids": unit_validation_ids,
+                "semantic_normalization_gate_ids": semantic_normalization_gate_ids,
             },
         ),
     ]
@@ -721,10 +741,17 @@ def _fhir_profile_context(resources: list[ClinicalResourceRecord]) -> dict[str, 
     }
 
 
-def _package_warnings(resources: list[ClinicalResourceRecord]) -> list[str]:
+def _package_warnings(
+    resources: list[ClinicalResourceRecord],
+    semantic_normalization_gates: list[Any],
+) -> list[str]:
     warnings = ["FHIR-like package has not been validated by a full HL7 FHIR validator."]
     if any(record.review_required for record in resources):
         warnings.append("One or more generated resources require human review.")
+    if semantic_normalization_gates:
+        warnings.append(
+            "Semantic normalization candidates require human review before automatic application."
+        )
     return warnings
 
 
