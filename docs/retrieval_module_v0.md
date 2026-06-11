@@ -92,6 +92,15 @@ The retrieval package now includes a `graph_context` handoff that extracts
 entities and evidence triples from the retrieved claims. This is a
 GraphRAG-lite context for validation/explanation workflows, not diagnosis,
 treatment, triage, or medication advice.
+When the backend has a graph repository configured, every retrieval package
+with a graph handoff also stores an owner-scoped `GraphContextRecord`. The
+package returns `handoff_context.graph_record` with the persisted graph ID,
+workflow/search metadata, counts, and creation time. Operators can list these
+records through `GET /api/v1/retrieval/graph/contexts` and export the graph
+neighborhood as newline-delimited JSON through
+`GET /api/v1/retrieval/graph/export?format=jsonl` or RDF-like triples through
+`format=rdf_jsonl`. The export is operational graph/RAG metadata only; it is
+not a clinical decision-support artifact.
 
 The package also includes a guarded `answer` object. This is deterministic
 retrieval synthesis, not open-ended clinical generation. It is built only from
@@ -1079,6 +1088,19 @@ Workflow output includes:
 Concept normalization is deterministic dictionary lookup against seed
 registries, not a clinical coding decision; unmapped terms keep their plain
 `clinical_concept` node without a `normalizes_to` edge.
+
+Persisted graph records are stored in the backend spine:
+
+- Memory mode keeps graph records for tests and local demos only.
+- SQLite mode stores `graph_contexts` beside workflow, event, dataset,
+  retrieval, assistant, and audit tables.
+- Postgres mode stores `ojtflow.graph_contexts` through migration
+  `019_graph_contexts.sql`.
+- `GET /api/v1/retrieval/graph/contexts` lists authenticated-owner records,
+  optionally filtered by `workflow_id`.
+- `GET /api/v1/retrieval/graph/export` exports the same authenticated-owner
+  scope as `jsonl` node/edge/triple records or `rdf_jsonl`
+  subject/predicate/object triples.
 
 Graph-NER has a deterministic evaluation gate:
 

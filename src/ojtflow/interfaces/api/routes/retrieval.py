@@ -12,6 +12,7 @@ from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
+from ojtflow.core.contracts.graph import GraphContextRecord, GraphExport, GraphExportFormat
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
     CorpusChunkingProfileCatalog,
@@ -130,6 +131,16 @@ class RetrievalIntegrityEnvelope(ContractModel):
     error: None = None
 
 
+class RetrievalGraphContextsEnvelope(ContractModel):
+    data: list[GraphContextRecord]
+    error: None = None
+
+
+class RetrievalGraphExportEnvelope(ContractModel):
+    data: GraphExport
+    error: None = None
+
+
 class RetrievalJudgmentsEnvelope(ContractModel):
     data: list[RetrievalRelevanceJudgment]
     error: None = None
@@ -194,6 +205,44 @@ async def search_retrieval(
         request_id=getattr(http_request.state, "request_id", None),
     )
     return ok(package)
+
+
+@router.get("/retrieval/graph/contexts", response_model=RetrievalGraphContextsEnvelope)
+async def list_retrieval_graph_contexts(
+    workflow_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        service.list_graph_contexts(
+            owner_user_id=authenticated.user.user_id,
+            workflow_id=_optional_query_value(workflow_id),
+            limit=limit,
+        )
+    )
+
+
+@router.get("/retrieval/graph/export", response_model=RetrievalGraphExportEnvelope)
+async def export_retrieval_graph_contexts(
+    workflow_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    export_format: GraphExportFormat = Query(default="jsonl", alias="format"),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        service.export_graph_contexts(
+            owner_user_id=authenticated.user.user_id,
+            workflow_id=_optional_query_value(workflow_id),
+            limit=limit,
+            export_format=export_format,
+        )
+    )
 
 
 def _retrieval_query_from_request(request: RetrievalSearchRequest) -> RetrievalQuery:

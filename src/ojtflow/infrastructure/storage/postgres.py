@@ -30,6 +30,7 @@ from ojtflow.core.contracts.assistant import (
 from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalRelevanceJudgment,
@@ -903,6 +904,93 @@ class PostgresAuditRepository:
                 )
                 rows = cursor.fetchall()
         return [AuditRecord.model_validate(row["record_json"]) for row in rows]
+
+
+class PostgresGraphRepository:
+    """Postgres Graph-NER context repository."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def save_context(self, record: GraphContextRecord) -> GraphContextRecord:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.graph_contexts (
+                        graph_id, owner_user_id, workflow_id, request_id,
+                        search_signature, query_text, resource_type, fields_json,
+                        node_count, edge_count, triple_count, graph_json,
+                        record_json, created_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
+                        %s, %s, %s, %s::jsonb, %s::jsonb, %s::timestamptz
+                    )
+                    on conflict(graph_id) do update set
+                        owner_user_id = excluded.owner_user_id,
+                        workflow_id = excluded.workflow_id,
+                        request_id = excluded.request_id,
+                        search_signature = excluded.search_signature,
+                        query_text = excluded.query_text,
+                        resource_type = excluded.resource_type,
+                        fields_json = excluded.fields_json,
+                        node_count = excluded.node_count,
+                        edge_count = excluded.edge_count,
+                        triple_count = excluded.triple_count,
+                        graph_json = excluded.graph_json,
+                        record_json = excluded.record_json,
+                        created_at = excluded.created_at
+                    """,
+                    (
+                        record.graph_id,
+                        record.owner_user_id,
+                        record.workflow_id,
+                        record.request_id,
+                        record.search_signature,
+                        record.query,
+                        record.resource_type,
+                        json.dumps(record.fields),
+                        record.node_count,
+                        record.edge_count,
+                        record.triple_count,
+                        json.dumps(record.graph_context),
+                        record.model_dump_json(),
+                        record.created_at,
+                    ),
+                )
+            connection.commit()
+        return record
+
+    def list_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = %s")
+            params.append(owner_user_id)
+        if workflow_id is not None:
+            clauses.append("workflow_id = %s")
+            params.append(workflow_id)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select record_json from ojtflow.graph_contexts
+                    {where}
+                    order by created_at desc, graph_id desc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [GraphContextRecord.model_validate(row["record_json"]) for row in rows]
 
 
 class PostgresRetrievalJudgmentRepository:

@@ -61,6 +61,7 @@ from ojtflow.infrastructure.storage.in_memory import (
     InMemoryBackgroundJobRepository,
     InMemoryDatasetStore,
     InMemoryEventRepository,
+    InMemoryGraphRepository,
     InMemoryRetrievalJudgmentRepository,
     InMemoryWorkflowRepository,
 )
@@ -73,6 +74,7 @@ from ojtflow.infrastructure.storage.postgres import (
     PostgresBackgroundJobRepository,
     PostgresDatasetStore,
     PostgresEventRepository,
+    PostgresGraphRepository,
     PostgresRetrievalJudgmentRepository,
     PostgresWorkflowRepository,
 )
@@ -85,6 +87,7 @@ from ojtflow.infrastructure.storage.sqlite import (
     SQLiteBackgroundJobRepository,
     SQLiteDatasetStore,
     SQLiteEventRepository,
+    SQLiteGraphRepository,
     SQLiteRetrievalJudgmentRepository,
     SQLiteWorkflowRepository,
 )
@@ -144,6 +147,7 @@ def _build_workflow_service() -> WorkflowService:
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()
         events = InMemoryEventRepository()
+        graph_repository = InMemoryGraphRepository()
         retrieval = _build_retrieval_repository(
             settings,
             knowledge_root,
@@ -158,6 +162,7 @@ def _build_workflow_service() -> WorkflowService:
         datasets = SQLiteDatasetStore(backbone)
         workflows = SQLiteWorkflowRepository(backbone)
         events = SQLiteEventRepository(backbone)
+        graph_repository = SQLiteGraphRepository(backbone)
         retrieval = _build_retrieval_repository(
             settings,
             knowledge_root,
@@ -172,6 +177,7 @@ def _build_workflow_service() -> WorkflowService:
         datasets = PostgresDatasetStore(backbone)
         workflows = PostgresWorkflowRepository(backbone)
         events = PostgresEventRepository(backbone)
+        graph_repository = PostgresGraphRepository(backbone)
         retrieval = _build_retrieval_repository(
             settings,
             knowledge_root,
@@ -188,6 +194,7 @@ def _build_workflow_service() -> WorkflowService:
         events=events,
         knowledge=StaticKnowledgeRepository(knowledge_root),
         retrieval=retrieval,
+        graph_repository=graph_repository,
         retrieval_rule_packs=retrieval_rule_packs(knowledge_root),
         external_provider_policy=external_provider_policy,
     )

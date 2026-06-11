@@ -14,10 +14,12 @@ from ojtflow.agents.validation_agent import ValidationAgent
 from ojtflow.application.ports import (
     DatasetStore,
     EventRepository,
+    GraphRepository,
     KnowledgeRepository,
     RetrievalRepository,
     WorkflowRepository,
 )
+from ojtflow.application.graph_service import GraphService
 from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.application.tool_registry import tool_specs_json
 from ojtflow.clinical.package_builder import build_clinical_package
@@ -39,6 +41,7 @@ from ojtflow.core.contracts.enums import (
 )
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
+from ojtflow.core.contracts.graph import GraphContextRecord, GraphExport, GraphExportFormat
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -90,6 +93,7 @@ class WorkflowService:
         events: EventRepository,
         knowledge: KnowledgeRepository,
         retrieval: RetrievalRepository,
+        graph_repository: GraphRepository | None = None,
         retrieval_rule_packs: Sequence[dict[str, Any]] | None = None,
         external_provider_policy: ExternalProviderPolicy | None = None,
     ) -> None:
@@ -97,6 +101,7 @@ class WorkflowService:
         self.workflows = workflows
         self.events = events
         self.knowledge = knowledge
+        self.graph_service = GraphService(graph_repository) if graph_repository else None
         self.retrieval_service = RetrievalService(
             retrieval,
             rule_packs=retrieval_rule_packs,
@@ -588,6 +593,11 @@ class WorkflowService:
             top_k=5,
         )
         retrieval_package.trace.request_id = _workflow_request_id(workflow)
+        retrieval_package = self._persist_graph_context(
+            retrieval_package,
+            owner_user_id=workflow.owner_user_id,
+            workflow_id=workflow.workflow_id,
+        )
         evidence = retrieval_package.evidence
         workflow.retrieved_context = [*fhir_context["evidence"], *evidence]
         workflow.handoff_context["retrieval_trace"] = retrieval_package.trace.model_dump(
@@ -1027,6 +1037,11 @@ class WorkflowService:
         self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
         package = self.retrieval_service.search(query)
         package.trace.request_id = request_id
+        package = self._persist_graph_context(
+            package,
+            owner_user_id=owner_user_id,
+            workflow_id=query.workflow_id,
+        )
         return package
 
     def plan_retrieval(
@@ -1046,6 +1061,49 @@ class WorkflowService:
         """List available retrieval source inventory."""
 
         return self.retrieval_service.list_sources()
+
+    def list_graph_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]:
+        if self.graph_service is None:
+            return []
+        return self.graph_service.list_contexts(
+            owner_user_id=owner_user_id,
+            workflow_id=workflow_id,
+            limit=limit,
+        )
+
+    def export_graph_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+        export_format: GraphExportFormat = "jsonl",
+    ) -> GraphExport:
+        if self.graph_service is None:
+            from ojtflow.core.time import utc_now
+
+            return GraphExport(
+                format=export_format,
+                content_type="application/x-ndjson",
+                graph_count=0,
+                node_count=0,
+                edge_count=0,
+                triple_count=0,
+                generated_at=utc_now().isoformat(),
+                content="",
+            )
+        return self.graph_service.export_contexts(
+            owner_user_id=owner_user_id,
+            workflow_id=workflow_id,
+            limit=limit,
+            export_format=export_format,
+        )
 
     def reindex_retrieval(
         self,
@@ -1071,6 +1129,29 @@ class WorkflowService:
         return self.retrieval_service.integrity_report(
             include_seeded=include_seeded,
             include_corpus=include_corpus,
+        )
+
+    def _persist_graph_context(
+        self,
+        package: RetrievalPackage,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None,
+    ) -> RetrievalPackage:
+        if self.graph_service is None:
+            return package
+        request = package.handoff_context.get("search_request")
+        if not isinstance(request, dict):
+            return package
+        query_payload = {**request, "workflow_id": workflow_id or request.get("workflow_id")}
+        try:
+            query = RetrievalQuery.model_validate(query_payload)
+        except Exception:
+            return package
+        return self.graph_service.persist_retrieval_package(
+            package,
+            query,
+            owner_user_id=owner_user_id,
         )
 
     def _load_requested_schema(

@@ -24,6 +24,7 @@ from ojtflow.core.contracts.assistant import (
 from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalRelevanceJudgment,
@@ -222,6 +223,32 @@ class SQLiteBackboneStore:
 
                 create index if not exists idx_retrieval_judgments_owner_query
                     on retrieval_relevance_judgments(owner_user_id, query_hash, updated_at desc);
+
+                create table if not exists graph_contexts (
+                    graph_id text primary key,
+                    owner_user_id text,
+                    workflow_id text,
+                    request_id text,
+                    search_signature text,
+                    query_text text not null,
+                    resource_type text,
+                    fields_json text not null,
+                    node_count integer not null,
+                    edge_count integer not null,
+                    triple_count integer not null,
+                    graph_json text not null,
+                    record_json text not null,
+                    created_at text not null,
+                    check (node_count >= 0),
+                    check (edge_count >= 0),
+                    check (triple_count >= 0)
+                );
+
+                create index if not exists idx_graph_contexts_owner_created
+                    on graph_contexts(owner_user_id, created_at desc);
+
+                create index if not exists idx_graph_contexts_workflow_created
+                    on graph_contexts(workflow_id, created_at desc);
 
                 create table if not exists assistant_chat_sessions (
                     session_id text primary key,
@@ -963,6 +990,86 @@ class SQLiteAuditRepository:
                 tuple(params),
             ).fetchall()
         return [AuditRecord.model_validate_json(row["record_json"]) for row in rows]
+
+
+class SQLiteGraphRepository:
+    """SQLite Graph-NER context repository."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def save_context(self, record: GraphContextRecord) -> GraphContextRecord:
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into graph_contexts (
+                    graph_id, owner_user_id, workflow_id, request_id,
+                    search_signature, query_text, resource_type, fields_json,
+                    node_count, edge_count, triple_count, graph_json,
+                    record_json, created_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(graph_id) do update set
+                    owner_user_id = excluded.owner_user_id,
+                    workflow_id = excluded.workflow_id,
+                    request_id = excluded.request_id,
+                    search_signature = excluded.search_signature,
+                    query_text = excluded.query_text,
+                    resource_type = excluded.resource_type,
+                    fields_json = excluded.fields_json,
+                    node_count = excluded.node_count,
+                    edge_count = excluded.edge_count,
+                    triple_count = excluded.triple_count,
+                    graph_json = excluded.graph_json,
+                    record_json = excluded.record_json,
+                    created_at = excluded.created_at
+                """,
+                (
+                    record.graph_id,
+                    record.owner_user_id,
+                    record.workflow_id,
+                    record.request_id,
+                    record.search_signature,
+                    record.query,
+                    record.resource_type,
+                    json.dumps(record.fields),
+                    record.node_count,
+                    record.edge_count,
+                    record.triple_count,
+                    json.dumps(record.graph_context),
+                    record.model_dump_json(),
+                    record.created_at,
+                ),
+            )
+        return record
+
+    def list_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = ?")
+            params.append(owner_user_id)
+        if workflow_id is not None:
+            clauses.append("workflow_id = ?")
+            params.append(workflow_id)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                f"""
+                select record_json from graph_contexts
+                {where}
+                order by created_at desc, graph_id desc
+                limit ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [GraphContextRecord.model_validate_json(row["record_json"]) for row in rows]
 
 
 class SQLiteRetrievalJudgmentRepository:

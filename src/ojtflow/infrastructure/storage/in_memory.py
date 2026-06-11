@@ -23,6 +23,7 @@ from ojtflow.core.contracts.assistant import (
 from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalRelevanceJudgment,
@@ -359,6 +360,35 @@ class InMemoryAuditRepository:
             )
         ]
         records.sort(key=lambda record: (record.timestamp, record.audit_id), reverse=True)
+        return [deepcopy(record) for record in records[: max(1, min(limit, 1000))]]
+
+
+class InMemoryGraphRepository:
+    """In-memory Graph-NER context repository for tests and demos."""
+
+    def __init__(self) -> None:
+        self._records: dict[str, GraphContextRecord] = {}
+
+    def save_context(self, record: GraphContextRecord) -> GraphContextRecord:
+        self._records[record.graph_id] = deepcopy(record)
+        return deepcopy(record)
+
+    def list_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]:
+        records = list(self._records.values())
+        if owner_user_id is not None:
+            records = [
+                record for record in records
+                if record.owner_user_id == owner_user_id
+            ]
+        if workflow_id is not None:
+            records = [record for record in records if record.workflow_id == workflow_id]
+        records.sort(key=lambda record: record.created_at, reverse=True)
         return [deepcopy(record) for record in records[: max(1, min(limit, 1000))]]
 
 

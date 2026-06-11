@@ -290,6 +290,16 @@ def test_openapi_exposes_core_request_examples() -> None:
             "delete",
             "RetrievalJudgmentDeleteEnvelope",
         ),
+        (
+            "/api/v1/retrieval/graph/contexts",
+            "get",
+            "RetrievalGraphContextsEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/graph/export",
+            "get",
+            "RetrievalGraphExportEnvelope",
+        ),
     ]
     for path, method, schema_name in retrieval_support_response_models:
         schema = openapi["paths"][path][method]["responses"]["200"]["content"]["application/json"][
@@ -328,6 +338,12 @@ def test_openapi_exposes_core_request_examples() -> None:
         "#/components/schemas/RetrievalRelevanceJudgment"
     )
     assert "judgment_id" in schemas["RetrievalJudgmentDeleteResult"]["properties"]
+    assert schemas["RetrievalGraphContextsEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/GraphContextRecord"
+    )
+    assert schemas["RetrievalGraphExportEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/GraphExport"
+    )
 
 
 def test_api_contract_doc_covers_current_route_surface() -> None:
@@ -768,6 +784,108 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
     assert plan_data["task_summary"]["primary_action"]
     assert plan_data["task_summary"]["total_task_count"] == 0
     assert plan_data["risk_signals"] == []
+
+
+@pytest.mark.asyncio
+async def test_retrieval_graph_routes_use_authenticated_owner(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def list_graph_contexts(self, **kwargs):
+            self.calls.append({"method": "list", **kwargs})
+            return [
+                {
+                    "graph_id": "graph_api",
+                    "owner_user_id": kwargs["owner_user_id"],
+                    "workflow_id": kwargs["workflow_id"],
+                    "request_id": "req_api",
+                    "search_signature": "sig_api",
+                    "query": "Observation HbA1c unit",
+                    "resource_type": "Observation",
+                    "fields": ["unit"],
+                    "node_count": 2,
+                    "edge_count": 1,
+                    "triple_count": 1,
+                    "graph_context": {
+                        "graph_contract": "graph_ner_handoff.v0",
+                        "summary": {"node_count": 2, "edge_count": 1, "triple_count": 1},
+                    },
+                    "created_at": "2026-06-11T00:00:00+00:00",
+                }
+            ]
+
+        def export_graph_contexts(self, **kwargs):
+            self.calls.append({"method": "export", **kwargs})
+            return {
+                "format": kwargs["export_format"],
+                "content_type": "application/x-ndjson",
+                "graph_count": 1,
+                "node_count": 2,
+                "edge_count": 1,
+                "triple_count": 1,
+                "generated_at": "2026-06-11T00:00:00+00:00",
+                "content": (
+                    '{"graph_id":"graph_api","subject":"Observation.valueQuantity.unit",'
+                    '"predicate":"uses","object":"UCUM","evidence_id":"ev_ucum"}'
+                ),
+            }
+
+    fake_service = FakeWorkflowService()
+    fake_governance = FakeGovernanceService({"retrieval:read"})
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    async def fake_governance_service() -> FakeGovernanceService:
+        return fake_governance
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    app.dependency_overrides[get_governance_service] = fake_governance_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        contexts_response = await client.get(
+            "/api/v1/retrieval/graph/contexts",
+            params={"workflow_id": "  wf_graph  ", "limit": 5},
+        )
+        export_response = await client.get(
+            "/api/v1/retrieval/graph/export",
+            params={"workflow_id": "  wf_graph  ", "limit": 5, "format": "rdf_jsonl"},
+        )
+
+    assert contexts_response.status_code == 200
+    assert export_response.status_code == 200
+    contexts = _assert_success_envelope(contexts_response)["data"]
+    export = _assert_success_envelope(export_response)["data"]
+    assert contexts[0]["owner_user_id"] == "usr_api_test"
+    assert contexts[0]["workflow_id"] == "wf_graph"
+    assert export["format"] == "rdf_jsonl"
+    assert fake_service.calls == [
+        {
+            "method": "list",
+            "owner_user_id": "usr_api_test",
+            "workflow_id": "wf_graph",
+            "limit": 5,
+        },
+        {
+            "method": "export",
+            "owner_user_id": "usr_api_test",
+            "workflow_id": "wf_graph",
+            "limit": 5,
+            "export_format": "rdf_jsonl",
+        },
+    ]
+    assert fake_governance.calls == [
+        ("usr_api_test", "retrieval:read"),
+        ("usr_api_test", "retrieval:read"),
+    ]
 
 
 @pytest.mark.asyncio

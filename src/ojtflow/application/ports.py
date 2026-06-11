@@ -41,6 +41,7 @@ from ojtflow.core.contracts.governance import (
     WorkspaceDetail,
     WorkspaceSettingsRecord,
 )
+from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
@@ -344,6 +345,18 @@ class RetrievalJudgmentRepository(Protocol):
     ) -> list[RetrievalRelevanceJudgment]: ...
 
     def delete(self, *, owner_user_id: str, judgment_id: str) -> None: ...
+
+
+class GraphRepository(Protocol):
+    def save_context(self, record: GraphContextRecord) -> GraphContextRecord: ...
+
+    def list_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]: ...
 
 
 class AssistantSessionRepository(Protocol):

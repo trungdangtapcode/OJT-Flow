@@ -2905,6 +2905,7 @@ Response data is a `RetrievalPackage`:
 - `handoff_context.standard_search_plan`
 - `handoff_context.search_request`
 - `handoff_context.search_signature`
+- `handoff_context.graph_record` when graph persistence is enabled
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
@@ -2919,6 +2920,10 @@ normalization comes from `knowledge/terminologies/medical_concepts.json`; FHIR
 search-parameter expansion comes from
 `knowledge/terminologies/fhir_search_parameters.json`. This is retrieval
 grounding and audit metadata, not an autonomous clinical coding decision.
+When graph persistence is enabled, the backend stores this graph context after
+the search and returns `handoff_context.graph_record` with `graph_id`, workflow
+and search metadata, node/edge/triple counts, and creation time. Graph records
+are owner-scoped for direct API access.
 `handoff_context.query_analysis` is auditable query-understanding metadata.
 It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
 such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
@@ -3044,6 +3049,25 @@ constraints, evidence tier, and reviewer policy.
 `GET /api/v1/retrieval/strategies` returns data-driven retrieval strategy
 presets from `knowledge/retrieval/strategy_catalog.json`, including lexical,
 vector, hybrid, metadata-filtered, high-recall, and exact-source modes.
+
+`GET /api/v1/retrieval/graph/contexts` returns persisted Graph-NER context
+records owned by the authenticated user. Query parameters:
+
+- `workflow_id`: optional workflow scope.
+- `limit`: `1..1000`, default `100`.
+
+`GET /api/v1/retrieval/graph/export` returns a `GraphExport` envelope for the
+same owner/workflow scope. Query parameters:
+
+- `workflow_id`: optional workflow scope.
+- `limit`: `1..1000`, default `100`.
+- `format`: `jsonl` for nodes/edges/triples or `rdf_jsonl` for
+  subject/predicate/object triples only.
+
+The export payload includes `content_type = application/x-ndjson`, aggregate
+graph/node/edge/triple counts, `generated_at`, and `content` containing newline
+delimited JSON. This is an operational export for downstream graph/RAG tools,
+not a clinical decision-support artifact.
 
 `GET /api/v1/retrieval/corpus/adapters` returns available corpus source adapter
 definitions, including adapter ID, source family, ingestion mode, license notes,
