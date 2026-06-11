@@ -138,6 +138,32 @@ class AssistantAnswerTemplate(ContractModel):
     output_constraints: list[NonBlankStr] = Field(default_factory=list)
 
 
+class AssistantEvaluationCase(ContractModel):
+    """One data-driven Assistant evaluation case."""
+
+    case_id: NonBlankStr
+    label: NonBlankStr
+    task_type: NonBlankStr
+    message: NonBlankStr
+    context: dict[str, Any] = Field(default_factory=dict)
+    execute_write_actions: bool = False
+    expected_tool_names: list[NonBlankStr] = Field(default_factory=list)
+    expected_tool_statuses: list[NonBlankStr] = Field(default_factory=list)
+    required_answer_terms: list[NonBlankStr] = Field(default_factory=list)
+    forbidden_answer_terms: list[NonBlankStr] = Field(default_factory=list)
+    min_evidence_summaries: int = Field(default=0, ge=0)
+    required_evidence_source_ids: list[NonBlankStr] = Field(default_factory=list)
+    faithfulness_notes: list[NonBlankStr] = Field(default_factory=list)
+    roadmap_refs: list[NonBlankStr] = Field(default_factory=list)
+
+
+class AssistantEvaluationSuite(ContractModel):
+    """Versioned Assistant evaluation fixture suite."""
+
+    version: NonBlankStr
+    cases: list[AssistantEvaluationCase] = Field(default_factory=list)
+
+
 class AssistantMemoryPreferenceDefinition(ContractModel):
     """Policy-defined preference the Assistant may remember for a user."""
 

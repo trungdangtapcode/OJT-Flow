@@ -304,4 +304,5 @@ verified.
 
 1. Add retention settings and admin export for persisted sessions.
 2. Implement the remote MCP transport/auth gateway described in the policy.
-3. Add eval fixtures for natural-language commands and tool selection quality.
+3. Expand `knowledge/assistant/evaluation_cases.json` with LLM-backed and
+   browser-backed eval cases after deterministic coverage is stable.

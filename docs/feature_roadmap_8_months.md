@@ -171,6 +171,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F053 | Implemented | Added `UnitValidationResult`, `knowledge/terminologies/ucum_units.json`, and UCUM-like unit checks for `lab_result_v1.unit`, carried in `ClinicalPackage.unit_validations` with missing/unknown/not-preferred review flags. |
 | 2026-06-11 | F116 | Implemented | Added durable generic audit records for Assistant and MCP tool calls, with memory/SQLite/Postgres repositories, Postgres migration 015, owner-scoped `GET /api/v1/audit/records`, redacted tool input/output hashes, request/session/workflow/workflow-event correlation, and docs/tests. |
 | 2026-06-11 | F115 | Implemented | Added a data-driven remote MCP deployment policy at `knowledge/assistant/remote_mcp_deployment_policy.json`, authenticated `GET /api/v1/assistant/mcp/remote-policy`, MCP resource `ojtflow://assistant/mcp/remote-policy`, and docs/tests. Remote exposure remains blocked until OAuth protected-resource metadata, resource indicators, per-user scoping, rate limits, and remote audit metadata are implemented and verified. |
+| 2026-06-11 | F117 | Implemented | Added data-driven Assistant evaluation fixtures at `knowledge/assistant/evaluation_cases.json`, typed suite/case contracts, fixture loader, evaluation docs, and deterministic tests for tool selection, write-gate preservation, answer terms, and evidence-source requirements. |
 
 ## Feature Backlog
 
@@ -304,7 +305,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F114 Add MCP prompts for standard tasks such as validate lab CSV, profile FHIR, find UCUM evidence, and inspect pending reviews.
 - [x] F115 Add remote MCP deployment design with OAuth/resource indicators, per-user scoping, rate limits, and audit.
 - [x] F116 Add MCP tool-call audit events linked to assistant chat sessions and workflow events.
-- [ ] F117 Add agent evaluation fixtures for natural-language tool selection and final answer faithfulness.
+- [x] F117 Add agent evaluation fixtures for natural-language tool selection and final answer faithfulness.
 - [ ] F118 Add assistant safety tests for prompt injection in uploaded data, tool descriptions, retrieved chunks, and user messages.
 
 ### Month 6: Governance, Security, Privacy, And Enterprise Administration
