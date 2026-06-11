@@ -796,6 +796,64 @@ class RetrievalEvidenceSupportMatrix(ContractModel):
     warnings: list[NonBlankStr] = Field(default_factory=list)
 
 
+RetrievalAnswerStatus = Literal["supported", "partial", "refused", "review_required"]
+
+
+class RetrievalAnswerCitation(ContractModel):
+    """One citation used by a guarded retrieval answer."""
+
+    citation_id: NonBlankStr
+    evidence_id: NonBlankStr
+    source_id: NonBlankStr
+    source_type: EvidenceSourceType
+    source_version: NonBlankStr | None = None
+    source_locator: dict[str, Any] = Field(default_factory=dict)
+    supported_claim_ids: list[NonBlankStr] = Field(default_factory=list)
+
+
+class RetrievalAnswerClaim(ContractModel):
+    """One answer claim after evidence-support and graph checks."""
+
+    claim_id: NonBlankStr
+    text: NonBlankStr
+    support_status: RetrievalSupportStatus
+    evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    citation_ids: list[NonBlankStr] = Field(default_factory=list)
+    graph_path_refs: list[NonBlankStr] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+
+
+class RetrievalAnswerFreshnessWarning(ContractModel):
+    """Freshness, lifecycle, or version warning for cited evidence."""
+
+    warning_id: NonBlankStr
+    severity: NonBlankStr
+    evidence_id: NonBlankStr | None = None
+    source_id: NonBlankStr | None = None
+    source_version: NonBlankStr | None = None
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalAnswer(ContractModel):
+    """Self-checked answer synthesized only from retrieved evidence."""
+
+    version: NonBlankStr = "retrieval_answer.v1"
+    status: RetrievalAnswerStatus
+    answer_text: NonBlankStr
+    refusal_reason: NonBlankStr | None = None
+    requires_human_review: bool = True
+    confidence: float = Field(ge=0.0, le=1.0)
+    claims: list[RetrievalAnswerClaim] = Field(default_factory=list)
+    citations: list[RetrievalAnswerCitation] = Field(default_factory=list)
+    unsupported_claims: list[RetrievalAnswerClaim] = Field(default_factory=list)
+    missing_evidence_gaps: list[NonBlankStr] = Field(default_factory=list)
+    freshness_warnings: list[RetrievalAnswerFreshnessWarning] = Field(default_factory=list)
+    graph_path_summary: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalPackage(ContractModel):
     """Evidence package returned to workflow state and API callers."""
 
@@ -811,6 +869,7 @@ class RetrievalPackage(ContractModel):
     remediation_summary: NonBlankStr | None = None
     interpretation: RetrievalInterpretation | None = None
     support_matrix: RetrievalEvidenceSupportMatrix | None = None
+    answer: RetrievalAnswer | None = None
     strategy_recommendations: list[RetrievalStrategyRecommendation] = Field(default_factory=list)
     standard_search_plan: RetrievalStandardSearchPlan | None = None
     diversity: RetrievalDiversitySummary | None = None

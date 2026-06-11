@@ -9,6 +9,7 @@ from typing import Any
 
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.ports import RetrievalRepository
+from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
 from ojtflow.core.contracts.data import DataProfile
 from ojtflow.core.contracts.external_provider import (
     ExternalProviderDecision,
@@ -35,11 +36,13 @@ class RetrievalService:
         self,
         repository: RetrievalRepository,
         graph_ner: GraphNERService | None = None,
+        answer_synthesizer: RetrievalAnswerSynthesizer | None = None,
         rule_packs: Sequence[dict[str, Any]] | None = None,
         external_provider_policy: ExternalProviderPolicy | None = None,
     ) -> None:
         self.repository = repository
         self.graph_ner = graph_ner or GraphNERService()
+        self.answer_synthesizer = answer_synthesizer or RetrievalAnswerSynthesizer()
         self.rule_packs = [dict(pack) for pack in rule_packs or ()]
         self.external_provider_policy = external_provider_policy
 
@@ -50,7 +53,8 @@ class RetrievalService:
         package = self._attach_search_metadata(package, query)
         package = self._attach_rule_pack_metadata(package)
         package = self._apply_external_search_policy(package, query)
-        return self.graph_ner.augment_package(package, query)
+        package = self.graph_ner.augment_package(package, query)
+        return self.answer_synthesizer.augment_package(package, query)
 
     def plan(self, query: RetrievalQuery) -> RetrievalPlan:
         """Build a plan-only retrieval analysis without ranking evidence."""

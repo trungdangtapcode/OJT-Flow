@@ -2890,7 +2890,12 @@ Response data is a `RetrievalPackage`:
 - `trace.final_hit_ids`
 - `trace.safety_flags`
 - `trace.warnings`
+- `answer`: evidence-only retrieval answer with status, citations, claims,
+  unsupported claims, missing-evidence gaps, source freshness warnings, and
+  graph-path summary
 - `handoff_context`
+- `handoff_context.answer` mirrors the top-level answer for Assistant and MCP
+  clients
 - `handoff_context.graph_context`
 - `handoff_context.query_analysis`
 - `handoff_context.diversity` mirrors top-level `diversity` for assistant and

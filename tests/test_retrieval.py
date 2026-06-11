@@ -11,6 +11,7 @@ from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import RetrievalQuery
 from ojtflow.application.graph_ner_service import GraphNERService
+from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
 from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.retrieval_service import RetrievalService
@@ -2845,6 +2846,79 @@ def test_retrieval_service_adds_graph_context() -> None:
         "top_k": 3,
         "filters": {},
     }
+
+
+def test_retrieval_service_attaches_guarded_answer_with_citations() -> None:
+    class FakeRepository:
+        def search(self, query):
+            return StaticRetrievalRepository(ROOT / "knowledge").search(query)
+
+        def list_sources(self):
+            return []
+
+        def reindex(self, *, include_seeded=True, include_corpus=True):
+            return {}
+
+    service = RetrievalService(FakeRepository())
+    package = service.search(
+        RetrievalQuery(
+            query="FHIR Observation HbA1c UCUM unit evidence",
+            fields=["lab_name", "unit"],
+            resource_type="Observation",
+            top_k=3,
+        )
+    )
+
+    assert package.answer is not None
+    assert package.answer.status in {"supported", "partial"}
+    assert package.answer.citations
+    assert package.answer.claims
+    assert package.answer.answer_text.startswith("The retrieved evidence supports")
+    assert package.answer.graph_path_summary["graph_contract"] == "graph_ner_handoff.v0"
+    assert package.answer.graph_path_summary["claim_graph_ref_count"] >= 1
+    assert package.handoff_context["answer"]["citations"][0]["evidence_id"] == (
+        package.answer.citations[0].evidence_id
+    )
+
+
+def test_retrieval_answer_refuses_when_no_evidence_supports_query() -> None:
+    query = RetrievalQuery(query="unsupported clinical assertion", top_k=3)
+    package = rank_chunks([], query)
+    guarded = RetrievalAnswerSynthesizer().augment_package(package, query)
+
+    assert guarded.answer is not None
+    assert guarded.answer.status == "refused"
+    assert guarded.answer.confidence == 0.0
+    assert guarded.answer.citations == []
+    assert "No retrieved evidence" in guarded.answer.refusal_reason
+    assert "retrieval_answer_refused_unsupported" in guarded.trace.safety_flags
+
+
+def test_retrieval_answer_warns_on_deprecated_source_version() -> None:
+    query = RetrievalQuery(query="FHIR Observation unit evidence", top_k=1)
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="deprecated_observation",
+                source_id="standard:fhir_observation_old",
+                source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+                title="Deprecated FHIR Observation note",
+                content="FHIR Observation valueQuantity unit evidence.",
+                source_version="deprecated-2018",
+                standard_system="FHIR",
+                clinical_domain="laboratory",
+            )
+        ],
+        query,
+    )
+    guarded = RetrievalAnswerSynthesizer().augment_package(package, query)
+
+    assert guarded.answer is not None
+    assert guarded.answer.status == "partial"
+    warning_ids = {warning.warning_id for warning in guarded.answer.freshness_warnings}
+    assert "source_version_deprecated" in warning_ids
+    assert guarded.answer.requires_human_review is True
+    assert "source_version_deprecated" in guarded.trace.warnings
 
 
 def test_graph_ner_normalizes_clinical_concepts_to_standard_codes() -> None:

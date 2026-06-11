@@ -93,6 +93,27 @@ entities and evidence triples from the retrieved claims. This is a
 GraphRAG-lite context for validation/explanation workflows, not diagnosis,
 treatment, triage, or medication advice.
 
+The package also includes a guarded `answer` object. This is deterministic
+retrieval synthesis, not open-ended clinical generation. It is built only from
+the `support_matrix`, ranked evidence, source metadata, and Graph-NER handoff:
+
+- `answer.status` is `supported`, `partial`, `review_required`, or `refused`.
+- `answer.answer_text` summarizes only retrieved evidence claims and cites
+  evidence IDs.
+- `answer.claims[]` links each answer claim to evidence IDs, citation IDs, and
+  graph path refs when Graph-NER produced matching evidence triples.
+- `answer.unsupported_claims[]` carries weak or unsupported support rows
+  instead of allowing them into confident answer text.
+- `answer.missing_evidence_gaps[]` explains why a package cannot support a
+  complete answer.
+- `answer.freshness_warnings[]` flags stale, deprecated, blocked,
+  review-needed, unapproved, or version-mismatched sources.
+
+If no row reaches strong or partial evidence support, the answer is refused and
+the trace receives `retrieval_answer_refused_unsupported`. This keeps Assistant,
+MCP, UI, and export consumers from inventing conclusions outside the retrieved
+evidence package.
+
 The package also includes a `standard_search_plan`. This is a typed,
 healthcare-standard playbook selected from
 `knowledge/retrieval/standard_search_playbook_rules.json`. It tells operators

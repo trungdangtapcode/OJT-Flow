@@ -334,6 +334,55 @@ export type RetrievalEvidenceSupportMatrix = {
   warnings: string[];
 };
 
+export type RetrievalAnswerStatus = "supported" | "partial" | "refused" | "review_required";
+
+export type RetrievalAnswerCitation = {
+  citation_id: string;
+  evidence_id: string;
+  source_id: string;
+  source_type: string;
+  source_version?: string | null;
+  source_locator: Record<string, unknown>;
+  supported_claim_ids: string[];
+};
+
+export type RetrievalAnswerClaim = {
+  claim_id: string;
+  text: string;
+  support_status: RetrievalSupportStatus;
+  evidence_ids: string[];
+  citation_ids: string[];
+  graph_path_refs: string[];
+  warnings: string[];
+};
+
+export type RetrievalAnswerFreshnessWarning = {
+  warning_id: string;
+  severity: string;
+  evidence_id?: string | null;
+  source_id?: string | null;
+  source_version?: string | null;
+  message: string;
+  suggested_action: string;
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalAnswer = {
+  version: string;
+  status: RetrievalAnswerStatus;
+  answer_text: string;
+  refusal_reason?: string | null;
+  requires_human_review: boolean;
+  confidence: number;
+  claims: RetrievalAnswerClaim[];
+  citations: RetrievalAnswerCitation[];
+  unsupported_claims: RetrievalAnswerClaim[];
+  missing_evidence_gaps: string[];
+  freshness_warnings: RetrievalAnswerFreshnessWarning[];
+  graph_path_summary: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+};
+
 export type RetrievalStandardSearchStep = {
   step_id: string;
   label: string;
@@ -568,6 +617,7 @@ export type RetrievalPackage = {
   remediation_summary?: string | null;
   interpretation?: RetrievalInterpretation | null;
   support_matrix?: RetrievalEvidenceSupportMatrix | null;
+  answer?: RetrievalAnswer | null;
   strategy_recommendations?: RetrievalStrategyRecommendation[];
   standard_search_plan?: RetrievalStandardSearchPlan | null;
   diversity?: RetrievalDiversitySummary | null;

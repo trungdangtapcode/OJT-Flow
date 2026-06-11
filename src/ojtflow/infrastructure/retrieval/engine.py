@@ -737,7 +737,7 @@ def _evidence_support_row_from_hit(
         evidence_id=hit.evidence.evidence_id,
         source_id=hit.evidence.source_id,
         source_type=hit.evidence.source_type,
-        source_version=hit.evidence.source_version,
+        source_version=_blank_to_none(hit.evidence.source_version),
         source_locator=_support_source_locator(hit),
         matched_terms=_unique_strings(hit.matched_terms)[:12],
         score=hit.score,
@@ -759,6 +759,12 @@ def _support_source_locator(hit: RetrievalHit) -> dict[str, Any]:
     locator = dict(hit.evidence.locator)
     locator.update(hit.source_locator)
     return locator
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 def _support_status_value(value: str) -> str:

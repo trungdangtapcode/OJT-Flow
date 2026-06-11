@@ -198,6 +198,8 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F156-F157, F173 | Implemented | Added data-driven performance budgets, bounded load-smoke scenarios, `scripts/performance-smoke.py`, CI/release-check performance gate, deployment smoke plan, `scripts/deployment-smoke.py` with public URL and frontend build-version summary, runtime admin APIs, docs, and tests. |
 | 2026-06-11 | F162 | Implemented | Added explicit CI gates for backend tests, Postgres migration manifest integrity, frontend build, Docker build, retrieval eval, PHI log scan, performance smoke, and bounded Playwright smoke through the Docker stack; release-check now runs migration and performance gates locally. |
 | 2026-06-11 | F158 | Started | Added a data-driven observability dashboard signal contract covering API, workflow, Assistant, retrieval, background jobs, governance/security, and LLM/OCR cost panels. Hosted metrics backend, OpenTelemetry export, and rendered dashboard remain follow-up scope. |
+| 2026-06-11 | F083, F095 | Implemented | Added deterministic retrieval answer synthesis backed only by support matrices, ranked evidence, citations, and Graph-NER path refs. Unsupported evidence now produces explicit refusal or gaps, and stale/deprecated/review-needed/unapproved/version-mismatched sources produce first-class freshness warnings. |
+| 2026-06-11 | F093-F094 | Started | Retrieval packages now include a guarded answer object and graph-path summary after Graph-NER handoff. Remaining work: graph neighborhood persistence/expansion, graph-aware reranking, and full generated-answer claim-to-triple checking. |
 
 ## Feature Backlog
 
@@ -294,7 +296,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F080 Add metadata filter pre-application for all retrieval frameworks, including LlamaIndex adapter parity.
 - [x] F081 Add source-aware diversity selection that can be tuned per query route.
 - [x] F082 Add corrective RAG behavior: if evidence is weak, ask for missing filters, broaden source scope, or trigger reindex suggestion.
-- [ ] F083 Add self-checking retrieval answer synthesis that refuses unsupported claims and returns missing-evidence gaps.
+- [x] F083 Add self-checking retrieval answer synthesis that refuses unsupported claims and returns missing-evidence gaps.
 - [x] F084 Add evidence support matrix for each answer claim with source ID, chunk locator, matched terms, score, and reasoning.
 - [ ] F085 Add retrieval benchmark datasets for lab validation, FHIR mapping, UCUM unit checks, PHI review, and external medical search routing.
 - [ ] F086 Add nightly retrieval evaluation job that tracks recall@k, MRR, nDCG, coverage, source diversity, and unsupported-claim rate.
@@ -304,9 +306,9 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F090 Add graph neighborhood retrieval that expands evidence by normalized concept, resource type, source, and relation.
 - [ ] F091 Add graph query UI for entities, relationships, source evidence, and workflow references.
 - [ ] F092 Add knowledge graph export as JSONL or RDF-like triples for downstream tools.
-- [ ] F093 Add GraphRAG-lite answer path: retrieve chunks, extract entities, expand neighborhood, rerank with graph support, synthesize with citations.
-- [ ] F094 Add hallucination guard that compares answer claims to evidence triples and flags unsupported clinical assertions.
-- [ ] F095 Add source freshness warnings when retrieved medical standards are old, deprecated, or version-mismatched.
+- [ ] F093 Add GraphRAG-lite answer path: retrieve chunks, extract entities, expand neighborhood, rerank with graph support, synthesize with citations. _(Started: packages now synthesize cited answers from support matrices and Graph-NER path refs; graph neighborhood expansion and graph-aware reranking remain.)_
+- [ ] F094 Add hallucination guard that compares answer claims to evidence triples and flags unsupported clinical assertions. _(Started: deterministic retrieval answers refuse weak/unsupported support rows and expose graph path refs; full generated-answer claim-to-triple checking remains.)_
+- [x] F095 Add source freshness warnings when retrieved medical standards are old, deprecated, or version-mismatched.
 
 ### Month 5: Assistant, Streaming, MCP, And Operator Workflows
 
