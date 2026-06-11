@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ojtflow.application.artifact_retention import resolve_artifact_retention_policy
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.ports import DatasetStore, DocumentExtractor, UploadedArtifactRepository
 from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
     ExtractionStepTrace,
     ParsingPipelineTrace,
     UploadedArtifact,
@@ -31,11 +33,15 @@ class DocumentIntakeService:
         datasets: DatasetStore,
         jobs: BackgroundJobService,
         extractor: DocumentExtractor,
+        product_mode: str = "local_dev",
+        retention_rules: tuple[dict[str, object], ...] = (),
     ) -> None:
         self.artifacts = artifacts
         self.datasets = datasets
         self.jobs = jobs
         self.extractor = extractor
+        self.product_mode = product_mode
+        self.retention_rules = retention_rules
 
     def register_upload(
         self,
@@ -49,12 +55,21 @@ class DocumentIntakeService:
     ) -> UploadedArtifact:
         """Persist raw upload bytes and return artifact metadata."""
 
+        retention_policy = resolve_artifact_retention_policy(
+            product_mode=self.product_mode,
+            owner_user_id=owner_user_id,
+            source=source,
+            mime_type=mime_type,
+            filename=filename,
+            rules=self.retention_rules,
+        )
         return self.artifacts.put_bytes(
             owner_user_id=owner_user_id,
             filename=filename,
             mime_type=mime_type,
             data=data,
             source=source,
+            retention_policy=retention_policy,
             metadata={
                 "request_id": request_id,
                 "source_format": source_format_for_filename(filename),
@@ -94,6 +109,41 @@ class DocumentIntakeService:
 
     def get_artifact(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact:
         return self.artifacts.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+
+    def get_artifact_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes:
+        return self.artifacts.get_bytes(owner_user_id=owner_user_id, artifact_id=artifact_id)
+
+    def record_artifact_access(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+        actor_user_id: str,
+        action: str,
+        request_id: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> ArtifactAccessEvent:
+        artifact = self.artifacts.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        event = ArtifactAccessEvent(
+            artifact_id=artifact.artifact_id,
+            owner_user_id=artifact.owner_user_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            request_id=request_id,
+            metadata=metadata or {},
+        )
+        return self.artifacts.append_access_event(event)
+
+    def list_artifact_access_events(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ArtifactAccessEvent]:
+        return self.artifacts.list_access_events(
+            owner_user_id=owner_user_id,
+            artifact_id=artifact_id,
+        )
 
     def list_traces(
         self,

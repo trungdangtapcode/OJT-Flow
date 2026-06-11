@@ -188,6 +188,10 @@ class Settings(BaseModel):
         default=DEFAULT_ALLOWED_UPLOAD_EXTENSIONS,
         alias="OJT_ALLOWED_UPLOAD_EXTENSIONS",
     )
+    artifact_retention_rules: tuple[dict[str, object], ...] = Field(
+        default=(),
+        alias="OJT_ARTIFACT_RETENTION_RULES",
+    )
     embedding_provider: EmbeddingProvider = Field(
         default="deterministic",
         alias="OJT_EMBEDDING_PROVIDER",
@@ -478,6 +482,10 @@ def get_settings() -> Settings:
         OJT_ALLOWED_UPLOAD_EXTENSIONS=_parse_extensions(
             os.getenv("OJT_ALLOWED_UPLOAD_EXTENSIONS")
         ),
+        OJT_ARTIFACT_RETENTION_RULES=_parse_json_object_list(
+            os.getenv("OJT_ARTIFACT_RETENTION_RULES"),
+            setting_name="OJT_ARTIFACT_RETENTION_RULES",
+        ),
         OJT_EMBEDDING_PROVIDER=_parse_embedding_provider(os.getenv("OJT_EMBEDDING_PROVIDER")),
         OJT_EMBEDDING_MODEL=_parse_embedding_model(
             os.getenv("OJT_EMBEDDING_MODEL"),
@@ -761,6 +769,27 @@ def _parse_extensions(value: str | None) -> tuple[str, ...]:
         if extension not in extensions:
             extensions.append(extension)
     return tuple(extensions) or DEFAULT_ALLOWED_UPLOAD_EXTENSIONS
+
+
+def _parse_json_object_list(
+    value: str | None,
+    *,
+    setting_name: str,
+) -> tuple[dict[str, object], ...]:
+    if not value:
+        return ()
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{setting_name} must be valid JSON") from exc
+    if not isinstance(loaded, list):
+        raise ValueError(f"{setting_name} must be a JSON list")
+    result: list[dict[str, object]] = []
+    for index, item in enumerate(loaded):
+        if not isinstance(item, dict):
+            raise ValueError(f"{setting_name}[{index}] must be a JSON object")
+        result.append({str(key): value for key, value in item.items()})
+    return tuple(result)
 
 
 def _parse_oauth_redirect_uri(

@@ -39,6 +39,27 @@ def _service() -> DocumentIntakeService:
     )
 
 
+def _service_with_retention_rules() -> DocumentIntakeService:
+    return DocumentIntakeService(
+        artifacts=InMemoryUploadedArtifactRepository(),
+        datasets=InMemoryDatasetStore(),
+        jobs=BackgroundJobService(InMemoryBackgroundJobRepository()),
+        extractor=FakeDocumentExtractor(),
+        product_mode="production",
+        retention_rules=(
+            {
+                "rule_id": "prod_clipboard_phi_delete_7",
+                "mode": "production",
+                "source": "clipboard",
+                "sensitivity_class": "potential_phi",
+                "action": "delete_after_expiry",
+                "retain_days": 7,
+                "reason": "Production clipboard images expire quickly.",
+            },
+        ),
+    )
+
+
 async def _authenticated_dependency() -> AuthenticatedSession:
     now = datetime.now(timezone.utc)
     user = UserRecord(
@@ -85,6 +106,22 @@ def test_upload_artifact_dedupes_bytes_and_preserves_upload_record() -> None:
     assert second.duplicate_of_artifact_id == first.artifact_id
     assert second.storage_ref == first.storage_ref
     assert len(service.list_artifacts(owner_user_id="usr_1")) == 2
+
+
+def test_upload_artifact_stamps_configurable_retention_policy() -> None:
+    service = _service_with_retention_rules()
+    artifact = service.register_upload(
+        owner_user_id="usr_1",
+        filename="clipboard.png",
+        mime_type="image/png",
+        data=b"fake-image",
+        source="clipboard",
+    )
+
+    assert artifact.retention_policy.policy_id == "prod_clipboard_phi_delete_7"
+    assert artifact.retention_policy.action == "delete_after_expiry"
+    assert artifact.retention_policy.sensitivity_class == "potential_phi"
+    assert artifact.retention_policy.retain_until
 
 
 def test_file_parse_job_persists_trace_and_extracted_text_ref() -> None:
@@ -190,3 +227,40 @@ async def test_clipboard_image_parse_job_endpoint_creates_artifact() -> None:
     assert body["data"]["artifact"]["source"] == "clipboard"
     assert body["data"]["artifact"]["mime_type"] == "image/png"
     assert body["data"]["artifact"]["filename"] == "clipboard.png"
+
+
+@pytest.mark.asyncio
+async def test_artifact_download_export_and_access_events_are_audited() -> None:
+    service = _service()
+
+    async def _intake_dependency() -> DocumentIntakeService:
+        return service
+
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_document_intake_service] = _intake_dependency
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        upload = await client.post(
+            "/api/v1/parse/upload/jobs",
+            data={"extractor": "auto", "execute_now": "false"},
+            files={"file": ("lab.csv", b"patient_id,value\nP001,7.4\n", "text/csv")},
+        )
+        artifact_id = upload.json()["data"]["artifact"]["artifact_id"]
+        download = await client.get(f"/api/v1/parse/artifacts/{artifact_id}/download")
+        export = await client.get(f"/api/v1/parse/artifacts/{artifact_id}/export")
+        access = await client.get(f"/api/v1/parse/artifacts/{artifact_id}/access-events")
+
+    assert download.status_code == 200
+    assert download.content == b"patient_id,value\nP001,7.4\n"
+    assert download.headers["x-ojt-artifact-id"] == artifact_id
+    assert "attachment" in download.headers["content-disposition"]
+    assert export.status_code == 200
+    export_actions = [event["action"] for event in export.json()["data"]["access_events"]]
+    assert "download" in export_actions
+    assert "export_metadata" in export_actions
+    assert access.status_code == 200
+    access_actions = [event["action"] for event in access.json()["data"]]
+    assert "download" in access_actions
+    assert "export_metadata" in access_actions

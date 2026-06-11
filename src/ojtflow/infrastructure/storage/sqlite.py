@@ -6,7 +6,12 @@ import json
 import sqlite3
 from pathlib import Path
 
-from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
+from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
+    ArtifactRetentionPolicy,
+    ParsingPipelineTrace,
+    UploadedArtifact,
+)
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -134,6 +139,22 @@ class SQLiteBackboneStore:
 
                 create index if not exists idx_document_parse_traces_artifact_created
                     on document_parse_traces(owner_user_id, artifact_id, created_at desc);
+
+                create table if not exists artifact_access_events (
+                    event_id text primary key,
+                    artifact_id text not null references uploaded_artifacts(artifact_id)
+                        on delete cascade,
+                    owner_user_id text not null,
+                    actor_user_id text not null,
+                    action text not null,
+                    request_id text,
+                    event_json text not null,
+                    created_at text not null,
+                    check (action in ('download', 'export_metadata', 'view_metadata'))
+                );
+
+                create index if not exists idx_artifact_access_events_artifact_created
+                    on artifact_access_events(owner_user_id, artifact_id, created_at desc);
 
                 create table if not exists retrieval_relevance_judgments (
                     judgment_id text primary key,
@@ -407,6 +428,7 @@ class SQLiteUploadedArtifactRepository:
         mime_type: str,
         data: bytes,
         source: str = "upload",
+        retention_policy: ArtifactRetentionPolicy | None = None,
         metadata: dict | None = None,
     ) -> UploadedArtifact:
         digest = sha256_bytes(data)
@@ -433,6 +455,7 @@ class SQLiteUploadedArtifactRepository:
             source=source,
             storage_ref=storage_ref,
             duplicate_of_artifact_id=duplicate.artifact_id if duplicate else None,
+            retention_policy=retention_policy or ArtifactRetentionPolicy(),
             metadata=metadata or {},
         )
         with self.backbone.connect() as connection:
@@ -522,6 +545,47 @@ class SQLiteUploadedArtifactRepository:
                 (owner_user_id, artifact_id),
             ).fetchall()
         return [ParsingPipelineTrace.model_validate_json(row["trace_json"]) for row in rows]
+
+    def append_access_event(self, event: ArtifactAccessEvent) -> ArtifactAccessEvent:
+        self.get(owner_user_id=event.owner_user_id, artifact_id=event.artifact_id)
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into artifact_access_events (
+                    event_id, artifact_id, owner_user_id, actor_user_id, action,
+                    request_id, event_json, created_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.event_id,
+                    event.artifact_id,
+                    event.owner_user_id,
+                    event.actor_user_id,
+                    event.action,
+                    event.request_id,
+                    event.model_dump_json(),
+                    event.timestamp,
+                ),
+            )
+        return event
+
+    def list_access_events(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ArtifactAccessEvent]:
+        self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                """
+                select event_json from artifact_access_events
+                where owner_user_id = ? and artifact_id = ?
+                order by created_at desc, event_id desc
+                """,
+                (owner_user_id, artifact_id),
+            ).fetchall()
+        return [ArtifactAccessEvent.model_validate_json(row["event_json"]) for row in rows]
 
     def _canonical_for_hash(
         self,

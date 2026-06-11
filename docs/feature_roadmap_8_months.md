@@ -138,6 +138,8 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F037 | Implemented | Added deterministic extraction quality scoring based on empty/short text, low extractor confidence, extractor warnings, PDF OCR requirement, and workbook structure warnings. |
 | 2026-06-11 | F038 | Implemented | Added trace-level extraction explanations covering what was read, skipped, needs review, and limitations for user-facing support. |
 | 2026-06-11 | F033 | Implemented | Added deterministic redaction preview with structured CSV sensitive-column masking, SSN/email/phone span detection, `POST /api/v1/parse/redaction-preview`, and trace-level redaction summaries before external provider handoff. |
+| 2026-06-11 | F034 | Implemented | Added mode/source/sensitivity/tenant-aware artifact retention policy resolution with `OJT_ARTIFACT_RETENTION_RULES`, default mode policies, and per-artifact stamped retention metadata. |
+| 2026-06-11 | F035 | Implemented | Added owner-scoped artifact download, metadata export, and access-event listing APIs backed by append-only memory/SQLite/Postgres artifact access logs and Postgres migration 012. |
 
 ## Feature Backlog
 
@@ -179,8 +181,8 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F031 Add spreadsheet workbook parsing with sheet-level profiles, header detection, merged-cell warnings, and hidden-sheet warnings.
 - [x] F032 Add PDF scanned-vs-digital detection and a clear warning when OCR is required.
 - [x] F033 Add document redaction preview for PHI-like text before sending content to external LLM/OCR providers.
-- [ ] F034 Add configurable upload retention rules by mode, tenant, source type, and sensitivity class.
-- [ ] F035 Add artifact download/export access controls and audit events.
+- [x] F034 Add configurable upload retention rules by mode, tenant, source type, and sensitivity class.
+- [x] F035 Add artifact download/export access controls and audit events.
 - [ ] F036 Add source-linked validation issues where each issue can point to row, cell, page, bounding box, or text span. _(Started: contract supports row/cell/page/bbox/text-span references; producers and UI links remain.)_
 - [x] F037 Add document extraction quality scoring based on empty text, low OCR confidence, conflicting extractors, and malformed tables.
 - [x] F038 Add user-facing extraction explanation: what was read, what was skipped, and what needs review.

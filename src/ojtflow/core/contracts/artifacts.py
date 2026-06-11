@@ -14,6 +14,7 @@ from ojtflow.core.time import utc_now
 
 ArtifactSource = Literal["upload", "clipboard", "assistant_attachment", "api"]
 RetentionAction = Literal["retain", "review", "delete_after_expiry"]
+ArtifactAccessAction = Literal["download", "export_metadata", "view_metadata"]
 ExtractionStepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 TableSourceKind = Literal["pdf", "excel", "csv", "screenshot", "image", "html", "unknown"]
 PdfScanLikelihood = Literal["digital", "scanned", "mixed", "unknown"]
@@ -28,6 +29,22 @@ class ArtifactRetentionPolicy(ContractModel):
     action: RetentionAction = "review"
     retain_until: str | None = None
     reason: str = "Default local artifact retention; tenant policy can override later."
+    mode: str | None = None
+    source: ArtifactSource | None = None
+    tenant_id: str | None = None
+
+
+class ArtifactRetentionRule(ContractModel):
+    """Configurable rule for upload retention policy resolution."""
+
+    rule_id: str
+    mode: str | None = None
+    tenant_id: str | None = None
+    source: ArtifactSource | None = None
+    sensitivity_class: str | None = None
+    action: RetentionAction = "review"
+    retain_days: int | None = Field(default=None, ge=0)
+    reason: str = ""
 
 
 class UploadedArtifact(ContractModel):
@@ -51,6 +68,19 @@ class UploadedArtifact(ContractModel):
     @property
     def is_duplicate(self) -> bool:
         return self.duplicate_of_artifact_id is not None
+
+
+class ArtifactAccessEvent(ContractModel):
+    """Append-only audit event for artifact metadata/export/download access."""
+
+    event_id: str = Field(default_factory=lambda: new_id("artevt"))
+    artifact_id: str
+    owner_user_id: str
+    actor_user_id: str
+    action: ArtifactAccessAction
+    request_id: str | None = None
+    timestamp: str = Field(default_factory=lambda: utc_now().isoformat())
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExtractionStepTrace(ContractModel):

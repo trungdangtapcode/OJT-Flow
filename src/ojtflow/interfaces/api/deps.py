@@ -344,6 +344,8 @@ def _build_document_intake_service() -> DocumentIntakeService:
         datasets=datasets,
         jobs=_build_background_job_service(),
         extractor=LocalDocumentExtractor(),
+        product_mode=settings.product_mode,
+        retention_rules=settings.artifact_retention_rules,
     )
 
 

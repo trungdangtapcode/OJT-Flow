@@ -12,16 +12,23 @@ from __future__ import annotations
 
 import base64
 import binascii
+import io
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import StreamingResponse
 from pydantic import Field
 
 from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
-from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
+from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
+    ParsingPipelineTrace,
+    UploadedArtifact,
+)
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import DataFormat
@@ -93,6 +100,22 @@ class ClipboardImageParseRequest(ContractModel):
 
 class ArtifactEnvelope(ContractModel):
     data: UploadedArtifact
+    error: None = None
+
+
+class ArtifactExportResponse(ContractModel):
+    artifact: UploadedArtifact
+    traces: list[ParsingPipelineTrace]
+    access_events: list[ArtifactAccessEvent]
+
+
+class ArtifactExportEnvelope(ContractModel):
+    data: ArtifactExportResponse
+    error: None = None
+
+
+class ArtifactAccessEventsEnvelope(ContractModel):
+    data: list[ArtifactAccessEvent]
     error: None = None
 
 
@@ -205,6 +228,11 @@ def _read_clipboard_image_bytes(
     return data, filename, mime_type
 
 
+def _content_disposition_filename(filename: str) -> str:
+    safe = sanitize_upload_filename(filename)
+    return f"attachment; filename*=UTF-8''{quote(safe)}"
+
+
 @router.post("/parse/upload/jobs", response_model=UploadParseJobEnvelope)
 async def create_upload_parse_job(
     http_request: Request,
@@ -306,16 +334,95 @@ async def list_uploaded_artifacts(
 
 @router.get("/parse/artifacts/{artifact_id}", response_model=ArtifactEnvelope)
 async def get_uploaded_artifact(
+    http_request: Request,
     artifact_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Return metadata for one uploaded artifact."""
 
+    artifact = intake.get_artifact(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact_id,
+    )
+    intake.record_artifact_access(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+        actor_user_id=authenticated.user.user_id,
+        action="view_metadata",
+        request_id=getattr(http_request.state, "request_id", None),
+        metadata={"route": "get_uploaded_artifact"},
+    )
+    return ok(artifact)
+
+
+@router.get("/parse/artifacts/{artifact_id}/download")
+async def download_uploaded_artifact(
+    http_request: Request,
+    artifact_id: NonBlankStr,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+):
+    """Download raw uploaded artifact bytes after owner-scoped access check."""
+
+    artifact = intake.get_artifact(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact_id,
+    )
+    data = intake.get_artifact_bytes(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+    )
+    intake.record_artifact_access(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+        actor_user_id=authenticated.user.user_id,
+        action="download",
+        request_id=getattr(http_request.state, "request_id", None),
+        metadata={"route": "download_uploaded_artifact", "byte_size": len(data)},
+    )
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=artifact.mime_type,
+        headers={
+            "Content-Disposition": _content_disposition_filename(artifact.filename),
+            "X-OJT-Artifact-ID": artifact.artifact_id,
+        },
+    )
+
+
+@router.get("/parse/artifacts/{artifact_id}/export", response_model=ArtifactExportEnvelope)
+async def export_uploaded_artifact_metadata(
+    http_request: Request,
+    artifact_id: NonBlankStr,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Export artifact metadata, traces, and access events without raw bytes."""
+
+    artifact = intake.get_artifact(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact_id,
+    )
+    intake.record_artifact_access(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+        actor_user_id=authenticated.user.user_id,
+        action="export_metadata",
+        request_id=getattr(http_request.state, "request_id", None),
+        metadata={"route": "export_uploaded_artifact_metadata"},
+    )
     return ok(
-        intake.get_artifact(
-            owner_user_id=authenticated.user.user_id,
-            artifact_id=artifact_id,
+        ArtifactExportResponse(
+            artifact=artifact,
+            traces=intake.list_traces(
+                owner_user_id=authenticated.user.user_id,
+                artifact_id=artifact.artifact_id,
+            ),
+            access_events=intake.list_artifact_access_events(
+                owner_user_id=authenticated.user.user_id,
+                artifact_id=artifact.artifact_id,
+            ),
         )
     )
 
@@ -330,6 +437,25 @@ async def list_uploaded_artifact_traces(
 
     return ok(
         intake.list_traces(
+            owner_user_id=authenticated.user.user_id,
+            artifact_id=artifact_id,
+        )
+    )
+
+
+@router.get(
+    "/parse/artifacts/{artifact_id}/access-events",
+    response_model=ArtifactAccessEventsEnvelope,
+)
+async def list_uploaded_artifact_access_events(
+    artifact_id: NonBlankStr,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Return artifact access events for the owner."""
+
+    return ok(
+        intake.list_artifact_access_events(
             owner_user_id=authenticated.user.user_id,
             artifact_id=artifact_id,
         )

@@ -12,7 +12,12 @@ except ImportError:  # pragma: no cover - exercised only when optional dependenc
     psycopg = None
     dict_row = None
 
-from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
+from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
+    ArtifactRetentionPolicy,
+    ParsingPipelineTrace,
+    UploadedArtifact,
+)
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -209,6 +214,7 @@ class PostgresUploadedArtifactRepository:
         mime_type: str,
         data: bytes,
         source: str = "upload",
+        retention_policy: ArtifactRetentionPolicy | None = None,
         metadata: dict | None = None,
     ) -> UploadedArtifact:
         digest = sha256_bytes(data)
@@ -235,6 +241,7 @@ class PostgresUploadedArtifactRepository:
             source=source,
             storage_ref=storage_ref,
             duplicate_of_artifact_id=duplicate.artifact_id if duplicate else None,
+            retention_policy=retention_policy or ArtifactRetentionPolicy(),
             metadata=metadata or {},
         )
         with self.backbone.connect() as connection:
@@ -339,6 +346,51 @@ class PostgresUploadedArtifactRepository:
                 )
                 rows = cursor.fetchall()
         return [ParsingPipelineTrace.model_validate(row["trace_json"]) for row in rows]
+
+    def append_access_event(self, event: ArtifactAccessEvent) -> ArtifactAccessEvent:
+        self.get(owner_user_id=event.owner_user_id, artifact_id=event.artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.artifact_access_events (
+                        event_id, artifact_id, owner_user_id, actor_user_id, action,
+                        request_id, event_json, created_at
+                    ) values (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::timestamptz)
+                    """,
+                    (
+                        event.event_id,
+                        event.artifact_id,
+                        event.owner_user_id,
+                        event.actor_user_id,
+                        event.action,
+                        event.request_id,
+                        event.model_dump_json(),
+                        event.timestamp,
+                    ),
+                )
+            connection.commit()
+        return event
+
+    def list_access_events(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ArtifactAccessEvent]:
+        self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select event_json from ojtflow.artifact_access_events
+                    where owner_user_id = %s and artifact_id = %s
+                    order by created_at desc, event_id desc
+                    """,
+                    (owner_user_id, artifact_id),
+                )
+                rows = cursor.fetchall()
+        return [ArtifactAccessEvent.model_validate(row["event_json"]) for row in rows]
 
     def _canonical_for_hash(
         self,

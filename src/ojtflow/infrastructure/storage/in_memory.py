@@ -5,7 +5,12 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
-from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
+from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
+    ArtifactRetentionPolicy,
+    ParsingPipelineTrace,
+    UploadedArtifact,
+)
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -107,6 +112,7 @@ class InMemoryUploadedArtifactRepository:
         self._artifacts: dict[str, UploadedArtifact] = {}
         self._bytes_by_ref: dict[str, bytes] = {}
         self._traces: dict[str, list[ParsingPipelineTrace]] = {}
+        self._access_events: dict[str, list[ArtifactAccessEvent]] = {}
 
     def put_bytes(
         self,
@@ -116,6 +122,7 @@ class InMemoryUploadedArtifactRepository:
         mime_type: str,
         data: bytes,
         source: str = "upload",
+        retention_policy: ArtifactRetentionPolicy | None = None,
         metadata: dict | None = None,
     ) -> UploadedArtifact:
         digest = sha256_bytes(data)
@@ -142,6 +149,7 @@ class InMemoryUploadedArtifactRepository:
             source=source,
             storage_ref=storage_ref,
             duplicate_of_artifact_id=duplicate.artifact_id if duplicate else None,
+            retention_policy=retention_policy or ArtifactRetentionPolicy(),
             metadata=metadata or {},
         )
         self._artifacts[artifact.artifact_id] = deepcopy(artifact)
@@ -180,6 +188,24 @@ class InMemoryUploadedArtifactRepository:
     ) -> list[ParsingPipelineTrace]:
         self._artifact(owner_user_id=owner_user_id, artifact_id=artifact_id)
         return [deepcopy(trace) for trace in self._traces.get(artifact_id, [])]
+
+    def append_access_event(self, event: ArtifactAccessEvent) -> ArtifactAccessEvent:
+        self._artifact(owner_user_id=event.owner_user_id, artifact_id=event.artifact_id)
+        self._access_events.setdefault(event.artifact_id, []).append(deepcopy(event))
+        return deepcopy(event)
+
+    def list_access_events(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ArtifactAccessEvent]:
+        self._artifact(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        return [
+            deepcopy(event)
+            for event in self._access_events.get(artifact_id, [])
+            if event.owner_user_id == owner_user_id
+        ]
 
     def _canonical_for_hash(
         self,

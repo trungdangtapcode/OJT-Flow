@@ -138,6 +138,29 @@ redaction summary, not a full duplicate of the extracted text.
 
 Returns one user-owned artifact metadata record.
 
+Metadata reads are owner-scoped and append a `view_metadata` access event.
+
+### Download Uploaded Artifact
+
+`GET /api/v1/parse/artifacts/{artifact_id}/download`
+
+Returns raw uploaded bytes after owner-scoped access checks. The response uses
+the artifact MIME type and a sanitized `Content-Disposition` filename. Each
+download appends a `download` access event.
+
+### Export Artifact Metadata
+
+`GET /api/v1/parse/artifacts/{artifact_id}/export`
+
+Returns artifact metadata, parse traces, and access events without raw bytes.
+Each export appends an `export_metadata` access event.
+
+### List Artifact Access Events
+
+`GET /api/v1/parse/artifacts/{artifact_id}/access-events`
+
+Returns append-only access events for that artifact.
+
 ### List Parse Traces
 
 `GET /api/v1/parse/artifacts/{artifact_id}/traces`
@@ -153,6 +176,7 @@ Postgres tables:
 
 - `ojtflow.uploaded_artifacts`
 - `ojtflow.document_parse_traces`
+- `ojtflow.artifact_access_events`
 
 SQLite local tables with the same logical fields are created by the SQLite
 backbone initializer.
@@ -169,6 +193,34 @@ Deduplication is owner-scoped in v0:
 This avoids duplicate bytes while preserving a user-visible upload/audit record.
 Extracted-text dedupe is still a follow-up because it needs extractor-version and
 normalization metadata to avoid merging incompatible outputs.
+
+## Retention
+
+Every `UploadedArtifact` is stamped with an `ArtifactRetentionPolicy` at intake.
+Defaults are mode-aware:
+
+- `local_dev` and `demo`: 7-day review policy.
+- `pilot` and `production`: 30-day review policy for potential PHI.
+- Low-sensitivity files default to retain.
+
+Override rules can be supplied with `OJT_ARTIFACT_RETENTION_RULES` as a JSON list:
+
+```json
+[
+  {
+    "rule_id": "prod_clipboard_phi_delete_7",
+    "mode": "production",
+    "source": "clipboard",
+    "sensitivity_class": "potential_phi",
+    "action": "delete_after_expiry",
+    "retain_days": 7,
+    "reason": "Production clipboard images expire quickly."
+  }
+]
+```
+
+Rules can match by mode, tenant/user ID, source, and sensitivity class. V0 only
+stamps policy and audit metadata; automatic deletion is a later governance task.
 
 ## Extension Points
 

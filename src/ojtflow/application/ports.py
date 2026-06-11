@@ -12,7 +12,12 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
-from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
+from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
+    ArtifactRetentionPolicy,
+    ParsingPipelineTrace,
+    UploadedArtifact,
+)
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -74,6 +79,7 @@ class UploadedArtifactRepository(Protocol):
         mime_type: str,
         data: bytes,
         source: str = "upload",
+        retention_policy: ArtifactRetentionPolicy | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> UploadedArtifact: ...
 
@@ -96,6 +102,15 @@ class UploadedArtifactRepository(Protocol):
         owner_user_id: str,
         artifact_id: str,
     ) -> list[ParsingPipelineTrace]: ...
+
+    def append_access_event(self, event: ArtifactAccessEvent) -> ArtifactAccessEvent: ...
+
+    def list_access_events(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ArtifactAccessEvent]: ...
 
 
 class DocumentExtractor(Protocol):
