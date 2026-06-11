@@ -13,7 +13,10 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
+from ojtflow.core.contracts.data import TransformationOutput
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision
+from ojtflow.core.contracts.storage import DatasetRecord
+from ojtflow.core.contracts.workflow import WorkflowInput, WorkflowOutput, WorkflowState
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.data_tools.hashing import sha256_text
 from ojtflow.interfaces.api.app import create_app
@@ -28,6 +31,10 @@ from ojtflow.interfaces.api.deps import (
     require_authentication,
 )
 from ojtflow.interfaces.api.routes import runtime as runtime_routes
+from ojtflow.infrastructure.storage.consistency import (
+    build_storage_repair_plan,
+    write_storage_repair_marker,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1018,6 +1025,80 @@ async def test_retrieval_reindex_route_delegates_to_workflow_service(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_retrieval_reindex_job_persists_and_runs_synchronously(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def reindex_retrieval(self, *, include_seeded=True, include_corpus=True):
+            self.calls.append(
+                {
+                    "include_seeded": include_seeded,
+                    "include_corpus": include_corpus,
+                }
+            )
+            return {
+                "repository": "fake",
+                "chunks_indexed": 7,
+                "include_seeded": include_seeded,
+                "include_corpus": include_corpus,
+            }
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+    request_id = "web_job_reindex_test"
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        created = await client.post(
+            "/api/v1/jobs/retrieval-reindex",
+            headers={"X-Request-ID": request_id},
+            json={
+                "include_seeded": False,
+                "include_corpus": True,
+                "execute_now": True,
+            },
+        )
+        job = _assert_success_envelope(created)["data"]
+        listed = await client.get("/api/v1/jobs", params={"job_type": "retrieval_reindex"})
+        fetched = await client.get(f"/api/v1/jobs/{job['job_id']}")
+
+    assert created.status_code == 200
+    assert job["status"] == "succeeded"
+    assert job["job_type"] == "retrieval_reindex"
+    assert job["input"] == {
+        "include_seeded": False,
+        "include_corpus": True,
+        "request_id": request_id,
+    }
+    assert created.headers["x-request-id"] == request_id
+    assert job["output"]["chunks_indexed"] == 7
+    assert job["attempts"] == 1
+    assert job["started_at"]
+    assert job["completed_at"]
+    assert listed.status_code == 200
+    assert [item["job_id"] for item in listed.json()["data"]] == [job["job_id"]]
+    assert fetched.status_code == 200
+    assert fetched.json()["data"]["job_id"] == job["job_id"]
+    assert fake_service.calls == [
+        {
+            "include_seeded": False,
+            "include_corpus": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_retrieval_integrity_route_delegates_to_workflow_service(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     clear_settings_cache()
@@ -1165,6 +1246,28 @@ async def test_unhandled_api_errors_do_not_expose_internal_exception_types() -> 
 
 
 @pytest.mark.asyncio
+async def test_api_request_id_is_echoed_and_included_in_error_envelopes(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    request_id = "web_test_request_123"
+    transport = httpx.ASGITransport(app=create_app())
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        health = await client.get("/health", headers={"X-Request-ID": request_id})
+        unauthorized = await client.get(
+            "/api/v1/workflows",
+            headers={"X-Request-ID": request_id},
+        )
+
+    assert health.headers["x-request-id"] == request_id
+    assert unauthorized.headers["x-request-id"] == request_id
+    body = _assert_error_envelope(unauthorized, expected_code="unauthorized")
+    assert body["error"]["request_id"] == request_id
+    assert body["error"]["details"]["request_id"] == request_id
+
+
+@pytest.mark.asyncio
 async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     clear_settings_cache()
@@ -1216,8 +1319,15 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         extractors = await client.get("/api/v1/parse/extractors")
         runtime_config = await client.get("/api/v1/runtime/config")
         runtime_readiness = await client.get("/api/v1/runtime/readiness")
+        runtime_storage_repair_plan = await client.get("/api/v1/runtime/storage-repair-plan")
+        runtime_storage_repair_markers = await client.post(
+            "/api/v1/runtime/storage-repair-markers"
+        )
         assistant_tools = await client.get("/api/v1/assistant/tools")
         assistant_examples = await client.get("/api/v1/assistant/examples")
+        assistant_stream_replays = await client.get(
+            "/api/v1/assistant/sessions/chat_missing/stream-replays"
+        )
         assistant_stream = await client.post(
             "/api/v1/assistant/chat/stream",
             json={"message": "Find evidence for lab units."},
@@ -1234,6 +1344,12 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         )
         retrieval_sources = await client.get("/api/v1/retrieval/sources")
         retrieval_integrity = await client.get("/api/v1/retrieval/integrity")
+        jobs = await client.get("/api/v1/jobs")
+        job_detail = await client.get("/api/v1/jobs/job_missing")
+        retrieval_reindex_job = await client.post(
+            "/api/v1/jobs/retrieval-reindex",
+            json={"include_seeded": True, "include_corpus": True, "execute_now": True},
+        )
         review = await client.post(
             "/api/v1/review/rev_missing",
             json={"decision": "approve"},
@@ -1275,10 +1391,16 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(runtime_config, expected_code="unauthorized")
     assert runtime_readiness.status_code == 401
     _assert_error_envelope(runtime_readiness, expected_code="unauthorized")
+    assert runtime_storage_repair_plan.status_code == 401
+    _assert_error_envelope(runtime_storage_repair_plan, expected_code="unauthorized")
+    assert runtime_storage_repair_markers.status_code == 401
+    _assert_error_envelope(runtime_storage_repair_markers, expected_code="unauthorized")
     assert assistant_tools.status_code == 401
     _assert_error_envelope(assistant_tools, expected_code="unauthorized")
     assert assistant_examples.status_code == 401
     _assert_error_envelope(assistant_examples, expected_code="unauthorized")
+    assert assistant_stream_replays.status_code == 401
+    _assert_error_envelope(assistant_stream_replays, expected_code="unauthorized")
     assert assistant_stream.status_code == 401
     _assert_error_envelope(assistant_stream, expected_code="unauthorized")
     assert retrieval.status_code == 401
@@ -1293,6 +1415,12 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_sources, expected_code="unauthorized")
     assert retrieval_integrity.status_code == 401
     _assert_error_envelope(retrieval_integrity, expected_code="unauthorized")
+    assert jobs.status_code == 401
+    _assert_error_envelope(jobs, expected_code="unauthorized")
+    assert job_detail.status_code == 401
+    _assert_error_envelope(job_detail, expected_code="unauthorized")
+    assert retrieval_reindex_job.status_code == 401
+    _assert_error_envelope(retrieval_reindex_job, expected_code="unauthorized")
     assert review.status_code == 401
     _assert_error_envelope(review, expected_code="unauthorized")
     assert logout.status_code == 401
@@ -1360,6 +1488,7 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert response.status_code == 200
         body = _assert_success_envelope(response)["data"]
         assert body["status"] == "ok"
+        assert body["product_mode"] == "local_dev"
         assert body["storage_backend"] == "postgres"
         assert body["persistent_storage"] is True
         assert body["postgres_configured"] is True
@@ -1442,6 +1571,12 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert len(rule_packs["fhir_search_parameters"]["content_hash"]) == 64
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
+        assert body["policy"] == {
+            "no_mock_data": False,
+            "effective_no_mock_data": False,
+            "requires_real_llm": False,
+            "requires_persistent_storage": False,
+        }
         response_text = response.text
         assert "client-secret" not in response_text
         assert "secret@example" not in response_text
@@ -1450,6 +1585,47 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     finally:
         clear_settings_cache()
         clear_workflow_service_cache()
+
+
+def test_product_mode_policy_rejects_disabled_llm_for_pilot(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_PRODUCT_MODE", "pilot")
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "postgres")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="OJT_LLM_PROVIDER=disabled"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+def test_product_mode_policy_rejects_memory_storage_for_production(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_PRODUCT_MODE", "production")
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "openai")
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="OJT_STORAGE_BACKEND=memory"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+def test_product_mode_policy_enables_no_mock_for_pilot(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_PRODUCT_MODE", "pilot")
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "postgres")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "openai")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.product_mode == "pilot"
+    assert settings.effective_no_mock_data is True
 
 
 @pytest.mark.asyncio
@@ -1570,7 +1746,13 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         assert body["status"] == "ready"
         checks = {check["name"]: check for check in body["checks"]}
         assert checks["settings"]["status"] == "ok"
+        assert checks["postgres_migrations"]["status"] == "ok"
+        assert checks["postgres_migrations"]["details"]["required"] is False
         assert checks["artifact_directory"]["status"] == "ok"
+        assert checks["auth_configuration"]["status"] == "ok"
+        assert checks["embedding_configuration"]["status"] == "ok"
+        assert checks["llm_configuration"]["status"] == "ok"
+        assert checks["mcp_tool_registry"]["status"] == "ok"
         assert checks["retrieval_rule_packs"]["status"] == "ok"
         assert checks["retrieval_rule_packs"]["details"]["pack_count"] >= 6
         assert checks["retrieval_rule_packs"]["details"]["issue_count"] == 0
@@ -1583,6 +1765,8 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         assert isinstance(checks["retrieval_inventory"]["details"]["probe_warning_count"], int)
         assert checks["retrieval_inventory"]["details"]["probe_warning_count"] >= 0
         assert checks["session_cache"]["details"]["mode"] == "process_local"
+        assert checks["storage_consistency"]["status"] == "ok"
+        assert checks["storage_consistency"]["details"]["required"] is False
         response_text = response.text
         assert "secret@example" not in response_text
         assert "secret-cache" not in response_text
@@ -1909,6 +2093,387 @@ def test_runtime_readiness_artifact_directory_reports_missing_dirs(
     assert check["details"]["datasets_dir"]["writable"] is False
     assert check["details"]["outputs_dir"]["writable"] is False
     assert str(data_dir) not in json.dumps(check)
+
+
+def test_runtime_readiness_provider_configuration_flags_missing_keys(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OJT_OPENAI_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+        embedding_check = runtime_routes._embedding_configuration_check(settings)
+        llm_check = runtime_routes._llm_configuration_check(settings)
+    finally:
+        clear_settings_cache()
+
+    assert embedding_check["status"] == "error"
+    assert embedding_check["details"]["api_key_configured"] is False
+    assert llm_check["status"] == "error"
+    assert llm_check["details"]["api_key_configured"] is False
+    assert "OPENAI_API_KEY" not in json.dumps(embedding_check)
+    assert "OPENAI_API_KEY" not in json.dumps(llm_check)
+
+
+def test_runtime_readiness_mcp_tool_registry_is_sane() -> None:
+    check = runtime_routes._mcp_tool_registry_check()
+
+    assert check["status"] == "ok"
+    assert check["details"]["tool_count"] >= 1
+    assert check["details"]["duplicate_names"] == []
+    assert check["details"]["missing_agent_scope_count"] == 0
+
+
+def test_runtime_readiness_storage_consistency_checks_refs_and_hashes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    data_dir = tmp_path / "var"
+    datasets_dir = data_dir / "datasets"
+    outputs_dir = data_dir / "outputs"
+    datasets_dir.mkdir(parents=True)
+    outputs_dir.mkdir()
+    input_path = datasets_dir / "input.txt"
+    output_path = outputs_dir / "output.txt"
+    orphan_path = datasets_dir / "orphan.txt"
+    input_path.write_text("date,patient_id,lab_name,value,unit\n", encoding="utf-8")
+    output_path.write_text('[{"ok": true}]', encoding="utf-8")
+    orphan_path.write_text("orphan", encoding="utf-8")
+    missing_path = outputs_dir / "missing.txt"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("OJT_DATA_DIR", str(data_dir))
+    clear_settings_cache()
+
+    workflow = WorkflowState(
+        workflow_id="wf_runtime_consistency",
+        owner_user_id="usr_api_test",
+        user_instruction="Validate data.",
+        input=WorkflowInput(
+            dataset_ref=input_path.resolve().as_uri(),
+            input_hash=sha256_text(input_path.read_text(encoding="utf-8")),
+            declared_format=DataFormat.CSV,
+            detected_format=DataFormat.CSV,
+        ),
+        output=WorkflowOutput(
+            transformation=TransformationOutput(
+                output_format=DataFormat.JSON,
+                output_ref=output_path.resolve().as_uri(),
+                output_hash=sha256_text("different content"),
+            )
+        ),
+        handoff_context={"extracted_dataset_ref": missing_path.resolve().as_uri()},
+    )
+
+    class WorkflowServiceStub:
+        class Datasets:
+            def list_records(self, limit=300):
+                assert limit == 300
+                return [
+                    DatasetRecord(
+                        dataset_id="ds_input",
+                        workflow_id="wf_runtime_consistency",
+                        source_kind="inline",
+                        declared_format="csv",
+                        detected_format="csv",
+                        byte_size=input_path.stat().st_size,
+                        sha256=sha256_text(input_path.read_text(encoding="utf-8")),
+                        storage_ref=input_path.resolve().as_uri(),
+                    ),
+                    DatasetRecord(
+                        dataset_id="ds_output",
+                        workflow_id="wf_runtime_consistency",
+                        source_kind="generated",
+                        declared_format="json",
+                        detected_format="json",
+                        byte_size=output_path.stat().st_size,
+                        sha256=sha256_text(output_path.read_text(encoding="utf-8")),
+                        storage_ref=output_path.resolve().as_uri(),
+                    ),
+                    DatasetRecord(
+                        dataset_id="ds_orphan_candidate",
+                        workflow_id="wf_runtime_consistency",
+                        source_kind="inline",
+                        byte_size=orphan_path.stat().st_size,
+                        sha256=sha256_text(orphan_path.read_text(encoding="utf-8")),
+                        storage_ref=orphan_path.resolve().as_uri(),
+                    ),
+                ]
+
+        datasets = Datasets()
+
+        def list_workflows(self, limit=100, owner_user_id=None):
+            assert limit == 100
+            assert owner_user_id == "usr_api_test"
+            return [workflow]
+
+    try:
+        check = runtime_routes._storage_consistency_check(
+            WorkflowServiceStub(),
+            get_settings(),
+            "usr_api_test",
+        )
+    finally:
+        clear_settings_cache()
+
+    assert check["status"] == "error"
+    assert check["details"]["sampled_workflow_count"] == 1
+    assert check["details"]["artifact_ref_count"] == 3
+    assert check["details"]["dataset_record_count"] == 3
+    assert check["details"]["checked_hash_count"] == 2
+    assert check["details"]["checked_dataset_file_count"] == 3
+    assert check["details"]["missing_count"] == 1
+    assert check["details"]["missing_dataset_record_count"] == 1
+    assert check["details"]["missing_dataset_file_count"] == 0
+    assert check["details"]["hash_mismatch_count"] == 1
+    assert check["details"]["dataset_hash_mismatch_count"] == 0
+    assert check["details"]["unreferenced_dataset_record_count"] == 1
+    response_text = json.dumps(check)
+    assert str(tmp_path) not in response_text
+
+
+def test_storage_repair_plan_classifies_non_destructive_candidates(tmp_path) -> None:
+    data_dir = tmp_path / "var"
+    datasets_dir = data_dir / "datasets"
+    outputs_dir = data_dir / "outputs"
+    datasets_dir.mkdir(parents=True)
+    outputs_dir.mkdir()
+    input_path = datasets_dir / "input.txt"
+    output_path = outputs_dir / "output.txt"
+    orphan_row_path = datasets_dir / "orphan-row.txt"
+    orphan_file_path = outputs_dir / "orphan-file.txt"
+    missing_path = outputs_dir / "missing.txt"
+    input_path.write_text("date,patient_id,lab_name,value,unit\n", encoding="utf-8")
+    output_path.write_text('[{"ok": true}]', encoding="utf-8")
+    orphan_row_path.write_text("orphan row", encoding="utf-8")
+    orphan_file_path.write_text("orphan file", encoding="utf-8")
+
+    workflow = WorkflowState(
+        workflow_id="wf_repair_plan",
+        owner_user_id="usr_api_test",
+        user_instruction="Validate data.",
+        input=WorkflowInput(
+            dataset_ref=input_path.resolve().as_uri(),
+            input_hash=sha256_text(input_path.read_text(encoding="utf-8")),
+            declared_format=DataFormat.CSV,
+            detected_format=DataFormat.CSV,
+        ),
+        output=WorkflowOutput(
+            transformation=TransformationOutput(
+                output_format=DataFormat.JSON,
+                output_ref=output_path.resolve().as_uri(),
+                output_hash=sha256_text("different content"),
+            )
+        ),
+        handoff_context={"extracted_dataset_ref": missing_path.resolve().as_uri()},
+    )
+    records = [
+        DatasetRecord(
+            dataset_id="ds_input",
+            workflow_id="wf_repair_plan",
+            source_kind="inline",
+            declared_format="csv",
+            detected_format="csv",
+            byte_size=input_path.stat().st_size,
+            sha256=sha256_text(input_path.read_text(encoding="utf-8")),
+            storage_ref=input_path.resolve().as_uri(),
+        ),
+        DatasetRecord(
+            dataset_id="ds_output",
+            workflow_id="wf_repair_plan",
+            source_kind="generated",
+            declared_format="json",
+            detected_format="json",
+            byte_size=output_path.stat().st_size,
+            sha256=sha256_text(output_path.read_text(encoding="utf-8")),
+            storage_ref=output_path.resolve().as_uri(),
+        ),
+        DatasetRecord(
+            dataset_id="ds_orphan_row",
+            workflow_id="wf_repair_plan",
+            source_kind="inline",
+            byte_size=orphan_row_path.stat().st_size,
+            sha256=sha256_text(orphan_row_path.read_text(encoding="utf-8")),
+            storage_ref=orphan_row_path.resolve().as_uri(),
+        ),
+    ]
+
+    plan = build_storage_repair_plan(
+        [workflow],
+        data_dir=data_dir,
+        required=True,
+        dataset_records=records,
+        max_candidates=10,
+    )
+
+    kinds = {candidate.kind for candidate in plan.candidates}
+    assert plan.required is True
+    assert plan.mutation_applied is False
+    assert plan.scanned_file_count == 4
+    assert {
+        "missing_dataset_record",
+        "missing_artifact_ref",
+        "hash_mismatch",
+        "orphaned_dataset_record",
+        "orphaned_file_artifact",
+    }.issubset(kinds)
+    assert all(candidate.destructive is False for candidate in plan.candidates)
+    assert any(
+        candidate.recommended_action == "mark_orphaned_dataset_row"
+        for candidate in plan.candidates
+    )
+    assert any(
+        candidate.recommended_action == "mark_orphaned_file_artifact"
+        for candidate in plan.candidates
+    )
+    assert str(tmp_path) not in json.dumps(plan.model_dump(mode="json"))
+
+    marker = write_storage_repair_marker(plan, data_dir=data_dir)
+
+    marker_dir = data_dir / "repair_markers" / "storage_consistency"
+    marker_path = marker_dir / f"{marker.marker_id}.json"
+    assert marker_path.exists()
+    assert marker.candidate_count == plan.returned_candidate_count
+    assert marker.destructive is False
+    marker_payload = marker_path.read_text(encoding="utf-8")
+    assert str(tmp_path) not in marker_payload
+    assert "mark_orphaned_dataset_row" in marker_payload
+
+
+@pytest.mark.asyncio
+async def test_runtime_storage_consistency_endpoint_returns_sanitized_report(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/storage-consistency")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "consistent"
+    assert body["report"] == {
+        "required": False,
+        "sampled_workflow_count": 0,
+        "artifact_ref_count": 0,
+        "dataset_record_count": 0,
+        "checked_hash_count": 0,
+        "checked_dataset_file_count": 0,
+        "missing_count": 0,
+        "missing_dataset_file_count": 0,
+        "missing_dataset_record_count": 0,
+        "hash_mismatch_count": 0,
+        "dataset_hash_mismatch_count": 0,
+        "unreferenced_dataset_record_count": 0,
+        "examples": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_runtime_storage_repair_plan_endpoint_returns_memory_not_required(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/storage-repair-plan")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "not_required"
+    assert body["plan"]["required"] is False
+    assert body["plan"]["mutation_applied"] is False
+    assert body["plan"]["candidates"] == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_storage_repair_markers_endpoint_returns_memory_not_required(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.post("/api/v1/runtime/storage-repair-markers")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "not_required"
+    assert body["plan"]["required"] is False
+    assert "marker" not in body
+
+
+@pytest.mark.asyncio
+async def test_runtime_migrations_endpoint_returns_manifest_when_postgres_not_required(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/migrations")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "not_required"
+    assert body["storage_backend"] == "memory"
+    assert body["bootstrap_code"] == "not_required"
+    assert body["manifest_count"] >= 8
+    assert body["latest_available_version"]
+    assert len(body["migrations"]) == body["manifest_count"]
+    assert {migration["status"] for migration in body["migrations"]} == {"pending"}
+    assert "postgresql://" not in json.dumps(body)
+
+
+def test_runtime_migration_bootstrap_error_classifier_is_operator_specific() -> None:
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("Duplicate migration version 005 in /app/sql/postgres/migrations")
+        )
+        == "duplicate_migration"
+    )
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("password authentication failed for user ojtflow")
+        )
+        == "auth_failed"
+    )
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("could not translate host name postgres")
+        )
+        == "dns_failed"
+    )
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("connection refused")
+        )
+        == "network_refused"
+    )
 
 
 @pytest.mark.asyncio
@@ -3410,6 +3975,53 @@ async def test_assistant_chat_stream_emits_tool_progress_and_final_response(monk
 
 
 @pytest.mark.asyncio
+async def test_assistant_chat_stream_persists_replay_artifact(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        created_session = await client.post(
+            "/api/v1/assistant/sessions",
+            json={"title": "Replay test"},
+        )
+        session_id = created_session.json()["data"]["session_id"]
+        async with client.stream(
+            "POST",
+            "/api/v1/assistant/chat/stream",
+            json={
+                "session_id": session_id,
+                "message": "Find evidence for HbA1c CSV missing unit FHIR Observation",
+                "context": {
+                    "schema_id": "lab_result_v1",
+                    "fields": ["lab_name", "value", "unit"],
+                    "clinical_domain": "laboratory",
+                },
+            },
+        ) as response:
+            body = await response.aread()
+        replays = await client.get(
+            f"/api/v1/assistant/sessions/{session_id}/stream-replays"
+        )
+        session_detail = await client.get(f"/api/v1/assistant/sessions/{session_id}")
+
+    assert response.status_code == 200
+    event_text = body.decode("utf-8")
+    assert "stream_id" in event_text
+    replay_body = _assert_success_envelope(replays)["data"]
+    assert len(replay_body) == 1
+    replay = replay_body[0]
+    assert replay["session_id"] == session_id
+    assert replay["status"] == "completed"
+    assert replay["events"][0]["type"] == "stream_opened"
+    assert replay["events"][0]["sequence"] == 1
+    assert replay["events"][-1]["type"] == "final"
+    messages = _assert_success_envelope(session_detail)["data"]["messages"]
+    assert messages == []
+
+
+@pytest.mark.asyncio
 async def test_assistant_chat_stream_emits_structured_error_event(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
@@ -3486,6 +4098,98 @@ async def test_assistant_examples_endpoint_returns_data_driven_starters(monkeypa
         "review_work_queue",
     }
     assert all("data" not in example["context"] for example in examples)
+
+
+@pytest.mark.asyncio
+async def test_assistant_session_routes_persist_user_scoped_chat(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        created = await client.post(
+            "/api/v1/assistant/sessions",
+            json={"title": "Lab review"},
+        )
+        session = created.json()["data"]
+        session_id = session["session_id"]
+        user_message = await client.post(
+            f"/api/v1/assistant/sessions/{session_id}/messages",
+            json={
+                "role": "user",
+                "content": "Validate this lab CSV.",
+                "payload": {"context": {"schema_id": "lab_result_v1"}},
+            },
+        )
+        assistant_message = await client.post(
+            f"/api/v1/assistant/sessions/{session_id}/messages",
+            json={
+                "role": "assistant",
+                "content": "Two validation issues need review.",
+                "payload": {
+                    "finding_count": 2,
+                    "response": {
+                        "tool_calls": [
+                            {"output": {"workflow_id": "wf_assistant_link"}}
+                        ]
+                    },
+                },
+            },
+        )
+        detail = await client.get(f"/api/v1/assistant/sessions/{session_id}")
+        renamed = await client.patch(
+            f"/api/v1/assistant/sessions/{session_id}",
+            json={"title": "Reviewed lab CSV"},
+        )
+        active_list = await client.get("/api/v1/assistant/sessions")
+        matched_search = await client.get(
+            "/api/v1/assistant/sessions",
+            params={"q": "validation issues"},
+        )
+        unmatched_search = await client.get(
+            "/api/v1/assistant/sessions",
+            params={"q": "not in this chat"},
+        )
+        archived = await client.post(f"/api/v1/assistant/sessions/{session_id}/archive")
+        active_after_archive = await client.get("/api/v1/assistant/sessions")
+        archived_list = await client.get(
+            "/api/v1/assistant/sessions?include_archived=true"
+        )
+        deleted = await client.delete(f"/api/v1/assistant/sessions/{session_id}")
+
+    assert created.status_code == 200
+    assert session["title"] == "Lab review"
+    assert session["owner_user_id"] == "usr_api_test"
+    assert user_message.status_code == 200
+    assert user_message.json()["data"]["role"] == "user"
+    assert assistant_message.status_code == 200
+    assert assistant_message.json()["data"]["role"] == "assistant"
+    assert assistant_message.json()["data"]["workflow_refs"] == ["wf_assistant_link"]
+    assert detail.status_code == 200
+    detail_data = detail.json()["data"]
+    assert detail_data["session"]["message_count"] == 2
+    assert [message["role"] for message in detail_data["messages"]] == [
+        "user",
+        "assistant",
+    ]
+    assert detail_data["messages"][0]["payload"]["context"]["schema_id"] == "lab_result_v1"
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["title"] == "Reviewed lab CSV"
+    assert active_list.status_code == 200
+    assert [item["session_id"] for item in active_list.json()["data"]] == [session_id]
+    assert matched_search.status_code == 200
+    assert [item["session_id"] for item in matched_search.json()["data"]] == [session_id]
+    assert unmatched_search.status_code == 200
+    assert unmatched_search.json()["data"] == []
+    assert archived.status_code == 200
+    assert archived.json()["data"]["archived_at"]
+    assert active_after_archive.status_code == 200
+    assert active_after_archive.json()["data"] == []
+    assert archived_list.status_code == 200
+    assert [item["session_id"] for item in archived_list.json()["data"]] == [session_id]
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] == {"deleted": True, "session_id": session_id}
 
 
 @pytest.mark.asyncio
