@@ -33,6 +33,14 @@ jobs:
           PYTHONPATH: src
         run: python -m pytest
 
+      - name: Check Postgres migration manifest
+        env:
+          PYTHONPATH: src
+        run: python scripts/check-migrations.py
+
+      - name: Check repo hygiene
+        run: git diff --check
+
       - name: Scan logs for raw PHI
         env:
           PYTHONPATH: src
@@ -86,3 +94,50 @@ jobs:
 
       - name: Build frontend image
         run: docker build -t ojtflow-frontend:ci ./frontend
+
+  playwright-smoke:
+    name: Playwright smoke
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Docker stack
+        env:
+          OJT_PYTHON_EXTRAS: parsing
+        run: docker compose up -d --build
+
+      - name: Run Playwright smoke
+        working-directory: frontend
+        env:
+          OJT_E2E_BASE_URL: http://127.0.0.1:5173
+        run: npm run e2e:smoke
+
+      - name: Cleanup Playwright artifacts
+        if: always()
+        working-directory: frontend
+        run: |
+          npm run e2e:cleanup || true
+          npm run e2e:cleanup:local || true
+
+      - name: Stop Docker stack
+        if: always()
+        run: docker compose down -v

@@ -89,12 +89,14 @@ def test_operations_catalogs_cover_month8_release_readiness_scope() -> None:
     }
     assert {gate.gate_id for gate in gates.gates} >= {
         "backend_tests",
+        "migration_manifest",
         "frontend_build",
         "no_raw_phi_log_scan",
         "retrieval_eval",
         "performance_smoke",
         "docker_build",
         "repo_hygiene",
+        "playwright_smoke",
         "browser_e2e",
         "deployment_smoke",
     }
@@ -137,5 +139,13 @@ def test_ci_and_release_check_include_performance_smoke_gate() -> None:
 
     assert "Run performance smoke" in ci
     assert "scripts/performance-smoke.py --mode asgi --json" in ci
+    assert "Check Postgres migration manifest" in ci
+    assert "python scripts/check-migrations.py" in ci
+    assert "Check repo hygiene" in ci
+    assert "git diff --check" in ci
+    assert "Playwright smoke" in ci
+    assert "npm run e2e:smoke" in ci
     assert "Performance smoke" in release_check
     assert "scripts/performance-smoke.py\" --mode asgi" in release_check
+    assert "Postgres migration manifest" in release_check
+    assert "scripts/check-migrations.py" in release_check

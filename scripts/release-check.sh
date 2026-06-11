@@ -68,6 +68,10 @@ run_step "Python test suite" \
   env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="${repo_root}/src" \
   "${python_bin}" -m pytest -q
 
+run_step "Postgres migration manifest" \
+  env PYTHONPATH="${repo_root}/src" \
+  "${python_bin}" "${repo_root}/scripts/check-migrations.py"
+
 run_step "Retrieval quality evaluation" "${python_bin}" "${repo_root}/scripts/evaluate-retrieval.py"
 
 run_step "Performance smoke" \

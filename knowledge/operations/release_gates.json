@@ -13,6 +13,16 @@
       "notes": ["Runs all backend unit and integration tests available in the repo."]
     },
     {
+      "gate_id": "migration_manifest",
+      "category": "backend",
+      "status": "required",
+      "command": "PYTHONPATH=src python scripts/check-migrations.py",
+      "evidence": "migration manifest checker exit code 0",
+      "owner": "backend",
+      "blocking": true,
+      "notes": ["Rejects duplicate, invalid, non-contiguous, or checksum-duplicated Postgres migration files."]
+    },
+    {
       "gate_id": "frontend_build",
       "category": "frontend",
       "status": "required",
@@ -71,6 +81,16 @@
       "owner": "all",
       "blocking": true,
       "notes": ["Does not assert clean working tree; user-owned untracked files may exist."]
+    },
+    {
+      "gate_id": "playwright_smoke",
+      "category": "e2e",
+      "status": "required",
+      "command": "docker compose up -d --build && cd frontend && npm run e2e:smoke",
+      "evidence": "bounded Playwright smoke spec exit code 0",
+      "owner": "frontend",
+      "blocking": true,
+      "notes": ["CI runs a narrow login/authenticated-shell smoke through the Docker stack."]
     },
     {
       "gate_id": "browser_e2e",

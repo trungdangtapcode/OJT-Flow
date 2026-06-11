@@ -12,8 +12,9 @@ gates needed to measure and block obvious regressions.
   ratio.
 - F158 observability dashboard signal contract. This is a dashboard spec, not a
   hosted dashboard renderer.
-- F162 CI gates for backend tests, frontend build, Docker build, retrieval eval,
-  PHI log scan, repo hygiene, and performance smoke.
+- F162 CI gates for backend tests, migration manifest integrity, frontend build,
+  Docker build, retrieval eval, PHI log scan, performance smoke, and bounded
+  Playwright smoke.
 - F173 deployment smoke command that prints the public URL, frontend status, API
   health, authenticated readiness/config/retrieval checks, and sanitized status
   details.
@@ -96,14 +97,16 @@ Authenticated API checks fail unless `OJT_SMOKE_BEARER_TOKEN` or
 `.github/workflows/ci.yml` now runs:
 
 - backend tests;
+- Postgres migration manifest integrity;
 - raw-PHI log scan;
 - retrieval evaluation;
 - performance smoke;
 - frontend build;
-- Docker API/frontend builds.
+- Docker API/frontend builds;
+- bounded Playwright smoke through the Docker stack.
 
-`scripts/release-check.sh` also runs performance smoke before frontend build and
-Docker/E2E checks.
+`scripts/release-check.sh` also runs the migration manifest check and performance
+smoke before frontend build and Docker/E2E checks.
 
 ## Observability Contract
 
@@ -135,12 +138,15 @@ OJT_STORAGE_BACKEND=memory PYTHONPATH=src pytest -q \
   tests/test_api.py::test_runtime_routes_use_api_settings_dependency
 
 OJT_STORAGE_BACKEND=memory PYTHONPATH=src python scripts/performance-smoke.py --mode asgi
+PYTHONPATH=src python scripts/check-migrations.py
 PYTHONPATH=src python scripts/deployment-smoke.py --allow-missing-auth --json
+cd frontend && npx playwright test --list e2e/smoke.spec.ts
 
 PYTHONPATH=src python -m py_compile \
   src/ojtflow/core/contracts/operations.py \
   src/ojtflow/infrastructure/operations.py \
   src/ojtflow/interfaces/api/routes/runtime.py \
   scripts/performance-smoke.py \
-  scripts/deployment-smoke.py
+  scripts/deployment-smoke.py \
+  scripts/check-migrations.py
 ```

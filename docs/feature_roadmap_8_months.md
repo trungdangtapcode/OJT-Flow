@@ -196,7 +196,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F139-F145 | Implemented | Added Month 7 interoperability adapters for Bulk FHIR NDJSON import/export, HL7 v2 MSH/PID/OBR/OBX parsing and Observation mapping with provenance, DICOM metadata profiling, ImagingStudy-like mapping without pixel processing, DocumentReference-like mapping, API endpoints, docs, and tests. |
 | 2026-06-11 | F146-F155 | Implemented | Added Month 7 analytics and external-data workflow foundation: data-driven OMOP mapping profile, vocabulary candidate catalog, OMOP preview, DQD compatibility notes, cohort/research workflow boundaries, external connector registry, external API cache metadata, source ingestion approval preview, transparent source link launchers, ETL manifest export, API endpoints, docs, and tests. |
 | 2026-06-11 | F156-F157, F173 | Implemented | Added data-driven performance budgets, bounded load-smoke scenarios, `scripts/performance-smoke.py`, CI/release-check performance gate, deployment smoke plan, `scripts/deployment-smoke.py` with public URL and frontend build-version summary, runtime admin APIs, docs, and tests. |
-| 2026-06-11 | F162 | Started | Added a data-driven release gate catalog, CI performance-smoke gate, and release-check integration. Remaining work: migration duplicate check as an explicit CI step and a bounded Playwright smoke job in CI. |
+| 2026-06-11 | F162 | Implemented | Added explicit CI gates for backend tests, Postgres migration manifest integrity, frontend build, Docker build, retrieval eval, PHI log scan, performance smoke, and bounded Playwright smoke through the Docker stack; release-check now runs migration and performance gates locally. |
 | 2026-06-11 | F158 | Started | Added a data-driven observability dashboard signal contract covering API, workflow, Assistant, retrieval, background jobs, governance/security, and LLM/OCR cost panels. Hosted metrics backend, OpenTelemetry export, and rendered dashboard remain follow-up scope. |
 
 ## Feature Backlog
@@ -385,7 +385,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F159 Add structured logs with request IDs, workflow IDs, user IDs, tenant IDs, and redaction status.
 - [ ] F160 Add OpenTelemetry traces for assistant stream, retrieval pipeline, document extraction, and workflow orchestration.
 - [ ] F161 Add production Docker Compose profile and cloud deployment manifests with explicit env docs.
-- [ ] F162 Add CI gates for backend tests, frontend build, migration duplicate check, repo hygiene, retrieval eval, and critical Playwright smoke tests. _(Started: CI has backend, frontend, Docker, retrieval eval, PHI scan, and performance smoke; release-check has repo hygiene and Playwright E2E. Explicit CI migration-duplicate and bounded Playwright smoke remain.)_
+- [x] F162 Add CI gates for backend tests, frontend build, migration duplicate check, repo hygiene, retrieval eval, and critical Playwright smoke tests.
 - [ ] F163 Add seed-free production mode that requires real configured auth, storage, LLM, and source inventory.
 - [ ] F164 Add demo mode that is explicitly labeled and isolated from production data.
 - [ ] F165 Add release checklist for security, migration, data retention, external providers, OAuth, logs, and backup/restore.
