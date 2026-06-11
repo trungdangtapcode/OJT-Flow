@@ -3,6 +3,8 @@ import * as React from "react";
 import {
   useRetrievalGraphContextsQuery,
   useRetrievalGraphNeighborhoodQuery,
+  useRetrievalJudgmentSummaryQuery,
+  useRetrievalJudgmentsQuery,
   useRetrievalPresetsQuery,
   useRetrievalSearchOptionsQuery,
   useRetrievalSearchMutation,
@@ -37,6 +39,14 @@ export function useRetrievalPageController(): {
   const graphContextsQuery = useRetrievalGraphContextsQuery({ limit: 20 });
   const graphNeighborhoodResultQuery =
     useRetrievalGraphNeighborhoodQuery(graphNeighborhoodQuery);
+  const regressionJudgmentsQuery = useRetrievalJudgmentsQuery(
+    { limit: 1000 },
+    { enabled: true },
+  );
+  const regressionSummaryQuery = useRetrievalJudgmentSummaryQuery(
+    { limit: 1000 },
+    { enabled: true },
+  );
 
   return retrievalPageProps({
     graphContextsQuery,
@@ -44,6 +54,8 @@ export function useRetrievalPageController(): {
     graphNeighborhoodResultQuery,
     integritySession,
     presetsQuery,
+    regressionJudgmentsQuery,
+    regressionSummaryQuery,
     runtimeQuery,
     schemasQuery,
     searchMutation,

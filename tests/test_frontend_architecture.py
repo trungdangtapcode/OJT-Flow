@@ -709,6 +709,13 @@ RETRIEVAL_SPLIT_FILES = [
     / "features"
     / "retrieval"
     / "components"
+    / "retrieval-regression-dashboard.tsx",
+    REPO_ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "retrieval"
+    / "components"
     / "retrieval-runtime-status.tsx",
     REPO_ROOT
     / "frontend"
@@ -2690,6 +2697,15 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
         / "retrieval"
         / "components"
         / "relevance-judgment-control.tsx"
+    ).read_text(encoding="utf-8")
+    retrieval_regression_dashboard = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "features"
+        / "retrieval"
+        / "components"
+        / "retrieval-regression-dashboard.tsx"
     ).read_text(encoding="utf-8")
     retrieval_runtime_status = (
         REPO_ROOT
@@ -8464,6 +8480,13 @@ def test_retrieval_page_surfaces_runtime_ranking_stack() -> None:
     assert "RuntimeDiversityBadge" in retrieval_search_results_header
     assert "RetrievalRuntimeStatusStrip" in retrieval_results_column
     assert "./retrieval-runtime-status" in retrieval_results_column
+    assert "RetrievalRegressionDashboard" in retrieval_query_column
+    assert "retrievalPageRegressionDashboardProps" in retrieval_page_query_column_props
+    assert "Regression dashboard" in retrieval_regression_dashboard
+    assert "Precision@k" in retrieval_regression_dashboard
+    assert "MAP@k" in retrieval_regression_dashboard
+    assert "useRetrievalJudgmentsQuery" in retrieval_page_controller_hook
+    assert "components/retrieval-regression-dashboard" not in retrieval_page
     assert "components/retrieval-runtime-status" not in retrieval_page
     assert "function RerankBadge" not in retrieval_page
     assert "function DiversityBadge" not in retrieval_page

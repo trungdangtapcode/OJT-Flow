@@ -473,9 +473,11 @@ export function useRetrievalJudgmentsQuery(params: {
   run_id?: string | null;
   evidence_id?: string | null;
   limit?: number;
-}) {
+}, options: { enabled?: boolean } = {}) {
+  const enabled =
+    options.enabled ?? Boolean(params.query || params.run_id || params.evidence_id);
   return useQuery({
-    enabled: Boolean(params.query || params.run_id || params.evidence_id),
+    enabled,
     queryKey: queryKeys.retrievalJudgments(params),
     queryFn: () => listRetrievalJudgments(params),
   });
@@ -484,9 +486,9 @@ export function useRetrievalJudgmentsQuery(params: {
 export function useRetrievalJudgmentSummaryQuery(params: {
   query?: string | null;
   limit?: number;
-}) {
+}, options: { enabled?: boolean } = {}) {
   return useQuery({
-    enabled: Boolean(params.query),
+    enabled: options.enabled ?? Boolean(params.query),
     queryKey: queryKeys.retrievalJudgmentSummary(params),
     queryFn: () => getRetrievalJudgmentSummary(params),
   });

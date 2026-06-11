@@ -130,6 +130,11 @@ the compact runtime status strip composition and rerank/diversity badges.
 neighborhood lookup over `/retrieval/graph/contexts` and
 `/retrieval/graph/neighborhood`; the page controller owns only the submitted
 neighborhood query state and server-state hook wiring.
+`retrieval-regression-dashboard.tsx` owns the admin-facing retrieval regression
+dashboard: aggregate relevance-label health, active-run evaluation metrics,
+and recent labeled-query slices. It consumes judgment summary/list data through
+`retrieval-page-regression-dashboard-props.ts` and does not call the API
+directly.
 `integrity-panel.tsx` owns only the index-integrity card shell and report
 presence branch. `integrity-panel-header.tsx` owns title/status actions,
 `integrity-summary-metrics.tsx` owns report metric composition,
