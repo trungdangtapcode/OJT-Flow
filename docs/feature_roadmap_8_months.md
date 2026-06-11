@@ -195,6 +195,9 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F138 | Implemented | Added data-driven non-diagnostic/non-treatment disclaimer policy, authenticated runtime disclaimer API, route-aware app-shell banners for Assistant, Workbench, Workflows, Reviews, Retrieval, Audit, Schemas, Settings, and Help, plus docs/tests. |
 | 2026-06-11 | F139-F145 | Implemented | Added Month 7 interoperability adapters for Bulk FHIR NDJSON import/export, HL7 v2 MSH/PID/OBR/OBX parsing and Observation mapping with provenance, DICOM metadata profiling, ImagingStudy-like mapping without pixel processing, DocumentReference-like mapping, API endpoints, docs, and tests. |
 | 2026-06-11 | F146-F155 | Implemented | Added Month 7 analytics and external-data workflow foundation: data-driven OMOP mapping profile, vocabulary candidate catalog, OMOP preview, DQD compatibility notes, cohort/research workflow boundaries, external connector registry, external API cache metadata, source ingestion approval preview, transparent source link launchers, ETL manifest export, API endpoints, docs, and tests. |
+| 2026-06-11 | F156-F157, F173 | Implemented | Added data-driven performance budgets, bounded load-smoke scenarios, `scripts/performance-smoke.py`, CI/release-check performance gate, deployment smoke plan, `scripts/deployment-smoke.py` with public URL and frontend build-version summary, runtime admin APIs, docs, and tests. |
+| 2026-06-11 | F162 | Started | Added a data-driven release gate catalog, CI performance-smoke gate, and release-check integration. Remaining work: migration duplicate check as an explicit CI step and a bounded Playwright smoke job in CI. |
+| 2026-06-11 | F158 | Started | Added a data-driven observability dashboard signal contract covering API, workflow, Assistant, retrieval, background jobs, governance/security, and LLM/OCR cost panels. Hosted metrics backend, OpenTelemetry export, and rendered dashboard remain follow-up scope. |
 
 ## Feature Backlog
 
@@ -376,13 +379,13 @@ Keep this section updated when roadmap items move from planning into code.
 
 ### Month 8: Scale, Quality, Deployment, And Release Readiness
 
-- [ ] F156 Add load tests for workflow creation, retrieval search, assistant stream, upload parsing, and reindexing.
-- [ ] F157 Add performance budgets for p50/p95 API latency, assistant first-token latency, retrieval latency, and upload processing time.
-- [ ] F158 Add observability dashboard with API metrics, job metrics, retrieval metrics, LLM cost, error rate, and queue depth.
+- [x] F156 Add load tests for workflow creation, retrieval search, assistant stream, upload parsing, and reindexing.
+- [x] F157 Add performance budgets for p50/p95 API latency, assistant first-token latency, retrieval latency, and upload processing time.
+- [ ] F158 Add observability dashboard with API metrics, job metrics, retrieval metrics, LLM cost, error rate, and queue depth. _(Started: data-driven dashboard signal contract exists; hosted metrics backend/rendered dashboard remain.)_
 - [ ] F159 Add structured logs with request IDs, workflow IDs, user IDs, tenant IDs, and redaction status.
 - [ ] F160 Add OpenTelemetry traces for assistant stream, retrieval pipeline, document extraction, and workflow orchestration.
 - [ ] F161 Add production Docker Compose profile and cloud deployment manifests with explicit env docs.
-- [ ] F162 Add CI gates for backend tests, frontend build, migration duplicate check, repo hygiene, retrieval eval, and critical Playwright smoke tests.
+- [ ] F162 Add CI gates for backend tests, frontend build, migration duplicate check, repo hygiene, retrieval eval, and critical Playwright smoke tests. _(Started: CI has backend, frontend, Docker, retrieval eval, PHI scan, and performance smoke; release-check has repo hygiene and Playwright E2E. Explicit CI migration-duplicate and bounded Playwright smoke remain.)_
 - [ ] F163 Add seed-free production mode that requires real configured auth, storage, LLM, and source inventory.
 - [ ] F164 Add demo mode that is explicitly labeled and isolated from production data.
 - [ ] F165 Add release checklist for security, migration, data retention, external providers, OAuth, logs, and backup/restore.
@@ -393,7 +396,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F170 Add end-user tutorial path: upload data, ask assistant, inspect evidence, approve review, export package.
 - [ ] F171 Add evaluator guide for B2B buyers explaining architecture, standards, governance, and limitations.
 - [ ] F172 Add security review packet with threat model, dataflow, dependency inventory, and known residual risks.
-- [ ] F173 Add deployment smoke test command that prints public URL, API health, auth status, retrieval status, and frontend build version.
+- [x] F173 Add deployment smoke test command that prints public URL, API health, auth status, retrieval status, and frontend build version.
 - [ ] F174 Add release candidate tag process after all blocking checks pass.
 - [ ] F175 Add post-release monitoring plan with incident triage, rollback, and regression evaluation.
 

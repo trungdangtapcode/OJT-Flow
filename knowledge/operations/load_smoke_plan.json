@@ -1,0 +1,88 @@
+{
+  "plan_id": "ojtflow_load_smoke_v0",
+  "version": "2026-06-11",
+  "scenarios": [
+    {
+      "scenario_id": "workflow_create",
+      "surface": "workflow_create",
+      "method": "POST",
+      "path": "/api/v1/workflows",
+      "repetitions": 4,
+      "warmup_requests": 1,
+      "expected_status": 200,
+      "max_p95_ms": 2200,
+      "max_error_ratio": 0,
+      "description": "Create governed lab CSV workflows through the public API path.",
+      "notes": ["Covers parser, validation, retrieval evidence, clinical package build, and persistence."]
+    },
+    {
+      "scenario_id": "retrieval_search",
+      "surface": "retrieval_search",
+      "method": "POST",
+      "path": "/api/v1/retrieval/search",
+      "repetitions": 5,
+      "warmup_requests": 1,
+      "expected_status": 200,
+      "max_p95_ms": 900,
+      "max_error_ratio": 0,
+      "description": "Search trusted evidence for a laboratory standards query.",
+      "notes": ["Uses seeded/static retrieval in ASGI smoke mode."]
+    },
+    {
+      "scenario_id": "assistant_stream",
+      "surface": "assistant_stream",
+      "method": "POST",
+      "path": "/api/v1/assistant/chat",
+      "repetitions": 2,
+      "warmup_requests": 0,
+      "expected_status": 200,
+      "max_p95_ms": 1800,
+      "max_error_ratio": 0,
+      "description": "Open an assistant stream and read the first live event.",
+      "notes": ["CI smoke mode uses deterministic local assistant behavior unless LLM is configured."]
+    },
+    {
+      "scenario_id": "upload_parse",
+      "surface": "upload_parse",
+      "method": "POST",
+      "path": "/api/v1/parse/upload/jobs",
+      "repetitions": 3,
+      "warmup_requests": 0,
+      "expected_status": 200,
+      "max_p95_ms": 1800,
+      "max_error_ratio": 0,
+      "description": "Parse a small uploaded CSV artifact through durable file parse jobs.",
+      "notes": ["Large OCR/PDF throughput remains a separate worker benchmark."]
+    },
+    {
+      "scenario_id": "reindex",
+      "surface": "reindex",
+      "method": "POST",
+      "path": "/api/v1/jobs/retrieval-reindex",
+      "repetitions": 2,
+      "warmup_requests": 0,
+      "expected_status": 200,
+      "max_p95_ms": 2500,
+      "max_error_ratio": 0,
+      "description": "Create and execute a local retrieval reindex background job.",
+      "notes": ["Queue-backed worker mode will need its own async worker benchmark later."]
+    },
+    {
+      "scenario_id": "runtime_readiness",
+      "surface": "runtime_readiness",
+      "method": "GET",
+      "path": "/api/v1/runtime/readiness",
+      "repetitions": 4,
+      "warmup_requests": 1,
+      "expected_status": 200,
+      "max_p95_ms": 1500,
+      "max_error_ratio": 0,
+      "description": "Read runtime readiness diagnostics used by operators and deployment smoke checks.",
+      "notes": ["Readiness must remain bounded even as the runtime surface grows."]
+    }
+  ],
+  "warnings": [
+    "The smoke plan is deterministic and bounded. It is not a replacement for sustained load testing.",
+    "HTTP mode requires a running API and a bearer token or authenticated cookie when auth is enabled."
+  ]
+}

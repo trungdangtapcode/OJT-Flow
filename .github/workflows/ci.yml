@@ -43,6 +43,12 @@ jobs:
           PYTHONPATH: src
         run: python scripts/evaluate-retrieval.py
 
+      - name: Run performance smoke
+        env:
+          OJT_STORAGE_BACKEND: memory
+          PYTHONPATH: src
+        run: python scripts/performance-smoke.py --mode asgi --json
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest

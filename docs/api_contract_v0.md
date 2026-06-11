@@ -2285,6 +2285,41 @@ If a readiness check fails, the check is marked `error` and exposes only a
 sanitized `error_type`; exception messages, DSNs, Redis URLs, and local paths are
 not returned.
 
+`GET /api/v1/runtime/performance-budgets`
+
+Returns the data-driven performance budget catalog for authenticated operators
+with `admin:read`. Response data includes catalog ID, version, environment,
+metrics, p95/ratio/count budgets, blocking flags, measurement commands, notes,
+and warnings. These are CI/local smoke budgets, not production SLOs.
+
+`GET /api/v1/runtime/load-smoke-plan`
+
+Returns bounded load-smoke scenarios for workflow creation, retrieval search,
+assistant stream, upload parsing, reindexing, and runtime readiness. Response
+data includes method, path, repetitions, warmup requests, expected status, p95
+budget, error-ratio budget, description, notes, and warnings.
+
+`GET /api/v1/runtime/observability-dashboard`
+
+Returns the observability dashboard signal contract for authenticated operators
+with `admin:read`. Response data includes dashboard panels for API health,
+workflow throughput, assistant streaming, retrieval quality, background jobs,
+governance/security, and LLM/OCR cost. The endpoint exposes the dashboard spec,
+not a hosted metrics backend.
+
+`GET /api/v1/runtime/release-gates`
+
+Returns CI, release, and manual deployment gate definitions. Response data
+includes gate ID, category, required/recommended/manual status, command,
+evidence, owner, blocking flag, notes, and warnings.
+
+`GET /api/v1/runtime/deployment-smoke-plan`
+
+Returns deployment smoke targets and expected checks. Response data includes
+frontend/API targets, URL env vars, default URLs, required and optional paths,
+expected statuses, required env variables, and warnings. The runnable smoke
+command is `PYTHONPATH=src python scripts/deployment-smoke.py`.
+
 `GET /api/v1/runtime/migrations`
 
 Returns sanitized migration diagnostics for authenticated operators. For

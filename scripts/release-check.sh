@@ -70,6 +70,10 @@ run_step "Python test suite" \
 
 run_step "Retrieval quality evaluation" "${python_bin}" "${repo_root}/scripts/evaluate-retrieval.py"
 
+run_step "Performance smoke" \
+  env OJT_STORAGE_BACKEND=memory PYTHONPATH="${repo_root}/src" \
+  "${python_bin}" "${repo_root}/scripts/performance-smoke.py" --mode asgi
+
 run_frontend_step "Frontend TypeScript/Vite build" npm run build
 
 if [[ "${skip_docker_build}" != "1" ]]; then

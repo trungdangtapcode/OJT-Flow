@@ -1,0 +1,100 @@
+{
+  "catalog_id": "ojtflow_release_gates_v0",
+  "version": "2026-06-11",
+  "gates": [
+    {
+      "gate_id": "backend_tests",
+      "category": "backend",
+      "status": "required",
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m pytest",
+      "evidence": "pytest exit code 0",
+      "owner": "backend",
+      "blocking": true,
+      "notes": ["Runs all backend unit and integration tests available in the repo."]
+    },
+    {
+      "gate_id": "frontend_build",
+      "category": "frontend",
+      "status": "required",
+      "command": "cd frontend && npm ci && npm run build",
+      "evidence": "Vite/TypeScript build exit code 0",
+      "owner": "frontend",
+      "blocking": true,
+      "notes": ["CI uses npm cache and frontend/package-lock.json."]
+    },
+    {
+      "gate_id": "no_raw_phi_log_scan",
+      "category": "security",
+      "status": "required",
+      "command": "PYTHONPATH=src python scripts/scan-no-raw-phi.py --self-test --allow-missing",
+      "evidence": "scanner exit code 0",
+      "owner": "security",
+      "blocking": true,
+      "notes": ["Verifies the logging guard scanner and any present log directories."]
+    },
+    {
+      "gate_id": "retrieval_eval",
+      "category": "retrieval",
+      "status": "required",
+      "command": "PYTHONPATH=src python scripts/evaluate-retrieval.py",
+      "evidence": "retrieval evaluation passes configured thresholds",
+      "owner": "retrieval",
+      "blocking": true,
+      "notes": ["Tracks hit@k, recall@k, MRR, NDCG, and source coverage for deterministic fixtures."]
+    },
+    {
+      "gate_id": "performance_smoke",
+      "category": "deployment",
+      "status": "required",
+      "command": "OJT_STORAGE_BACKEND=memory PYTHONPATH=src python scripts/performance-smoke.py --mode asgi",
+      "evidence": "load smoke report passed=true",
+      "owner": "platform",
+      "blocking": true,
+      "notes": ["Covers workflow creation, retrieval search, assistant stream, upload parse, reindex, and readiness."]
+    },
+    {
+      "gate_id": "docker_build",
+      "category": "docker",
+      "status": "required",
+      "command": "docker build --build-arg OJT_PYTHON_EXTRAS=parsing -t ojtflow-api:ci . && docker build -t ojtflow-frontend:ci ./frontend",
+      "evidence": "both Docker builds exit code 0",
+      "owner": "platform",
+      "blocking": true,
+      "notes": ["CI runs Docker build after backend and frontend pass."]
+    },
+    {
+      "gate_id": "repo_hygiene",
+      "category": "repo_hygiene",
+      "status": "required",
+      "command": "git diff --check && git diff --cached --check",
+      "evidence": "no whitespace or conflict-marker errors",
+      "owner": "all",
+      "blocking": true,
+      "notes": ["Does not assert clean working tree; user-owned untracked files may exist."]
+    },
+    {
+      "gate_id": "browser_e2e",
+      "category": "e2e",
+      "status": "recommended",
+      "command": "cd frontend && npm run e2e",
+      "evidence": "Playwright suite exit code 0 and cleanup assertion passes",
+      "owner": "frontend",
+      "blocking": false,
+      "notes": ["Recommended before release candidate; can be skipped in constrained local checks with explicit env flag."]
+    },
+    {
+      "gate_id": "deployment_smoke",
+      "category": "deployment",
+      "status": "manual",
+      "command": "PYTHONPATH=src python scripts/deployment-smoke.py --json",
+      "evidence": "public URL, health, readiness, auth, retrieval, and frontend checks printed",
+      "owner": "platform",
+      "blocking": true,
+      "notes": ["Requires deployed URLs or local running services."]
+    }
+  ],
+  "warnings": [
+    "Release gates are a minimum bar; customer pilots may require additional security, privacy, and compliance review.",
+    "Manual gates must capture evidence in the release checklist before tagging a release candidate."
+  ]
+}

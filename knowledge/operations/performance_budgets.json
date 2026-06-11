@@ -1,0 +1,110 @@
+{
+  "catalog_id": "ojtflow_performance_budgets_v0",
+  "version": "2026-06-11",
+  "environment": "local_dev_ci_baseline",
+  "metrics": [
+    {
+      "metric_id": "perf_workflow_create_p50",
+      "surface": "workflow_create",
+      "metric_name": "workflow creation p50 latency",
+      "percentile": "p50",
+      "budget_ms": 1200,
+      "blocking": false,
+      "measurement": "scripts/performance-smoke.py workflow_create scenario",
+      "notes": ["Tracked as a regression signal; p95 remains the blocking budget."]
+    },
+    {
+      "metric_id": "perf_workflow_create_p95",
+      "surface": "workflow_create",
+      "metric_name": "workflow creation p95 latency",
+      "percentile": "p95",
+      "budget_ms": 2200,
+      "blocking": true,
+      "measurement": "scripts/performance-smoke.py workflow_create scenario",
+      "notes": ["Includes parse, validation, static retrieval, clinical package build, and in-memory persistence in CI smoke mode."]
+    },
+    {
+      "metric_id": "perf_retrieval_search_p50",
+      "surface": "retrieval_search",
+      "metric_name": "retrieval search p50 latency",
+      "percentile": "p50",
+      "budget_ms": 500,
+      "blocking": false,
+      "measurement": "scripts/performance-smoke.py retrieval_search scenario",
+      "notes": ["Tracked as a regression signal; p95 remains the blocking budget."]
+    },
+    {
+      "metric_id": "perf_retrieval_search_p95",
+      "surface": "retrieval_search",
+      "metric_name": "retrieval search p95 latency",
+      "percentile": "p95",
+      "budget_ms": 900,
+      "blocking": true,
+      "measurement": "scripts/performance-smoke.py retrieval_search scenario",
+      "notes": ["Uses deterministic/static retrieval in CI. Postgres/vector production budgets should be tightened after load testing on target hardware."]
+    },
+    {
+      "metric_id": "perf_assistant_first_event_p50",
+      "surface": "assistant_stream",
+      "metric_name": "assistant first stream event p50 latency",
+      "percentile": "p50",
+      "budget_ms": 900,
+      "blocking": false,
+      "measurement": "scripts/performance-smoke.py assistant_stream scenario",
+      "notes": ["Tracked as a regression signal; p95 remains the blocking budget."]
+    },
+    {
+      "metric_id": "perf_assistant_first_event_p95",
+      "surface": "assistant_stream",
+      "metric_name": "assistant first stream event p95 latency",
+      "percentile": "p95",
+      "budget_ms": 1800,
+      "blocking": true,
+      "measurement": "scripts/performance-smoke.py assistant_stream scenario",
+      "notes": ["Measures first event in deterministic local mode; external LLM first-token budgets are tracked separately by deployment telemetry."]
+    },
+    {
+      "metric_id": "perf_upload_parse_p95",
+      "surface": "upload_parse",
+      "metric_name": "small CSV upload parse p95 latency",
+      "percentile": "p95",
+      "budget_ms": 1800,
+      "blocking": true,
+      "measurement": "scripts/performance-smoke.py upload_parse scenario",
+      "notes": ["Small artifact path only; large PDF/image OCR throughput belongs to a separate worker benchmark."]
+    },
+    {
+      "metric_id": "perf_reindex_p95",
+      "surface": "reindex",
+      "metric_name": "retrieval reindex job creation p95 latency",
+      "percentile": "p95",
+      "budget_ms": 2500,
+      "blocking": true,
+      "measurement": "scripts/performance-smoke.py reindex scenario",
+      "notes": ["Covers durable job creation and local execution mode for seeded knowledge."]
+    },
+    {
+      "metric_id": "perf_runtime_readiness_p95",
+      "surface": "runtime_readiness",
+      "metric_name": "runtime readiness p95 latency",
+      "percentile": "p95",
+      "budget_ms": 1500,
+      "blocking": true,
+      "measurement": "scripts/performance-smoke.py runtime_readiness scenario",
+      "notes": ["Readiness should stay fast enough for operator use and deployment smoke checks."]
+    },
+    {
+      "metric_id": "perf_error_ratio",
+      "surface": "workflow_create",
+      "metric_name": "performance smoke error ratio",
+      "budget_ratio": 0,
+      "blocking": true,
+      "measurement": "all performance smoke scenarios",
+      "notes": ["Any unexpected HTTP status or exception fails the smoke report."]
+    }
+  ],
+  "warnings": [
+    "These are CI/local smoke budgets, not production SLOs.",
+    "Production SLOs must be calibrated from real deployment telemetry and data volume."
+  ]
+}

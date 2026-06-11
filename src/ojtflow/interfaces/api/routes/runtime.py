@@ -55,6 +55,13 @@ from ojtflow.infrastructure.storage.consistency import (
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
 from ojtflow.infrastructure.ai_risk_register import load_ai_risk_register
 from ojtflow.infrastructure.disclaimers import load_disclaimer_policy
+from ojtflow.infrastructure.operations import (
+    load_deployment_smoke_plan,
+    load_load_smoke_plan,
+    load_observability_dashboard,
+    load_performance_budgets,
+    load_release_gates,
+)
 from ojtflow.infrastructure.owasp_llm_threat_model import load_owasp_llm_threat_model
 from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.application.tool_registry import tool_specs_json
@@ -369,6 +376,66 @@ async def runtime_owasp_llm_threat_model(
 
     governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     return ok(load_owasp_llm_threat_model(settings.resolved_owasp_llm_threat_model_path))
+
+
+@router.get("/runtime/performance-budgets")
+async def runtime_performance_budgets(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return performance budgets used by CI and release smoke checks."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(load_performance_budgets(settings.resolved_knowledge_dir))
+
+
+@router.get("/runtime/load-smoke-plan")
+async def runtime_load_smoke_plan(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return bounded load-smoke scenarios for release readiness."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(load_load_smoke_plan(settings.resolved_knowledge_dir))
+
+
+@router.get("/runtime/observability-dashboard")
+async def runtime_observability_dashboard(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return the observability dashboard signal contract."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(load_observability_dashboard(settings.resolved_knowledge_dir))
+
+
+@router.get("/runtime/release-gates")
+async def runtime_release_gates(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return CI, release, and manual deployment gate definitions."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(load_release_gates(settings.resolved_knowledge_dir))
+
+
+@router.get("/runtime/deployment-smoke-plan")
+async def runtime_deployment_smoke_plan(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return deployment smoke targets and expected checks."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(load_deployment_smoke_plan(settings.resolved_knowledge_dir))
 
 
 @router.post("/runtime/settings-history/rollback")

@@ -1,0 +1,42 @@
+{
+  "plan_id": "ojtflow_deployment_smoke_v0",
+  "version": "2026-06-11",
+  "required_env": [
+    "OJT_PUBLIC_URL or OJT_FRONTEND_URL",
+    "OJT_API_URL",
+    "OJT_SMOKE_BEARER_TOKEN for authenticated API checks"
+  ],
+  "targets": [
+    {
+      "target_id": "frontend",
+      "url_env_var": "OJT_FRONTEND_URL",
+      "default_url": "http://localhost:5173",
+      "required_paths": ["/"],
+      "optional_paths": ["/ai", "/workflows", "/help"],
+      "expected_statuses": [200],
+      "notes": ["Frontend smoke verifies the UI host responds; authenticated route rendering is covered by Playwright."]
+    },
+    {
+      "target_id": "api_public_health",
+      "url_env_var": "OJT_API_URL",
+      "default_url": "http://localhost:8000",
+      "required_paths": ["/health"],
+      "optional_paths": [],
+      "expected_statuses": [200],
+      "notes": ["Health is public and should be safe for load balancers."]
+    },
+    {
+      "target_id": "api_authenticated_readiness",
+      "url_env_var": "OJT_API_URL",
+      "default_url": "http://localhost:8000",
+      "required_paths": ["/api/v1/runtime/readiness", "/api/v1/runtime/config", "/api/v1/retrieval/sources"],
+      "optional_paths": ["/api/v1/runtime/secrets/health"],
+      "expected_statuses": [200],
+      "notes": ["Authenticated paths require OJT_SMOKE_BEARER_TOKEN or a session cookie header."]
+    }
+  ],
+  "warnings": [
+    "The smoke command prints the public URL summary and sanitized status only.",
+    "Do not pass raw OAuth client secrets, OpenAI keys, or PHI into smoke command arguments."
+  ]
+}
