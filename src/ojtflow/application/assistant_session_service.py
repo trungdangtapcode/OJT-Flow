@@ -14,11 +14,13 @@ from ojtflow.core.contracts.assistant import (
     AssistantStreamReplay,
 )
 from ojtflow.core.time import utc_now
+from ojtflow.data_tools.phi import classify_text
 
 MAX_WORKFLOW_REFS_PER_MESSAGE = 50
 MAX_SESSION_SEARCH_CHARS = 160
 DEFAULT_SESSION_TITLE = "New chat"
 MAX_GENERATED_TITLE_CHARS = 72
+PHI_CLASSIFICATION_PAYLOAD_KEY = "phi_classification"
 WORKFLOW_REF_PAYLOAD_KEYS = frozenset(
     {"workflow_id", "workflow_ids", "workflow_ref", "workflow_refs"}
 )
@@ -129,7 +131,14 @@ class AssistantSessionService:
         payload: dict[str, Any] | None = None,
         workflow_refs: list[str] | None = None,
     ) -> AssistantChatMessage:
-        clean_payload = payload or {}
+        clean_payload = dict(payload or {})
+        phi_classification = classify_text(
+            _message_classification_text(content=content, payload=clean_payload),
+            target_type="chat_message",
+        )
+        clean_payload[PHI_CLASSIFICATION_PAYLOAD_KEY] = phi_classification.model_dump(
+            mode="json"
+        )
         detail_before_append = None
         if role == "user":
             detail_before_append = self.repository.get_session(
@@ -322,6 +331,35 @@ def _clean_workflow_refs(workflow_refs: list[str]) -> list[str]:
         if len(refs) >= MAX_WORKFLOW_REFS_PER_MESSAGE:
             break
     return refs
+
+
+def _message_classification_text(*, content: str, payload: dict[str, Any]) -> str:
+    parts = [content]
+    parts.extend(_payload_text_values(payload))
+    return "\n".join(part for part in parts if part)
+
+
+def _payload_text_values(value: Any, *, depth: int = 0) -> list[str]:
+    if depth > 4:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            parts.extend(_payload_text_values(item, depth=depth + 1))
+        return parts
+    if not isinstance(value, dict):
+        return []
+    parts: list[str] = []
+    for key, nested in value.items():
+        if key == PHI_CLASSIFICATION_PAYLOAD_KEY:
+            continue
+        if key in {"data", "raw_text", "extracted_text", "text", "content", "message"}:
+            parts.extend(_payload_text_values(nested, depth=depth + 1))
+        elif key in {"context", "attachment", "attachments"}:
+            parts.extend(_payload_text_values(nested, depth=depth + 1))
+    return parts
 
 
 def _extract_workflow_refs(value: Any, *, depth: int = 0) -> list[str]:

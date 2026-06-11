@@ -4,19 +4,7 @@ from __future__ import annotations
 
 from ojtflow.core.contracts.data import TransformationPlan, ValidationReport
 from ojtflow.core.contracts.enums import Severity
-
-SENSITIVE_FIELD_TOKENS = {
-    "patient",
-    "name",
-    "address",
-    "phone",
-    "email",
-    "insurance",
-    "diagnosis",
-    "medication",
-    "medical_history",
-    "ssn",
-}
+from ojtflow.core.policy.phi_policy import matches_phi_field_policy
 
 PROMPT_INJECTION_PATTERNS = (
     "ignore previous",
@@ -43,8 +31,7 @@ def review_required(report: ValidationReport, plan: TransformationPlan | None = 
 def looks_sensitive_field(field_name: str) -> bool:
     """Heuristic high-recall sensitive field detector for MVP fixtures."""
 
-    normalized = field_name.lower().replace("-", "_").replace(" ", "_")
-    return any(token in normalized for token in SENSITIVE_FIELD_TOKENS)
+    return matches_phi_field_policy(field_name)
 
 
 def contains_prompt_injection(text: str) -> bool:
@@ -52,4 +39,3 @@ def contains_prompt_injection(text: str) -> bool:
 
     lowered = text.lower()
     return any(pattern in lowered for pattern in PROMPT_INJECTION_PATTERNS)
-

@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
+from ojtflow.core.contracts.phi import PhiClassification
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 
@@ -257,6 +258,7 @@ class AssistantChatMessage(ContractModel):
     content: str = ""
     workflow_refs: list[str] = Field(default_factory=list)
     payload: dict[str, Any] = Field(default_factory=dict)
+    phi_classification: PhiClassification | None = None
     created_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
 

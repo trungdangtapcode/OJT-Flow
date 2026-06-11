@@ -1186,6 +1186,7 @@ class PostgresAssistantSessionRepository:
             content=content,
             workflow_refs=workflow_refs or [],
             payload=payload or {},
+            phi_classification=(payload or {}).get("phi_classification"),
             created_at=now,
         )
         with self.backbone.connect() as connection:
@@ -1744,6 +1745,7 @@ def _postgres_assistant_message_from_row(row) -> AssistantChatMessage:
             row["workflow_refs"] if "workflow_refs" in row else []
         ),
         payload=payload,
+        phi_classification=payload.get("phi_classification"),
         created_at=row["created_at"].isoformat(),
     )
 

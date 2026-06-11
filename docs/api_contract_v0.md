@@ -62,6 +62,13 @@ Workspace RBAC is enforced through
 - operational diagnostics require `admin:read`; reindex/repair marker writes
   require `admin:write`.
 
+PHI and sensitive-data classification is exposed as shared metadata, not as a
+separate endpoint. The `phi_classification` object appears on `DataProfile`,
+`ValidationReport`, `TransformationOutput`, `RedactionPreview`, persisted
+`AssistantChatMessage` objects, and retrieved chunk evidence under
+`Evidence.locator.phi_classification`. See `docs/phi_classification_v0.md` for
+the contract, policy model, and verification commands.
+
 Default persistence uses Postgres plus local file-backed artifacts:
 
 ```text

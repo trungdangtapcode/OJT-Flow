@@ -8,6 +8,7 @@ from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel
 from ojtflow.core.contracts.issue import SourceLocation
+from ojtflow.core.contracts.phi import PhiClassification
 from ojtflow.core.ids import new_id
 
 
@@ -40,5 +41,6 @@ class RedactionPreview(ContractModel):
     original_length: int = Field(ge=0)
     redacted_text: str
     matches: list[RedactionMatch] = Field(default_factory=list)
+    phi_classification: PhiClassification | None = None
     external_provider_block_recommended: bool = False
     warnings: list[str] = Field(default_factory=list)

@@ -59,6 +59,13 @@ from ojtflow.core.contracts.governance import (
     WorkspaceSettingsRecord,
 )
 from ojtflow.core.contracts.issue import Issue, SourceLocation
+from ojtflow.core.contracts.phi import (
+    PhiClassification,
+    PhiClassificationPolicy,
+    PhiFieldRule,
+    PhiFinding,
+    PhiPatternRule,
+)
 from ojtflow.core.contracts.review import HumanReview
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.terminology import TerminologyCandidate, UnitValidationResult
@@ -105,6 +112,11 @@ __all__ = [
     "OrganizationMembershipRecord",
     "OrganizationRecord",
     "ParsedData",
+    "PhiClassification",
+    "PhiClassificationPolicy",
+    "PhiFieldRule",
+    "PhiFinding",
+    "PhiPatternRule",
     "RbacPermissionDefinition",
     "RbacPolicy",
     "RbacRoleDefinition",

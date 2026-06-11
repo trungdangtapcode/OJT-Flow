@@ -45,6 +45,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalTrace,
 )
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
+from ojtflow.data_tools.phi import classify_text
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
@@ -3454,6 +3455,11 @@ def retrieval_safety_flags(query: RetrievalQuery) -> list[str]:
 def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence:
     """Convert an internal chunk to the public evidence contract."""
 
+    phi_classification = classify_text(
+        chunk.content,
+        source_ref=chunk.source_id,
+        target_type="chunk",
+    )
     locator = {
         **chunk.locator,
         "chunk_id": chunk.chunk_id,
@@ -3461,6 +3467,7 @@ def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence
         "clinical_domain": chunk.clinical_domain,
         "standard_system": chunk.standard_system,
         "metadata": chunk.metadata,
+        "phi_classification": phi_classification.model_dump(mode="json"),
     }
     return Evidence(
         source_type=chunk.source_type,

@@ -1203,6 +1203,7 @@ class SQLiteAssistantSessionRepository:
             content=content,
             workflow_refs=workflow_refs or [],
             payload=payload or {},
+            phi_classification=(payload or {}).get("phi_classification"),
             created_at=now,
         )
         with self.backbone.connect() as connection:
@@ -1652,6 +1653,7 @@ def _sqlite_assistant_session_from_row(row) -> AssistantChatSessionSummary:
 
 
 def _sqlite_assistant_message_from_row(row) -> AssistantChatMessage:
+    payload = _json_load(row["payload_json"])
     return AssistantChatMessage(
         message_id=row["message_id"],
         session_id=row["session_id"],
@@ -1661,7 +1663,8 @@ def _sqlite_assistant_message_from_row(row) -> AssistantChatMessage:
         workflow_refs=_json_load_list(
             row["workflow_refs_json"] if "workflow_refs_json" in row.keys() else None
         ),
-        payload=_json_load(row["payload_json"]),
+        payload=payload,
+        phi_classification=payload.get("phi_classification"),
         created_at=row["created_at"],
     )
 

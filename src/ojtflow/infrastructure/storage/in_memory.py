@@ -525,6 +525,7 @@ class InMemoryAssistantSessionRepository:
             content=content,
             workflow_refs=workflow_refs or [],
             payload=payload or {},
+            phi_classification=(payload or {}).get("phi_classification"),
         )
         self._messages.setdefault(session_id, []).append(deepcopy(message))
         session.message_count = len(self._messages[session_id])

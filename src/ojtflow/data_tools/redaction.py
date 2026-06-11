@@ -5,19 +5,13 @@ from __future__ import annotations
 import csv
 import io
 import re
-from collections.abc import Iterable
 
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.issue import SourceLocation
+from ojtflow.core.contracts.phi import PhiClassificationPolicy, PhiPatternRule
 from ojtflow.core.contracts.redaction import RedactionMatch, RedactionPreview
-from ojtflow.core.policy.risk_rules import looks_sensitive_field
-
-
-SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
-PHONE_PATTERN = re.compile(
-    r"(?<!\d)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)"
-)
+from ojtflow.core.policy.phi_policy import default_phi_policy, match_phi_field_rule
+from ojtflow.data_tools.phi import classify_text
 
 
 def build_redaction_preview(
@@ -27,20 +21,18 @@ def build_redaction_preview(
 ) -> RedactionPreview:
     """Return redacted text and match metadata without mutating source content."""
 
+    policy = default_phi_policy()
     matches: list[RedactionMatch] = []
     redacted_text = _redact_sensitive_csv_fields(
         text,
         matches=matches,
         enabled=data_format in {DataFormat.CSV, None},
+        policy=policy,
     )
     redacted_text = _redact_regex_matches(
         redacted_text,
         matches=matches,
-        rules=(
-            ("ssn", SSN_PATTERN, "[REDACTED:SSN]", "SSN-like value detected."),
-            ("email", EMAIL_PATTERN, "[REDACTED:EMAIL]", "Email address detected."),
-            ("phone", PHONE_PATTERN, "[REDACTED:PHONE]", "Phone-like value detected."),
-        ),
+        rules=policy.pattern_rules,
     )
     warnings = []
     if matches:
@@ -48,11 +40,19 @@ def build_redaction_preview(
             "Potential sensitive text was found. Review redacted preview before "
             "sending content to external LLM or OCR providers."
         )
+    phi_classification = classify_text(
+        text,
+        data_format=data_format,
+        target_type="document",
+    )
     return RedactionPreview(
         original_length=len(text),
         redacted_text=redacted_text,
         matches=matches,
-        external_provider_block_recommended=bool(matches),
+        phi_classification=phi_classification,
+        external_provider_block_recommended=(
+            bool(matches) or phi_classification.external_provider_block_recommended
+        ),
         warnings=warnings,
     )
 
@@ -62,6 +62,7 @@ def _redact_sensitive_csv_fields(
     *,
     matches: list[RedactionMatch],
     enabled: bool,
+    policy: PhiClassificationPolicy,
 ) -> str:
     if not enabled or "," not in text or "\n" not in text:
         return text
@@ -76,7 +77,7 @@ def _redact_sensitive_csv_fields(
     sensitive_columns = [
         index
         for index, header in enumerate(headers)
-        if header and looks_sensitive_field(header)
+        if header and match_phi_field_rule(header, policy=policy)
     ]
     if not sensitive_columns:
         return text
@@ -93,7 +94,7 @@ def _redact_sensitive_csv_fields(
             if value in (None, ""):
                 continue
             header = headers[column_index]
-            kind = _field_redaction_kind(header)
+            kind = _field_redaction_kind(header, policy)
             replacement = f"[REDACTED:{kind.upper()}]"
             matches.append(
                 RedactionMatch(
@@ -118,10 +119,12 @@ def _redact_regex_matches(
     text: str,
     *,
     matches: list[RedactionMatch],
-    rules: Iterable[tuple[str, re.Pattern[str], str, str]],
+    rules: list[PhiPatternRule],
 ) -> str:
     redacted = text
-    for kind, pattern, replacement, reason in rules:
+    for rule in rules:
+        pattern = re.compile(rule.pattern, re.IGNORECASE)
+        replacement = f"[REDACTED:{rule.kind.upper()}]"
         pieces: list[str] = []
         cursor = 0
         found = False
@@ -132,11 +135,11 @@ def _redact_regex_matches(
             pieces.append(replacement)
             matches.append(
                 RedactionMatch(
-                    kind=kind,
+                    kind=rule.kind,
                     value_preview=_preview(value),
                     replacement=replacement,
-                    confidence=0.9,
-                    reason=reason,
+                    confidence=rule.confidence,
+                    reason=rule.reason,
                     start=match.start(),
                     end=match.end(),
                 )
@@ -148,17 +151,9 @@ def _redact_regex_matches(
     return redacted
 
 
-def _field_redaction_kind(field_name: str):
-    normalized = field_name.lower().replace("-", "_").replace(" ", "_")
-    if "ssn" in normalized:
-        return "ssn"
-    if "patient" in normalized:
-        return "patient_identifier"
-    if "email" in normalized:
-        return "email"
-    if "phone" in normalized:
-        return "phone"
-    return "sensitive_field"
+def _field_redaction_kind(field_name: str, policy: PhiClassificationPolicy) -> str:
+    rule = match_phi_field_rule(field_name, policy=policy)
+    return rule.kind if rule else "sensitive_field"
 
 
 def _preview(value: str) -> str:

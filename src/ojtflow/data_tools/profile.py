@@ -8,6 +8,7 @@ from typing import Any
 from ojtflow.core.contracts.data import DataProfile, FieldProfile, ParsedData
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.policy.risk_rules import looks_sensitive_field
+from ojtflow.data_tools.phi import classify_parsed_data
 
 
 def profile_data(parsed: ParsedData) -> DataProfile:
@@ -45,6 +46,7 @@ def profile_data(parsed: ParsedData) -> DataProfile:
         row_count=len(records) if records else _non_record_count(parsed.content),
         column_count=len(fields),
         fields=profiles,
+        phi_classification=classify_parsed_data(parsed),
         warnings=parsed.parser_warnings,
     )
 
@@ -77,6 +79,7 @@ def _profile_markdown(parsed: ParsedData) -> DataProfile:
                 )
                 for field in [k for k in (parsed.records[0].keys() if parsed.records else []) if k != "_source_row"]
             ],
+            phi_classification=classify_parsed_data(parsed),
             warnings=parsed.parser_warnings,
         )
 
@@ -110,6 +113,7 @@ def _profile_markdown(parsed: ParsedData) -> DataProfile:
         row_count=1,
         column_count=0,
         fields=pseudo_fields,
+        phi_classification=classify_parsed_data(parsed),
         warnings=parsed.parser_warnings,
     )
 
@@ -164,4 +168,3 @@ def _infer_type(value: Any) -> str:
         return "date"
     except ValueError:
         return "string"
-

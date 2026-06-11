@@ -319,7 +319,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F120 Add RBAC roles for viewer, operator, reviewer, data steward, admin, and auditor.
 - [x] F121 Add ownership checks across workflows, reviews, chat sessions, artifacts, source inventory, runtime settings, and exports.
 - [x] F122 Add service-account identity for ingestion jobs, CI, and automation.
-- [ ] F123 Add PHI classification contract for fields, rows, documents, chunks, chat messages, and generated outputs.
+- [x] F123 Add PHI classification contract for fields, rows, documents, chunks, chat messages, and generated outputs.
 - [ ] F124 Add PHI redaction policy engine with masking, suppression, tokenization placeholder, and review-gated reveal.
 - [ ] F125 Add no-raw-PHI logging guard and log scanner for development and CI.
 - [ ] F126 Add configurable external-provider policy controlling which data can be sent to OpenAI, OCR, embedding APIs, and external search APIs.
