@@ -59,6 +59,7 @@ from ojtflow.core.contracts.governance import (
     WorkspaceSettingsRecord,
 )
 from ojtflow.core.contracts.issue import Issue, SourceLocation
+from ojtflow.core.contracts.logging import LogPhiFinding, LogPhiScanResult
 from ojtflow.core.contracts.phi import (
     PhiClassification,
     PhiClassificationPolicy,
@@ -114,6 +115,8 @@ __all__ = [
     "FormatDetection",
     "HumanReview",
     "Issue",
+    "LogPhiFinding",
+    "LogPhiScanResult",
     "OrganizationGroupMembershipRecord",
     "OrganizationGroupRecord",
     "OrganizationMembershipRecord",

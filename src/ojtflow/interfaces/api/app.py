@@ -8,6 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from uuid import uuid4
 
 from ojtflow.core.errors import OJTFlowError
+from ojtflow.observability.logging_guard import install_no_raw_phi_filter
 from ojtflow.interfaces.api.responses import (
     http_exception_handler,
     ojtflow_exception_handler,
@@ -37,6 +38,7 @@ from ojtflow.interfaces.api.routes import (
 def create_app() -> FastAPI:
     """Create the local OJTFlow API app."""
 
+    install_no_raw_phi_filter()
     app = FastAPI(
         title="OJTFlow",
         version="0.1.0",

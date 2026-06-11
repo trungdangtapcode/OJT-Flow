@@ -33,6 +33,11 @@ jobs:
           PYTHONPATH: src
         run: python -m pytest
 
+      - name: Scan logs for raw PHI
+        env:
+          PYTHONPATH: src
+        run: python scripts/scan-no-raw-phi.py --self-test --allow-missing
+
       - name: Run retrieval evaluation fixture
         env:
           PYTHONPATH: src

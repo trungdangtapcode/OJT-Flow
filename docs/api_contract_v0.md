@@ -76,6 +76,10 @@ The response includes `policy_id`, `policy_version`, per-match action metadata,
 approve raw reveal through this endpoint; review-approved reveal is reserved for
 future governed review workflows. See `docs/phi_redaction_policy_v0.md`.
 
+Application logs are protected by a no-raw-PHI logging filter installed in the
+FastAPI app factory. CI also runs `scripts/scan-no-raw-phi.py` against log
+directories when present. See `docs/no_raw_phi_logging_v0.md`.
+
 Default persistence uses Postgres plus local file-backed artifacts:
 
 ```text
