@@ -246,6 +246,8 @@ def test_openapi_exposes_core_request_examples() -> None:
         ("/api/v1/retrieval/presets", "get", "RetrievalPresetsEnvelope"),
         ("/api/v1/retrieval/search-options", "get", "RetrievalSearchOptionsEnvelope"),
         ("/api/v1/retrieval/source-policies", "get", "RetrievalSourcePoliciesEnvelope"),
+        ("/api/v1/retrieval/corpus/adapters", "get", "RetrievalCorpusAdaptersEnvelope"),
+        ("/api/v1/retrieval/corpus/manifest", "get", "RetrievalCorpusManifestEnvelope"),
         ("/api/v1/retrieval/strategies", "get", "RetrievalStrategiesEnvelope"),
         ("/api/v1/retrieval/sources", "get", "RetrievalSourcesEnvelope"),
         ("/api/v1/retrieval/reindex", "post", "RetrievalReindexEnvelope"),
@@ -1358,6 +1360,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         retrieval_presets = await client.get("/api/v1/retrieval/presets")
         retrieval_search_options = await client.get("/api/v1/retrieval/search-options")
         retrieval_source_policies = await client.get("/api/v1/retrieval/source-policies")
+        retrieval_corpus_adapters = await client.get("/api/v1/retrieval/corpus/adapters")
+        retrieval_corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
         retrieval_strategies = await client.get("/api/v1/retrieval/strategies")
         retrieval_reindex = await client.post(
             "/api/v1/retrieval/reindex",
@@ -1438,6 +1442,10 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_search_options, expected_code="unauthorized")
     assert retrieval_source_policies.status_code == 401
     _assert_error_envelope(retrieval_source_policies, expected_code="unauthorized")
+    assert retrieval_corpus_adapters.status_code == 401
+    _assert_error_envelope(retrieval_corpus_adapters, expected_code="unauthorized")
+    assert retrieval_corpus_manifest.status_code == 401
+    _assert_error_envelope(retrieval_corpus_manifest, expected_code="unauthorized")
     assert retrieval_strategies.status_code == 401
     _assert_error_envelope(retrieval_strategies, expected_code="unauthorized")
     assert retrieval_reindex.status_code == 401
@@ -3995,6 +4003,30 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             and policy["evidence_tier"] == "authoritative_standard"
             and "FHIR-like profiling" in policy["clinical_scope"]
             for policy in policy_data["policies"]
+        )
+
+        corpus_adapters = await client.get("/api/v1/retrieval/corpus/adapters")
+        assert corpus_adapters.status_code == 200
+        adapter_data = corpus_adapters.json()["data"]
+        assert adapter_data["version"] == "corpus_adapters.v1"
+        assert any(
+            adapter["adapter_id"] == "external_loinc_selected_public_pages_v1"
+            and adapter["license"]["license_id"] == "loinc_terms"
+            and adapter["lifecycle_state"] == "candidate"
+            for adapter in adapter_data["adapters"]
+        )
+
+        corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
+        assert corpus_manifest.status_code == 200
+        manifest_data = corpus_manifest.json()["data"]
+        assert manifest_data["version"] == "corpus_ingestion_manifest.v1"
+        assert manifest_data["adapter_catalog_version"] == "corpus_adapters.v1"
+        assert manifest_data["item_count"] >= 1
+        assert any(
+            item["adapter_id"] == "local_medical_search_playbook_v1"
+            and item["content_hash"].startswith("sha256:")
+            and item["reviewer_state"] == "approved"
+            for item in manifest_data["items"]
         )
 
         strategies = await client.get("/api/v1/retrieval/strategies")

@@ -14,7 +14,11 @@ from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.retrieval_service import RetrievalService
-from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
+from ojtflow.infrastructure.retrieval.catalogs import load_corpus_adapter_catalog
+from ojtflow.infrastructure.retrieval.corpus import (
+    build_corpus_ingestion_manifest,
+    load_local_corpus_chunks,
+)
 from ojtflow.infrastructure.retrieval.embeddings import (
     HuggingFaceEmbeddingProvider,
     OpenAIEmbeddingProvider,
@@ -1836,6 +1840,7 @@ def test_knowledge_json_sources_are_valid() -> None:
         ROOT / "knowledge/retrieval/evaluation_policy.json",
         ROOT / "knowledge/retrieval/search_hint_targets.json",
         ROOT / "knowledge/source_catalog/official_healthcare_sources.json",
+        ROOT / "knowledge/source_catalog/corpus_adapters.json",
     ]:
         parsed = json.loads(path.read_text(encoding="utf-8"))
         assert isinstance(parsed, dict)
@@ -3000,6 +3005,44 @@ def test_static_retrieval_reindex_adds_local_corpus(tmp_path: Path) -> None:
 
     assert result["corpus"]["files_indexed"] == 1
     assert any(item.source_id.startswith("corpus:") for item in package.evidence)
+
+
+def test_corpus_adapter_catalog_and_manifest_are_governed() -> None:
+    catalog = load_corpus_adapter_catalog(ROOT / "knowledge")
+    manifest = build_corpus_ingestion_manifest(
+        (ROOT / "knowledge" / "corpus",),
+        knowledge_root=ROOT / "knowledge",
+    )
+
+    adapters = {adapter.adapter_id: adapter for adapter in catalog.adapters}
+    items = {item.adapter_id: item for item in manifest.items if item.adapter_id}
+
+    assert catalog.version == "corpus_adapters.v1"
+    loinc_adapter = adapters["external_loinc_selected_public_pages_v1"]
+    assert loinc_adapter.license.license_id == "loinc_terms"
+    assert adapters["external_openfda_api_cache_v1"].lifecycle_state == "candidate"
+    assert manifest.adapter_catalog_version == catalog.version
+    assert items["local_medical_search_playbook_v1"].content_hash.startswith("sha256:")
+    assert items["local_medical_search_playbook_v1"].reviewer_state == "approved"
+    assert items["local_medical_search_playbook_v1"].fetch_time_source == "filesystem_mtime"
+
+
+def test_static_retrieval_source_inventory_includes_corpus_governance_metadata() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    result = repository.reindex(include_seeded=False, include_corpus=True)
+    sources = {source.source_id: source for source in repository.list_sources()}
+
+    corpus_sources = [
+        source
+        for source in sources.values()
+        if source.canonical_source_id == "dictionary:medical_search_playbook_v1"
+    ]
+
+    assert result["corpus"]["manifest"]["adapter_catalog_version"] == "corpus_adapters.v1"
+    assert corpus_sources
+    assert corpus_sources[0].reviewer_state == "approved"
+    assert corpus_sources[0].license_id == "project_internal"
+    assert corpus_sources[0].content_hash.startswith("sha256:")
 
 
 def test_retrieval_eval_fixture_passes_static_repository() -> None:

@@ -671,6 +671,86 @@ export type RetrievalSourceTrustPolicyCatalog = {
   policies: RetrievalSourceTrustPolicy[];
 };
 
+export type CorpusLifecycleState =
+  | "candidate"
+  | "approved"
+  | "deprecated"
+  | "blocked"
+  | "failed"
+  | "needs_review";
+
+export type CorpusLicenseMetadata = {
+  license_id: string;
+  name: string;
+  url?: string | null;
+  constraints: string[];
+};
+
+export type CorpusSourceAdapter = {
+  adapter_id: string;
+  source_id: string;
+  title: string;
+  authority: string;
+  source_type: string;
+  clinical_domain: string;
+  standard_system: string;
+  access_mode: string;
+  ingestion_mode: string;
+  release_version: string;
+  refresh_cadence: string;
+  reviewer_state: CorpusLifecycleState;
+  lifecycle_state: CorpusLifecycleState;
+  enabled: boolean;
+  source_urls: Record<string, string>;
+  local_paths: string[];
+  parser: string;
+  chunk_profile: string;
+  fetch_time_policy: string;
+  license: CorpusLicenseMetadata;
+  governance_notes: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type CorpusAdapterCatalog = {
+  version: string;
+  adapters: CorpusSourceAdapter[];
+};
+
+export type CorpusIngestionItem = {
+  item_id: string;
+  source_id: string;
+  adapter_id?: string | null;
+  title: string;
+  source_type: string;
+  clinical_domain: string;
+  standard_system: string;
+  release_version: string;
+  fetched_at: string;
+  fetch_time_source: string;
+  content_hash: string;
+  size_bytes: number;
+  path?: string | null;
+  source_url?: string | null;
+  license: CorpusLicenseMetadata;
+  reviewer_state: CorpusLifecycleState;
+  lifecycle_state: CorpusLifecycleState;
+  enabled: boolean;
+  warnings: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type CorpusIngestionManifest = {
+  version: string;
+  generated_at: string;
+  adapter_catalog_version: string;
+  knowledge_root: string;
+  item_count: number;
+  enabled_adapter_count: number;
+  approved_item_count: number;
+  needs_review_item_count: number;
+  items: CorpusIngestionItem[];
+};
+
 export type RetrievalStrategyProfile = {
   strategy_id: string;
   label: string;
@@ -848,6 +928,15 @@ export type RetrievalSource = {
   clinical_domain?: string | null;
   standard_system?: string | null;
   chunk_count: number;
+  authority?: string | null;
+  access_mode?: string | null;
+  ingestion_mode?: string | null;
+  license_id?: string | null;
+  license_name?: string | null;
+  reviewer_state?: CorpusLifecycleState | null;
+  lifecycle_state?: CorpusLifecycleState | null;
+  content_hash?: string | null;
+  canonical_source_id?: string | null;
 };
 
 export type RetrievalIntegrityItem = {

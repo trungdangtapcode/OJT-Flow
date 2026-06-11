@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
+from ojtflow.core.contracts.retrieval import (
+    CorpusAdapterCatalog,
+    CorpusIngestionItem,
+    CorpusIngestionManifest,
+    CorpusLicenseMetadata,
+    CorpusSourceAdapter,
+)
+from ojtflow.infrastructure.retrieval.catalogs import load_corpus_adapter_catalog
 from ojtflow.infrastructure.retrieval.engine import KnowledgeChunk
 
 
@@ -22,6 +31,57 @@ class CorpusIndexResult:
     files_indexed: int
     chunks_indexed: int
     skipped_files: list[str]
+    manifest: CorpusIngestionManifest | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "files_seen": self.files_seen,
+            "files_indexed": self.files_indexed,
+            "chunks_indexed": self.chunks_indexed,
+            "skipped_files": list(self.skipped_files),
+            "manifest": (
+                self.manifest.model_dump(mode="json") if self.manifest is not None else None
+            ),
+        }
+
+
+def build_corpus_ingestion_manifest(
+    corpus_dirs: tuple[Path, ...],
+    *,
+    knowledge_root: Path,
+    generated_at: datetime | None = None,
+) -> CorpusIngestionManifest:
+    """Build a governed manifest for local corpus files available to ingestion."""
+
+    catalog = load_corpus_adapter_catalog(knowledge_root)
+    adapters_by_path = _adapters_by_local_path(catalog, knowledge_root=knowledge_root)
+    generated_at_value = _isoformat(generated_at or datetime.now(UTC))
+    items: list[CorpusIngestionItem] = []
+    for path in _iter_supported_corpus_files(corpus_dirs):
+        relative = _display_path(path, knowledge_root)
+        adapter = adapters_by_path.get(relative)
+        text = _read_text(path)
+        items.append(
+            _manifest_item_for_file(
+                path,
+                text,
+                knowledge_root=knowledge_root,
+                adapter=adapter,
+            )
+        )
+    return CorpusIngestionManifest(
+        version="corpus_ingestion_manifest.v1",
+        generated_at=generated_at_value,
+        adapter_catalog_version=catalog.version,
+        knowledge_root=_display_path(knowledge_root, knowledge_root),
+        item_count=len(items),
+        enabled_adapter_count=sum(1 for adapter in catalog.adapters if adapter.enabled),
+        approved_item_count=sum(1 for item in items if item.reviewer_state == "approved"),
+        needs_review_item_count=sum(
+            1 for item in items if item.reviewer_state == "needs_review"
+        ),
+        items=items,
+    )
 
 
 def load_local_corpus_chunks(
@@ -37,6 +97,12 @@ def load_local_corpus_chunks(
     files_seen = 0
     files_indexed = 0
     skipped_files: list[str] = []
+    manifest = build_corpus_ingestion_manifest(corpus_dirs, knowledge_root=knowledge_root)
+    manifest_by_path = {
+        item.path: item
+        for item in manifest.items
+        if item.path
+    }
 
     for corpus_dir in corpus_dirs:
         if not corpus_dir.exists():
@@ -56,6 +122,15 @@ def load_local_corpus_chunks(
             if not text.strip():
                 skipped_files.append(f"{_display_path(path, knowledge_root)}:blank")
                 continue
+            manifest_item = manifest_by_path.get(_display_path(path, knowledge_root))
+            if manifest_item and (
+                not manifest_item.enabled
+                or manifest_item.lifecycle_state in {"blocked", "failed"}
+            ):
+                skipped_files.append(
+                    f"{_display_path(path, knowledge_root)}:{manifest_item.lifecycle_state}"
+                )
+                continue
             files_indexed += 1
             chunks.extend(
                 _chunks_for_file(
@@ -64,6 +139,7 @@ def load_local_corpus_chunks(
                     knowledge_root=knowledge_root,
                     max_chars=max_chars,
                     overlap_chars=overlap_chars,
+                    manifest_item=manifest_item,
                 )
             )
 
@@ -72,6 +148,7 @@ def load_local_corpus_chunks(
         files_indexed=files_indexed,
         chunks_indexed=len(chunks),
         skipped_files=skipped_files[:50],
+        manifest=manifest,
     )
 
 
@@ -82,6 +159,7 @@ def _chunks_for_file(
     knowledge_root: Path,
     max_chars: int,
     overlap_chars: int,
+    manifest_item: CorpusIngestionItem | None = None,
 ) -> list[KnowledgeChunk]:
     relative = _display_path(path, knowledge_root)
     title = _title_from_text(path, text)
@@ -89,8 +167,21 @@ def _chunks_for_file(
     source_type = _source_type_for(path, text)
     clinical_domain = _clinical_domain_for(path, text)
     standard_system = _standard_system_for(path, text)
+    source_version = "local-unversioned"
+    metadata = {
+        "origin": "local_corpus",
+        "content_hash": sha256(text.encode("utf-8")).hexdigest(),
+        "extension": path.suffix.lower(),
+    }
+    if manifest_item is not None:
+        title = manifest_item.title
+        source_id = manifest_item.source_id
+        source_type = manifest_item.source_type
+        clinical_domain = manifest_item.clinical_domain
+        standard_system = manifest_item.standard_system
+        source_version = manifest_item.release_version
+        metadata.update(_metadata_from_manifest_item(manifest_item))
     text_chunks = _chunk_text(text, max_chars=max_chars, overlap_chars=overlap_chars)
-    content_hash = sha256(text.encode("utf-8")).hexdigest()
 
     chunks: list[KnowledgeChunk] = []
     for index, chunk_text in enumerate(text_chunks):
@@ -102,18 +193,138 @@ def _chunks_for_file(
                 source_type=source_type,
                 title=title,
                 content=chunk_text,
+                source_version=source_version,
                 trust_level=TrustLevel.APPROVED,
                 clinical_domain=clinical_domain,
                 standard_system=standard_system,
                 locator={"path": relative, "chunk_index": index},
-                metadata={
-                    "origin": "local_corpus",
-                    "content_hash": content_hash,
-                    "extension": path.suffix.lower(),
-                },
+                metadata=metadata,
             )
         )
     return chunks
+
+
+def _manifest_item_for_file(
+    path: Path,
+    text: str,
+    *,
+    knowledge_root: Path,
+    adapter: CorpusSourceAdapter | None,
+) -> CorpusIngestionItem:
+    relative = _display_path(path, knowledge_root)
+    stat = path.stat()
+    content_hash = sha256(path.read_bytes()).hexdigest()
+    fallback_license = CorpusLicenseMetadata(
+        license_id="operator_provided",
+        name="Operator-provided local corpus",
+        constraints=[
+            "Operator must confirm source rights and reviewer approval before production use"
+        ],
+    )
+    source_id = f"corpus:{_stable_slug(relative)}"
+    warnings: list[str] = []
+    if adapter is None:
+        warnings.append("uncataloged_local_corpus_file")
+    elif not adapter.enabled:
+        warnings.append("adapter_disabled")
+    return CorpusIngestionItem(
+        item_id=f"corpus_item:{_stable_slug(relative)}",
+        source_id=source_id,
+        adapter_id=adapter.adapter_id if adapter else None,
+        title=adapter.title if adapter else _title_from_text(path, text),
+        source_type=adapter.source_type if adapter else _source_type_for(path, text),
+        clinical_domain=(
+            adapter.clinical_domain if adapter else _clinical_domain_for(path, text)
+        ),
+        standard_system=(
+            adapter.standard_system if adapter else _standard_system_for(path, text)
+        ),
+        release_version=adapter.release_version if adapter else "local-unversioned",
+        fetched_at=_isoformat(datetime.fromtimestamp(stat.st_mtime, UTC)),
+        fetch_time_source="filesystem_mtime",
+        content_hash=f"sha256:{content_hash}",
+        size_bytes=stat.st_size,
+        path=relative,
+        source_url=_primary_source_url(adapter),
+        license=adapter.license if adapter else fallback_license,
+        reviewer_state=adapter.reviewer_state if adapter else "needs_review",
+        lifecycle_state=adapter.lifecycle_state if adapter else "needs_review",
+        enabled=adapter.enabled if adapter else True,
+        warnings=warnings,
+        metadata={
+            "canonical_source_id": adapter.source_id if adapter else None,
+            "authority": adapter.authority if adapter else None,
+            "access_mode": adapter.access_mode if adapter else "local_file",
+            "ingestion_mode": adapter.ingestion_mode if adapter else "operator_local_file",
+            "origin": "local_corpus",
+            "extension": path.suffix.lower(),
+        },
+    )
+
+
+def _metadata_from_manifest_item(item: CorpusIngestionItem) -> dict:
+    return {
+        "corpus_item_id": item.item_id,
+        "adapter_id": item.adapter_id,
+        "canonical_source_id": item.metadata.get("canonical_source_id"),
+        "authority": item.metadata.get("authority"),
+        "access_mode": item.metadata.get("access_mode"),
+        "ingestion_mode": item.metadata.get("ingestion_mode"),
+        "release_version": item.release_version,
+        "fetched_at": item.fetched_at,
+        "fetch_time_source": item.fetch_time_source,
+        "content_hash": item.content_hash,
+        "size_bytes": item.size_bytes,
+        "license_id": item.license.license_id,
+        "license_name": item.license.name,
+        "license_constraints": list(item.license.constraints),
+        "reviewer_state": item.reviewer_state,
+        "lifecycle_state": item.lifecycle_state,
+        "source_url": item.source_url,
+        "warnings": list(item.warnings),
+    }
+
+
+def _iter_supported_corpus_files(corpus_dirs: tuple[Path, ...]) -> list[Path]:
+    paths: list[Path] = []
+    for corpus_dir in corpus_dirs:
+        if not corpus_dir.exists() or not corpus_dir.is_dir():
+            continue
+        for path in sorted(corpus_dir.rglob("*")):
+            if (
+                path.is_file()
+                and not _has_hidden_part(path)
+                and path.suffix.lower() in SUPPORTED_CORPUS_EXTENSIONS
+            ):
+                paths.append(path)
+    return paths
+
+
+def _adapters_by_local_path(
+    catalog: CorpusAdapterCatalog,
+    *,
+    knowledge_root: Path,
+) -> dict[str, CorpusSourceAdapter]:
+    adapters: dict[str, CorpusSourceAdapter] = {}
+    for adapter in catalog.adapters:
+        for local_path in adapter.local_paths:
+            path = Path(local_path)
+            relative = str(path) if not path.is_absolute() else _display_path(path, knowledge_root)
+            adapters[relative] = adapter
+    return adapters
+
+
+def _primary_source_url(adapter: CorpusSourceAdapter | None) -> str | None:
+    if adapter is None or not adapter.source_urls:
+        return None
+    if "primary" in adapter.source_urls:
+        return adapter.source_urls["primary"]
+    return next(iter(adapter.source_urls.values()))
+
+
+def _isoformat(value: datetime) -> str:
+    normalized = value.astimezone(UTC).replace(microsecond=0)
+    return normalized.isoformat().replace("+00:00", "Z")
 
 
 def _chunk_text(text: str, *, max_chars: int, overlap_chars: int) -> list[str]:

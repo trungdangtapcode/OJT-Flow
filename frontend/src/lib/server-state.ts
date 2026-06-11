@@ -23,6 +23,8 @@ import {
   getExtractorInventory,
   getRetrievalJudgmentSummary,
   getRetrievalIntegrity,
+  getRetrievalCorpusAdapters,
+  getRetrievalCorpusManifest,
   getRetrievalSearchOptions,
   getRetrievalSourcePolicies,
   getRetrievalStrategies,
@@ -123,6 +125,8 @@ export const queryKeys = {
   retrievalJudgmentEvaluation: (params: Record<string, unknown>) =>
     ["retrieval-judgment-evaluation", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
+  retrievalCorpusAdapters: ["retrieval-corpus-adapters"] as const,
+  retrievalCorpusManifest: ["retrieval-corpus-manifest"] as const,
   retrievalSourcePolicies: ["retrieval-source-policies"] as const,
   retrievalStrategies: ["retrieval-strategies"] as const,
   retrievalPlan: (payload: RetrievalSearchPayload | null) => ["retrieval-plan", payload] as const,
@@ -329,6 +333,20 @@ export function useRetrievalPresetsQuery() {
 
 export function useRetrievalSearchOptionsQuery() {
   return useQuery({ queryKey: queryKeys.retrievalSearchOptions, queryFn: getRetrievalSearchOptions });
+}
+
+export function useRetrievalCorpusAdaptersQuery() {
+  return useQuery({
+    queryKey: queryKeys.retrievalCorpusAdapters,
+    queryFn: getRetrievalCorpusAdapters,
+  });
+}
+
+export function useRetrievalCorpusManifestQuery() {
+  return useQuery({
+    queryKey: queryKeys.retrievalCorpusManifest,
+    queryFn: getRetrievalCorpusManifest,
+  });
 }
 
 export function useRetrievalSourcePoliciesQuery() {

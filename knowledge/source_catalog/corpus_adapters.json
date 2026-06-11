@@ -1,0 +1,325 @@
+{
+  "version": "corpus_adapters.v1",
+  "adapters": [
+    {
+      "adapter_id": "local_clinical_data_standards_map_v1",
+      "source_id": "standard:clinical_data_standards_map_v1",
+      "title": "Clinical Data Standards Map",
+      "authority": "OJTFlow curated knowledge",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "multi_domain",
+      "standard_system": "ojtflow_standard_map",
+      "access_mode": "local_curated_file",
+      "ingestion_mode": "local_markdown_snapshot",
+      "release_version": "2026-06-11",
+      "refresh_cadence": "before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "approved",
+      "enabled": true,
+      "source_urls": {
+        "primary": "knowledge/corpus/clinical_data_standards_map.md"
+      },
+      "local_paths": ["knowledge/corpus/clinical_data_standards_map.md"],
+      "parser": "markdown",
+      "chunk_profile": "paragraph_window_v0",
+      "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
+      "license": {
+        "license_id": "project_internal",
+        "name": "Project internal curated knowledge",
+        "constraints": ["Use as implementation guidance, not clinical decision support"]
+      },
+      "governance_notes": [
+        "Treat as internal architecture knowledge.",
+        "Use authoritative standards directly when making compliance claims."
+      ],
+      "metadata": {
+        "roadmap_refs": ["F061", "F069"]
+      }
+    },
+    {
+      "adapter_id": "local_medical_search_playbook_v1",
+      "source_id": "dictionary:medical_search_playbook_v1",
+      "title": "Medical Search Playbook",
+      "authority": "OJTFlow curated knowledge",
+      "source_type": "data_dictionary",
+      "clinical_domain": "retrieval",
+      "standard_system": "ojtflow_retrieval",
+      "access_mode": "local_curated_file",
+      "ingestion_mode": "local_markdown_snapshot",
+      "release_version": "2026-06-11",
+      "refresh_cadence": "before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "approved",
+      "enabled": true,
+      "source_urls": {
+        "primary": "knowledge/corpus/medical_search_playbook.md"
+      },
+      "local_paths": ["knowledge/corpus/medical_search_playbook.md"],
+      "parser": "markdown",
+      "chunk_profile": "paragraph_window_v0",
+      "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
+      "license": {
+        "license_id": "project_internal",
+        "name": "Project internal curated knowledge",
+        "constraints": ["Use for retrieval workflow routing and operator education"]
+      },
+      "governance_notes": [
+        "Keep playbook wording synchronized with UI guidance and assistant tool behavior."
+      ],
+      "metadata": {
+        "techniques": ["query_decomposition", "hybrid_search", "source_diversity"]
+      }
+    },
+    {
+      "adapter_id": "local_public_dataset_ingestion_plan_v1",
+      "source_id": "catalog:public_dataset_ingestion_plan_v1",
+      "title": "Public Dataset Ingestion Plan",
+      "authority": "OJTFlow curated knowledge",
+      "source_type": "data_dictionary",
+      "clinical_domain": "multi_domain",
+      "standard_system": "ojtflow_source_catalog",
+      "access_mode": "local_curated_file",
+      "ingestion_mode": "local_markdown_snapshot",
+      "release_version": "2026-06-11",
+      "refresh_cadence": "before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "approved",
+      "enabled": true,
+      "source_urls": {
+        "primary": "knowledge/corpus/public_dataset_ingestion_plan.md"
+      },
+      "local_paths": ["knowledge/corpus/public_dataset_ingestion_plan.md"],
+      "parser": "markdown",
+      "chunk_profile": "paragraph_window_v0",
+      "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
+      "license": {
+        "license_id": "project_internal",
+        "name": "Project internal curated knowledge",
+        "constraints": ["Use as a source-selection plan; verify each upstream license before ingestion"]
+      },
+      "governance_notes": [
+        "Bulk upstream datasets must stay out of git and use runtime storage."
+      ],
+      "metadata": {
+        "storage_policy": "runtime_storage_only_for_bulk_data"
+      }
+    },
+    {
+      "adapter_id": "local_laboratory_semantic_retrieval_v1",
+      "source_id": "dictionary:laboratory_semantic_retrieval_v1",
+      "title": "Laboratory Semantic Retrieval",
+      "authority": "OJTFlow curated knowledge",
+      "source_type": "data_dictionary",
+      "clinical_domain": "laboratory",
+      "standard_system": "ojtflow_retrieval",
+      "access_mode": "local_curated_file",
+      "ingestion_mode": "local_markdown_snapshot",
+      "release_version": "2026-06-11",
+      "refresh_cadence": "before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "approved",
+      "enabled": true,
+      "source_urls": {
+        "primary": "knowledge/corpus/laboratory_semantic_retrieval.md"
+      },
+      "local_paths": ["knowledge/corpus/laboratory_semantic_retrieval.md"],
+      "parser": "markdown",
+      "chunk_profile": "paragraph_window_v0",
+      "fetch_time_policy": "filesystem_mtime_for_local_snapshot",
+      "license": {
+        "license_id": "project_internal",
+        "name": "Project internal curated knowledge",
+        "constraints": ["Use for retrieval design and lab-data grounding only"]
+      },
+      "governance_notes": [
+        "Do not convert lab names or units without reviewer-visible evidence."
+      ],
+      "metadata": {
+        "clinical_scope": ["laboratory", "terminology_candidates", "unit_validation"]
+      }
+    },
+    {
+      "adapter_id": "external_hl7_fhir_r4_selected_spec_v1",
+      "source_id": "hl7_fhir_r4",
+      "title": "HL7 FHIR R4 Core Specification",
+      "authority": "HL7 International",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "interoperability",
+      "standard_system": "FHIR",
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_spec_chunks_and_profile_json",
+      "release_version": "R4",
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://hl7.org/fhir/r4/",
+        "observation": "https://hl7.org/fhir/r4/observation.html",
+        "search_parameters": "https://www.hl7.org/fhir/R4/searchparameter-registry.html"
+      },
+      "local_paths": [],
+      "parser": "selected_spec_snapshot",
+      "chunk_profile": "section_window_v0",
+      "fetch_time_policy": "record_http_fetch_time_per_snapshot",
+      "license": {
+        "license_id": "hl7_terms",
+        "name": "HL7 publication terms",
+        "url": "https://www.hl7.org/legal/ippolicy.cfm",
+        "constraints": ["Respect HL7 publication terms and cite the exact FHIR release"]
+      },
+      "governance_notes": [
+        "This adapter is a hook point; full FHIR validation remains out of scope for v0."
+      ],
+      "metadata": {
+        "expected_artifacts": ["selected_html_sections", "profile_json"]
+      }
+    },
+    {
+      "adapter_id": "external_loinc_selected_public_pages_v1",
+      "source_id": "loinc_core",
+      "title": "LOINC Selected Public Pages",
+      "authority": "Regenstrief Institute",
+      "source_type": "terminology_system",
+      "clinical_domain": "laboratory",
+      "standard_system": "LOINC",
+      "access_mode": "licensed_bulk_or_public_pages",
+      "ingestion_mode": "licensed_bulk_or_selected_public_pages",
+      "release_version": "current_public_snapshot",
+      "refresh_cadence": "per_release_or_quarterly",
+      "reviewer_state": "needs_review",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://loinc.org/",
+        "hba1c_example": "https://loinc.org/4548-4"
+      },
+      "local_paths": [],
+      "parser": "terminology_snapshot",
+      "chunk_profile": "concept_card_v0",
+      "fetch_time_policy": "record_download_or_page_fetch_time",
+      "license": {
+        "license_id": "loinc_terms",
+        "name": "LOINC terms of use",
+        "url": "https://loinc.org/license/",
+        "constraints": [
+          "Full LOINC downloads may require account and license review",
+          "Do not commit licensed bulk files to git"
+        ]
+      },
+      "governance_notes": [
+        "Use candidates as review evidence; do not auto-code lab names."
+      ],
+      "metadata": {
+        "expected_artifacts": ["selected_public_concept_pages", "licensed_bulk_snapshot_optional"]
+      }
+    },
+    {
+      "adapter_id": "external_ucum_seed_registry_v1",
+      "source_id": "ucum",
+      "title": "UCUM Unit Registry",
+      "authority": "Regenstrief Institute / UCUM maintainers",
+      "source_type": "terminology_system",
+      "clinical_domain": "units",
+      "standard_system": "UCUM",
+      "access_mode": "public_web_or_nlm_service",
+      "ingestion_mode": "selected_unit_seed_plus_validator_adapter",
+      "release_version": "current_public_snapshot",
+      "refresh_cadence": "quarterly",
+      "reviewer_state": "approved",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://ucum.org/",
+        "nlm_service": "https://ucum.nlm.nih.gov/"
+      },
+      "local_paths": [],
+      "parser": "terminology_seed_registry",
+      "chunk_profile": "concept_card_v0",
+      "fetch_time_policy": "record_download_or_service_fetch_time",
+      "license": {
+        "license_id": "ucum_terms",
+        "name": "UCUM publication terms",
+        "url": "https://ucum.org/",
+        "constraints": ["Preserve original unit text and reviewer-visible normalization evidence"]
+      },
+      "governance_notes": [
+        "Unit normalization changes must be review-gated."
+      ],
+      "metadata": {
+        "runtime_registry": "knowledge/terminologies/ucum_units.json"
+      }
+    },
+    {
+      "adapter_id": "external_rxnorm_api_cache_v1",
+      "source_id": "nlm_rxnorm",
+      "title": "RxNorm and RxNav API",
+      "authority": "U.S. National Library of Medicine",
+      "source_type": "terminology_system",
+      "clinical_domain": "medication",
+      "standard_system": "RxNorm",
+      "access_mode": "public_api",
+      "ingestion_mode": "api_lookup_cache",
+      "release_version": "api_current",
+      "refresh_cadence": "monthly_or_api_release",
+      "reviewer_state": "needs_review",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://www.nlm.nih.gov/research/umls/rxnorm/",
+        "api_docs": "https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html"
+      },
+      "local_paths": [],
+      "parser": "api_json_cache",
+      "chunk_profile": "concept_card_v0",
+      "fetch_time_policy": "record_api_fetch_time_and_response_hash",
+      "license": {
+        "license_id": "nlm_rxnorm_terms",
+        "name": "NLM RxNorm terms",
+        "url": "https://www.nlm.nih.gov/research/umls/rxnorm/",
+        "constraints": ["Cache responses with source URL, release metadata, and fetch time"]
+      },
+      "governance_notes": [
+        "Medication normalization remains a reviewer decision."
+      ],
+      "metadata": {
+        "expected_artifacts": ["api_query_cache"]
+      }
+    },
+    {
+      "adapter_id": "external_openfda_api_cache_v1",
+      "source_id": "openfda",
+      "title": "openFDA",
+      "authority": "U.S. Food and Drug Administration",
+      "source_type": "healthcare_standard",
+      "clinical_domain": "drug_safety_regulatory",
+      "standard_system": "openFDA",
+      "access_mode": "public_api_or_download",
+      "ingestion_mode": "api_or_endpoint_downloads_out_of_repo",
+      "release_version": "api_current",
+      "refresh_cadence": "weekly_or_before_regulatory_demo",
+      "reviewer_state": "needs_review",
+      "lifecycle_state": "candidate",
+      "enabled": true,
+      "source_urls": {
+        "primary": "https://open.fda.gov/apis/",
+        "downloads": "https://open.fda.gov/apis/downloads/"
+      },
+      "local_paths": [],
+      "parser": "api_json_cache",
+      "chunk_profile": "record_summary_v0",
+      "fetch_time_policy": "record_api_fetch_time_and_response_hash",
+      "license": {
+        "license_id": "public_us_government_data",
+        "name": "Public U.S. government data",
+        "constraints": ["Preserve endpoint, query, fetch time, and limitation language"]
+      },
+      "governance_notes": [
+        "Regulatory context is not clinical decision support."
+      ],
+      "metadata": {
+        "expected_artifacts": ["drug_label_cache", "adverse_event_context_cache"]
+      }
+    }
+  ]
+}

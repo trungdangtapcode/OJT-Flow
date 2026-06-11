@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ojtflow.core.contracts.retrieval import (
+    CorpusAdapterCatalog,
+    CorpusSourceAdapter,
     RetrievalSourceTrustPolicy,
     RetrievalSourceTrustPolicyCatalog,
     RetrievalStrategyCatalog,
@@ -14,6 +16,7 @@ from ojtflow.core.contracts.retrieval import (
 )
 
 
+DEFAULT_CORPUS_ADAPTER_CATALOG_PATH = Path("source_catalog/corpus_adapters.json")
 DEFAULT_SOURCE_POLICY_PATH = Path("source_catalog/source_trust_policies.json")
 DEFAULT_STRATEGY_CATALOG_PATH = Path("retrieval/strategy_catalog.json")
 
@@ -36,6 +39,30 @@ def load_source_trust_policy_catalog(knowledge_root: Path) -> RetrievalSourceTru
     catalog = RetrievalSourceTrustPolicyCatalog.model_validate(raw)
     _ensure_unique(
         [_PolicyKey(policy) for policy in catalog.policies],
+        path=path,
+        field="source_id",
+    )
+    return catalog
+
+
+def load_corpus_adapter_catalog(knowledge_root: Path) -> CorpusAdapterCatalog:
+    """Load governed corpus adapter specs from trusted knowledge data."""
+
+    path = knowledge_root / DEFAULT_CORPUS_ADAPTER_CATALOG_PATH
+    if not path.exists():
+        return CorpusAdapterCatalog(
+            version="corpus_adapters.empty",
+            adapters=[],
+        )
+    raw = _read_json_object(path)
+    catalog = CorpusAdapterCatalog.model_validate(raw)
+    _ensure_unique(
+        [_AdapterKey(adapter) for adapter in catalog.adapters],
+        path=path,
+        field="adapter_id",
+    )
+    _ensure_unique(
+        [_AdapterSourceKey(adapter) for adapter in catalog.adapters],
         path=path,
         field="source_id",
     )
@@ -85,6 +112,16 @@ def _ensure_unique(items: list[_HasId], *, path: Path, field: str) -> None:
 class _PolicyKey:
     def __init__(self, policy: RetrievalSourceTrustPolicy) -> None:
         self.key = policy.source_id
+
+
+class _AdapterKey:
+    def __init__(self, adapter: CorpusSourceAdapter) -> None:
+        self.key = adapter.adapter_id
+
+
+class _AdapterSourceKey:
+    def __init__(self, adapter: CorpusSourceAdapter) -> None:
+        self.key = adapter.source_id
 
 
 class _StrategyKey:

@@ -12,6 +12,8 @@ from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.retrieval import (
+    CorpusAdapterCatalog,
+    CorpusIngestionManifest,
     RetrievalJudgmentEvaluationResult,
     RetrievalIntegrityReport,
     RetrievalPackage,
@@ -26,9 +28,11 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalStrategyCatalog,
 )
 from ojtflow.infrastructure.retrieval.catalogs import (
+    load_corpus_adapter_catalog,
     load_retrieval_strategy_catalog,
     load_source_trust_policy_catalog,
 )
+from ojtflow.infrastructure.retrieval.corpus import build_corpus_ingestion_manifest
 from ojtflow.infrastructure.retrieval.presets import (
     load_retrieval_search_options,
     load_retrieval_search_presets,
@@ -73,6 +77,16 @@ class RetrievalSearchOptionsEnvelope(ContractModel):
 
 class RetrievalSourcePoliciesEnvelope(ContractModel):
     data: RetrievalSourceTrustPolicyCatalog
+    error: None = None
+
+
+class RetrievalCorpusAdaptersEnvelope(ContractModel):
+    data: CorpusAdapterCatalog
+    error: None = None
+
+
+class RetrievalCorpusManifestEnvelope(ContractModel):
+    data: CorpusIngestionManifest
     error: None = None
 
 
@@ -220,6 +234,30 @@ async def get_retrieval_source_policies(
 ) -> dict:
     del authenticated
     return ok(load_source_trust_policy_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/corpus/adapters", response_model=RetrievalCorpusAdaptersEnvelope)
+async def get_retrieval_corpus_adapters(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    del authenticated
+    return ok(load_corpus_adapter_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/corpus/manifest", response_model=RetrievalCorpusManifestEnvelope)
+async def get_retrieval_corpus_manifest(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    del authenticated
+    knowledge_root = settings.resolved_knowledge_dir
+    return ok(
+        build_corpus_ingestion_manifest(
+            (knowledge_root / "corpus",),
+            knowledge_root=knowledge_root,
+        )
+    )
 
 
 @router.get("/retrieval/strategies", response_model=RetrievalStrategiesEnvelope)

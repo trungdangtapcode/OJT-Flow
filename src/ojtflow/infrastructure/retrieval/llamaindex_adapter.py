@@ -307,7 +307,7 @@ class LlamaIndexRetrievalRepository:
                 "vector_weight": self.vector_weight,
                 "bm25_weight": self.bm25_weight,
             },
-            "corpus": result.__dict__ if result else None,
+            "corpus": result.to_dict() if result else None,
         }
 
     def integrity_report(

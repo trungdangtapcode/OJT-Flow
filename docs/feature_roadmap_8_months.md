@@ -230,7 +230,7 @@ Keep this section updated when roadmap items move from planning into code.
 
 ### Month 4: Retrieval, RAG, Corpus, And Graph-NER
 
-- [ ] F061 Add a corpus ingestion framework with source adapters, license metadata, release version, fetch time, hash, and reviewer state.
+- [x] F061 Add a corpus ingestion framework with source adapters, license metadata, release version, fetch time, hash, and reviewer state.
 - [ ] F062 Add official source adapters for FHIR specification pages relevant to Patient, Observation, DiagnosticReport, DocumentReference, Provenance, and AuditEvent.
 - [ ] F063 Add official source adapter for LOINC release metadata and selected public guide pages, respecting login/license boundaries.
 - [ ] F064 Add UCUM service metadata ingestion for validation and conversion guidance.
@@ -238,7 +238,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F066 Add PubMed/NCBI E-utilities connector for literature metadata and abstracts where allowed.
 - [ ] F067 Add ClinicalTrials.gov API connector for trial summaries and condition/intervention filters.
 - [ ] F068 Add openFDA connector for labels, adverse events, recalls, and device metadata where useful.
-- [ ] F069 Add source inventory lifecycle states: candidate, approved, deprecated, blocked, failed, and needs review.
+- [x] F069 Add source inventory lifecycle states: candidate, approved, deprecated, blocked, failed, and needs review.
 - [x] F070 Add source-level trust policy with domain, standard system, clinical scope, intended use, refresh cadence, and license constraints.
 - [ ] F071 Add chunking profiles for standards docs, terminology pages, structured API records, PDFs, and internal policies.
 - [ ] F072 Add metadata extraction for resource type, standard system, clinical domain, field names, version, section heading, and source locator.

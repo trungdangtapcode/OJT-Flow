@@ -3513,6 +3513,7 @@ def sources_from_chunks(chunks: list[KnowledgeChunk]) -> list[RetrievalSource]:
     sources: list[RetrievalSource] = []
     for source_id, source_chunks in sorted(grouped.items()):
         first = source_chunks[0]
+        source_metadata = _source_inventory_metadata(first.metadata)
         sources.append(
             RetrievalSource(
                 source_id=source_id,
@@ -3523,9 +3524,36 @@ def sources_from_chunks(chunks: list[KnowledgeChunk]) -> list[RetrievalSource]:
                 clinical_domain=first.clinical_domain,
                 standard_system=first.standard_system,
                 chunk_count=len(source_chunks),
+                authority=source_metadata.get("authority"),
+                access_mode=source_metadata.get("access_mode"),
+                ingestion_mode=source_metadata.get("ingestion_mode"),
+                license_id=source_metadata.get("license_id"),
+                license_name=source_metadata.get("license_name"),
+                reviewer_state=source_metadata.get("reviewer_state"),
+                lifecycle_state=source_metadata.get("lifecycle_state"),
+                content_hash=source_metadata.get("content_hash"),
+                canonical_source_id=source_metadata.get("canonical_source_id"),
             )
         )
     return sources
+
+
+def _source_inventory_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: metadata.get(key)
+        for key in (
+            "authority",
+            "access_mode",
+            "ingestion_mode",
+            "license_id",
+            "license_name",
+            "reviewer_state",
+            "lifecycle_state",
+            "content_hash",
+            "canonical_source_id",
+        )
+        if metadata.get(key) is not None
+    }
 
 
 def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:

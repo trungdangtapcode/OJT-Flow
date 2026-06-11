@@ -104,7 +104,7 @@ class PostgresRetrievalRepository:
             "include_corpus": include_corpus,
             "chunks_indexed": len(chunks),
             "embedding": self.embedding_provider.metadata(),
-            "corpus": corpus_result.__dict__ if corpus_result else None,
+            "corpus": corpus_result.to_dict() if corpus_result else None,
         }
 
     def _upsert_chunks(self, chunks: list[KnowledgeChunk]) -> None:
@@ -229,6 +229,7 @@ class PostgresRetrievalRepository:
                         document.trust_level,
                         document.clinical_domain,
                         document.standard_system,
+                        document.metadata,
                         count(chunk.chunk_id)::int as chunk_count
                     from ojtflow.knowledge_documents document
                     left join ojtflow.knowledge_chunks chunk
@@ -240,24 +241,37 @@ class PostgresRetrievalRepository:
                         document.source_version,
                         document.trust_level,
                         document.clinical_domain,
-                        document.standard_system
+                        document.standard_system,
+                        document.metadata
                     order by document.source_id
                     """
                 )
                 rows = cursor.fetchall()
-        return [
-            RetrievalSource(
-                source_id=row["source_id"],
-                source_type=EvidenceSourceType(row["source_type"]),
-                title=row["title"],
-                source_version=row["source_version"],
-                trust_level=TrustLevel(row["trust_level"]),
-                clinical_domain=row["clinical_domain"],
-                standard_system=row["standard_system"],
-                chunk_count=row["chunk_count"],
+        sources: list[RetrievalSource] = []
+        for row in rows:
+            source_metadata = _source_metadata_from_document_metadata(row.get("metadata"))
+            sources.append(
+                RetrievalSource(
+                    source_id=row["source_id"],
+                    source_type=EvidenceSourceType(row["source_type"]),
+                    title=row["title"],
+                    source_version=row["source_version"],
+                    trust_level=TrustLevel(row["trust_level"]),
+                    clinical_domain=row["clinical_domain"],
+                    standard_system=row["standard_system"],
+                    chunk_count=row["chunk_count"],
+                    authority=source_metadata.get("authority"),
+                    access_mode=source_metadata.get("access_mode"),
+                    ingestion_mode=source_metadata.get("ingestion_mode"),
+                    license_id=source_metadata.get("license_id"),
+                    license_name=source_metadata.get("license_name"),
+                    reviewer_state=source_metadata.get("reviewer_state"),
+                    lifecycle_state=source_metadata.get("lifecycle_state"),
+                    content_hash=source_metadata.get("content_hash"),
+                    canonical_source_id=source_metadata.get("canonical_source_id"),
+                )
             )
-            for row in rows
-        ]
+        return sources
 
     def integrity_report(
         self,
@@ -549,6 +563,29 @@ def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:
         locator=row["locator"] or {},
         metadata=row["metadata"] or {},
     )
+
+
+def _source_metadata_from_document_metadata(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    metadata = value.get("metadata", value)
+    if not isinstance(metadata, dict):
+        return {}
+    return {
+        key: metadata.get(key)
+        for key in (
+            "authority",
+            "access_mode",
+            "ingestion_mode",
+            "license_id",
+            "license_name",
+            "reviewer_state",
+            "lifecycle_state",
+            "content_hash",
+            "canonical_source_id",
+        )
+        if metadata.get(key) is not None
+    }
 
 
 def _checked_scope(*, include_seeded: bool, include_corpus: bool) -> str:

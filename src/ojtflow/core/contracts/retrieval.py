@@ -428,6 +428,98 @@ RetrievalTaskTarget = Literal["local_corpus", "external_medical_index"]
 RetrievalTaskActionType = Literal["run_local_search", "open_external_url", "copy_query"]
 
 
+CorpusLifecycleState = Literal[
+    "candidate",
+    "approved",
+    "deprecated",
+    "blocked",
+    "failed",
+    "needs_review",
+]
+
+
+class CorpusLicenseMetadata(ContractModel):
+    """License and use constraints for one corpus source adapter."""
+
+    license_id: NonBlankStr
+    name: NonBlankStr
+    url: str | None = None
+    constraints: list[NonBlankStr] = Field(default_factory=list)
+
+
+class CorpusSourceAdapter(ContractModel):
+    """Data-driven source adapter spec for governed corpus ingestion."""
+
+    adapter_id: NonBlankStr
+    source_id: NonBlankStr
+    title: NonBlankStr
+    authority: NonBlankStr
+    source_type: EvidenceSourceType
+    clinical_domain: NonBlankStr
+    standard_system: NonBlankStr
+    access_mode: NonBlankStr
+    ingestion_mode: NonBlankStr
+    release_version: NonBlankStr
+    refresh_cadence: NonBlankStr
+    reviewer_state: CorpusLifecycleState
+    lifecycle_state: CorpusLifecycleState
+    enabled: bool = True
+    source_urls: dict[NonBlankStr, NonBlankStr] = Field(default_factory=dict)
+    local_paths: list[NonBlankStr] = Field(default_factory=list)
+    parser: NonBlankStr = "plain_text"
+    chunk_profile: NonBlankStr = "paragraph_window_v0"
+    fetch_time_policy: NonBlankStr = "record_fetch_or_filesystem_observed_time"
+    license: CorpusLicenseMetadata
+    governance_notes: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CorpusAdapterCatalog(ContractModel):
+    """Versioned corpus adapter registry loaded from trusted knowledge data."""
+
+    version: NonBlankStr
+    adapters: list[CorpusSourceAdapter] = Field(default_factory=list)
+
+
+class CorpusIngestionItem(ContractModel):
+    """One observed ingestion artifact with governance and consistency metadata."""
+
+    item_id: NonBlankStr
+    source_id: NonBlankStr
+    adapter_id: NonBlankStr | None = None
+    title: NonBlankStr
+    source_type: EvidenceSourceType
+    clinical_domain: NonBlankStr
+    standard_system: NonBlankStr
+    release_version: NonBlankStr
+    fetched_at: NonBlankStr
+    fetch_time_source: NonBlankStr
+    content_hash: NonBlankStr
+    size_bytes: int = Field(ge=0)
+    path: NonBlankStr | None = None
+    source_url: str | None = None
+    license: CorpusLicenseMetadata
+    reviewer_state: CorpusLifecycleState
+    lifecycle_state: CorpusLifecycleState
+    enabled: bool = True
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CorpusIngestionManifest(ContractModel):
+    """Versioned manifest describing the files available for corpus indexing."""
+
+    version: NonBlankStr
+    generated_at: NonBlankStr
+    adapter_catalog_version: NonBlankStr
+    knowledge_root: NonBlankStr
+    item_count: int = Field(ge=0)
+    enabled_adapter_count: int = Field(ge=0)
+    approved_item_count: int = Field(ge=0)
+    needs_review_item_count: int = Field(ge=0)
+    items: list[CorpusIngestionItem] = Field(default_factory=list)
+
+
 class RetrievalSearchTask(ContractModel):
     """Executable retrieval task derived from query analysis before ranking."""
 
@@ -714,6 +806,15 @@ class RetrievalSource(ContractModel):
     clinical_domain: str | None = None
     standard_system: str | None = None
     chunk_count: int = 0
+    authority: str | None = None
+    access_mode: str | None = None
+    ingestion_mode: str | None = None
+    license_id: str | None = None
+    license_name: str | None = None
+    reviewer_state: CorpusLifecycleState | None = None
+    lifecycle_state: CorpusLifecycleState | None = None
+    content_hash: str | None = None
+    canonical_source_id: str | None = None
 
 
 class RetrievalIntegrityItem(ContractModel):

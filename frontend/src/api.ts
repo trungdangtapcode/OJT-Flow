@@ -16,6 +16,8 @@ import type {
   AuthLoginResponse,
   AuthSessionResponse,
   BackgroundJob,
+  CorpusAdapterCatalog,
+  CorpusIngestionManifest,
   ExtractedDocument,
   ExtractorInventory,
   MigrationDiagnostics,
@@ -516,6 +518,14 @@ export function getRetrievalSearchOptions(): Promise<RetrievalSearchOptions> {
 
 export function getRetrievalSourcePolicies(): Promise<RetrievalSourceTrustPolicyCatalog> {
   return request<RetrievalSourceTrustPolicyCatalog>("/retrieval/source-policies");
+}
+
+export function getRetrievalCorpusAdapters(): Promise<CorpusAdapterCatalog> {
+  return request<CorpusAdapterCatalog>("/retrieval/corpus/adapters");
+}
+
+export function getRetrievalCorpusManifest(): Promise<CorpusIngestionManifest> {
+  return request<CorpusIngestionManifest>("/retrieval/corpus/manifest");
 }
 
 export function getRetrievalStrategies(): Promise<RetrievalStrategyCatalog> {
