@@ -1435,35 +1435,6 @@ Response data includes:
 - `retrieval.hnsw_ef_search`
 - `retrieval.runtime_settings_configured`
 - `retrieval.runtime_settings`
-
-`GET /api/v1/runtime/settings-history`
-
-Returns append-only runtime settings history entries. Query parameters:
-
-- `limit`: maximum entries to return; default `100`, maximum `500`.
-
-Each entry includes `change_id`, `changed_at`, `surface`, `actor_id`,
-`actor_email`, `reason`, `rollback_of`, and `changes[]` with old/new value
-presence and value fields.
-
-`POST /api/v1/runtime/settings-history/rollback`
-
-Rolls back one runtime settings history entry and appends a rollback history
-entry. Request:
-
-```json
-{
-  "change_id": "rsh_abc123",
-  "reason": "Rollback after pilot validation."
-}
-```
-
-Response data includes:
-
-- `settings.assistant`
-- `settings.retrieval`
-- `reloaded`
-- `history_entry`
 - `retrieval.rule_packs[]` with sanitized `name`, `status`, `source`,
   `env_var`, `configured`, `rule_count`, `version`, and `content_hash`
 - `upload.max_upload_bytes`
@@ -1700,6 +1671,53 @@ Response:
   "error": null
 }
 ```
+
+`GET /api/v1/runtime/settings-history`
+
+Returns append-only runtime settings history entries. Query parameters:
+
+- `limit`: maximum entries to return; default `100`, maximum `500`.
+
+Each entry includes `change_id`, `changed_at`, `surface`, `actor_id`,
+`actor_email`, `reason`, `rollback_of`, and `changes[]` with old/new value
+presence and value fields.
+
+`POST /api/v1/runtime/settings-history/rollback`
+
+Rolls back one runtime settings history entry and appends a rollback history
+entry. Request:
+
+```json
+{
+  "change_id": "rsh_abc123",
+  "reason": "Rollback after pilot validation."
+}
+```
+
+Response data includes:
+
+- `settings.assistant`
+- `settings.retrieval`
+- `reloaded`
+- `history_entry`
+
+`GET /api/v1/runtime/secrets/health`
+
+Returns sanitized secret/config readiness for admins. The response never
+includes secret values, DSNs, token prefixes, or hashes.
+
+Response data includes:
+
+- `status`
+- `product_mode`
+- `storage_backend`
+- `secret_values_exposed`
+- `checks[].name`
+- `checks[].status`
+- `checks[].configured`
+- `checks[].required`
+- `checks[].env_vars`
+- `checks[].remediation`
 
 `GET /api/v1/runtime/readiness`
 

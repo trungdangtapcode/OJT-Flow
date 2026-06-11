@@ -297,6 +297,18 @@ async def runtime_settings_history(
     return ok(list_runtime_setting_history(settings, limit=limit))
 
 
+@router.get("/runtime/secrets/health")
+async def runtime_secrets_health(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    """Return sanitized secret/configuration readiness without secret values."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(_secret_health(settings))
+
+
 @router.post("/runtime/settings-history/rollback")
 async def rollback_runtime_settings_history(
     request: RuntimeSettingsRollbackRequest,
@@ -327,6 +339,86 @@ async def rollback_runtime_settings_history(
             "history_entry": history_entry,
         }
     )
+
+
+def _secret_health(settings: Settings) -> dict[str, Any]:
+    checks = [
+        _secret_check(
+            name="Google OAuth client ID",
+            env_vars=["OJT_GOOGLE_CLIENT_ID"],
+            configured=bool(settings.google_client_id),
+            required=settings.product_mode in {"pilot", "production"},
+            remediation="Create a Google OAuth web client and set OJT_GOOGLE_CLIENT_ID.",
+        ),
+        _secret_check(
+            name="Google OAuth client secret",
+            env_vars=["OJT_GOOGLE_CLIENT_SECRET"],
+            configured=bool(settings.google_client_secret),
+            required=settings.product_mode in {"pilot", "production"},
+            remediation="Set OJT_GOOGLE_CLIENT_SECRET from the OAuth client secret value.",
+        ),
+        _secret_check(
+            name="OpenAI API key",
+            env_vars=["OJT_OPENAI_API_KEY", "OPENAI_API_KEY"],
+            configured=bool(settings.openai_api_key),
+            required=(
+                settings.llm_provider == "openai"
+                or settings.embedding_provider == "openai"
+                or settings.product_mode in {"pilot", "production"}
+            ),
+            remediation="Set OJT_OPENAI_API_KEY or OPENAI_API_KEY for OpenAI-backed LLM/embedding features.",
+        ),
+        _secret_check(
+            name="Postgres database URL",
+            env_vars=["OJT_DATABASE_URL", "DATABASE_URL"],
+            configured=bool(settings.postgres_dsn),
+            required=settings.storage_backend == "postgres",
+            remediation="Set OJT_DATABASE_URL for the Postgres-backed backend spine.",
+        ),
+        _secret_check(
+            name="Redis URL",
+            env_vars=["OJT_REDIS_URL"],
+            configured=bool(settings.redis_url),
+            required=settings.storage_backend == "postgres",
+            remediation="Set OJT_REDIS_URL for Postgres session/cache deployment.",
+        ),
+    ]
+    status = "ok"
+    if any(check["status"] == "error" for check in checks):
+        status = "error"
+    elif any(check["status"] == "warning" for check in checks):
+        status = "warning"
+    return {
+        "status": status,
+        "product_mode": settings.product_mode,
+        "storage_backend": settings.storage_backend,
+        "secret_values_exposed": False,
+        "checks": checks,
+    }
+
+
+def _secret_check(
+    *,
+    name: str,
+    env_vars: list[str],
+    configured: bool,
+    required: bool,
+    remediation: str,
+) -> dict[str, Any]:
+    if configured:
+        status = "ok"
+    elif required:
+        status = "error"
+    else:
+        status = "warning"
+    return {
+        "name": name,
+        "status": status,
+        "configured": configured,
+        "required": required,
+        "env_vars": env_vars,
+        "remediation": remediation,
+    }
 
 
 @router.get("/runtime/readiness")
