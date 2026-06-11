@@ -16,6 +16,7 @@ from ojtflow.application.ports import AuditRepository
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.application.document_intake_service import DocumentIntakeService
+from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
@@ -39,9 +40,13 @@ from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 from ojtflow.infrastructure.extraction.document import LocalDocumentExtractor
+from ojtflow.infrastructure.governance_defaults import load_workspace_defaults
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
+from ojtflow.infrastructure.storage.governance_memory import InMemoryGovernanceRepository
+from ojtflow.infrastructure.storage.governance_postgres import PostgresGovernanceRepository
+from ojtflow.infrastructure.storage.governance_sqlite import SQLiteGovernanceRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryAuditRepository,
     InMemoryAssistantMemoryRepository,
@@ -414,6 +419,31 @@ def _build_document_intake_service() -> DocumentIntakeService:
     )
 
 
+@lru_cache(maxsize=1)
+def _build_governance_service() -> GovernanceService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryGovernanceRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteGovernanceRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresGovernanceRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return GovernanceService(
+        repository,
+        defaults=load_workspace_defaults(settings.resolved_knowledge_dir),
+    )
+
+
 async def get_workflow_service() -> WorkflowService:
     """Return the cached workflow service without FastAPI threadpool dispatch."""
 
@@ -466,6 +496,12 @@ async def get_document_intake_service() -> DocumentIntakeService:
     """Return uploaded document intake service."""
 
     return _build_document_intake_service()
+
+
+async def get_governance_service() -> GovernanceService:
+    """Return tenant/workspace governance service."""
+
+    return _build_governance_service()
 
 
 async def get_auth_service() -> AuthService:

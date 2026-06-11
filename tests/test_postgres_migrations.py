@@ -34,6 +34,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         "013",
         "014",
         "015",
+        "016",
     ]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
@@ -50,6 +51,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
     assert migrations[12].name == "assistant_stream_replay_cancelled"
     assert migrations[13].name == "assistant_memory_preferences"
     assert migrations[14].name == "audit_records"
+    assert migrations[15].name == "organization_workspace_model"
     assert all(len(migration.checksum) == 64 for migration in migrations)
 
 
@@ -267,6 +269,23 @@ def test_audit_records_migration_has_correlation_and_redaction_fields() -> None:
     assert "idx_audit_records_workflow_timestamp" in sql
     assert "idx_audit_records_session_timestamp" in sql
     assert "references ojtflow.workflows(workflow_id)" in sql
+
+
+def test_organization_workspace_migration_has_tenant_tables_and_indexes() -> None:
+    sql = (ROOT / "sql/postgres/migrations/016_organization_workspace_model.sql").read_text()
+
+    assert "create table if not exists ojtflow.organizations" in sql
+    assert "create table if not exists ojtflow.organization_memberships" in sql
+    assert "create table if not exists ojtflow.organization_groups" in sql
+    assert "create table if not exists ojtflow.organization_group_memberships" in sql
+    assert "create table if not exists ojtflow.workspace_settings" in sql
+    assert "created_by_user_id text not null references ojtflow.users(user_id)" in sql
+    assert "role_key text not null" in sql
+    assert "role_keys jsonb not null default '[]'::jsonb" in sql
+    assert "settings_json jsonb not null default '{}'::jsonb" in sql
+    assert "unique (organization_id, user_id)" in sql
+    assert "idx_org_memberships_user_status" in sql
+    assert "idx_org_group_memberships_org_user" in sql
 
 
 def test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback() -> None:

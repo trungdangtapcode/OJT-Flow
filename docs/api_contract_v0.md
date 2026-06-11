@@ -1795,6 +1795,70 @@ Structured unauthorized response:
 }
 ```
 
+## Organization Workspaces
+
+`GET /api/v1/organizations/current`
+
+Returns the authenticated user's current organization workspace. If the user has
+no active organization membership yet, the backend creates a default workspace
+from `knowledge/governance/workspace_defaults.json`.
+
+Response data includes:
+
+- `organization.organization_id`
+- `organization.slug`
+- `membership.user_id`
+- `membership.role_key`
+- `groups`
+- `group_memberships`
+- `settings.settings`
+- `settings.version`
+
+`GET /api/v1/organizations`
+
+Lists organization workspaces visible to the authenticated user. The v0 backend
+bootstraps a default workspace when none exists.
+
+`PATCH /api/v1/organizations/{organization_id}/settings`
+
+Deep-merges workspace-level settings and increments the settings version.
+
+Example request:
+
+```json
+{
+  "settings": {
+    "review_policy": {
+      "low_confidence_threshold": 0.75
+    },
+    "assistant": {
+      "write_actions_require_confirmation": true
+    }
+  }
+}
+```
+
+`POST /api/v1/organizations/{organization_id}/groups`
+
+Creates a group in the organization workspace for future RBAC and assignment
+workflows.
+
+Example request:
+
+```json
+{
+  "slug": "data-stewards",
+  "display_name": "Data Stewards",
+  "description": "Users responsible for data quality review.",
+  "role_keys": ["data-steward"]
+}
+```
+
+F119 stores role keys and groups but does not enforce full RBAC. F120 defines
+role-to-permission policy, and F121 applies ownership checks across workflows,
+reviews, chat sessions, artifacts, source inventory, runtime settings, and
+exports.
+
 ## Retrieval Plan
 
 `POST /api/v1/retrieval/plan`

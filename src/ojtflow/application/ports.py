@@ -32,6 +32,14 @@ from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.governance import (
+    OrganizationGroupMembershipRecord,
+    OrganizationGroupRecord,
+    OrganizationMembershipRecord,
+    OrganizationRecord,
+    WorkspaceDetail,
+    WorkspaceSettingsRecord,
+)
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
@@ -113,6 +121,39 @@ class UploadedArtifactRepository(Protocol):
         owner_user_id: str,
         artifact_id: str,
     ) -> list[ArtifactAccessEvent]: ...
+
+
+class GovernanceRepository(Protocol):
+    def get_current_workspace(self, *, user_id: str) -> WorkspaceDetail | None: ...
+
+    def list_workspaces(self, *, user_id: str) -> list[WorkspaceDetail]: ...
+
+    def create_default_workspace(
+        self,
+        *,
+        organization: OrganizationRecord,
+        membership: OrganizationMembershipRecord,
+        group: OrganizationGroupRecord,
+        group_membership: OrganizationGroupMembershipRecord,
+        settings: WorkspaceSettingsRecord,
+    ) -> WorkspaceDetail: ...
+
+    def update_workspace_settings(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        settings: dict[str, Any],
+        updated_by_user_id: str,
+    ) -> WorkspaceDetail: ...
+
+    def create_group(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        group: OrganizationGroupRecord,
+    ) -> WorkspaceDetail: ...
 
 
 class DocumentExtractor(Protocol):

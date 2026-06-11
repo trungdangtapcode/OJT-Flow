@@ -173,6 +173,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F115 | Implemented | Added a data-driven remote MCP deployment policy at `knowledge/assistant/remote_mcp_deployment_policy.json`, authenticated `GET /api/v1/assistant/mcp/remote-policy`, MCP resource `ojtflow://assistant/mcp/remote-policy`, and docs/tests. Remote exposure remains blocked until OAuth protected-resource metadata, resource indicators, per-user scoping, rate limits, and remote audit metadata are implemented and verified. |
 | 2026-06-11 | F117 | Implemented | Added data-driven Assistant evaluation fixtures at `knowledge/assistant/evaluation_cases.json`, typed suite/case contracts, fixture loader, evaluation docs, and deterministic tests for tool selection, write-gate preservation, answer terms, and evidence-source requirements. |
 | 2026-06-11 | F118 | Implemented | Added data-driven Assistant prompt-injection safety fixtures, loader, docs, and regression tests for uploaded data, retrieved chunks, tool descriptions, and user messages. LLM planner/synthesis payloads now mark uploaded data, tool arguments, and retrieved claims as untrusted content while preserving exact backend tool execution. |
+| 2026-06-11 | F119 | Implemented | Added organization/workspace governance contracts, data-driven workspace defaults, memory/SQLite/Postgres repositories, Postgres migration 016, authenticated organization APIs, workspace settings merge/versioning, group creation, and docs/tests. RBAC enforcement and cross-resource ownership checks remain scoped to F120/F121. |
 
 ## Feature Backlog
 
@@ -311,7 +312,7 @@ Keep this section updated when roadmap items move from planning into code.
 
 ### Month 6: Governance, Security, Privacy, And Enterprise Administration
 
-- [ ] F119 Add tenant/organization model with users, roles, groups, and workspace-level settings.
+- [x] F119 Add tenant/organization model with users, roles, groups, and workspace-level settings.
 - [ ] F120 Add RBAC roles for viewer, operator, reviewer, data steward, admin, and auditor.
 - [ ] F121 Add ownership checks across workflows, reviews, chat sessions, artifacts, source inventory, runtime settings, and exports.
 - [ ] F122 Add service-account identity for ingestion jobs, CI, and automation.

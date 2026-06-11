@@ -46,6 +46,15 @@ from ojtflow.core.contracts.enums import (
 )
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.contracts.governance import (
+    OrganizationGroupMembershipRecord,
+    OrganizationGroupRecord,
+    OrganizationMembershipRecord,
+    OrganizationRecord,
+    WorkspaceDefaults,
+    WorkspaceDetail,
+    WorkspaceSettingsRecord,
+)
 from ojtflow.core.contracts.issue import Issue, SourceLocation
 from ojtflow.core.contracts.review import HumanReview
 from ojtflow.core.contracts.storage import DatasetRecord
@@ -88,6 +97,10 @@ __all__ = [
     "FormatDetection",
     "HumanReview",
     "Issue",
+    "OrganizationGroupMembershipRecord",
+    "OrganizationGroupRecord",
+    "OrganizationMembershipRecord",
+    "OrganizationRecord",
     "ParsedData",
     "ReviewDecision",
     "ReviewStatus",
@@ -104,6 +117,8 @@ __all__ = [
     "TrustLevel",
     "UnitValidationResult",
     "ValidationReport",
+    "WorkspaceDefaults",
+    "WorkspaceDetail",
     "WorkflowEvent",
     "WorkflowInput",
     "WorkflowIntent",
@@ -111,4 +126,5 @@ __all__ = [
     "WorkflowState",
     "WorkflowStep",
     "WorkflowStatus",
+    "WorkspaceSettingsRecord",
 ]
