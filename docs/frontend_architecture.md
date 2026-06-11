@@ -1779,6 +1779,12 @@ answer in a separate section above a long tool panel, because users lose sight
 of streamed model output while tools expand below it. Tool rows should stay
 compact by default and expose detailed arguments/results only inside expandable
 sections.
+Backend `tool_progress` events should render inline between `tool_started` and
+`tool_completed`, with labels and progress percentages coming from the
+data-driven Assistant progress policy catalog rather than browser hardcoding.
+This gives long validation, retrieval, OCR-adjacent extraction, workflow, and
+review operations observable intermediate state without inventing a separate
+tool console.
 The timeline should also render the validated `plan_ready` payload before
 tool execution: plan mode, selected tool sequence, rationale, and bounded
 argument JSON. The UI must not imply that partial planning text is executable;

@@ -808,9 +808,9 @@ review conditions for a task class.
 `GET /api/v1/assistant/mcp/resources`
 
 Returns the MCP resource catalog from `knowledge/assistant/mcp_resources.json`.
-Resources are read-only operational catalogs such as assistant tools, retrieval
-strategies, source trust policies, workflows, reviews, schemas, and knowledge
-source inventory.
+Resources are read-only operational catalogs such as assistant tools, assistant
+tool progress policies, retrieval strategies, source trust policies, workflows,
+reviews, schemas, and knowledge source inventory.
 
 `GET /api/v1/assistant/mcp/prompts`
 
@@ -907,13 +907,16 @@ fields such as `workflow_id`, `workflow_ids`, `workflow_ref`, and
 Streams the same assistant operation over server-sent events for the browser
 chat UI. The stream emits `planning_started`, `planning_step`, optional
 `planning_delta`, optional fallback `planning_progress`, `plan_ready`,
-`tool_started`, `tool_completed`, optional `warning`, `synthesis_started`,
-zero or more `answer_delta`, optional `error`, and `final` events. When OpenAI
-is configured, planning and answer synthesis use the OpenAI Responses streaming
-API. Planner text/tool-plan deltas are forwarded as `planning_delta` before any
-backend tool executes, so users can see the model is building a plan instead of
-watching a black-box spinner. If a configured planner cannot stream, the backend
-still emits `planning_progress` heartbeat events between `planning_started` and
+`tool_started`, zero or more `tool_progress`, `tool_completed`, optional
+`warning`, `synthesis_started`, zero or more `answer_delta`, optional `error`,
+and `final` events. Tool progress stages are loaded from
+`knowledge/assistant/tool_progress_policies.json`, so labels and progress copy
+are data-driven instead of hardcoded in the browser. When OpenAI is configured,
+planning and answer synthesis use the OpenAI Responses streaming API. Planner
+text/tool-plan deltas are forwarded as `planning_delta` before any backend tool
+executes, so users can see the model is building a plan instead of watching a
+black-box spinner. If a configured planner cannot stream, the backend still
+emits `planning_progress` heartbeat events between `planning_started` and
 `plan_ready`, including `elapsed_seconds`. If execution fails after response
 headers have been sent, the backend emits a structured `error` event because
 the HTTP status can no longer be changed.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
@@ -16,6 +16,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantPlan,
     AssistantResponse,
     AssistantToolPlan,
+    AssistantToolProgressStage,
     AssistantToolResult,
     AssistantToolSpec,
 )
@@ -32,11 +33,16 @@ class AssistantService:
         planner: AssistantPlanner | None = None,
         max_tool_calls: int = 4,
         planning_progress_interval_seconds: float = 2.0,
+        tool_progress_stages: Mapping[str, list[AssistantToolProgressStage]] | None = None,
     ) -> None:
         self.tool_executor = tool_executor
         self.planner = planner
         self.max_tool_calls = max_tool_calls
         self.planning_progress_interval_seconds = planning_progress_interval_seconds
+        self.tool_progress_stages = _validated_tool_progress_stages(
+            tool_progress_stages or {},
+            tool_specs=self.tool_specs,
+        )
 
     @property
     def tool_specs(self) -> list[AssistantToolSpec]:
@@ -215,6 +221,12 @@ class AssistantService:
                 "index": index,
                 "tool_call": tool_call.model_dump(mode="json"),
             }
+            for stage in self._tool_progress_events(
+                index=index,
+                tool_name=tool_call.tool_name,
+                event="before_execute",
+            ):
+                yield stage
             result = self.tool_executor.execute(
                 tool_call,
                 execute_write_actions=execute_write_actions,
@@ -222,6 +234,12 @@ class AssistantService:
                 request_id=request_id,
             )
             tool_results.append(result)
+            for stage in self._tool_progress_events(
+                index=index,
+                tool_name=tool_call.tool_name,
+                event="after_execute",
+            ):
+                yield stage
             yield {
                 "type": "tool_completed",
                 "index": index,
@@ -317,6 +335,43 @@ class AssistantService:
                 max_tool_calls=self.max_tool_calls,
             )
         return _deterministic_plan(message, context)
+
+    def _tool_progress_events(
+        self,
+        *,
+        index: int,
+        tool_name: str,
+        event: str,
+    ) -> list[dict[str, Any]]:
+        stages = self.tool_progress_stages.get(tool_name, [])
+        return [
+            {
+                "type": "tool_progress",
+                "index": index,
+                "tool_name": tool_name,
+                "stage_id": stage.stage_id,
+                "label": stage.label,
+                "message": stage.message,
+                "progress": stage.progress,
+            }
+            for stage in stages
+            if stage.event == event
+        ]
+
+
+def _validated_tool_progress_stages(
+    progress_stages: Mapping[str, list[AssistantToolProgressStage]],
+    *,
+    tool_specs: list[AssistantToolSpec],
+) -> dict[str, list[AssistantToolProgressStage]]:
+    known_tools = {spec.name for spec in tool_specs}
+    unknown_tools = sorted(set(progress_stages) - known_tools)
+    if unknown_tools:
+        raise ValueError(
+            "Assistant tool progress policy references unknown tool(s): "
+            + ", ".join(unknown_tools)
+        )
+    return {tool_name: list(stages) for tool_name, stages in progress_stages.items()}
 
 
 def _planning_failure_warning(exc: OJTFlowError) -> str:

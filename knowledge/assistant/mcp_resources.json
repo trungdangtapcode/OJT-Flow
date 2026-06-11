@@ -38,6 +38,18 @@
       "roadmap_refs": ["F096", "F113"]
     },
     {
+      "resource_id": "assistant_tool_progress_policies",
+      "uri": "ojtflow://assistant/tool-progress-policies",
+      "name": "assistant_tool_progress_policies",
+      "title": "Assistant Tool Progress Policies",
+      "description": "Data-driven stream progress stages for Assistant tool execution, including validation, retrieval, OCR-adjacent extraction, workflow, and review operations.",
+      "mime_type": "application/json",
+      "provider_key": "assistant_tool_progress_policies",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "streaming", "tools", "governance"],
+      "roadmap_refs": ["F100", "F113"]
+    },
+    {
       "resource_id": "retrieval_strategies",
       "uri": "ojtflow://retrieval/strategies",
       "name": "retrieval_strategies",

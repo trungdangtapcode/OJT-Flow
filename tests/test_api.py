@@ -4175,9 +4175,13 @@ async def test_assistant_chat_stream_emits_tool_progress_and_final_response(monk
     assert event_text.index("event: stream_opened") < event_text.index("event: planning_started")
     assert "event: plan_ready" in event_text
     assert "event: tool_started" in event_text
+    assert "event: tool_progress" in event_text
     assert "event: tool_completed" in event_text
     assert "event: final" in event_text
+    assert event_text.index("event: tool_started") < event_text.index("event: tool_progress")
+    assert event_text.index("event: tool_progress") < event_text.index("event: tool_completed")
     assert '"tool_name":"retrieval_search"' in event_text
+    assert "Search and rerank evidence" in event_text
     assert '"status":"completed"' in event_text
     assert '"mode":"deterministic"' in event_text
 
@@ -4348,6 +4352,11 @@ async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monk
     assert any(
         resource["uri"] == "ojtflow://retrieval/strategies"
         and "F113" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
+    assert any(
+        resource["uri"] == "ojtflow://assistant/tool-progress-policies"
+        and "F100" in resource["roadmap_refs"]
         for resource in resources["resources"]
     )
 

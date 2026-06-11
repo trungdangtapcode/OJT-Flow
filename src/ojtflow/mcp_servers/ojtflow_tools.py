@@ -19,6 +19,7 @@ from ojtflow.config import get_settings
 from ojtflow.core.contracts.mcp import McpPromptSpec, McpResourceSpec
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.infrastructure.assistant.policies import load_assistant_tool_permission_policies
+from ojtflow.infrastructure.assistant.progress import load_assistant_tool_progress_policies
 from ojtflow.infrastructure.assistant_examples import load_assistant_examples
 from ojtflow.infrastructure.assistant_templates import load_assistant_answer_templates
 from ojtflow.infrastructure.mcp_catalogs import (
@@ -80,6 +81,12 @@ def create_server():
                 example.model_dump(mode="json")
                 for example in load_assistant_examples(knowledge_root)
             ],
+            "assistant_tool_progress_policies": lambda: {
+                tool_name: [stage.model_dump(mode="json") for stage in stages]
+                for tool_name, stages in load_assistant_tool_progress_policies(
+                    knowledge_root
+                ).items()
+            },
             "retrieval_strategies": lambda: load_retrieval_strategy_catalog(
                 knowledge_root
             ).model_dump(mode="json"),

@@ -146,6 +146,11 @@ function chronologicalTimelineItems(
           />
         ),
       });
+    } else if (event.type === "tool_progress") {
+      items.push({
+        key: `tool-progress-${event.index}-${event.stage_id}-${index}`,
+        node: <ToolProgressRow event={event} />,
+      });
     } else if (event.type === "tool_completed") {
       if (!streamEvents.some((candidate) => candidate.type === "tool_started" && candidate.index === event.index)) {
         items.push({
@@ -418,6 +423,43 @@ function ToolTimelineCard({
         ) : null}
       </div>
     </details>
+  );
+}
+
+function ToolProgressRow({
+  event,
+}: {
+  event: Extract<AssistantStreamEvent, { type: "tool_progress" }>;
+}) {
+  const progress =
+    typeof event.progress === "number"
+      ? Math.max(0, Math.min(100, event.progress))
+      : null;
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm">
+      <div className="flex min-w-0 items-start gap-2">
+        <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="break-words font-black">{event.label}</span>
+            <Badge variant="muted">tool {event.index}</Badge>
+            {progress !== null ? <Badge variant="muted">{progress}%</Badge> : null}
+          </div>
+          <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+            {event.message}
+          </div>
+          {progress !== null ? (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                aria-label={`${event.label} progress`}
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 

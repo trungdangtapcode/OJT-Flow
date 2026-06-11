@@ -5,7 +5,11 @@ import pytest
 
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_tools import ASSISTANT_TOOL_SPECS, OJTFlowToolExecutor
-from ojtflow.core.contracts.assistant import AssistantPlan, AssistantToolPlan
+from ojtflow.core.contracts.assistant import (
+    AssistantPlan,
+    AssistantToolPlan,
+    AssistantToolProgressStage,
+)
 from ojtflow.core.errors import ToolExecutionError
 from ojtflow.infrastructure.llm.openai import (
     OpenAIResponsesPlanner,
@@ -21,8 +25,15 @@ class _FakeToolExecutor:
     def tool_specs(self):
         return []
 
-    def execute(self, plan, *, execute_write_actions=False, owner_user_id=None):
-        del execute_write_actions, owner_user_id
+    def execute(
+        self,
+        plan,
+        *,
+        execute_write_actions=False,
+        owner_user_id=None,
+        request_id=None,
+    ):
+        del execute_write_actions, owner_user_id, request_id
         from ojtflow.core.contracts.assistant import AssistantToolResult
 
         return AssistantToolResult(
@@ -126,8 +137,15 @@ class _FakeRetrievalToolExecutor:
     def tool_specs(self):
         return []
 
-    def execute(self, plan, *, execute_write_actions=False, owner_user_id=None):
-        del execute_write_actions, owner_user_id
+    def execute(
+        self,
+        plan,
+        *,
+        execute_write_actions=False,
+        owner_user_id=None,
+        request_id=None,
+    ):
+        del execute_write_actions, owner_user_id, request_id
         from ojtflow.core.contracts.assistant import AssistantToolResult
 
         return AssistantToolResult(
@@ -335,6 +353,12 @@ class _FakeRetrievalToolExecutor:
         )
 
 
+class _FakeRetrievalToolExecutorWithSpec(_FakeToolExecutor):
+    @property
+    def tool_specs(self):
+        return [ASSISTANT_TOOL_SPECS["retrieval_search"]]
+
+
 @pytest.mark.asyncio
 async def test_assistant_service_uses_planner_but_backend_executor_owns_tools() -> None:
     planner = _FakePlanner()
@@ -420,6 +444,50 @@ async def test_assistant_stream_emits_streamed_planner_steps_and_deltas() -> Non
     assert "planning_delta" in event_types
     assert event_types.index("planning_delta") < event_types.index("plan_ready")
     assert event_types.index("plan_ready") < event_types.index("final")
+
+
+@pytest.mark.asyncio
+async def test_assistant_stream_emits_data_driven_tool_progress_events() -> None:
+    service = AssistantService(
+        _FakeRetrievalToolExecutorWithSpec(),  # type: ignore[arg-type]
+        planner=_FakePlanner(),
+        max_tool_calls=2,
+        tool_progress_stages={
+            "retrieval_search": [
+                AssistantToolProgressStage(
+                    stage_id="search_index",
+                    label="Search evidence index",
+                    message="Running the configured retrieval strategy.",
+                    progress=55,
+                    event="before_execute",
+                ),
+                AssistantToolProgressStage(
+                    stage_id="package_trace",
+                    label="Package retrieval trace",
+                    message="Preparing evidence trace metadata.",
+                    progress=90,
+                    event="after_execute",
+                ),
+            ]
+        },
+    )
+
+    events = [
+        event
+        async for event in service.chat_stream(
+            message="search HbA1c",
+            owner_user_id="usr_test",
+        )
+    ]
+
+    event_types = [event["type"] for event in events]
+    progress_events = [event for event in events if event["type"] == "tool_progress"]
+    assert len(progress_events) == 2
+    assert progress_events[0]["stage_id"] == "search_index"
+    assert progress_events[0]["progress"] == 55
+    assert progress_events[1]["stage_id"] == "package_trace"
+    assert event_types.index("tool_started") < event_types.index("tool_progress")
+    assert event_types.index("tool_progress") < event_types.index("tool_completed")
 
 
 @pytest.mark.asyncio

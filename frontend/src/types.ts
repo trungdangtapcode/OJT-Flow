@@ -1193,6 +1193,15 @@ export type AssistantStreamEvent =
       tool_call: AssistantToolPlan;
     }
   | {
+      type: "tool_progress";
+      index: number;
+      tool_name: string;
+      stage_id: string;
+      label: string;
+      message: string;
+      progress?: number | null;
+    }
+  | {
       type: "tool_completed";
       index: number;
       tool_result: AssistantToolResult;

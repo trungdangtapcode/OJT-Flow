@@ -14,6 +14,7 @@ from ojtflow.core.time import utc_now
 AssistantToolStatus = Literal["completed", "failed", "requires_approval", "skipped"]
 AssistantFindingSeverity = Literal["info", "warning", "error", "action_required"]
 AssistantMessageRole = Literal["user", "assistant", "system", "tool"]
+AssistantToolProgressEvent = Literal["before_execute", "after_execute"]
 
 
 class AssistantToolSpec(ContractModel):
@@ -47,6 +48,30 @@ class AssistantToolResult(ContractModel):
     summary: str = ""
     error: str | None = None
     requires_approval: bool = False
+
+
+class AssistantToolProgressStage(ContractModel):
+    """Data-driven progress marker streamed while an assistant tool runs."""
+
+    stage_id: NonBlankStr
+    label: NonBlankStr
+    message: NonBlankStr
+    progress: int | None = Field(default=None, ge=0, le=100)
+    event: AssistantToolProgressEvent = "before_execute"
+
+
+class AssistantToolProgressPolicy(ContractModel):
+    """Progress stages for one assistant tool."""
+
+    tool_name: NonBlankStr
+    stages: list[AssistantToolProgressStage] = Field(default_factory=list)
+
+
+class AssistantToolProgressCatalog(ContractModel):
+    """Data-driven assistant progress stage registry."""
+
+    version: NonBlankStr
+    policies: list[AssistantToolProgressPolicy] = Field(default_factory=list)
 
 
 class AssistantFinding(ContractModel):

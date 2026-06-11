@@ -10181,9 +10181,20 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert 'type: "planning_delta"' in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
+    assert 'type: "tool_progress"' in (REPO_ROOT / "frontend/src/types.ts").read_text(
+        encoding="utf-8"
+    )
     assert "chronologicalTimelineItems" in assistant_live_timeline
     assert "AssistantTextStreamPreview" in assistant_live_timeline
     assert "ToolTimelineCard" in assistant_live_timeline
+    assert "ToolProgressRow" in assistant_live_timeline
+    assert "tool_progress" in assistant_live_timeline
+    assert "Search and rerank evidence" in (
+        REPO_ROOT / "knowledge" / "assistant" / "tool_progress_policies.json"
+    ).read_text(encoding="utf-8")
+    assert "load_assistant_tool_progress_policies" in (
+        REPO_ROOT / "src" / "ojtflow" / "interfaces" / "api" / "deps.py"
+    ).read_text(encoding="utf-8")
     assert "formatPlannerStreamText" in assistant_live_timeline
     assert "PlannerStreamPreview" in assistant_live_timeline
     assert "Planner stream" in assistant_live_timeline

@@ -123,12 +123,15 @@ sidebar uses this query instead of relying on browser-only history.
 
 The browser Assistant uses the streaming route. It sends the same request
 payload as `/assistant/chat`, then receives server-sent events for planning,
-tool start/completion, warnings, answer synthesis, answer text deltas, and the
-final `AssistantResponse`. Mid-stream failures are emitted as structured
-`error` events because the HTTP status may already be committed. In OpenAI
-mode, synthesis calls the OpenAI Responses API with `stream: true` and forwards
-`response.output_text.delta` chunks to the UI so users see the answer as it is
-generated.
+tool start, data-driven `tool_progress` stages, tool completion, warnings,
+answer synthesis, answer text deltas, and the final `AssistantResponse`.
+Progress stage copy lives in `knowledge/assistant/tool_progress_policies.json`
+and is also exposed through the MCP resource catalog as
+`ojtflow://assistant/tool-progress-policies`. Mid-stream failures are emitted
+as structured `error` events because the HTTP status may already be committed.
+In OpenAI mode, synthesis calls the OpenAI Responses API with `stream: true`
+and forwards `response.output_text.delta` chunks to the UI so users see the
+answer as it is generated.
 
 ```json
 {

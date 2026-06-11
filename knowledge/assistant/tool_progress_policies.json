@@ -1,0 +1,230 @@
+{
+  "version": "assistant_tool_progress_policies.v1",
+  "policies": [
+    {
+      "tool_name": "retrieval_search",
+      "stages": [
+        {
+          "stage_id": "prepare_query",
+          "label": "Prepare retrieval query",
+          "message": "Normalizing the query, schema, fields, and source filters before searching trusted evidence.",
+          "progress": 20,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "search_and_rerank",
+          "label": "Search and rerank evidence",
+          "message": "Running retrieval over the configured medical corpus and ranking candidate evidence.",
+          "progress": 55,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "package_retrieval_trace",
+          "label": "Package retrieval trace",
+          "message": "Building evidence summaries, support matrix, warnings, and trace metadata for review.",
+          "progress": 90,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "validate_data",
+      "stages": [
+        {
+          "stage_id": "detect_and_parse",
+          "label": "Detect and parse input",
+          "message": "Detecting the source format and parsing rows or records through the deterministic parser.",
+          "progress": 30,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "run_validation_rules",
+          "label": "Run validation rules",
+          "message": "Checking required fields, malformed rows, dates, units, types, PHI risk, and prompt-injection patterns.",
+          "progress": 65,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "package_validation_report",
+          "label": "Package validation report",
+          "message": "Summarizing validation issues and review requirements for the assistant answer.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "validate_with_evidence",
+      "stages": [
+        {
+          "stage_id": "validate_payload",
+          "label": "Validate payload",
+          "message": "Parsing the supplied healthcare data and producing structured validation issues.",
+          "progress": 25,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "retrieve_supporting_evidence",
+          "label": "Retrieve supporting evidence",
+          "message": "Searching trusted schema, terminology, policy, and interoperability evidence for the detected issues.",
+          "progress": 60,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "merge_evidence_and_issues",
+          "label": "Merge evidence and issues",
+          "message": "Combining validation findings, retrieval support, safety flags, and review guidance.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "convert_data",
+      "stages": [
+        {
+          "stage_id": "parse_source_payload",
+          "label": "Parse source payload",
+          "message": "Parsing the source data before conversion and preserving conversion metadata.",
+          "progress": 35,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "convert_target_format",
+          "label": "Convert target format",
+          "message": "Converting to the requested format and checking for lossy representation changes.",
+          "progress": 70,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "package_conversion_output",
+          "label": "Package conversion output",
+          "message": "Preparing converted output, hash metadata, warnings, and applied actions.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "fhir_profile",
+      "stages": [
+        {
+          "stage_id": "detect_resource_shape",
+          "label": "Detect FHIR-like shape",
+          "message": "Detecting resourceType, Bundle entries, and minimal FHIR-like structure.",
+          "progress": 35,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "profile_resource",
+          "label": "Profile resource",
+          "message": "Checking minimal required shape and preparing schema evidence for Graph-NER/RAG handoff.",
+          "progress": 70,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "package_profile",
+          "label": "Package FHIR profile",
+          "message": "Returning profile evidence, warnings, and handoff context.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "list_workflows",
+      "stages": [
+        {
+          "stage_id": "query_workflow_queue",
+          "label": "Query workflow queue",
+          "message": "Reading visible workflow summaries from the durable workflow store.",
+          "progress": 55,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "summarize_queue",
+          "label": "Summarize queue",
+          "message": "Formatting queue counts and latest workflow metadata for the assistant.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "list_reviews",
+      "stages": [
+        {
+          "stage_id": "query_review_queue",
+          "label": "Query review queue",
+          "message": "Reading visible human-review tasks and review-gated workflow states.",
+          "progress": 55,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "summarize_reviews",
+          "label": "Summarize reviews",
+          "message": "Formatting pending review counts and actionable review metadata.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "get_workflow",
+      "stages": [
+        {
+          "stage_id": "load_workflow",
+          "label": "Load workflow",
+          "message": "Reading the selected workflow state from the durable workflow store.",
+          "progress": 60,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "package_workflow_state",
+          "label": "Package workflow state",
+          "message": "Preparing workflow steps, issues, evidence, output refs, review flags, and audit context.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "workflow_summary",
+      "stages": [
+        {
+          "stage_id": "load_workflow_context",
+          "label": "Load workflow context",
+          "message": "Reading workflow state, events, review status, evidence, and output references.",
+          "progress": 55,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "build_operator_summary",
+          "label": "Build operator summary",
+          "message": "Condensing workflow status, issues, review state, evidence counts, and next actions.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
+      "tool_name": "start_workflow",
+      "stages": [
+        {
+          "stage_id": "check_write_gate",
+          "label": "Check write gate",
+          "message": "Verifying approval state before creating durable workflow state.",
+          "progress": 20,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "return_workflow_gate_result",
+          "label": "Return workflow gate result",
+          "message": "Returning whether the workflow was created or is still waiting for explicit write approval.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    }
+  ]
+}
