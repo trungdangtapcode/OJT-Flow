@@ -1,6 +1,8 @@
-import type * as React from "react";
+import * as React from "react";
 
 import {
+  useRetrievalGraphContextsQuery,
+  useRetrievalGraphNeighborhoodQuery,
   useRetrievalPresetsQuery,
   useRetrievalSearchOptionsQuery,
   useRetrievalSearchMutation,
@@ -8,6 +10,7 @@ import {
   useRuntimeConfigQuery,
   useSchemasQuery,
 } from "../../../lib/server-state";
+import type { RetrievalGraphNeighborhoodQuery } from "../../../types";
 import type { RetrievalPageChrome } from "../components/retrieval-page-chrome";
 import type { RetrievalQueryColumn } from "../components/retrieval-query-column";
 import type { RetrievalResultsColumn } from "../components/retrieval-results-column";
@@ -29,14 +32,23 @@ export function useRetrievalPageController(): {
   const integritySession = useRetrievalIntegritySession();
   const presets = presetsQuery.data ?? [];
   const workspace = useRetrievalPageWorkspace({ presets, searchMutation });
+  const [graphNeighborhoodQuery, setGraphNeighborhoodQuery] =
+    React.useState<RetrievalGraphNeighborhoodQuery | null>(null);
+  const graphContextsQuery = useRetrievalGraphContextsQuery({ limit: 20 });
+  const graphNeighborhoodResultQuery =
+    useRetrievalGraphNeighborhoodQuery(graphNeighborhoodQuery);
 
   return retrievalPageProps({
+    graphContextsQuery,
+    graphNeighborhoodQuery,
+    graphNeighborhoodResultQuery,
     integritySession,
     presetsQuery,
     runtimeQuery,
     schemasQuery,
     searchMutation,
     searchOptionsQuery,
+    setGraphNeighborhoodQuery,
     sourcesQuery,
     workspace,
   });

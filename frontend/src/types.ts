@@ -353,6 +353,7 @@ export type RetrievalAnswerClaim = {
   evidence_ids: string[];
   citation_ids: string[];
   graph_path_refs: string[];
+  graph_guard: Record<string, unknown>;
   warnings: string[];
 };
 
@@ -473,6 +474,52 @@ export type RetrievalGraphContext = {
     concept_registry_count?: number;
   };
   limits?: Record<string, unknown>;
+};
+
+export type RetrievalGraphContextRecord = {
+  graph_id: string;
+  owner_user_id?: string | null;
+  workflow_id?: string | null;
+  request_id?: string | null;
+  search_signature?: string | null;
+  query: string;
+  resource_type?: string | null;
+  fields: string[];
+  node_count: number;
+  edge_count: number;
+  triple_count: number;
+  graph_context: RetrievalGraphContext | Record<string, unknown>;
+  created_at: string;
+};
+
+export type RetrievalGraphNeighborhoodQuery = {
+  workflow_id?: string | null;
+  q?: string | null;
+  node_id?: string | null;
+  evidence_id?: string | null;
+  source_id?: string | null;
+  normalized_code?: string | null;
+  resource_type?: string | null;
+  field?: string | null;
+  relation?: string | null;
+  limit?: number;
+  max_depth?: number;
+};
+
+export type RetrievalGraphNeighborhood = {
+  query: RetrievalGraphNeighborhoodQuery;
+  source_graph_ids: string[];
+  graph_count: number;
+  node_count: number;
+  edge_count: number;
+  triple_count: number;
+  matched_node_ids: string[];
+  matched_evidence_ids: string[];
+  nodes: Array<Record<string, unknown>>;
+  edges: Array<Record<string, unknown>>;
+  triples: Array<Record<string, unknown>>;
+  warnings: string[];
+  generated_at: string;
 };
 
 export type RetrievalQueryAnalysis = {

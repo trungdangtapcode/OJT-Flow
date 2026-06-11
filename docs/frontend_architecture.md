@@ -126,6 +126,10 @@ the compact runtime status strip composition and rerank/diversity badges.
 `runtime-status-fact.tsx` owns individual runtime fact cards, and
 `runtime-graph-status.ts` owns graph supporting-copy formatting.
 `graph-handoff-panel.tsx` owns graph context rendering.
+`graph-query-panel.tsx` owns persisted graph-context listing and graph
+neighborhood lookup over `/retrieval/graph/contexts` and
+`/retrieval/graph/neighborhood`; the page controller owns only the submitted
+neighborhood query state and server-state hook wiring.
 `integrity-panel.tsx` owns only the index-integrity card shell and report
 presence branch. `integrity-panel-header.tsx` owns title/status actions,
 `integrity-summary-metrics.tsx` owns report metric composition,

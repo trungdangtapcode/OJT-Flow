@@ -13,8 +13,12 @@ import { retrievalPageTraceProps } from "./retrieval-page-trace-props";
 import { retrievalRuntimeStatusStripView } from "./retrieval-summary-model";
 
 export function retrievalPageResultsColumnProps({
+  graphContextsQuery,
+  graphNeighborhoodQuery,
+  graphNeighborhoodResultQuery,
   integritySession,
   searchMutation,
+  setGraphNeighborhoodQuery,
   sourcesQuery,
   workspace,
 }: RetrievalPagePropsArgs): React.ComponentProps<typeof RetrievalResultsColumn> {
@@ -28,6 +32,17 @@ export function retrievalPageResultsColumnProps({
 
   return {
     graph: { graphContext: packageData?.handoff_context.graph_context },
+    graphQuery: {
+      contexts: graphContextsQuery.data ?? [],
+      currentPackage: packageData,
+      isContextLoading: graphContextsQuery.isLoading,
+      isNeighborhoodFetching: graphNeighborhoodResultQuery.isFetching,
+      neighborhood: graphNeighborhoodResultQuery.data ?? null,
+      neighborhoodError: graphNeighborhoodResultQuery.error,
+      onRefreshContexts: () => void graphContextsQuery.refetch(),
+      onSubmitNeighborhoodQuery: setGraphNeighborhoodQuery,
+      submittedQuery: graphNeighborhoodQuery,
+    },
     integrity: {
       checks: integritySession.integrityQuery.data
         ? prioritizedIntegrityChecks(integritySession.integrityQuery.data)

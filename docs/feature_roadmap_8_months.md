@@ -206,6 +206,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F090 | Implemented | Added owner-scoped graph neighborhood retrieval over persisted Graph-NER records, with query criteria for text, node, evidence, source, normalized code, FHIR-like resource type, field, and relation; exposed a bounded API response for GraphRAG/evidence exploration with docs and focused tests. |
 | 2026-06-11 | F074 | Implemented | Added data-driven query transformation rules for rewrite, step-back query, multi-query expansion, and optional HyDE-style hypothetical evidence variants; integrated them into query variant provenance, rule-pack fingerprints, docs, and focused tests. |
 | 2026-06-11 | F075 | Implemented | Added a data-driven query router that selects an auditable retrieval strategy route from query profile, format, resource type, metadata filters, diagnostics, concepts, standards, and tokens; exposed route metadata in query analysis, package handoff, fusion diagnostics, docs, and focused tests. |
+| 2026-06-11 | F091 | Implemented | Added a Retrieval graph query panel backed by authenticated graph context listing and graph neighborhood APIs, with current-run shortcuts for top evidence/node/source, persisted graph records, result counts, warnings, and node/edge/triple result rendering. |
 
 ## Feature Backlog
 
@@ -310,7 +311,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F088 Add Graph-NER entity extraction evaluation fixtures for lab names, units, identifiers, medications, diagnoses, procedures, and resource names.
 - [x] F089 Add graph persistence for extracted entities/triples instead of only returning graph context in retrieval packages.
 - [x] F090 Add graph neighborhood retrieval that expands evidence by normalized concept, resource type, source, and relation.
-- [ ] F091 Add graph query UI for entities, relationships, source evidence, and workflow references.
+- [x] F091 Add graph query UI for entities, relationships, source evidence, and workflow references.
 - [x] F092 Add knowledge graph export as JSONL or RDF-like triples for downstream tools.
 - [x] F093 Add GraphRAG-lite answer path: retrieve chunks, extract entities, expand neighborhood, rerank with graph support, synthesize with citations.
 - [x] F094 Add hallucination guard that compares answer claims to evidence triples and flags unsupported clinical assertions.

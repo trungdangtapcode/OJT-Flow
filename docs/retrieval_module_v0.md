@@ -104,6 +104,12 @@ not a clinical decision-support artifact.
 Operators can also call `GET /api/v1/retrieval/graph/neighborhood` to expand a
 bounded subgraph by text, node ID, evidence ID, source ID, normalized code,
 FHIR-like resource type, data field, relation, owner, and workflow scope.
+The Retrieval page exposes the same capability in the `Graph query` panel:
+operators can query persisted graph neighborhoods by text, node, evidence,
+source, normalized code, workflow, or relation; seed the query from the current
+run's top evidence/node/source; inspect recent persisted graph records; and
+review bounded node, edge, and triple results without leaving the retrieval
+workspace.
 
 GraphRAG-lite reranking is configured by
 `knowledge/retrieval/graph_rag_policy.json` and included in the sanitized

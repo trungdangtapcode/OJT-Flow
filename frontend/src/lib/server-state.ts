@@ -29,6 +29,7 @@ import {
   getRetrievalCorpusAdapters,
   getRetrievalCorpusChunkingProfiles,
   getRetrievalCorpusManifest,
+  getRetrievalGraphNeighborhood,
   getRetrievalSearchOptions,
   getRetrievalSourcePolicies,
   getRetrievalStrategies,
@@ -47,6 +48,7 @@ import {
   listAssistantExamples,
   listAssistantSessions,
   listJobs,
+  listRetrievalGraphContexts,
   listRetrievalJudgments,
   listRetrievalPresets,
   listRetrievalSources,
@@ -88,6 +90,7 @@ import type {
   OcrEvidenceFieldInput,
   OcrEvidenceResponse,
   UploadParseJobResponse,
+  RetrievalGraphNeighborhoodQuery,
   RetrievalReindexJobPayload,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentPayload,
@@ -150,6 +153,10 @@ export const queryKeys = {
   retrievalCorpusManifest: ["retrieval-corpus-manifest"] as const,
   retrievalSourcePolicies: ["retrieval-source-policies"] as const,
   retrievalStrategies: ["retrieval-strategies"] as const,
+  retrievalGraphContexts: (params: Record<string, unknown>) =>
+    ["retrieval-graph-contexts", params] as const,
+  retrievalGraphNeighborhood: (params: RetrievalGraphNeighborhoodQuery | null) =>
+    ["retrieval-graph-neighborhood", params] as const,
   retrievalPlan: (payload: RetrievalSearchPayload | null) => ["retrieval-plan", payload] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   extractors: ["extractors"] as const,
@@ -414,6 +421,26 @@ export function useRetrievalStrategiesQuery() {
   return useQuery({
     queryKey: queryKeys.retrievalStrategies,
     queryFn: getRetrievalStrategies,
+  });
+}
+
+export function useRetrievalGraphContextsQuery(params: {
+  workflow_id?: string | null;
+  limit?: number;
+}) {
+  return useQuery({
+    queryKey: queryKeys.retrievalGraphContexts(params),
+    queryFn: () => listRetrievalGraphContexts(params),
+  });
+}
+
+export function useRetrievalGraphNeighborhoodQuery(
+  params: RetrievalGraphNeighborhoodQuery | null,
+) {
+  return useQuery({
+    enabled: Boolean(params),
+    queryKey: queryKeys.retrievalGraphNeighborhood(params),
+    queryFn: () => getRetrievalGraphNeighborhood(params!),
   });
 }
 

@@ -57,6 +57,9 @@ import type {
   RuntimeReadiness,
   RuntimeRetrievalSettingsPayload,
   RuntimeRetrievalSettingsUpdate,
+  RetrievalGraphContextRecord,
+  RetrievalGraphNeighborhood,
+  RetrievalGraphNeighborhoodQuery,
   SchemaEntry,
   StartWorkflowPayload,
   UploadParseJobResponse,
@@ -542,6 +545,35 @@ export function getRetrievalCorpusChunkingProfiles(): Promise<CorpusChunkingProf
 
 export function getRetrievalStrategies(): Promise<RetrievalStrategyCatalog> {
   return request<RetrievalStrategyCatalog>("/retrieval/strategies");
+}
+
+export function listRetrievalGraphContexts(params: {
+  workflow_id?: string | null;
+  limit?: number;
+} = {}): Promise<RetrievalGraphContextRecord[]> {
+  return request<RetrievalGraphContextRecord[]>(
+    `/retrieval/graph/contexts${queryString(params)}`,
+  );
+}
+
+export function getRetrievalGraphNeighborhood(
+  params: RetrievalGraphNeighborhoodQuery,
+): Promise<RetrievalGraphNeighborhood> {
+  return request<RetrievalGraphNeighborhood>(
+    `/retrieval/graph/neighborhood${queryString({
+      evidence_id: params.evidence_id,
+      field: params.field,
+      limit: params.limit,
+      max_depth: params.max_depth,
+      node_id: params.node_id,
+      normalized_code: params.normalized_code,
+      q: params.q,
+      relation: params.relation,
+      resource_type: params.resource_type,
+      source_id: params.source_id,
+      workflow_id: params.workflow_id,
+    })}`,
+  );
 }
 
 export function listRetrievalJudgments(params: {
