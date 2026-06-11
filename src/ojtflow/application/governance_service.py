@@ -13,6 +13,8 @@ from ojtflow.core.contracts.governance import (
     OrganizationGroupRecord,
     OrganizationMembershipRecord,
     OrganizationRecord,
+    RbacPolicy,
+    RbacRoleDefinition,
     WorkspaceDefaultGroup,
     WorkspaceDefaults,
     WorkspaceDetail,
@@ -31,16 +33,31 @@ class GovernanceService:
         repository: GovernanceRepository,
         *,
         defaults: WorkspaceDefaults,
+        rbac_policy: RbacPolicy,
     ) -> None:
         self.repository = repository
         self.defaults = defaults
+        self.rbac_policy = rbac_policy
+        self._roles_by_key = {role.role_key: role for role in rbac_policy.roles}
+        _validate_configured_roles(
+            [
+                defaults.default_role_key,
+                *defaults.default_group.role_keys,
+            ],
+            roles_by_key=self._roles_by_key,
+        )
+
+    def role_policy(self) -> RbacPolicy:
+        """Return the active role-based access-control catalog."""
+
+        return self.rbac_policy
 
     def get_or_create_current_workspace(self, user: UserRecord) -> WorkspaceDetail:
         """Return the user's current workspace, creating a default one if needed."""
 
         existing = self.repository.get_current_workspace(user_id=user.user_id)
         if existing:
-            return existing
+            return self._with_effective_permissions(existing, user_id=user.user_id)
 
         now = utc_now().isoformat()
         organization = OrganizationRecord(
@@ -78,20 +95,24 @@ class GovernanceService:
             updated_by_user_id=user.user_id,
             updated_at=now,
         )
-        return self.repository.create_default_workspace(
+        workspace = self.repository.create_default_workspace(
             organization=organization,
             membership=membership,
             group=group,
             group_membership=group_membership,
             settings=settings,
         )
+        return self._with_effective_permissions(workspace, user_id=user.user_id)
 
     def list_workspaces(self, user: UserRecord) -> list[WorkspaceDetail]:
         """List workspaces visible to a user, bootstrapping the default if absent."""
 
         workspaces = self.repository.list_workspaces(user_id=user.user_id)
         if workspaces:
-            return workspaces
+            return [
+                self._with_effective_permissions(workspace, user_id=user.user_id)
+                for workspace in workspaces
+            ]
         return [self.get_or_create_current_workspace(user)]
 
     def update_workspace_settings(
@@ -105,12 +126,13 @@ class GovernanceService:
 
         current = self._require_workspace(user=user, organization_id=organization_id)
         merged = _deep_merge(current.settings.settings, patch)
-        return self.repository.update_workspace_settings(
+        workspace = self.repository.update_workspace_settings(
             organization_id=organization_id,
             user_id=user.user_id,
             settings=merged,
             updated_by_user_id=user.user_id,
         )
+        return self._with_effective_permissions(workspace, user_id=user.user_id)
 
     def create_group(
         self,
@@ -132,15 +154,16 @@ class GovernanceService:
             slug=_normalize_slug(slug),
             display_name=display_name.strip(),
             description=description.strip(),
-            role_keys=_clean_role_keys(role_keys or []),
+            role_keys=_clean_role_keys(role_keys or [], roles_by_key=self._roles_by_key),
             created_at=now,
             updated_at=now,
         )
-        return self.repository.create_group(
+        workspace = self.repository.create_group(
             organization_id=organization_id,
             user_id=user.user_id,
             group=group,
         )
+        return self._with_effective_permissions(workspace, user_id=user.user_id)
 
     def _require_workspace(
         self,
@@ -154,6 +177,24 @@ class GovernanceService:
         raise NotFoundError(
             "Organization workspace was not found for the current user.",
             details={"organization_id": organization_id},
+        )
+
+    def _with_effective_permissions(
+        self,
+        workspace: WorkspaceDetail,
+        *,
+        user_id: str,
+    ) -> WorkspaceDetail:
+        role_keys = _effective_role_keys(workspace, user_id=user_id)
+        permission_scopes = _permission_scopes_for_roles(
+            role_keys,
+            roles_by_key=self._roles_by_key,
+        )
+        return workspace.model_copy(
+            update={
+                "effective_role_keys": role_keys,
+                "effective_permission_scopes": permission_scopes,
+            }
         )
 
 
@@ -190,16 +231,77 @@ def _normalize_slug(value: str) -> str:
     return normalized or new_id("slug")
 
 
-def _clean_role_keys(values: list[str]) -> list[str]:
+def _clean_role_keys(
+    values: list[str],
+    *,
+    roles_by_key: dict[str, RbacRoleDefinition] | None = None,
+) -> list[str]:
     seen: set[str] = set()
     role_keys: list[str] = []
     for value in values:
         role_key = _normalize_slug(value)
+        if roles_by_key is not None and role_key not in roles_by_key:
+            raise NotFoundError(
+                "RBAC role key was not found.",
+                details={"role_key": role_key},
+            )
         if role_key in seen:
             continue
         seen.add(role_key)
         role_keys.append(role_key)
     return role_keys
+
+
+def _effective_role_keys(workspace: WorkspaceDetail, *, user_id: str) -> list[str]:
+    group_ids_for_user = {
+        membership.group_id
+        for membership in workspace.group_memberships
+        if membership.user_id == user_id
+    }
+    role_keys = [workspace.membership.role_key]
+    for group in workspace.groups:
+        if group.group_id not in group_ids_for_user:
+            continue
+        role_keys.extend(group.role_keys)
+    return _unique_preserving_order(role_keys)
+
+
+def _permission_scopes_for_roles(
+    role_keys: list[str],
+    *,
+    roles_by_key: dict[str, RbacRoleDefinition],
+) -> list[str]:
+    permission_scopes: list[str] = []
+    for role_key in role_keys:
+        role = roles_by_key.get(role_key)
+        if role is None:
+            continue
+        permission_scopes.extend(role.permission_scopes)
+    return _unique_preserving_order(permission_scopes)
+
+
+def _unique_preserving_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _validate_configured_roles(
+    role_keys: list[str],
+    *,
+    roles_by_key: dict[str, RbacRoleDefinition],
+) -> None:
+    for role_key in _clean_role_keys(role_keys):
+        if role_key not in roles_by_key:
+            raise NotFoundError(
+                "Configured workspace default role is not defined in RBAC policy.",
+                details={"role_key": role_key},
+            )
 
 
 def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:

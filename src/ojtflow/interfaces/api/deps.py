@@ -41,6 +41,7 @@ from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 from ojtflow.infrastructure.extraction.document import LocalDocumentExtractor
 from ojtflow.infrastructure.governance_defaults import load_workspace_defaults
+from ojtflow.infrastructure.governance_rbac import load_rbac_policy
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
@@ -441,6 +442,7 @@ def _build_governance_service() -> GovernanceService:
     return GovernanceService(
         repository,
         defaults=load_workspace_defaults(settings.resolved_knowledge_dir),
+        rbac_policy=load_rbac_policy(settings.resolved_knowledge_dir),
     )
 
 

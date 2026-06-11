@@ -1819,6 +1819,21 @@ Response data includes:
 Lists organization workspaces visible to the authenticated user. The v0 backend
 bootstraps a default workspace when none exists.
 
+`GET /api/v1/governance/rbac-policy`
+
+Returns the active data-driven role and permission catalog from
+`knowledge/governance/rbac_roles.json`.
+
+Response data includes:
+
+- `version`
+- `permissions[].permission_scope`
+- `permissions[].risk_level`
+- `roles[].role_key`
+- `roles[].permission_scopes`
+- `roles[].assignable`
+- `roles[].system_role`
+
 `PATCH /api/v1/organizations/{organization_id}/settings`
 
 Deep-merges workspace-level settings and increments the settings version.

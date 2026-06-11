@@ -30,6 +30,7 @@ Repositories:
 Data-driven defaults:
 
 - `knowledge/governance/workspace_defaults.json`
+- `knowledge/governance/rbac_roles.json`
 
 Postgres migration:
 
@@ -43,6 +44,8 @@ All routes require an authenticated backend session and return the standard
 - `GET /api/v1/organizations/current`
   - Returns the current user's workspace.
   - Creates a default workspace if the user has no organization membership.
+- `GET /api/v1/governance/rbac-policy`
+  - Returns the data-driven role and permission catalog.
 - `GET /api/v1/organizations`
   - Lists workspaces visible to the user.
 - `PATCH /api/v1/organizations/{organization_id}/settings`
@@ -60,9 +63,9 @@ All routes require an authenticated backend session and return the standard
 - `workspace_settings`: versioned JSON settings for review, data handling,
   retrieval, and assistant behavior.
 
-Role keys are stored now but not yet interpreted as authorization decisions.
-That is intentional. The next roadmap item, F120, defines RBAC roles and maps
-role keys to permissions.
+Role keys are mapped through `knowledge/governance/rbac_roles.json`. Workspace
+responses include `effective_role_keys` and `effective_permission_scopes`.
+Authorization enforcement across product resources remains scoped to F121.
 
 ## Verification
 

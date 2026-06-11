@@ -12,6 +12,7 @@ from ojtflow.core.contracts.auth import (
     UserRecord,
 )
 from ojtflow.infrastructure.governance_defaults import load_workspace_defaults
+from ojtflow.infrastructure.governance_rbac import load_rbac_policy
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.governance_memory import InMemoryGovernanceRepository
 from ojtflow.infrastructure.storage.governance_sqlite import SQLiteGovernanceRepository
@@ -63,6 +64,7 @@ def _service(repository=None) -> GovernanceService:
     return GovernanceService(
         repository or InMemoryGovernanceRepository(),
         defaults=load_workspace_defaults(ROOT / "knowledge"),
+        rbac_policy=load_rbac_policy(ROOT / "knowledge"),
     )
 
 
@@ -73,6 +75,73 @@ def test_workspace_defaults_are_data_driven() -> None:
     assert defaults.default_role_key == "owner"
     assert defaults.default_group.slug == "owners"
     assert defaults.settings["assistant"]["write_actions_require_confirmation"] is True
+
+
+def test_rbac_policy_defines_required_enterprise_roles() -> None:
+    policy = load_rbac_policy(ROOT / "knowledge")
+    role_keys = {role.role_key for role in policy.roles}
+    permission_scopes = {permission.permission_scope for permission in policy.permissions}
+
+    assert policy.version == "rbac_roles.v1"
+    assert role_keys >= {
+        "viewer",
+        "operator",
+        "reviewer",
+        "data-steward",
+        "admin",
+        "auditor",
+        "owner",
+    }
+    assert permission_scopes >= {
+        "data:read",
+        "data:validate",
+        "data:transform",
+        "data:export",
+        "retrieval:read",
+        "review:read",
+        "review:write",
+        "audit:read",
+        "settings:write",
+        "users:write",
+        "admin:write",
+    }
+    admin = next(role for role in policy.roles if role.role_key == "admin")
+    auditor = next(role for role in policy.roles if role.role_key == "auditor")
+    assert "admin:write" in admin.permission_scopes
+    assert "settings:write" not in auditor.permission_scopes
+
+
+def test_rbac_policy_loader_rejects_unknown_permission_scope(tmp_path: Path) -> None:
+    policy_dir = tmp_path / "governance"
+    policy_dir.mkdir()
+    (policy_dir / "rbac_roles.json").write_text(
+        """
+        {
+          "version": "rbac_roles.bad",
+          "permissions": [
+            {
+              "permission_scope": "data:read",
+              "label": "Read",
+              "description": "Read data.",
+              "category": "data",
+              "risk_level": "low"
+            }
+          ],
+          "roles": [
+            {
+              "role_key": "viewer",
+              "display_name": "Viewer",
+              "description": "Read-only.",
+              "permission_scopes": ["data:read", "missing:scope"]
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown permission scopes"):
+        load_rbac_policy(tmp_path)
 
 
 def test_governance_service_bootstraps_default_workspace_once() -> None:
@@ -86,6 +155,9 @@ def test_governance_service_bootstraps_default_workspace_once() -> None:
     assert first.membership.role_key == "owner"
     assert first.groups[0].slug == "owners"
     assert first.group_memberships[0].user_id == user.user_id
+    assert first.effective_role_keys == ["owner"]
+    assert "admin:write" in first.effective_permission_scopes
+    assert "users:write" in first.effective_permission_scopes
     assert first.settings.settings["data_policy"]["allow_external_llm_for_phi"] is False
 
 
@@ -114,6 +186,8 @@ def test_governance_service_deep_merges_settings_and_creates_groups() -> None:
     assert {group.slug for group in grouped.groups} == {"owners", "data-stewards"}
     data_stewards = next(group for group in grouped.groups if group.slug == "data-stewards")
     assert data_stewards.role_keys == ["data-steward"]
+    assert "owner" in grouped.effective_role_keys
+    assert "data-steward" not in grouped.effective_role_keys
 
 
 def test_sqlite_governance_repository_roundtrip(tmp_path: Path) -> None:
@@ -135,6 +209,7 @@ def test_sqlite_governance_repository_roundtrip(tmp_path: Path) -> None:
     assert loaded.organization.organization_id == workspace.organization.organization_id
     assert loaded.membership.user_id == user.user_id
     assert loaded.groups[0].slug == "owners"
+    assert loaded.effective_role_keys == ["owner"]
     assert loaded.settings.version == 1
 
 
@@ -164,9 +239,11 @@ async def test_governance_api_current_settings_and_group_roundtrip() -> None:
                 "role_keys": ["reviewer"],
             },
         )
+        policy_response = await client.get("/api/v1/governance/rbac-policy")
 
     assert current_response.status_code == 200
     assert current["membership"]["role_key"] == "owner"
+    assert "admin:write" in current["effective_permission_scopes"]
     assert settings_response.status_code == 200
     assert settings_response.json()["data"]["settings"]["settings"]["assistant"][
         "memory_enabled"
@@ -176,3 +253,6 @@ async def test_governance_api_current_settings_and_group_roundtrip() -> None:
         "owners",
         "reviewers",
     }
+    assert policy_response.status_code == 200
+    policy = policy_response.json()["data"]
+    assert {role["role_key"] for role in policy["roles"]} >= {"viewer", "admin", "auditor"}

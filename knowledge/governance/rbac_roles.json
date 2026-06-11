@@ -1,0 +1,234 @@
+{
+  "version": "rbac_roles.v1",
+  "permissions": [
+    {
+      "permission_scope": "data:read",
+      "label": "Read data metadata",
+      "description": "View workflow, artifact, schema, evidence, and dataset metadata visible in the workspace.",
+      "category": "data",
+      "risk_level": "low"
+    },
+    {
+      "permission_scope": "data:profile",
+      "label": "Profile data",
+      "description": "Run non-mutating profiling over submitted healthcare data.",
+      "category": "data",
+      "risk_level": "medium"
+    },
+    {
+      "permission_scope": "data:validate",
+      "label": "Validate data",
+      "description": "Run parser, validation, PHI, format, and quality checks over submitted data.",
+      "category": "data",
+      "risk_level": "medium"
+    },
+    {
+      "permission_scope": "data:transform",
+      "label": "Draft transformations",
+      "description": "Create review-gated workflow or mapping drafts that may transform healthcare data.",
+      "category": "data",
+      "risk_level": "high"
+    },
+    {
+      "permission_scope": "data:export",
+      "label": "Export governed outputs",
+      "description": "Export approved workflow outputs and provenance packages.",
+      "category": "data",
+      "risk_level": "high"
+    },
+    {
+      "permission_scope": "retrieval:read",
+      "label": "Search evidence",
+      "description": "Search trusted retrieval sources, standards, and evidence packages.",
+      "category": "retrieval",
+      "risk_level": "medium"
+    },
+    {
+      "permission_scope": "review:read",
+      "label": "Read reviews",
+      "description": "View human review queues, review status, and review metadata.",
+      "category": "review",
+      "risk_level": "low"
+    },
+    {
+      "permission_scope": "review:write",
+      "label": "Create review work",
+      "description": "Create or update review-gated tasks and review workflow metadata.",
+      "category": "review",
+      "risk_level": "high"
+    },
+    {
+      "permission_scope": "audit:read",
+      "label": "Read audit records",
+      "description": "View audit records, assistant tool-call logs, and governance history.",
+      "category": "audit",
+      "risk_level": "medium"
+    },
+    {
+      "permission_scope": "audit:write",
+      "label": "Write audit records",
+      "description": "Append system audit records for tools, jobs, and governed operations.",
+      "category": "audit",
+      "risk_level": "high"
+    },
+    {
+      "permission_scope": "settings:read",
+      "label": "Read settings",
+      "description": "View sanitized runtime and workspace settings.",
+      "category": "settings",
+      "risk_level": "low"
+    },
+    {
+      "permission_scope": "settings:write",
+      "label": "Write settings",
+      "description": "Change workspace or runtime settings that affect governed behavior.",
+      "category": "settings",
+      "risk_level": "critical"
+    },
+    {
+      "permission_scope": "users:read",
+      "label": "Read users and groups",
+      "description": "View users, memberships, groups, and role assignments.",
+      "category": "identity",
+      "risk_level": "medium"
+    },
+    {
+      "permission_scope": "users:write",
+      "label": "Manage users and groups",
+      "description": "Manage organization memberships, groups, and role assignments.",
+      "category": "identity",
+      "risk_level": "critical"
+    },
+    {
+      "permission_scope": "admin:read",
+      "label": "Read admin diagnostics",
+      "description": "View operational admin diagnostics and policy state.",
+      "category": "admin",
+      "risk_level": "medium"
+    },
+    {
+      "permission_scope": "admin:write",
+      "label": "Administer workspace",
+      "description": "Perform high-risk administration that changes workspace behavior.",
+      "category": "admin",
+      "risk_level": "critical"
+    }
+  ],
+  "roles": [
+    {
+      "role_key": "viewer",
+      "display_name": "Viewer",
+      "description": "Read-only workspace participant for inspecting workflows, evidence, schemas, and non-sensitive operational status.",
+      "permission_scopes": ["data:read", "retrieval:read", "review:read", "settings:read"],
+      "assignable": true,
+      "system_role": false,
+      "notes": ["Cannot create workflows, mutate reviews, export packages, or change settings."]
+    },
+    {
+      "role_key": "operator",
+      "display_name": "Operator",
+      "description": "Runs governed workflow operations such as profiling, validation, retrieval, and review-gated transformation drafts.",
+      "permission_scopes": [
+        "data:read",
+        "data:profile",
+        "data:validate",
+        "data:transform",
+        "retrieval:read",
+        "review:read",
+        "review:write",
+        "settings:read"
+      ],
+      "assignable": true,
+      "system_role": false,
+      "notes": ["Write actions remain confirmation-gated and human-review gated."]
+    },
+    {
+      "role_key": "reviewer",
+      "display_name": "Reviewer",
+      "description": "Reviews blocked or low-confidence workflow decisions and can create review follow-up work.",
+      "permission_scopes": ["data:read", "retrieval:read", "review:read", "review:write", "settings:read"],
+      "assignable": true,
+      "system_role": false,
+      "notes": ["Approval/rejection endpoints remain separate from this role catalog until F121 enforcement."]
+    },
+    {
+      "role_key": "data-steward",
+      "display_name": "Data Steward",
+      "description": "Maintains data quality, schema, terminology, and evidence governance workflows.",
+      "permission_scopes": [
+        "data:read",
+        "data:profile",
+        "data:validate",
+        "data:transform",
+        "data:export",
+        "retrieval:read",
+        "review:read",
+        "review:write",
+        "audit:read",
+        "settings:read"
+      ],
+      "assignable": true,
+      "system_role": false,
+      "notes": ["Can prepare export packages only after review gates and provenance checks pass."]
+    },
+    {
+      "role_key": "admin",
+      "display_name": "Admin",
+      "description": "Workspace administrator for membership, settings, policy, and operational governance.",
+      "permission_scopes": [
+        "data:read",
+        "data:profile",
+        "data:validate",
+        "data:transform",
+        "data:export",
+        "retrieval:read",
+        "review:read",
+        "review:write",
+        "audit:read",
+        "settings:read",
+        "settings:write",
+        "users:read",
+        "users:write",
+        "admin:read",
+        "admin:write"
+      ],
+      "assignable": true,
+      "system_role": false,
+      "notes": ["Admin remains subject to audit and explicit confirmation for high-risk actions."]
+    },
+    {
+      "role_key": "auditor",
+      "display_name": "Auditor",
+      "description": "Read-only compliance reviewer focused on audit records, provenance, workflow history, and settings visibility.",
+      "permission_scopes": ["data:read", "retrieval:read", "review:read", "audit:read", "settings:read", "users:read", "admin:read"],
+      "assignable": true,
+      "system_role": false,
+      "notes": ["Cannot create or mutate workflows, reviews, users, settings, or exports."]
+    },
+    {
+      "role_key": "owner",
+      "display_name": "Owner",
+      "description": "Initial bootstrap role for workspace owners; equivalent to admin for v0 until ownership transfer is formalized.",
+      "permission_scopes": [
+        "data:read",
+        "data:profile",
+        "data:validate",
+        "data:transform",
+        "data:export",
+        "retrieval:read",
+        "review:read",
+        "review:write",
+        "audit:read",
+        "settings:read",
+        "settings:write",
+        "users:read",
+        "users:write",
+        "admin:read",
+        "admin:write"
+      ],
+      "assignable": false,
+      "system_role": true,
+      "notes": ["Created only during default workspace bootstrap."]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 
 OrganizationStatus = Literal["active", "disabled"]
 MembershipStatus = Literal["active", "disabled", "invited"]
+RbacRiskLevel = Literal["low", "medium", "high", "critical"]
 
 
 class WorkspaceDefaultGroup(ContractModel):
@@ -29,6 +30,36 @@ class WorkspaceDefaults(ContractModel):
     default_role_key: NonBlankStr
     default_group: WorkspaceDefaultGroup
     settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class RbacPermissionDefinition(ContractModel):
+    """One permission scope exposed by governance policy."""
+
+    permission_scope: NonBlankStr
+    label: NonBlankStr
+    description: NonBlankStr
+    category: NonBlankStr
+    risk_level: RbacRiskLevel = "low"
+
+
+class RbacRoleDefinition(ContractModel):
+    """One organization role and its granted permission scopes."""
+
+    role_key: NonBlankStr
+    display_name: NonBlankStr
+    description: NonBlankStr
+    permission_scopes: list[NonBlankStr] = Field(default_factory=list)
+    assignable: bool = True
+    system_role: bool = False
+    notes: list[NonBlankStr] = Field(default_factory=list)
+
+
+class RbacPolicy(ContractModel):
+    """Versioned role-based access-control catalog."""
+
+    version: NonBlankStr
+    permissions: list[RbacPermissionDefinition] = Field(default_factory=list)
+    roles: list[RbacRoleDefinition] = Field(default_factory=list)
 
 
 class OrganizationRecord(ContractModel):
@@ -96,3 +127,5 @@ class WorkspaceDetail(ContractModel):
     groups: list[OrganizationGroupRecord] = Field(default_factory=list)
     group_memberships: list[OrganizationGroupMembershipRecord] = Field(default_factory=list)
     settings: WorkspaceSettingsRecord
+    effective_role_keys: list[NonBlankStr] = Field(default_factory=list)
+    effective_permission_scopes: list[NonBlankStr] = Field(default_factory=list)

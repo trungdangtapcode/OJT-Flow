@@ -49,6 +49,17 @@ async def current_organization_workspace(
     return ok(service.get_or_create_current_workspace(authenticated.user))
 
 
+@router.get("/governance/rbac-policy")
+async def governance_rbac_policy(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: GovernanceService = Depends(get_governance_service),
+) -> dict:
+    """Return the active role and permission policy catalog."""
+
+    del authenticated
+    return ok(service.role_policy())
+
+
 @router.get("/organizations")
 async def list_organization_workspaces(
     authenticated: AuthenticatedSession = Depends(require_authentication),
