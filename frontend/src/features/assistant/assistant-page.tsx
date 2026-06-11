@@ -3,6 +3,8 @@ import {
   Bot,
   Loader2,
   Paperclip,
+  PlayCircle,
+  RotateCcw,
   Send,
   Settings2,
   Square,
@@ -32,6 +34,7 @@ import {
 import type {
   AssistantResponse,
   AssistantStreamEvent,
+  AssistantToolResult,
   AssistantTranscriptItem,
   ExtractedDocument,
 } from "../../types";
@@ -284,6 +287,24 @@ export function AssistantPage() {
     );
     const assistantMessage =
       cleanMessage || `Analyze the attached file ${selectedFile?.name ?? ""}.`.trim();
+    await runAssistantTurn({
+      assistantContext,
+      assistantMessage,
+      clearComposer: true,
+    });
+  };
+
+  const runAssistantTurn = async ({
+    assistantContext,
+    assistantMessage,
+    clearComposer = false,
+  }: {
+    assistantContext: Record<string, unknown>;
+    assistantMessage: string;
+    clearComposer?: boolean;
+  }) => {
+    if (isBusy) return;
+    setFormError(null);
     activeStreamRef.current?.abort();
     const abortController = new AbortController();
     activeStreamRef.current = abortController;
@@ -328,8 +349,10 @@ export function AssistantPage() {
       stream_events: [],
       streamed_answer: "",
     });
-    setMessage("");
-    setSelectedAttachment(null);
+    if (clearComposer) {
+      setMessage("");
+      setSelectedAttachment(null);
+    }
     try {
       const response = await assistantMutation.mutateAsync({
         payload: {
@@ -432,6 +455,50 @@ export function AssistantPage() {
     } catch (error) {
       setFormError(workflowErrorMessage(error));
     }
+  };
+
+  const retryFailedTool = async (
+    item: AssistantTranscriptItem,
+    call: AssistantToolResult,
+  ) => {
+    await runAssistantTurn({
+      assistantMessage: `Retry failed tool call ${call.tool_name}.`,
+      assistantContext: {
+        ...item.context,
+        assistant_recovery: {
+          action: "retry_tool",
+          tool_name: call.tool_name,
+          arguments: call.arguments,
+          failed_status: call.status,
+          failed_summary: call.summary,
+          failed_error: call.error ?? null,
+          source_turn_id: item.id,
+        },
+      },
+    });
+  };
+
+  const continueAfterFailure = async (item: AssistantTranscriptItem) => {
+    const failedToolCalls =
+      item.response?.tool_calls
+        .filter((call) => call.status === "failed")
+        .map((call) => ({
+          tool_name: call.tool_name,
+          status: call.status,
+          summary: call.summary,
+          error: call.error ?? null,
+        })) ?? [];
+    await runAssistantTurn({
+      assistantMessage: "Continue without retrying the failed tool call.",
+      assistantContext: {
+        ...item.context,
+        assistant_recovery: {
+          action: "continue_after_failure",
+          failed_tool_calls: failedToolCalls,
+          source_turn_id: item.id,
+        },
+      },
+    });
   };
 
   const appendTranscriptItem = (
@@ -553,7 +620,17 @@ export function AssistantPage() {
               ) : (
                 <div className="mx-auto grid max-w-7xl gap-5">
                   {transcript.map((item) => (
-                    <ConversationTurn item={item} key={item.id} />
+                    <ConversationTurn
+                      isBusy={isBusy}
+                      item={item}
+                      key={item.id}
+                      onContinueAfterFailure={(failedItem) =>
+                        void continueAfterFailure(failedItem)
+                      }
+                      onRetryFailedTool={(failedItem, call) =>
+                        void retryFailedTool(failedItem, call)
+                      }
+                    />
                   ))}
                   {assistantMutation.isPending &&
                   !(latestTranscriptItem?.stream_events?.length) ? (
@@ -697,7 +774,20 @@ export function AssistantPage() {
   );
 }
 
-function ConversationTurn({ item }: { item: AssistantTranscriptItem }) {
+function ConversationTurn({
+  isBusy,
+  item,
+  onContinueAfterFailure,
+  onRetryFailedTool,
+}: {
+  isBusy: boolean;
+  item: AssistantTranscriptItem;
+  onContinueAfterFailure: (item: AssistantTranscriptItem) => void;
+  onRetryFailedTool: (
+    item: AssistantTranscriptItem,
+    call: AssistantToolResult,
+  ) => void;
+}) {
   const attachments = attachmentSummariesFromContext(item.context);
   const hasAssistantActivity = Boolean(
     item.response || item.stream_events?.length || item.error,
@@ -759,6 +849,12 @@ function ConversationTurn({ item }: { item: AssistantTranscriptItem }) {
                   {item.error}
                 </Notice>
               ) : null}
+              <AssistantRecoveryActions
+                isBusy={isBusy}
+                item={item}
+                onContinueAfterFailure={onContinueAfterFailure}
+                onRetryFailedTool={onRetryFailedTool}
+              />
               {!hasAssistantActivity ? (
                 <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -773,6 +869,59 @@ function ConversationTurn({ item }: { item: AssistantTranscriptItem }) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AssistantRecoveryActions({
+  isBusy,
+  item,
+  onContinueAfterFailure,
+  onRetryFailedTool,
+}: {
+  isBusy: boolean;
+  item: AssistantTranscriptItem;
+  onContinueAfterFailure: (item: AssistantTranscriptItem) => void;
+  onRetryFailedTool: (
+    item: AssistantTranscriptItem,
+    call: AssistantToolResult,
+  ) => void;
+}) {
+  const failedToolCalls =
+    item.response?.tool_calls.filter((call) => call.status === "failed") ?? [];
+  if (!failedToolCalls.length) return null;
+  return (
+    <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+      <div className="font-black text-amber-950">Recovery actions</div>
+      <div className="flex min-w-0 flex-wrap gap-2">
+        {failedToolCalls.map((call, index) => (
+          <Button
+            disabled={isBusy}
+            key={`${call.tool_name}-${index}`}
+            onClick={() => onRetryFailedTool(item, call)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Retry {call.tool_name}
+          </Button>
+        ))}
+        <Button
+          disabled={isBusy}
+          onClick={() => onContinueAfterFailure(item)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <PlayCircle className="h-4 w-4" />
+          Continue without retry
+        </Button>
+      </div>
+      <div className="text-xs font-semibold leading-5 text-amber-950">
+        Retry reuses the original tool arguments. Continue keeps the failed step
+        unresolved and avoids another backend tool call.
       </div>
     </div>
   );

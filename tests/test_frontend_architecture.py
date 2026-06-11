@@ -10099,6 +10099,12 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "Live timeline" in assistant_live_timeline
     assert "Planning, tools, results, and answer text in order." in assistant_live_timeline
     assert "ConversationTurn" in assistant_page
+    assert "AssistantRecoveryActions" in assistant_page
+    assert "Retry failed tool call" in assistant_page
+    assert "Continue without retry" in assistant_page
+    assert "assistant_recovery" in assistant_page
+    assert "retry_tool" in assistant_page
+    assert "continue_after_failure" in assistant_page
     assert "streamed_answer" in assistant_page
     assert "AssistantResponseDetails" in assistant_page
     assert "AssistantEvidenceMatchStrip" in assistant_response_details

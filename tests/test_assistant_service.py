@@ -492,6 +492,72 @@ async def test_assistant_stream_emits_data_driven_tool_progress_events() -> None
     assert event_types.index("tool_progress") < event_types.index("tool_completed")
 
 
+@pytest.mark.asyncio
+async def test_assistant_recovery_retry_reuses_failed_tool_arguments() -> None:
+    service = AssistantService(
+        _FakeRetrievalToolExecutorWithSpec(),  # type: ignore[arg-type]
+        planner=_FakePlanner(),
+        max_tool_calls=2,
+    )
+
+    events = [
+        event
+        async for event in service.chat_stream(
+            message="Retry the failed tool call.",
+            context={
+                "assistant_recovery": {
+                    "action": "retry_tool",
+                    "tool_name": "retrieval_search",
+                    "arguments": {"query": "HbA1c missing unit", "top_k": 3},
+                    "failed_status": "failed",
+                    "failed_summary": "Prior retrieval failed.",
+                }
+            },
+            owner_user_id="usr_test",
+        )
+    ]
+
+    plan = next(event for event in events if event["type"] == "plan_ready")["plan"]
+    started = next(event for event in events if event["type"] == "tool_started")
+    assert plan["message"] == "Retrying failed assistant tool call: retrieval_search."
+    assert plan["tool_calls"][0]["tool_name"] == "retrieval_search"
+    assert plan["tool_calls"][0]["arguments"] == {
+        "query": "HbA1c missing unit",
+        "top_k": 3,
+    }
+    assert started["tool_call"]["arguments"]["query"] == "HbA1c missing unit"
+
+
+@pytest.mark.asyncio
+async def test_assistant_recovery_continue_does_not_execute_failed_tool() -> None:
+    service = AssistantService(
+        _FakeRetrievalToolExecutorWithSpec(),  # type: ignore[arg-type]
+        planner=_FakePlanner(),
+        max_tool_calls=2,
+    )
+
+    response = await service.chat(
+        message="Continue without retrying.",
+        context={
+            "assistant_recovery": {
+                "action": "continue_after_failure",
+                "failed_tool_calls": [
+                    {
+                        "tool_name": "retrieval_search",
+                        "status": "failed",
+                        "summary": "Prior retrieval failed.",
+                    }
+                ],
+            }
+        },
+        owner_user_id="usr_test",
+    )
+
+    assert response.tool_calls == []
+    assert response.message.startswith("Continuing without retrying retrieval_search.")
+    assert response.warnings == ["Assistant continued without re-running failed tool calls."]
+
+
 def test_assistant_stream_replay_preserves_cancelled_status() -> None:
     service = AssistantSessionService(InMemoryAssistantSessionRepository())
     session = service.create_session(owner_user_id="usr_test")
@@ -619,7 +685,8 @@ def test_assistant_retrieval_tool_forwards_exact_source_filters() -> None:
         def __init__(self) -> None:
             self.query = None
 
-        def search_retrieval(self, query, owner_user_id=None):
+        def search_retrieval(self, query, owner_user_id=None, request_id=None):
+            del owner_user_id, request_id
             self.query = query
             return type(
                 "Package",

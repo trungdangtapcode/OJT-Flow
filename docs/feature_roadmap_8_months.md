@@ -157,6 +157,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F099 | Implemented | Kept Assistant tool calls as inline collapsible cards inside the chat turn instead of a separate tool panel, and relabeled the UI section as a unified live timeline rather than tool-only output. |
 | 2026-06-11 | F100 | Implemented | Added data-driven Assistant tool progress policies, backend `tool_progress` SSE events around actual tool execution, inline frontend progress rows, and an MCP resource exposing the progress policy catalog. |
 | 2026-06-11 | F101 | Implemented | Added backend-aware cancellation: Assistant stream disconnects/stop actions persist replay status `cancelled`, cancellation renders in the live timeline, queued/running background jobs can be cancelled through an owner-scoped API, and Postgres migration 013 updates replay status constraints. |
+| 2026-06-11 | F102 | Implemented | Added failed Assistant tool-call recovery actions: inline Retry resubmits the exact failed tool name and original arguments through structured `assistant_recovery.retry_tool`, while Continue creates a deterministic no-tool continuation that keeps unresolved failures visible. |
 | 2026-06-11 | F041 | Implemented | Added `ClinicalPackage` contracts and `WorkflowState.clinical_package`, including raw input identity, FHIR-like bundle, OperationOutcome-like validation issues, evidence, review, audit refs, output refs, provenance, warnings, and handoff context. |
 | 2026-06-11 | F043 | Started | Added `ClinicalFieldProvenance` for generated lab Observation fields with target path, source field/value, row/column/source ref, derivation, and note. Remaining work: apply the same coverage across additional resource builders. |
 | 2026-06-11 | F044 | Implemented | Added `lab_result_v1` to FHIR-like Observation mapping for patient reference, effective date, code text, value quantity, and unit, with review warnings instead of silent semantic normalization. |
@@ -282,7 +283,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F099 Add collapsible tool cards inline between assistant messages instead of a separate long tool panel.
 - [x] F100 Add tool-call progress events for long parsing, retrieval, OCR, embedding, and workflow operations.
 - [x] F101 Add cancellation support for active assistant streams and backend jobs.
-- [ ] F102 Add retry and continue actions for failed assistant tool calls.
+- [x] F102 Add retry and continue actions for failed assistant tool calls.
 - [x] F103 Add strict OpenAI tool schemas with `additionalProperties=false` and required nullable fields where needed.
 - [x] F104 Add model/provider settings for planning model, synthesis model, vision model, embedding model, and local model endpoint.
 - [x] F105 Add per-tool permissions: read-only, write-gated, admin-only, external-network, PHI-sensitive, and destructive.

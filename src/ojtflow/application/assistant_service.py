@@ -62,7 +62,13 @@ class AssistantService:
         """Plan a small tool sequence and execute it through the backend allowlist."""
 
         clean_context = context or {}
-        planning_mode = "llm" if self.planner else "deterministic"
+        planning_mode = (
+            "deterministic"
+            if _recovery_plan(clean_context)
+            else "llm"
+            if self.planner
+            else "deterministic"
+        )
         try:
             plan = await self._plan(message=message, context=clean_context)
         except OJTFlowError as exc:
@@ -88,7 +94,11 @@ class AssistantService:
         evidence_summary = _evidence_summary(tool_results)
         synthesis_mode = "deterministic"
         message_text = _assistant_message(plan.message, tool_results, findings)
-        if self.planner and hasattr(self.planner, "synthesize"):
+        if (
+            self.planner
+            and hasattr(self.planner, "synthesize")
+            and not _is_continue_recovery(clean_context)
+        ):
             try:
                 message_text = await self.planner.synthesize(
                     message=message,
@@ -127,7 +137,13 @@ class AssistantService:
         """Stream planning, tool execution, synthesis deltas, and final response."""
 
         clean_context = context or {}
-        planning_mode = "llm" if self.planner else "deterministic"
+        planning_mode = (
+            "deterministic"
+            if _recovery_plan(clean_context)
+            else "llm"
+            if self.planner
+            else "deterministic"
+        )
         yield {
             "type": "planning_started",
             "mode": planning_mode,
@@ -258,7 +274,11 @@ class AssistantService:
         evidence_summary = _evidence_summary(tool_results)
         synthesis_mode = "deterministic"
         message_text = _assistant_message(plan.message, tool_results, findings)
-        if self.planner and hasattr(self.planner, "synthesize_stream"):
+        if (
+            self.planner
+            and hasattr(self.planner, "synthesize_stream")
+            and not _is_continue_recovery(clean_context)
+        ):
             yield {
                 "type": "synthesis_started",
                 "mode": "llm",
@@ -286,7 +306,11 @@ class AssistantService:
                 warning = f"LLM answer synthesis failed: {exc}"
                 warnings.append(warning)
                 yield {"type": "warning", "message": warning}
-        elif self.planner and hasattr(self.planner, "synthesize"):
+        elif (
+            self.planner
+            and hasattr(self.planner, "synthesize")
+            and not _is_continue_recovery(clean_context)
+        ):
             yield {
                 "type": "synthesis_started",
                 "mode": "llm",
@@ -327,6 +351,9 @@ class AssistantService:
         }
 
     async def _plan(self, *, message: str, context: dict[str, Any]) -> AssistantPlan:
+        recovery_plan = _recovery_plan(context)
+        if recovery_plan:
+            return recovery_plan
         if self.planner:
             return await self.planner.plan(
                 message=message,
@@ -535,6 +562,66 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
     return AssistantPlan(
         message="I planned the safest matching OJTFlow tool action.",
         tool_calls=tool_calls,
+    )
+
+
+def _recovery_plan(context: dict[str, Any]) -> AssistantPlan | None:
+    recovery = context.get("assistant_recovery")
+    if not isinstance(recovery, dict):
+        return None
+    action = _optional_text(recovery.get("action"))
+    if action == "retry_tool":
+        tool_name = _optional_text(recovery.get("tool_name"))
+        arguments = recovery.get("arguments")
+        if not tool_name or not isinstance(arguments, dict):
+            return AssistantPlan(
+                message="I could not retry the failed tool because recovery metadata was incomplete.",
+                tool_calls=[],
+                warnings=["assistant_recovery.retry_tool requires tool_name and arguments."],
+            )
+        return AssistantPlan(
+            message=f"Retrying failed assistant tool call: {tool_name}.",
+            tool_calls=[
+                AssistantToolPlan(
+                    tool_name=tool_name,
+                    arguments=dict(arguments),
+                    rationale=(
+                        "The operator requested an exact retry of a failed assistant "
+                        "tool call using the original validated arguments."
+                    ),
+                )
+            ],
+        )
+    if action == "continue_after_failure":
+        failed_names = ", ".join(_recovery_failed_tool_names(recovery)) or "the failed tool"
+        return AssistantPlan(
+            message=(
+                f"Continuing without retrying {failed_names}. Treat the prior failure as "
+                "unresolved, preserve any successful prior outputs, and avoid destructive "
+                "actions until the failed step is reviewed."
+            ),
+            tool_calls=[],
+            warnings=["Assistant continued without re-running failed tool calls."],
+        )
+    return None
+
+
+def _recovery_failed_tool_names(recovery: dict[str, Any]) -> list[str]:
+    calls = recovery.get("failed_tool_calls")
+    if not isinstance(calls, list):
+        return []
+    names: list[str] = []
+    for call in calls:
+        if isinstance(call, dict) and (name := _optional_text(call.get("tool_name"))):
+            names.append(name)
+    return names
+
+
+def _is_continue_recovery(context: dict[str, Any]) -> bool:
+    recovery = context.get("assistant_recovery")
+    return (
+        isinstance(recovery, dict)
+        and _optional_text(recovery.get("action")) == "continue_after_failure"
     )
 
 
@@ -1342,6 +1429,10 @@ def _context_text(context: dict[str, Any], key: str) -> str:
 
 def _context_optional_text(context: dict[str, Any], key: str) -> str | None:
     value = context.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _optional_text(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 

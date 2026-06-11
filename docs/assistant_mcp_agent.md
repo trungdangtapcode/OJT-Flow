@@ -136,6 +136,14 @@ In OpenAI mode, synthesis calls the OpenAI Responses API with `stream: true`
 and forwards `response.output_text.delta` chunks to the UI so users see the
 answer as it is generated.
 
+Failed tool recovery is carried through `context.assistant_recovery`. A
+`retry_tool` action includes the original `tool_name` and `arguments`, and the
+backend bypasses LLM planning to execute that exact allowlisted tool call
+through the normal permission gates. A `continue_after_failure` action records
+the failed tool summaries and returns a deterministic continuation without
+executing another backend tool, so unresolved failures remain visible instead
+of being silently treated as fixed.
+
 ```json
 {
   "message": "Validate this lab CSV and explain the issues with trusted evidence.",

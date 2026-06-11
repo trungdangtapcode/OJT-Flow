@@ -941,6 +941,50 @@ the replay when possible.
 }
 ```
 
+Failed tool recovery is explicit, not prompt-only. To retry a failed tool call,
+send the original tool name and arguments in `context.assistant_recovery`; the
+backend bypasses the LLM planner and executes that exact allowlisted tool plan:
+
+```json
+{
+  "message": "Retry failed tool call retrieval_search.",
+  "context": {
+    "assistant_recovery": {
+      "action": "retry_tool",
+      "tool_name": "retrieval_search",
+      "arguments": {
+        "query": "HbA1c missing unit",
+        "top_k": 3
+      },
+      "failed_status": "failed",
+      "failed_summary": "Prior retrieval failed."
+    }
+  }
+}
+```
+
+To continue without re-running failed tools, use `continue_after_failure`. This
+produces a deterministic continuation response with no backend tool execution
+and keeps the failed step unresolved for review:
+
+```json
+{
+  "message": "Continue without retrying the failed tool call.",
+  "context": {
+    "assistant_recovery": {
+      "action": "continue_after_failure",
+      "failed_tool_calls": [
+        {
+          "tool_name": "retrieval_search",
+          "status": "failed",
+          "summary": "Prior retrieval failed."
+        }
+      ]
+    }
+  }
+}
+```
+
 When `session_id` is supplied, each SSE event is stamped with `stream_id`,
 `session_id`, `sequence`, and `created_at`. After the stream finishes or emits a
 structured error, the backend persists one replay artifact for that stream.

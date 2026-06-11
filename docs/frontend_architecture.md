@@ -1768,6 +1768,11 @@ transcript and showing a cancellation state rather than leaving a stuck spinner.
 Backend stream replays should persist explicit cancellation as `cancelled`,
 not as `completed`, so support/debug views can distinguish an operator stop
 from a successful final response.
+Failed Assistant tool calls should expose inline recovery controls in the same
+chat turn. `Retry` must send structured `assistant_recovery.retry_tool` context
+with the original tool name and arguments; `Continue without retry` must send
+`assistant_recovery.continue_after_failure` and preserve the failure as
+unresolved instead of hiding it in a new prompt.
 Long LLM planning must not look frozen: the UI should render backend
 `planning_step` events and streamed `planning_delta` planner text before
 `plan_ready`, so users can see what the model is doing before tools execute.
