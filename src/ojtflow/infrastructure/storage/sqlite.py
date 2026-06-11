@@ -20,6 +20,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantMessageRole,
     AssistantStreamReplay,
 )
+from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
@@ -90,6 +91,34 @@ class SQLiteBackboneStore:
 
                 create index if not exists idx_workflow_events_workflow_id
                     on workflow_events(workflow_id, timestamp);
+
+                create table if not exists audit_records (
+                    audit_id text primary key,
+                    owner_user_id text,
+                    workflow_id text,
+                    assistant_session_id text,
+                    assistant_message_id text,
+                    request_id text,
+                    action text not null,
+                    actor_id text not null,
+                    actor_type text not null,
+                    status text not null,
+                    input_hash text,
+                    output_hash text,
+                    workflow_event_refs text not null,
+                    metadata_json text not null,
+                    timestamp text not null,
+                    record_json text not null
+                );
+
+                create index if not exists idx_audit_records_owner_timestamp
+                    on audit_records(owner_user_id, timestamp desc);
+
+                create index if not exists idx_audit_records_workflow_timestamp
+                    on audit_records(workflow_id, timestamp desc);
+
+                create index if not exists idx_audit_records_session_timestamp
+                    on audit_records(assistant_session_id, timestamp desc);
 
                 create table if not exists datasets (
                     dataset_id text primary key,
@@ -284,6 +313,7 @@ class SQLiteBackboneStore:
                     on background_jobs(owner_user_id, status, updated_at desc);
                 """
             )
+            self._ensure_audit_record_columns(connection)
             columns = {
                 row["name"]
                 for row in connection.execute("pragma table_info(workflows)").fetchall()
@@ -309,6 +339,25 @@ class SQLiteBackboneStore:
                     on workflows(owner_user_id, updated_at desc)
                 """
             )
+
+    def _ensure_audit_record_columns(self, connection: sqlite3.Connection) -> None:
+        existing = {
+            row["name"]
+            for row in connection.execute("pragma table_info(audit_records)").fetchall()
+        }
+        additions = {
+            "assistant_message_id": "text",
+            "actor_type": "text not null default 'system'",
+            "input_hash": "text",
+            "output_hash": "text",
+            "workflow_event_refs": "text not null default '[]'",
+            "metadata_json": "text not null default '{}'",
+        }
+        for column, definition in additions.items():
+            if column not in existing:
+                connection.execute(
+                    f"alter table audit_records add column {column} {definition}"
+                )
 
 
 class SQLiteDatasetStore:
@@ -783,6 +832,82 @@ class SQLiteEventRepository:
                 (workflow_id,),
             ).fetchall()
         return [WorkflowEvent.model_validate_json(row["event_json"]) for row in rows]
+
+
+class SQLiteAuditRepository:
+    """Append-only SQLite generic audit record repository."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def append(self, record: AuditRecord) -> AuditRecord:
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into audit_records (
+                    audit_id, owner_user_id, workflow_id, assistant_session_id,
+                    assistant_message_id, request_id, action, actor_id, actor_type,
+                    status, input_hash, output_hash, workflow_event_refs, metadata_json,
+                    timestamp, record_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.audit_id,
+                    record.owner_user_id,
+                    record.workflow_id,
+                    record.assistant_session_id,
+                    record.assistant_message_id,
+                    record.request_id,
+                    record.action,
+                    record.actor_id,
+                    record.actor_type,
+                    record.status,
+                    record.input_hash,
+                    record.output_hash,
+                    json.dumps(record.workflow_event_refs),
+                    json.dumps(record.metadata),
+                    record.timestamp,
+                    record.model_dump_json(),
+                ),
+            )
+        return record
+
+    def list(
+        self,
+        *,
+        owner_user_id: str | None = None,
+        action: str | None = None,
+        workflow_id: str | None = None,
+        assistant_session_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = ?")
+            params.append(owner_user_id)
+        if action is not None:
+            clauses.append("action = ?")
+            params.append(action)
+        if workflow_id is not None:
+            clauses.append("workflow_id = ?")
+            params.append(workflow_id)
+        if assistant_session_id is not None:
+            clauses.append("assistant_session_id = ?")
+            params.append(assistant_session_id)
+        params.append(max(1, min(limit, 1000)))
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                f"""
+                select record_json from audit_records
+                {where}
+                order by timestamp desc, audit_id desc
+                limit ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [AuditRecord.model_validate_json(row["record_json"]) for row in rows]
 
 
 class SQLiteRetrievalJudgmentRepository:

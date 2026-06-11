@@ -9,7 +9,8 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
-from ojtflow.application.ports import AssistantPlanner
+from ojtflow.application.ports import AssistantPlanner, AuditRepository
+from ojtflow.application.tool_audit import append_tool_audit_record
 from ojtflow.core.contracts.assistant import (
     AssistantEvidenceSummary,
     AssistantFinding,
@@ -31,12 +32,14 @@ class AssistantService:
         tool_executor: OJTFlowToolExecutor,
         *,
         planner: AssistantPlanner | None = None,
+        audit_repository: AuditRepository | None = None,
         max_tool_calls: int = 4,
         planning_progress_interval_seconds: float = 2.0,
         tool_progress_stages: Mapping[str, list[AssistantToolProgressStage]] | None = None,
     ) -> None:
         self.tool_executor = tool_executor
         self.planner = planner
+        self.audit_repository = audit_repository
         self.max_tool_calls = max_tool_calls
         self.planning_progress_interval_seconds = planning_progress_interval_seconds
         self.tool_progress_stages = _validated_tool_progress_stages(
@@ -58,6 +61,7 @@ class AssistantService:
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
         request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> AssistantResponse:
         """Plan a small tool sequence and execute it through the backend allowlist."""
 
@@ -76,11 +80,12 @@ class AssistantService:
             planning_mode = "deterministic"
             plan.warnings.append(_planning_failure_warning(exc))
         tool_results = [
-            self.tool_executor.execute(
+            self._execute_tool_call(
                 tool_call,
                 execute_write_actions=execute_write_actions,
                 owner_user_id=owner_user_id,
                 request_id=request_id,
+                assistant_session_id=assistant_session_id,
             )
             for tool_call in plan.tool_calls[: self.max_tool_calls]
         ]
@@ -133,6 +138,7 @@ class AssistantService:
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
         request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream planning, tool execution, synthesis deltas, and final response."""
 
@@ -243,11 +249,12 @@ class AssistantService:
                 event="before_execute",
             ):
                 yield stage
-            result = self.tool_executor.execute(
+            result = self._execute_tool_call(
                 tool_call,
                 execute_write_actions=execute_write_actions,
                 owner_user_id=owner_user_id,
                 request_id=request_id,
+                assistant_session_id=assistant_session_id,
             )
             tool_results.append(result)
             for stage in self._tool_progress_events(
@@ -362,6 +369,37 @@ class AssistantService:
                 max_tool_calls=self.max_tool_calls,
             )
         return _deterministic_plan(message, context)
+
+    def _execute_tool_call(
+        self,
+        tool_call: AssistantToolPlan,
+        *,
+        execute_write_actions: bool,
+        owner_user_id: str | None,
+        request_id: str | None,
+        assistant_session_id: str | None,
+    ) -> AssistantToolResult:
+        result = self.tool_executor.execute(
+            tool_call,
+            execute_write_actions=execute_write_actions,
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+        )
+        append_tool_audit_record(
+            self.audit_repository,
+            action_prefix="assistant",
+            tool_name=tool_call.tool_name,
+            arguments={
+                **tool_call.arguments,
+                "execute_write_actions": execute_write_actions,
+            },
+            output=result.model_dump(mode="json"),
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
+            actor_type="assistant",
+        )
+        return result
 
     def _tool_progress_events(
         self,

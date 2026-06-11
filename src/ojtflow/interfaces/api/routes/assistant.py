@@ -305,12 +305,19 @@ async def assistant_chat(
     http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: AssistantService = Depends(get_assistant_service),
+    session_service: AssistantSessionService = Depends(get_assistant_session_service),
     memory_service: AssistantMemoryService = Depends(get_assistant_memory_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     """Use natural language to run allowlisted OJTFlow tools."""
 
     enforce_inline_json_limit(request, settings, field_name="assistant_request")
+    session_id = request.session_id.strip() if request.session_id else None
+    if session_id:
+        session_service.get_session(
+            owner_user_id=authenticated.user.user_id,
+            session_id=session_id,
+        )
     context = merge_assistant_memory_context(
         request.context,
         memory_service.assistant_context(owner_user_id=authenticated.user.user_id),
@@ -321,6 +328,7 @@ async def assistant_chat(
         execute_write_actions=request.execute_write_actions,
         owner_user_id=authenticated.user.user_id,
         request_id=getattr(http_request.state, "request_id", None),
+        assistant_session_id=session_id,
     )
     return ok(result)
 
@@ -378,6 +386,7 @@ async def assistant_chat_stream(
                 execute_write_actions=request.execute_write_actions,
                 owner_user_id=authenticated.user.user_id,
                 request_id=request_id,
+                assistant_session_id=session_id,
             ):
                 if await http_request.is_disconnected():
                     status = "cancelled"

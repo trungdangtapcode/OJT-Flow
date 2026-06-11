@@ -28,6 +28,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantStreamReplay,
     AssistantToolSpec,
 )
+from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
@@ -158,6 +159,20 @@ class EventRepository(Protocol):
     def append(self, event: WorkflowEvent) -> None: ...
 
     def list_for_workflow(self, workflow_id: str) -> list[WorkflowEvent]: ...
+
+
+class AuditRepository(Protocol):
+    def append(self, record: AuditRecord) -> AuditRecord: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str | None = None,
+        action: str | None = None,
+        workflow_id: str | None = None,
+        assistant_session_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]: ...
 
 
 class KnowledgeRepository(Protocol):

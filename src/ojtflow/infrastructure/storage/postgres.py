@@ -26,6 +26,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantMessageRole,
     AssistantStreamReplay,
 )
+from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
@@ -782,6 +783,89 @@ class PostgresEventRepository:
                 )
                 rows = cursor.fetchall()
         return [WorkflowEvent.model_validate(row["event_json"]) for row in rows]
+
+
+class PostgresAuditRepository:
+    """Postgres-backed generic audit record repository."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def append(self, record: AuditRecord) -> AuditRecord:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.audit_records (
+                        audit_id, owner_user_id, workflow_id, assistant_session_id,
+                        assistant_message_id, request_id, action, actor_id,
+                        actor_type, status, input_hash, output_hash,
+                        workflow_event_refs, metadata, record_json, timestamp
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::jsonb, %s::jsonb, %s::jsonb, %s::timestamptz
+                    )
+                    """,
+                    (
+                        record.audit_id,
+                        record.owner_user_id,
+                        record.workflow_id,
+                        record.assistant_session_id,
+                        record.assistant_message_id,
+                        record.request_id,
+                        record.action,
+                        record.actor_id,
+                        record.actor_type,
+                        record.status,
+                        record.input_hash,
+                        record.output_hash,
+                        json.dumps(record.workflow_event_refs),
+                        json.dumps(record.metadata),
+                        record.model_dump_json(),
+                        record.timestamp,
+                    ),
+                )
+            connection.commit()
+        return record
+
+    def list(
+        self,
+        *,
+        owner_user_id: str | None = None,
+        action: str | None = None,
+        workflow_id: str | None = None,
+        assistant_session_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = %s")
+            params.append(owner_user_id)
+        if action is not None:
+            clauses.append("action = %s")
+            params.append(action)
+        if workflow_id is not None:
+            clauses.append("workflow_id = %s")
+            params.append(workflow_id)
+        if assistant_session_id is not None:
+            clauses.append("assistant_session_id = %s")
+            params.append(assistant_session_id)
+        params.append(max(1, min(limit, 1000)))
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select record_json from ojtflow.audit_records
+                    {where}
+                    order by timestamp desc, audit_id desc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [AuditRecord.model_validate(row["record_json"]) for row in rows]
 
 
 class PostgresRetrievalJudgmentRepository:

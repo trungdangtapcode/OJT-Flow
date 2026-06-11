@@ -1117,6 +1117,54 @@ The API remains the final enforcement boundary; unconfirmed or malicious clients
 cannot bypass backend tool permission checks without explicitly setting
 `execute_write_actions=true`.
 
+`GET /api/v1/audit/records`
+
+Lists generic append-only audit records visible to the authenticated user.
+Query parameters:
+
+- `action`: optional exact action filter such as
+  `assistant.tool.validate_with_evidence` or `mcp.tool.start_workflow`.
+- `workflow_id`: optional workflow correlation filter.
+- `assistant_session_id`: optional Assistant chat session correlation filter.
+- `limit`: maximum records to return; default `100`, maximum `500`.
+
+Assistant tool execution and local MCP tool execution both write audit records
+through the configured storage backend. Records include owner, action, actor,
+status, request ID, Assistant session ID, workflow ID, workflow event refs,
+input hash, output hash, and sanitized metadata. Raw tool arguments and raw
+tool output are not stored in the generic audit record. Payload-like strings
+such as `data`, `message`, `query`, and nested context strings are hashed before
+hashing the audit input fingerprint.
+
+Example response data:
+
+```json
+[
+  {
+    "audit_id": "aud_abc123",
+    "owner_user_id": "usr_123",
+    "workflow_id": "wf_456",
+    "workflow_event_refs": ["evt_parser", "evt_validation"],
+    "assistant_session_id": "chat_789",
+    "request_id": "req_20260611",
+    "timestamp": "2026-06-11T00:00:00+00:00",
+    "action": "assistant.tool.validate_with_evidence",
+    "actor_id": "usr_123",
+    "actor_type": "assistant",
+    "status": "completed",
+    "input_hash": "9f86d081884c7d659a2feaa0c55ad015...",
+    "output_hash": "e3b0c44298fc1c149afbf4c8996fb924...",
+    "metadata": {
+      "tool_name": "validate_with_evidence",
+      "argument_keys": ["data", "execute_write_actions", "schema_id"],
+      "workflow_ids": ["wf_456"],
+      "requires_approval": false,
+      "data_char_count": 72
+    }
+  }
+]
+```
+
 ## FHIR-Like Profile
 
 `POST /api/v1/fhir/profile`
@@ -2105,6 +2153,26 @@ includes `version`, `detected_formats[]` with `value`, `label`, and optional
 format and top-K controls so Markdown, FHIR-like, and future intake/search
 profiles can be added through trusted data.
 
+`GET /api/v1/retrieval/source-policies` returns source trust policy catalog
+data from `knowledge/source_catalog/source_trust_policies.json`, including
+domain, standard system, intended use, prohibited use, refresh cadence, license
+constraints, evidence tier, and reviewer policy.
+
+`GET /api/v1/retrieval/strategies` returns data-driven retrieval strategy
+presets from `knowledge/retrieval/strategy_catalog.json`, including lexical,
+vector, hybrid, metadata-filtered, high-recall, and exact-source modes.
+
+`GET /api/v1/retrieval/corpus/adapters` returns available corpus source adapter
+definitions, including adapter ID, source family, ingestion mode, license notes,
+and operational requirements.
+
+`GET /api/v1/retrieval/corpus/manifest` returns the reviewed corpus source
+manifest used by ingestion and readiness checks.
+
+`GET /api/v1/retrieval/corpus/chunking-profiles` returns data-driven chunking
+profiles for standards pages, terminology pages, structured records, PDFs, and
+internal policies.
+
 `GET /api/v1/retrieval/judgments` returns durable relevance judgments for the
 authenticated user. Optional query parameters:
 
@@ -2343,3 +2411,59 @@ return `unsupported_upload`.
 server-recognized upload extensions. `openai_vision` appears when an
 OpenAI-compatible OCR key is available; MarkItDown OCR plugin support is part
 of the `markitdown` extractor path.
+
+`POST /api/v1/parse/upload/jobs`
+
+Accepts a multipart file upload and creates a durable `file_parse` background
+job. In local sync mode the job may complete before the response returns; in
+queue-backed mode it remains queued for a worker. The uploaded bytes are stored
+as an owner-scoped `UploadedArtifact` with hash, MIME type, byte size, source,
+retention policy, and extraction trace metadata.
+
+`POST /api/v1/parse/upload/batch/jobs`
+
+Accepts multiple multipart files and creates one parse job per file with shared
+batch metadata such as `batch_id`, `case_id`, and `project_id`. Each file still
+gets its own artifact, dedupe check, job, and trace path.
+
+`POST /api/v1/parse/clipboard/images/jobs`
+
+Accepts pasted image bytes and creates the same artifact/job/trace path as a
+file upload. The Assistant paste UX uses this route before injecting extracted
+document context into chat.
+
+`POST /api/v1/parse/redaction-preview`
+
+Returns a deterministic PHI-like redaction preview for submitted text,
+including structured CSV sensitive-column masking and span-level findings for
+patterns such as SSNs, emails, and phone numbers. This route is intended to run
+before external OCR/LLM handoff.
+
+`GET /api/v1/parse/artifacts`
+
+Lists uploaded artifacts owned by the authenticated user. Response data includes
+artifact ID, filename, MIME type, extension, byte size, hash, source,
+duplicate-of link, retention policy, metadata, and timestamps.
+
+`GET /api/v1/parse/artifacts/{artifact_id}`
+
+Returns one owner-scoped artifact metadata record.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/download`
+
+Downloads the owner-scoped artifact bytes and records an artifact access event.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/export`
+
+Exports owner-scoped artifact metadata as JSON and records an artifact access
+event.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/traces`
+
+Lists extraction traces for an owner-scoped artifact, including extractor
+choice, fallback path, warnings, confidence, quality score, and output refs.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/access-events`
+
+Lists owner-scoped artifact access events such as download, metadata export,
+and metadata view.

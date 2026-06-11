@@ -12,6 +12,7 @@ from ojtflow.application.auth_service import AuthService
 from ojtflow.application.assistant_memory_service import AssistantMemoryService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_session_service import AssistantSessionService
+from ojtflow.application.ports import AuditRepository
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.application.document_intake_service import DocumentIntakeService
@@ -42,6 +43,7 @@ from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
+    InMemoryAuditRepository,
     InMemoryAssistantMemoryRepository,
     InMemoryAssistantSessionRepository,
     InMemoryUploadedArtifactRepository,
@@ -52,6 +54,7 @@ from ojtflow.infrastructure.storage.in_memory import (
     InMemoryWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.postgres import (
+    PostgresAuditRepository,
     PostgresAssistantMemoryRepository,
     PostgresAssistantSessionRepository,
     PostgresUploadedArtifactRepository,
@@ -63,6 +66,7 @@ from ojtflow.infrastructure.storage.postgres import (
     PostgresWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.sqlite import (
+    SQLiteAuditRepository,
     SQLiteAssistantMemoryRepository,
     SQLiteAssistantSessionRepository,
     SQLiteUploadedArtifactRepository,
@@ -73,8 +77,6 @@ from ojtflow.infrastructure.storage.sqlite import (
     SQLiteRetrievalJudgmentRepository,
     SQLiteWorkflowRepository,
 )
-
-
 bearer_scheme = HTTPBearer(auto_error=False)
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -254,6 +256,28 @@ def _build_retrieval_repository(
 
 
 @lru_cache(maxsize=1)
+def _build_audit_repository() -> AuditRepository:
+    """Build the generic append-only audit repository."""
+
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        return InMemoryAuditRepository()
+    if settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        return SQLiteAuditRepository(backbone)
+    if settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        return PostgresAuditRepository(backbone)
+    raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+
+
+@lru_cache(maxsize=1)
 def _build_medical_evidence_service() -> MedicalEvidenceService:
     return MedicalEvidenceService()
 
@@ -280,6 +304,7 @@ def _build_assistant_service() -> AssistantService:
             ),
         ),
         planner=planner,
+        audit_repository=_build_audit_repository(),
         max_tool_calls=settings.llm_max_tool_calls,
         planning_progress_interval_seconds=settings.llm_planning_progress_interval_seconds,
         tool_progress_stages=load_assistant_tool_progress_policies(
@@ -405,6 +430,12 @@ async def get_retrieval_judgment_service() -> RetrievalJudgmentService:
     """Return durable retrieval relevance judgment service."""
 
     return _build_retrieval_judgment_service()
+
+
+async def get_audit_repository() -> AuditRepository:
+    """Return generic append-only audit repository."""
+
+    return _build_audit_repository()
 
 
 async def get_assistant_service() -> AssistantService:
@@ -556,6 +587,7 @@ def clear_workflow_service_cache() -> None:
     _build_auth_service.cache_clear()
     _build_medical_evidence_service.cache_clear()
     _build_retrieval_judgment_service.cache_clear()
+    _build_audit_repository.cache_clear()
     _build_assistant_service.cache_clear()
     _build_assistant_session_service.cache_clear()
     _build_assistant_memory_service.cache_clear()

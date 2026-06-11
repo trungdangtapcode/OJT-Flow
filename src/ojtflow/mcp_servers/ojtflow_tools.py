@@ -11,10 +11,10 @@ Install the optional dependency first:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
+from ojtflow.application.tool_audit import append_tool_audit_record
 from ojtflow.config import get_settings
 from ojtflow.core.contracts.mcp import McpPromptSpec, McpResourceSpec
 from ojtflow.core.errors import DependencyUnavailableError
@@ -37,6 +37,7 @@ from ojtflow.infrastructure.retrieval.presets import (
     load_retrieval_search_presets,
 )
 from ojtflow.interfaces.api.deps import (
+    _build_audit_repository,
     _build_assistant_service,
     _build_medical_evidence_service,
     _build_workflow_service,
@@ -66,6 +67,7 @@ def create_server():
         medical_evidence_service=medical_evidence_service,
         tool_permission_policies=load_assistant_tool_permission_policies(knowledge_root),
     )
+    audit_repository = _build_audit_repository()
     assistant = _build_assistant_service()
     _register_catalog_resources(
         mcp,
@@ -126,15 +128,54 @@ def create_server():
         message: str,
         context: dict[str, Any] | None = None,
         execute_write_actions: bool = False,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Run one natural-language OJTFlow assistant command over allowlisted tools."""
 
-        response = await assistant.chat(
-            message=message,
-            context=context or {},
-            execute_write_actions=execute_write_actions,
-        )
-        return response.model_dump(mode="json")
+        arguments = {
+            "message": message,
+            "context": context or {},
+            "execute_write_actions": execute_write_actions,
+        }
+        try:
+            response = await assistant.chat(
+                message=message,
+                context=context or {},
+                execute_write_actions=execute_write_actions,
+                owner_user_id=owner_user_id,
+                request_id=request_id,
+                assistant_session_id=assistant_session_id,
+            )
+            payload = response.model_dump(mode="json")
+            append_tool_audit_record(
+                audit_repository,
+                action_prefix="mcp",
+                tool_name="assistant_chat",
+                arguments=arguments,
+                output=payload,
+                owner_user_id=owner_user_id,
+                request_id=request_id,
+                assistant_session_id=assistant_session_id,
+                actor_type="mcp",
+                actor_id=owner_user_id or "mcp_client",
+            )
+            return payload
+        except Exception as exc:
+            append_tool_audit_record(
+                audit_repository,
+                action_prefix="mcp",
+                tool_name="assistant_chat",
+                arguments=arguments,
+                output={"status": "failed", "error": exc.__class__.__name__},
+                owner_user_id=owner_user_id,
+                request_id=request_id,
+                assistant_session_id=assistant_session_id,
+                actor_type="mcp",
+                actor_id=owner_user_id or "mcp_client",
+            )
+            raise
 
     @mcp.tool()
     def retrieval_search(
@@ -144,10 +185,15 @@ def create_server():
         clinical_domain: str | None = None,
         standard_system: str | None = None,
         trust_level: str | None = "approved",
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Search trusted OJTFlow healthcare evidence."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "retrieval_search",
             {
                 "query": query,
@@ -157,6 +203,9 @@ def create_server():
                 "standard_system": standard_system,
                 "trust_level": trust_level,
             },
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
@@ -164,12 +213,20 @@ def create_server():
         data: str,
         input_format: str | None = None,
         schema_id: str | None = "lab_result_v1",
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Parse and validate JSON, YAML, CSV, or extracted markdown text."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "validate_data",
             {"data": data, "input_format": input_format, "schema_id": schema_id},
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
@@ -182,10 +239,15 @@ def create_server():
         standard_system: str | None = None,
         query: str | None = None,
         top_k: int = 5,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Validate healthcare data and retrieve standards evidence explaining issues."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "validate_with_evidence",
             {
                 "data": data,
@@ -197,6 +259,9 @@ def create_server():
                 "query": query,
                 "top_k": top_k,
             },
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
@@ -204,53 +269,122 @@ def create_server():
         data: str,
         target_format: str = "json",
         input_format: str | None = None,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Convert JSON, YAML, CSV, or extracted markdown text."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "convert_data",
             {
                 "data": data,
                 "input_format": input_format,
                 "target_format": target_format,
             },
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
-    def fhir_profile(data: str) -> dict[str, Any]:
+    def fhir_profile(
+        data: str,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
+    ) -> dict[str, Any]:
         """Profile FHIR-like JSON and produce schema evidence."""
 
-        return executor.execute_tool("fhir_profile", {"data": data})
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
+            "fhir_profile",
+            {"data": data},
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
+        )
 
     @mcp.tool()
-    def list_workflows(status: str | None = None, limit: int = 10) -> dict[str, Any]:
+    def list_workflows(
+        status: str | None = None,
+        limit: int = 10,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
+    ) -> dict[str, Any]:
         """List workflows in the configured OJTFlow backend."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "list_workflows",
             {"status": status, "limit": limit},
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
-    def list_reviews(status: str | None = "pending", limit: int = 10) -> dict[str, Any]:
+    def list_reviews(
+        status: str | None = "pending",
+        limit: int = 10,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
+    ) -> dict[str, Any]:
         """List human-review-gated workflows."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "list_reviews",
             {"status": status, "limit": limit},
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
-    def get_workflow(workflow_id: str) -> dict[str, Any]:
+    def get_workflow(
+        workflow_id: str,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
+    ) -> dict[str, Any]:
         """Inspect one workflow by ID."""
 
-        return executor.execute_tool("get_workflow", {"workflow_id": workflow_id})
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
+            "get_workflow",
+            {"workflow_id": workflow_id},
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
+        )
 
     @mcp.tool()
-    def workflow_summary(workflow_id: str) -> dict[str, Any]:
+    def workflow_summary(
+        workflow_id: str,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
+    ) -> dict[str, Any]:
         """Summarize one workflow for operator review and next action."""
 
-        return executor.execute_tool("workflow_summary", {"workflow_id": workflow_id})
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
+            "workflow_summary",
+            {"workflow_id": workflow_id},
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
+        )
 
     @mcp.tool()
     def start_workflow(
@@ -261,10 +395,15 @@ def create_server():
         schema_id: str | None = "lab_result_v1",
         require_human_review: bool = True,
         execute_write_actions: bool = False,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a workflow only when execute_write_actions is explicitly true."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "start_workflow",
             {
                 "instruction": instruction,
@@ -275,6 +414,9 @@ def create_server():
                 "require_human_review": require_human_review,
             },
             execute_write_actions=execute_write_actions,
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
@@ -289,10 +431,15 @@ def create_server():
         target_fields: list[str] | None = None,
         evidence_ids: list[str] | None = None,
         execute_write_actions: bool = False,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a review-gated mapping draft without executing conversion."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "generate_mapping_draft",
             {
                 "instruction": instruction,
@@ -306,6 +453,9 @@ def create_server():
                 "evidence_ids": evidence_ids or [],
             },
             execute_write_actions=execute_write_actions,
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     @mcp.tool()
@@ -320,10 +470,15 @@ def create_server():
         issue_kinds: list[str] | None = None,
         evidence_ids: list[str] | None = None,
         execute_write_actions: bool = False,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+        assistant_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a durable human-review task only when writes are explicit."""
 
-        return executor.execute_tool(
+        return _execute_mcp_tool(
+            executor,
+            audit_repository,
             "create_review_task",
             {
                 "question": question,
@@ -337,9 +492,48 @@ def create_server():
                 "evidence_ids": evidence_ids or [],
             },
             execute_write_actions=execute_write_actions,
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+            assistant_session_id=assistant_session_id,
         )
 
     return mcp
+
+
+def _execute_mcp_tool(
+    executor: OJTFlowToolExecutor,
+    audit_repository: Any,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    execute_write_actions: bool = False,
+    owner_user_id: str | None = None,
+    request_id: str | None = None,
+    assistant_session_id: str | None = None,
+) -> dict[str, Any]:
+    output = executor.execute_tool(
+        tool_name,
+        arguments,
+        execute_write_actions=execute_write_actions,
+        owner_user_id=owner_user_id,
+        request_id=request_id,
+    )
+    append_tool_audit_record(
+        audit_repository,
+        action_prefix="mcp",
+        tool_name=tool_name,
+        arguments={
+            **arguments,
+            "execute_write_actions": execute_write_actions,
+        },
+        output=output,
+        owner_user_id=owner_user_id,
+        request_id=request_id,
+        assistant_session_id=assistant_session_id,
+        actor_type="mcp",
+        actor_id=owner_user_id or "mcp_client",
+    )
+    return output
 
 
 def _register_catalog_resources(

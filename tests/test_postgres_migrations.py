@@ -33,6 +33,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         "012",
         "013",
         "014",
+        "015",
     ]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
@@ -48,6 +49,7 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
     assert migrations[11].name == "artifact_access_events"
     assert migrations[12].name == "assistant_stream_replay_cancelled"
     assert migrations[13].name == "assistant_memory_preferences"
+    assert migrations[14].name == "audit_records"
     assert all(len(migration.checksum) == 64 for migration in migrations)
 
 
@@ -246,6 +248,25 @@ def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
     assert "workflow_events_event_type_check" in sql
     assert "evidence_source_type_check" in sql
     assert "evidence_trust_level_check" in sql
+
+
+def test_audit_records_migration_has_correlation_and_redaction_fields() -> None:
+    sql = (ROOT / "sql/postgres/migrations/015_audit_records.sql").read_text()
+
+    assert "create table if not exists ojtflow.audit_records" in sql
+    assert "owner_user_id text" in sql
+    assert "workflow_id text" in sql
+    assert "assistant_session_id text" in sql
+    assert "request_id text" in sql
+    assert "input_hash text" in sql
+    assert "output_hash text" in sql
+    assert "workflow_event_refs jsonb" in sql
+    assert "metadata jsonb" in sql
+    assert "record_json jsonb" in sql
+    assert "idx_audit_records_owner_timestamp" in sql
+    assert "idx_audit_records_workflow_timestamp" in sql
+    assert "idx_audit_records_session_timestamp" in sql
+    assert "references ojtflow.workflows(workflow_id)" in sql
 
 
 def test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback() -> None:

@@ -19,6 +19,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantMessageRole,
     AssistantStreamReplay,
 )
+from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
@@ -314,6 +315,40 @@ class InMemoryEventRepository:
 
     def list_for_workflow(self, workflow_id: str) -> list[WorkflowEvent]:
         return [deepcopy(event) for event in self._events if event.workflow_id == workflow_id]
+
+
+class InMemoryAuditRepository:
+    """Append-only in-memory generic audit record store."""
+
+    def __init__(self) -> None:
+        self._records: list[AuditRecord] = []
+
+    def append(self, record: AuditRecord) -> AuditRecord:
+        self._records.append(deepcopy(record))
+        return deepcopy(record)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str | None = None,
+        action: str | None = None,
+        workflow_id: str | None = None,
+        assistant_session_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]:
+        records = [
+            record
+            for record in self._records
+            if (owner_user_id is None or record.owner_user_id == owner_user_id)
+            and (action is None or record.action == action)
+            and (workflow_id is None or record.workflow_id == workflow_id)
+            and (
+                assistant_session_id is None
+                or record.assistant_session_id == assistant_session_id
+            )
+        ]
+        records.sort(key=lambda record: (record.timestamp, record.audit_id), reverse=True)
+        return [deepcopy(record) for record in records[: max(1, min(limit, 1000))]]
 
 
 class InMemoryRetrievalJudgmentRepository:

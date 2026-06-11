@@ -169,6 +169,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F050 | Started | Added internal Provenance-like package records for parse, validate, map, retrieve evidence, review, and transform activities. Assistant/tool execution provenance remains follow-up. |
 | 2026-06-11 | F052 | Implemented | Added review-gated `TerminologyCandidate` contract and deterministic LOINC candidate generation for `lab_result_v1.lab_name` from `knowledge/terminologies/medical_concepts.json`, carried in `ClinicalPackage.terminology_candidates`. |
 | 2026-06-11 | F053 | Implemented | Added `UnitValidationResult`, `knowledge/terminologies/ucum_units.json`, and UCUM-like unit checks for `lab_result_v1.unit`, carried in `ClinicalPackage.unit_validations` with missing/unknown/not-preferred review flags. |
+| 2026-06-11 | F116 | Implemented | Added durable generic audit records for Assistant and MCP tool calls, with memory/SQLite/Postgres repositories, Postgres migration 015, owner-scoped `GET /api/v1/audit/records`, redacted tool input/output hashes, request/session/workflow/workflow-event correlation, and docs/tests. |
 
 ## Feature Backlog
 
@@ -301,7 +302,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F113 Add MCP resources for workflows, reviews, retrieval sources, schemas, and knowledge source inventory.
 - [x] F114 Add MCP prompts for standard tasks such as validate lab CSV, profile FHIR, find UCUM evidence, and inspect pending reviews.
 - [ ] F115 Add remote MCP deployment design with OAuth/resource indicators, per-user scoping, rate limits, and audit.
-- [ ] F116 Add MCP tool-call audit events linked to assistant chat sessions and workflow events.
+- [x] F116 Add MCP tool-call audit events linked to assistant chat sessions and workflow events.
 - [ ] F117 Add agent evaluation fixtures for natural-language tool selection and final answer faithfulness.
 - [ ] F118 Add assistant safety tests for prompt injection in uploaded data, tool descriptions, retrieved chunks, and user messages.
 

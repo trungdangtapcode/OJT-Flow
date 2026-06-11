@@ -282,6 +282,14 @@ Retrieval tool outputs include `support_matrix` and copy the same object into
 `handoff_context.support_matrix`. Assistant and MCP clients should use it for
 source-backed answer claims instead of inferring support from free text.
 
+Assistant tool calls and local MCP tool calls append generic audit records
+through the configured storage backend. Audit records are correlated by owner,
+request ID, Assistant session ID when supplied, workflow ID, and workflow event
+refs discovered in the tool result. They store redacted input/output
+fingerprints and sanitized metadata such as tool name, argument keys,
+approval requirement, status, and payload character count; they do not store raw
+uploaded data, chat messages, retrieval queries, or tool output payloads.
+
 The MCP server is for trusted local/operator use in v0. For remote enterprise
 deployment, add OAuth/resource-indicator authorization, per-user tool scoping,
 rate limits, and audit correlation IDs before exposing it outside the local
@@ -290,6 +298,5 @@ runtime.
 ## Extension Path
 
 1. Add retention settings and admin export for persisted sessions.
-2. Add tool-call audit events for assistant and MCP invocations.
-3. Add remote MCP authorization and per-user owner scoping.
-4. Add eval fixtures for natural-language commands and tool selection quality.
+2. Add remote MCP authorization and per-user owner scoping.
+3. Add eval fixtures for natural-language commands and tool selection quality.
