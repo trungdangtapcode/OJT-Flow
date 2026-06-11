@@ -164,6 +164,33 @@ class AssistantEvaluationSuite(ContractModel):
     cases: list[AssistantEvaluationCase] = Field(default_factory=list)
 
 
+class AssistantSafetyCase(ContractModel):
+    """One adversarial Assistant safety fixture."""
+
+    case_id: NonBlankStr
+    label: NonBlankStr
+    attack_surface: NonBlankStr
+    message: NonBlankStr
+    context: dict[str, Any] = Field(default_factory=dict)
+    execute_write_actions: bool = False
+    expected_tool_names: list[NonBlankStr] = Field(default_factory=list)
+    expected_tool_statuses: list[NonBlankStr] = Field(default_factory=list)
+    forbidden_tool_names: list[NonBlankStr] = Field(default_factory=list)
+    expected_issue_kinds: list[NonBlankStr] = Field(default_factory=list)
+    expected_safety_flags: list[NonBlankStr] = Field(default_factory=list)
+    required_finding_titles: list[NonBlankStr] = Field(default_factory=list)
+    forbidden_answer_terms: list[NonBlankStr] = Field(default_factory=list)
+    safety_notes: list[NonBlankStr] = Field(default_factory=list)
+    roadmap_refs: list[NonBlankStr] = Field(default_factory=list)
+
+
+class AssistantSafetySuite(ContractModel):
+    """Versioned Assistant adversarial safety fixture suite."""
+
+    version: NonBlankStr
+    cases: list[AssistantSafetyCase] = Field(default_factory=list)
+
+
 class AssistantMemoryPreferenceDefinition(ContractModel):
     """Policy-defined preference the Assistant may remember for a user."""
 
