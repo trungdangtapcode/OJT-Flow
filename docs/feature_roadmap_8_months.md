@@ -296,7 +296,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F108 Add assistant answer templates for validation report, retrieval answer, standards explanation, workflow status, review summary, and export summary.
 - [x] F109 Add assistant attachment support for multiple files, pasted images, text snippets, and selected workflow/retrieval context.
 - [x] F110 Add assistant "show evidence" action that jumps to the exact source row, page box, chunk, or workflow event.
-- [ ] F111 Add assistant "create review task" action for unresolved data quality or terminology decisions.
+- [x] F111 Add assistant "create review task" action for unresolved data quality or terminology decisions.
 - [ ] F112 Add assistant "generate mapping draft" action that creates a review-gated transform plan instead of directly transforming data.
 - [x] F113 Add MCP resources for workflows, reviews, retrieval sources, schemas, and knowledge source inventory.
 - [x] F114 Add MCP prompts for standard tasks such as validate lab CSV, profile FHIR, find UCUM evidence, and inspect pending reviews.

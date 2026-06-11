@@ -425,6 +425,7 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
     input_format = _context_optional_text(context, "input_format")
     target_format = _context_optional_text(context, "target_format") or "json"
     fields = context.get("fields") if isinstance(context.get("fields"), list) else []
+    review_task = _review_task_context(context)
     workflow_id = _context_optional_text(
         context,
         "workflow_id",
@@ -454,6 +455,44 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
                     "require_human_review": bool(context.get("require_human_review", True)),
                 },
                 rationale="The user asked to create a workflow and supplied data.",
+            )
+        )
+    elif _wants_create_review_task(normalized, review_task):
+        arguments: dict[str, Any] = {
+            "question": _review_task_question(message, context, review_task),
+            "schema_id": (
+                _optional_text(review_task.get("schema_id"))
+                or schema_id
+                or "lab_result_v1"
+            ),
+            "review_focus": (
+                _optional_text(review_task.get("review_focus"))
+                or _optional_text(review_task.get("focus"))
+                or "Unresolved data quality or terminology decision"
+            ),
+            "source_workflow_id": (
+                _optional_text(review_task.get("source_workflow_id")) or workflow_id
+            ),
+            "source_turn_id": _optional_text(review_task.get("source_turn_id")),
+            "issue_kinds": _review_task_string_list(review_task.get("issue_kinds")),
+            "evidence_ids": _review_task_string_list(review_task.get("evidence_ids")),
+        }
+        if data:
+            arguments["data"] = data
+        if input_format:
+            arguments["input_format"] = input_format
+        tool_calls.append(
+            AssistantToolPlan(
+                tool_name="create_review_task",
+                arguments={
+                    key: value
+                    for key, value in arguments.items()
+                    if value not in (None, "", [])
+                },
+                rationale=(
+                    "The user asked to create a durable human-review task for "
+                    "an unresolved governed data decision."
+                ),
             )
         )
     elif ("validate" in normalized or "check" in normalized) and data:
@@ -725,6 +764,8 @@ def _findings(tool_results: list) -> list[AssistantFinding]:
             findings.append(_workflow_summary_finding(result.output))
         elif result.tool_name == "start_workflow":
             findings.append(_workflow_finding(result.output, created=True))
+        elif result.tool_name == "create_review_task":
+            findings.append(_review_task_finding(result.output))
     return findings
 
 
@@ -1007,6 +1048,20 @@ def _workflow_summary_finding(output: dict[str, Any]) -> AssistantFinding:
         severity="warning" if output.get("requires_review") else "info",
         source_tool="workflow_summary",
         source_ids=[str(workflow_id)],
+    )
+
+
+def _review_task_finding(output: dict[str, Any]) -> AssistantFinding:
+    workflow_id = str(output.get("workflow_id") or "workflow")
+    review = output.get("review_task") if isinstance(output.get("review_task"), dict) else {}
+    review_id = str(review.get("review_id") or "review")
+    question = str(review.get("question") or "Review the unresolved data decision.")
+    return AssistantFinding(
+        title="Review task created",
+        detail=f"Created {review_id} for {workflow_id}: {question}",
+        severity="warning",
+        source_tool="create_review_task",
+        source_ids=[value for value in (workflow_id, review_id) if value],
     )
 
 
@@ -1430,6 +1485,10 @@ def _suggestions(tool_results: list) -> list[str]:
             for action in result.output.get("next_actions") or []:
                 if isinstance(action, str):
                     suggestions.append(action)
+        if result.tool_name == "create_review_task" and result.status == "completed":
+            suggestions.append(
+                "Open Reviews to approve, reject, clarify, or cancel the review task."
+            )
     return _dedupe(suggestions)
 
 
@@ -1445,6 +1504,44 @@ def _context_text(context: dict[str, Any], key: str) -> str:
 def _context_optional_text(context: dict[str, Any], key: str) -> str | None:
     value = context.get(key)
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _review_task_context(context: dict[str, Any]) -> dict[str, Any]:
+    value = context.get("assistant_review_task")
+    return value if isinstance(value, dict) else {}
+
+
+def _wants_create_review_task(
+    normalized_message: str,
+    review_task: dict[str, Any],
+) -> bool:
+    if _optional_text(review_task.get("action")) == "create_review_task":
+        return True
+    create_terms = ("create", "open", "raise", "file", "make", "escalate")
+    review_terms = ("review task", "review ticket", "human review", "manual review")
+    return any(term in normalized_message for term in create_terms) and any(
+        term in normalized_message for term in review_terms
+    )
+
+
+def _review_task_question(
+    message: str,
+    context: dict[str, Any],
+    review_task: dict[str, Any],
+) -> str:
+    return (
+        _context_optional_text(context, "review_question")
+        or _optional_text(review_task.get("question"))
+        or _optional_text(review_task.get("title"))
+        or message.strip()
+        or "Review unresolved data quality or terminology decision."
+    )
+
+
+def _review_task_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
 
 
 def _optional_text(value: Any) -> str | None:

@@ -85,6 +85,7 @@ import {
   transcriptItemWithStreamEvent,
 } from "./assistant-session";
 import type { AssistantChatSession } from "./assistant-session";
+import type { AssistantReviewTaskDraft } from "./assistant-response-model";
 import { AssistantSessionSidebar } from "./assistant-session-sidebar";
 import { ToolCatalogPanel } from "./assistant-tool-catalog-panel";
 
@@ -687,6 +688,14 @@ export function AssistantPage() {
     });
   };
 
+  const prepareReviewTask = React.useCallback((draft: AssistantReviewTaskDraft) => {
+    setMessage(draft.message);
+    setContextText(formatContext(draft.context));
+    setExecuteWriteActions(true);
+    setWriteConfirmationAccepted(false);
+    setFormError(null);
+  }, []);
+
   const appendTranscriptItem = (
     sessionId: string,
     item: AssistantTranscriptItem,
@@ -816,6 +825,7 @@ export function AssistantPage() {
                       onRetryFailedTool={(failedItem, call) =>
                         void retryFailedTool(failedItem, call)
                       }
+                      onCreateReviewTask={prepareReviewTask}
                     />
                   ))}
                   {assistantMutation.isPending &&
@@ -1144,11 +1154,13 @@ function ConversationTurn({
   isBusy,
   item,
   onContinueAfterFailure,
+  onCreateReviewTask,
   onRetryFailedTool,
 }: {
   isBusy: boolean;
   item: AssistantTranscriptItem;
   onContinueAfterFailure: (item: AssistantTranscriptItem) => void;
+  onCreateReviewTask: (draft: AssistantReviewTaskDraft) => void;
   onRetryFailedTool: (
     item: AssistantTranscriptItem,
     call: AssistantToolResult,
@@ -1231,7 +1243,15 @@ function ConversationTurn({
                 response={item.response ?? null}
                 streamEvents={item.stream_events ?? []}
               />
-              {item.response ? <AssistantResponseDetails response={item.response} /> : null}
+              {item.response ? (
+                <AssistantResponseDetails
+                  onCreateReviewTask={onCreateReviewTask}
+                  response={item.response}
+                  turnContext={item.context}
+                  turnId={item.id}
+                  userMessage={item.message}
+                />
+              ) : null}
             </div>
           </div>
         </div>

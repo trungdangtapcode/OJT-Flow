@@ -581,6 +581,107 @@ class WorkflowService:
         self.workflows.save(workflow)
         return workflow
 
+    def create_review_task(
+        self,
+        *,
+        question: str,
+        proposed_action: dict[str, Any] | None = None,
+        data: str | None = None,
+        declared_format: DataFormat | None = None,
+        schema_id: str | None = "lab_result_v1",
+        source_context: dict[str, Any] | None = None,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+    ) -> WorkflowState:
+        """Create a durable human-review task without executing a transformation."""
+
+        clean_question = question.strip()
+        if not clean_question:
+            raise PolicyBlockedError("Review task question is required.")
+        workflow = WorkflowState(
+            owner_user_id=owner_user_id,
+            user_instruction=f"Review task: {clean_question}",
+            intent=WorkflowIntent(
+                task_type="manual_review_task",
+                target_format=DataFormat.JSON,
+                requires_explanation=False,
+                options={
+                    "schema_id": schema_id,
+                    "source": "assistant",
+                    "review_task": True,
+                },
+            ),
+            status=WorkflowStatus.NEEDS_HUMAN_REVIEW,
+            handoff_context={
+                "source_context": dict(source_context or {}),
+                "tool_specs": tool_specs_json(),
+            },
+            risk_flags=["manual_review_task"],
+        )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
+        self.workflows.save(workflow)
+        output_refs: list[str] = []
+        if data and data.strip():
+            dataset = self.datasets.put_text(
+                data,
+                workflow_id=workflow.workflow_id,
+                declared_format=declared_format.value if declared_format else None,
+            )
+            workflow.input = WorkflowInput(
+                dataset_ref=dataset.storage_ref,
+                input_hash=dataset.sha256,
+                declared_format=declared_format,
+            )
+            output_refs.append(dataset.storage_ref)
+        self._event(
+            workflow,
+            ActorType.SYSTEM,
+            "workflow_service",
+            EventType.WORKFLOW_CREATED,
+            "Manual review task workflow created",
+            output_refs=output_refs,
+        )
+        self._step(
+            workflow,
+            "workflow_created",
+            StepStatus.COMPLETED,
+            "Manual review task workflow created",
+            output_ref=output_refs[0] if output_refs else None,
+        )
+        workflow.review = HumanReview(
+            workflow_id=workflow.workflow_id,
+            trigger="manual_assistant_review_task",
+            question=clean_question,
+            proposed_action={
+                "review_task_type": "assistant_escalation",
+                "schema_id": schema_id,
+                **(proposed_action or {}),
+            },
+            allowed_decisions=[
+                ReviewDecision.APPROVE,
+                ReviewDecision.REJECT,
+                ReviewDecision.CLARIFY,
+                ReviewDecision.CANCEL,
+            ],
+        )
+        self._event(
+            workflow,
+            ActorType.AGENT,
+            "assistant",
+            EventType.REVIEW_REQUESTED,
+            clean_question,
+            severity=Severity.WARNING,
+            metadata={
+                "review_id": workflow.review.review_id,
+                "trigger": workflow.review.trigger,
+            },
+        )
+        self._step(workflow, "human_review", StepStatus.PENDING, clean_question)
+        workflow.touch()
+        self.workflows.save(workflow)
+        return workflow
+
     def _profile_fhir_context(
         self,
         workflow: WorkflowState,

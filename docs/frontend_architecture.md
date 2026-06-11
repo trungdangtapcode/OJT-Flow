@@ -1781,6 +1781,14 @@ workflow/retrieval data loads so deep links can land on rendered evidence,
 validation issue, or workflow-event cards. Workflow and Retrieval evidence cards
 must keep stable IDs derived from backend evidence IDs; never use list indexes
 as evidence jump targets.
+Assistant response cards may also expose "Create review task" when validation,
+retrieval, or evidence findings leave an unresolved data quality or terminology
+decision. Draft generation belongs in `assistant-response-model.ts`, rendering
+belongs in `assistant-response-details.tsx`, and the route should only prefill
+the composer with `context.assistant_review_task` plus `execute_write_actions`
+enabled. The backend write gate remains authoritative; the browser must still
+require the operator's explicit write confirmation before creating durable
+workflow/review state.
 Failed Assistant tool calls should expose inline recovery controls in the same
 chat turn. `Retry` must send structured `assistant_recovery.retry_tool` context
 with the original tool name and arguments; `Continue without retry` must send

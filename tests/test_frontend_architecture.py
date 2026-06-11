@@ -10126,6 +10126,13 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "streamed_answer" in assistant_page
     assert "AssistantResponseDetails" in assistant_page
     assert "AssistantEvidenceMatchStrip" in assistant_response_details
+    assert "AssistantReviewTaskAction" in assistant_response_details
+    assert "Create review task" in assistant_response_details
+    assert "assistantReviewTaskDraft" in assistant_response_details
+    assert "AssistantReviewTaskDraft" in assistant_page
+    assert "prepareReviewTask" in assistant_page
+    assert "assistant_review_task" in assistant_response_model
+    assert "create_review_task" in assistant_response_model
     assert "assistantEvidenceMatchExplanation" in assistant_response_model
     assert "matchSupportBadgeVariant" in assistant_response_model
     assert "item.match_explanation" in assistant_response_model

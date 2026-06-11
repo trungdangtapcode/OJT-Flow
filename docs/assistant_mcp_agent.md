@@ -247,6 +247,7 @@ Exposed MCP tools:
 - `get_workflow`
 - `workflow_summary`
 - `start_workflow`
+- `create_review_task`
 
 Use `assistant_chat` for the normal operator path. Use the lower-level tools
 when an automation client already knows the exact backend operation it needs.
@@ -256,7 +257,9 @@ standards evidence. It accepts the same governed source scope as
 `retrieval_search`; use `source_id` when the user asks for evidence from one
 exact approved source such as a specific FHIR profile, schema, guideline, or
 terminology entry. `workflow_summary` is the primary workflow inspection tool
-for chat clients.
+for chat clients. `create_review_task` creates durable workflow/review state
+for unresolved data quality, terminology, evidence, or workflow decisions and
+is write-gated through the same approval controls as other write actions.
 
 Exposed MCP resources are registered from `knowledge/assistant/mcp_resources.json`.
 The v0 catalog includes read-only resources for the Assistant tool catalog,

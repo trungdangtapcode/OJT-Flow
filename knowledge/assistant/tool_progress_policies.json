@@ -225,6 +225,32 @@
           "event": "after_execute"
         }
       ]
+    },
+    {
+      "tool_name": "create_review_task",
+      "stages": [
+        {
+          "stage_id": "check_review_write_gate",
+          "label": "Check review write gate",
+          "message": "Verifying explicit approval before creating durable human-review state.",
+          "progress": 20,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "create_review_workflow",
+          "label": "Create review workflow",
+          "message": "Opening a workflow-backed review task with issue focus, evidence refs, and audit metadata.",
+          "progress": 70,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "return_review_task",
+          "label": "Return review task",
+          "message": "Returning the review ID, workflow ID, and next review action.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
     }
   ]
 }

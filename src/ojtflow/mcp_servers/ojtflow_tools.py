@@ -277,6 +277,37 @@ def create_server():
             execute_write_actions=execute_write_actions,
         )
 
+    @mcp.tool()
+    def create_review_task(
+        question: str,
+        data: str | None = None,
+        input_format: str | None = None,
+        schema_id: str | None = "lab_result_v1",
+        review_focus: str | None = None,
+        source_workflow_id: str | None = None,
+        source_turn_id: str | None = None,
+        issue_kinds: list[str] | None = None,
+        evidence_ids: list[str] | None = None,
+        execute_write_actions: bool = False,
+    ) -> dict[str, Any]:
+        """Create a durable human-review task only when writes are explicit."""
+
+        return executor.execute_tool(
+            "create_review_task",
+            {
+                "question": question,
+                "data": data,
+                "input_format": input_format,
+                "schema_id": schema_id,
+                "review_focus": review_focus,
+                "source_workflow_id": source_workflow_id,
+                "source_turn_id": source_turn_id,
+                "issue_kinds": issue_kinds or [],
+                "evidence_ids": evidence_ids or [],
+            },
+            execute_write_actions=execute_write_actions,
+        )
+
     return mcp
 
 

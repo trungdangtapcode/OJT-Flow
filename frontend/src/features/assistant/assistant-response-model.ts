@@ -4,6 +4,7 @@ import type { Badge } from "../../components/ui/badge";
 import type {
   AssistantEvidenceSummary,
   AssistantFinding,
+  AssistantResponse,
   AssistantToolResult,
   Evidence,
   RetrievalDiversitySelection,
@@ -67,6 +68,72 @@ export type AssistantEvidenceJumpAction = {
   label: string;
   source: "assistant" | "workflow";
 };
+
+export type AssistantReviewTaskDraft = {
+  context: Record<string, unknown>;
+  evidenceCount: number;
+  issueCount: number;
+  message: string;
+  reason: string;
+};
+
+export function assistantReviewTaskDraft({
+  response,
+  turnContext,
+  turnId,
+  userMessage,
+}: {
+  response: AssistantResponse;
+  turnContext: Record<string, unknown>;
+  turnId: string;
+  userMessage: string;
+}): AssistantReviewTaskDraft | null {
+  const issueKinds = uniqueStrings(
+    response.tool_calls.flatMap((call) =>
+      validationIssuesForToolCall(call).map((issue) => optionalStringValue(issue.kind)),
+    ),
+  );
+  const evidenceIds = uniqueStrings([
+    ...response.evidence_summary.map((item) => optionalStringValue(item.evidence_id)),
+    ...response.tool_calls
+      .flatMap(toolEvidence)
+      .map((item) => optionalStringValue(item.evidence_id)),
+  ]);
+  const unresolvedFindings = response.findings.filter(findingNeedsReview);
+  if (!issueKinds.length && !evidenceIds.length && !unresolvedFindings.length) {
+    return null;
+  }
+  const sourceWorkflowId =
+    response.tool_calls
+      .map(workflowIdForToolCall)
+      .find((workflowId): workflowId is string => Boolean(workflowId)) ??
+    optionalStringValue(turnContext.workflow_id);
+  const focus = issueKinds.length
+    ? `Review ${issueKinds.slice(0, 4).join(", ")} finding${issueKinds.length === 1 ? "" : "s"}`
+    : "Review unresolved data quality, terminology, or evidence decision";
+  const question = `${focus} from assistant turn ${turnId}.`;
+  const context = {
+    ...turnContext,
+    review_question: question,
+    assistant_review_task: {
+      action: "create_review_task",
+      question,
+      review_focus: focus,
+      source_message: userMessage,
+      source_turn_id: turnId,
+      source_workflow_id: sourceWorkflowId,
+      issue_kinds: issueKinds,
+      evidence_ids: evidenceIds,
+    },
+  };
+  return {
+    context,
+    evidenceCount: evidenceIds.length,
+    issueCount: issueKinds.length || unresolvedFindings.length,
+    message: "Create a review task for these unresolved assistant findings.",
+    reason: `${focus}. This will create durable workflow and human-review state after write confirmation.`,
+  };
+}
 
 export function evidenceJumpActionsForSummary(
   item: AssistantEvidenceSummary,
@@ -159,6 +226,31 @@ function evidenceForSummary(
         }
       : null)
   );
+}
+
+function validationIssuesForToolCall(call: AssistantToolResult): Record<string, unknown>[] {
+  const direct = validationIssuesValue(call.output.validation_report);
+  if (direct.length) return direct;
+  const validation = recordValue(call.output.validation);
+  return validationIssuesValue(validation.validation_report);
+}
+
+function validationIssuesValue(value: unknown): Record<string, unknown>[] {
+  const report = recordValue(value);
+  const issues = report.issues;
+  return Array.isArray(issues) ? issues.map(recordValue).filter((issue) => Object.keys(issue).length) : [];
+}
+
+function findingNeedsReview(finding: AssistantFinding): boolean {
+  return (
+    finding.severity === "warning" ||
+    finding.severity === "action_required" ||
+    finding.severity === "error"
+  );
+}
+
+function uniqueStrings(values: (string | null)[]): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
 export function assistantEvidenceMatchExplanation(

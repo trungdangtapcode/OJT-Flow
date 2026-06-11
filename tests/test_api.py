@@ -4330,6 +4330,7 @@ async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
     tool_names = {tool["name"] for tool in tools}
     assert "validate_with_evidence" in tool_names
     assert "start_workflow" in tool_names
+    assert "create_review_task" in tool_names
     start_workflow = next(tool for tool in tools if tool["name"] == "start_workflow")
     assert start_workflow["requires_approval"] is True
     assert start_workflow["permission_scope"] == "data:transform"
@@ -4337,6 +4338,11 @@ async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
     assert "write-gated" in start_workflow["permission_tags"]
     assert "Creates durable workflow state" in start_workflow["approval_reason"]
     assert start_workflow["input_schema"]["type"] == "object"
+    create_review_task = next(tool for tool in tools if tool["name"] == "create_review_task")
+    assert create_review_task["requires_approval"] is True
+    assert create_review_task["permission_scope"] == "review:write"
+    assert create_review_task["risk_level"] == "high"
+    assert "review" in create_review_task["permission_tags"]
 
 
 @pytest.mark.asyncio
@@ -4646,6 +4652,64 @@ async def test_assistant_chat_requires_explicit_write_execution(monkeypatch) -> 
     assert allowed_call["output"]["workflow_id"].startswith("wf_")
     assert allowed_call["output"]["owner_user_id"] == "usr_api_test"
     assert allowed.json()["data"]["findings"][0]["title"] == "Workflow created"
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_creates_write_gated_review_task(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    payload = {
+        "message": "Create a review task for this unresolved lab issue.",
+        "context": {
+            "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+            "input_format": "csv",
+            "schema_id": "lab_result_v1",
+            "assistant_review_task": {
+                "action": "create_review_task",
+                "question": "Review missing HbA1c value and unit before export.",
+                "review_focus": "Missing lab value and UCUM unit",
+                "issue_kinds": ["missing_value", "missing_unit"],
+                "evidence_ids": ["schema_lab_result_v1"],
+            },
+        },
+    }
+
+    async with await _client() as client:
+        gated = await client.post("/api/v1/assistant/chat", json=payload)
+        allowed = await client.post(
+            "/api/v1/assistant/chat",
+            json={**payload, "execute_write_actions": True},
+        )
+        reviews = await client.get("/api/v1/reviews")
+
+    assert gated.status_code == 200
+    gated_call = gated.json()["data"]["tool_calls"][0]
+    assert gated_call["tool_name"] == "create_review_task"
+    assert gated_call["status"] == "requires_approval"
+    assert gated_call["requires_approval"] is True
+    assert gated.json()["data"]["findings"][0]["severity"] == "action_required"
+
+    assert allowed.status_code == 200
+    allowed_body = allowed.json()["data"]
+    allowed_call = allowed_body["tool_calls"][0]
+    assert allowed_call["tool_name"] == "create_review_task"
+    assert allowed_call["status"] == "completed"
+    assert allowed_call["output"]["status"] == "needs_human_review"
+    assert allowed_call["output"]["workflow_id"].startswith("wf_")
+    assert allowed_call["output"]["review"]["trigger"] == "manual_assistant_review_task"
+    assert allowed_call["output"]["review_task"]["review_id"].startswith("rev_")
+    assert allowed_body["findings"][0]["title"] == "Review task created"
+    assert any("Open Reviews" in suggestion for suggestion in allowed_body["suggestions"])
+
+    assert reviews.status_code == 200
+    review_items = reviews.json()["data"]
+    assert any(
+        item["review"]["review_id"] == allowed_call["output"]["review_task"]["review_id"]
+        for item in review_items
+    )
 
 
 @pytest.mark.asyncio

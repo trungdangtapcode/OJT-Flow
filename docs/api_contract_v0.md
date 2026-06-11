@@ -1087,6 +1087,7 @@ The assistant can call:
 - `get_workflow`
 - `workflow_summary`
 - `start_workflow`
+- `create_review_task`
 
 `validate_with_evidence` is the preferred assistant path for healthcare data
 quality questions because it validates the payload and retrieves standards
@@ -1095,10 +1096,13 @@ support governed source scope through `clinical_domain`, `standard_system`,
 `source_type`, exact `source_id`, and `trust_level`. `workflow_summary` is the
 preferred assistant path for chat-based workflow inspection.
 
-`start_workflow` is a write action. It returns `status="requires_approval"`
-unless the request explicitly sets `execute_write_actions=true`. The assistant
-does not expose review approval, rejection, cancellation, or destructive
-artifact actions in v0.
+`start_workflow` and `create_review_task` are write actions. They return
+`status="requires_approval"` unless the request explicitly sets
+`execute_write_actions=true`. `create_review_task` creates a durable workflow in
+`needs_human_review` status with a pending human review and audit event, so
+unresolved data quality, terminology, or evidence decisions can leave the chat
+surface and enter the governed review queue. The assistant does not expose
+review approval, rejection, cancellation, or destructive artifact actions in v0.
 
 The browser UI adds an additional operator confirmation before sending
 `execute_write_actions=true`: it lists tools from the backend catalog where

@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   CheckCircle2,
   Clipboard,
+  ClipboardCheck,
   ExternalLink,
   Network,
   Route,
@@ -29,6 +30,7 @@ import {
   arrayCount,
   assistantEvidenceBucketVariant,
   assistantEvidenceMatchExplanation,
+  assistantReviewTaskDraft,
   assistantStandardSearchMatchReasons,
   badgeVariant,
   evidenceJumpActions,
@@ -44,10 +46,29 @@ import {
   toolStandardSearchPlan,
   workflowIdForToolCall,
 } from "./assistant-response-model";
-import type { AssistantEvidenceJumpAction } from "./assistant-response-model";
+import type {
+  AssistantEvidenceJumpAction,
+  AssistantReviewTaskDraft,
+} from "./assistant-response-model";
 import type { AssistantSearchHint } from "./assistant-response-model";
 
-export function AssistantResponseDetails({ response }: { response: AssistantResponse }) {
+export function AssistantResponseDetails({
+  onCreateReviewTask,
+  response,
+  turnContext = {},
+  turnId = "",
+  userMessage = "",
+}: {
+  onCreateReviewTask?: (draft: AssistantReviewTaskDraft) => void;
+  response: AssistantResponse;
+  turnContext?: Record<string, unknown>;
+  turnId?: string;
+  userMessage?: string;
+}) {
+  const reviewTaskDraft =
+    onCreateReviewTask && turnId
+      ? assistantReviewTaskDraft({ response, turnContext, turnId, userMessage })
+      : null;
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap gap-1.5">
@@ -63,6 +84,12 @@ export function AssistantResponseDetails({ response }: { response: AssistantResp
       ) : null}
       {response.findings.length > 0 ? (
         <FindingsPanel findings={response.findings} />
+      ) : null}
+      {reviewTaskDraft && onCreateReviewTask ? (
+        <AssistantReviewTaskAction
+          draft={reviewTaskDraft}
+          onCreateReviewTask={onCreateReviewTask}
+        />
       ) : null}
       {response.evidence_summary.length > 0 ? (
         <EvidenceSummaryPanel
@@ -87,6 +114,38 @@ export function AssistantResponseDetails({ response }: { response: AssistantResp
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function AssistantReviewTaskAction({
+  draft,
+  onCreateReviewTask,
+}: {
+  draft: AssistantReviewTaskDraft;
+  onCreateReviewTask: (draft: AssistantReviewTaskDraft) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+      <div className="min-w-0">
+        <div className="text-sm font-black text-amber-950">Unresolved decision</div>
+        <div className="break-words text-sm leading-6 text-amber-950/85">
+          {draft.reason}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          <Badge variant="warning">{formatCount(draft.issueCount, "issue")}</Badge>
+          <Badge variant="muted">{formatCount(draft.evidenceCount, "evidence")}</Badge>
+        </div>
+      </div>
+      <Button
+        className="shrink-0"
+        onClick={() => onCreateReviewTask(draft)}
+        type="button"
+        variant="outline"
+      >
+        <ClipboardCheck className="h-4 w-4" />
+        Create review task
+      </Button>
     </div>
   );
 }

@@ -175,6 +175,31 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
             "additionalProperties": False,
         },
     ),
+    "create_review_task": AssistantToolSpec(
+        name="create_review_task",
+        description=(
+            "Create a durable human-review task for unresolved data quality, "
+            "terminology, evidence, or workflow decisions."
+        ),
+        permission_scope=ToolPermission.REVIEW_WRITE.value,
+        requires_approval=True,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "data": {"type": ["string", "null"]},
+                "input_format": {"type": ["string", "null"]},
+                "schema_id": {"type": ["string", "null"]},
+                "review_focus": {"type": ["string", "null"]},
+                "source_workflow_id": {"type": ["string", "null"]},
+                "source_turn_id": {"type": ["string", "null"]},
+                "issue_kinds": {"type": "array", "items": {"type": "string"}},
+                "evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    ),
 }
 
 
@@ -224,6 +249,7 @@ class OJTFlowToolExecutor:
             "get_workflow": self._get_workflow,
             "workflow_summary": self._workflow_summary,
             "start_workflow": self._start_workflow,
+            "create_review_task": self._create_review_task,
         }
 
     @property
@@ -563,6 +589,46 @@ class OJTFlowToolExecutor:
         )
         return workflow.model_dump(mode="json")
 
+    def _create_review_task(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        source_context = {
+            "source_workflow_id": _optional_str(args.get("source_workflow_id")),
+            "source_turn_id": _optional_str(args.get("source_turn_id")),
+            "review_focus": _optional_str(args.get("review_focus")),
+            "issue_kinds": _str_list(args.get("issue_kinds")),
+            "evidence_ids": _str_list(args.get("evidence_ids")),
+        }
+        workflow = self.workflow_service.create_review_task(
+            question=_required_str(args, "question"),
+            proposed_action={
+                key: value
+                for key, value in source_context.items()
+                if value not in (None, "", [])
+            },
+            data=_optional_str(args.get("data")),
+            declared_format=_optional_data_format(args.get("input_format")),
+            schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
+            source_context={
+                key: value
+                for key, value in source_context.items()
+                if value not in (None, "", [])
+            },
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+        )
+        payload = workflow.model_dump(mode="json")
+        payload["review_task"] = {
+            "workflow_id": workflow.workflow_id,
+            "review_id": workflow.review.review_id if workflow.review else None,
+            "question": workflow.review.question if workflow.review else None,
+            "trigger": workflow.review.trigger if workflow.review else None,
+        }
+        return payload
+
 
 def _missing_required_arguments(
     spec: AssistantToolSpec,
@@ -614,6 +680,12 @@ def _tool_summary(tool_name: str, output: dict[str, Any]) -> str:
         return (
             f"Created workflow {output.get('workflow_id', '')} "
             f"with status {output.get('status', 'unknown')}."
+        )
+    if tool_name == "create_review_task":
+        review = output.get("review_task") if isinstance(output.get("review_task"), dict) else {}
+        return (
+            f"Created review task {review.get('review_id') or ''} "
+            f"for workflow {output.get('workflow_id', '')}."
         )
     return f"{tool_name} completed."
 
