@@ -12,6 +12,7 @@ import yaml
 from ojtflow.core.contracts.data import ParsedData
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.errors import ToolExecutionError
+from ojtflow.interoperability.adapters import parse_bulk_fhir_ndjson
 
 
 def parse_data(text: str, data_format: DataFormat, source_ref: str | None = None) -> ParsedData:
@@ -23,6 +24,8 @@ def parse_data(text: str, data_format: DataFormat, source_ref: str | None = None
         return _parse_yaml(text, source_ref)
     if data_format == DataFormat.CSV:
         return _parse_csv(text, source_ref)
+    if data_format == DataFormat.NDJSON:
+        return _parse_ndjson(text, source_ref)
     if data_format == DataFormat.MARKDOWN:
         return _parse_markdown(text, source_ref)
     # PDF/DOCX/IMAGE arrive here only if someone bypasses extraction; treat as markdown
@@ -158,4 +161,25 @@ def _parse_csv(text: str, source_ref: str | None) -> ParsedData:
         records=records,
         source_ref=source_ref,
         parser_warnings=warnings,
+    )
+
+
+def _parse_ndjson(text: str, source_ref: str | None) -> ParsedData:
+    report = parse_bulk_fhir_ndjson(text, source_ref=source_ref)
+    records = [
+        {
+            "resourceType": resource.resource_type,
+            "id": resource.resource_id,
+            "_source_row": resource.line_number,
+            "_warnings": list(resource.warnings),
+            "resource": resource.resource,
+        }
+        for resource in report.resources
+    ]
+    return ParsedData(
+        format=DataFormat.NDJSON,
+        content=report.model_dump(mode="json"),
+        records=records,
+        source_ref=source_ref,
+        parser_warnings=report.warnings,
     )

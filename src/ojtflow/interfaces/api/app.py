@@ -26,6 +26,7 @@ from ojtflow.interfaces.api.routes import (
     fhir,
     governance,
     health,
+    interoperability,
     jobs,
     ocr,
     parse,
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(convert.router, prefix="/api/v1", dependencies=protected)
     app.include_router(validate.router, prefix="/api/v1", dependencies=protected)
     app.include_router(fhir.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(interoperability.router, prefix="/api/v1", dependencies=protected)
     app.include_router(governance.router, prefix="/api/v1")
     app.include_router(ocr.router, prefix="/api/v1", dependencies=protected)
     app.include_router(parse.router, prefix="/api/v1")

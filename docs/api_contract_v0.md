@@ -1339,6 +1339,112 @@ Response data includes:
 - `profile.handoff_context`
 - `evidence`
 
+## Interoperability
+
+`POST /api/v1/interoperability/fhir/bulk/import`
+
+Parses FHIR Bulk Data-style NDJSON resources with lightweight validation.
+Request:
+
+```json
+{
+  "data": "{\"resourceType\":\"Patient\",\"id\":\"P001\"}\n{\"resourceType\":\"Observation\",\"id\":\"O001\",\"status\":\"final\"}\n",
+  "source_ref": "bulk-fhir://demo/patient-observation.ndjson",
+  "allowed_resource_types": ["Patient", "Observation"]
+}
+```
+
+Response data includes `resource_count`, `resource_counts`, `resources[]`,
+`rejected_line_count`, and `warnings[]`. Each resource includes line number,
+resource type, optional ID, raw resource JSON, and warnings.
+
+`POST /api/v1/interoperability/fhir/bulk/export-package`
+
+Exports a `ClinicalPackage` as grouped FHIR-like NDJSON files. Request:
+
+```json
+{
+  "package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0",
+    "workflow_id": "wf_demo",
+    "raw_input": {
+      "dataset_ref": "storage://datasets/demo",
+      "input_hash": "sha256:demo",
+      "declared_format": "csv",
+      "detected_format": "csv"
+    },
+    "clinical_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": [],
+      "resources": []
+    },
+    "operation_outcome": {"resourceType": "OperationOutcome", "issue": []}
+  },
+  "require_approval": true
+}
+```
+
+Response data includes `package_id`, `workflow_id`, `approved_for_export`,
+`files[]`, `resource_count`, and `warnings[]`. Each file includes resource type,
+filename, NDJSON text, resource count, and output hash.
+
+`POST /api/v1/interoperability/hl7v2/observations`
+
+Parses a starter HL7 v2 ORU-style lab message and maps OBX segments into
+FHIR-like Observation records with segment provenance. Request:
+
+```json
+{
+  "data": "MSH|^~\\&|LAB|HOSP|OJT|OJT|202606111200||ORU^R01|MSG1|P|2.5\rPID|1||P001^^^MRN||DOE^JANE\rOBX|1|NM|4548-4^HbA1c^LN||7.4|%^percent|||||F|||20260611\r",
+  "source_ref": "hl7v2://demo/oru-r01"
+}
+```
+
+Response data includes parsed message segments, segment counts, patient ID,
+Observation resources, field provenance, and warnings.
+
+`POST /api/v1/interoperability/dicom/metadata`
+
+Profiles DICOM metadata without reading pixel data and returns an
+ImagingStudy-like mapping. Request:
+
+```json
+{
+  "metadata": {
+    "StudyInstanceUID": "1.2.3",
+    "SeriesInstanceUID": "1.2.3.4",
+    "SOPInstanceUID": "1.2.3.4.5",
+    "Modality": "MR",
+    "AccessionNumber": "ACC-001",
+    "PatientIdentityRemoved": "YES"
+  },
+  "source_ref": "dicom://study/1.2.3"
+}
+```
+
+Response data includes `profile` and `imaging_study`. PixelData is intentionally
+excluded from the metadata profile.
+
+`POST /api/v1/interoperability/document-reference`
+
+Builds a DocumentReference-like resource for uploaded PDFs, images, notes, and
+extracted reports. Request:
+
+```json
+{
+  "document_id": "artifact_123",
+  "filename": "lab-report.pdf",
+  "content_type": "application/pdf",
+  "source_ref": "storage://uploads/lab-report.pdf",
+  "description": "Uploaded lab report"
+}
+```
+
+Response data includes a `ClinicalResourceRecord` for the DocumentReference-like
+resource plus warnings.
+
 ## OCR Evidence Stub
 
 `POST /api/v1/ocr/evidence`

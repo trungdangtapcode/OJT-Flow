@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr, NonBlankText
+from ojtflow.core.contracts.clinical import ClinicalPackage
 from ojtflow.core.contracts.enums import (
     DataFormat,
     EvidenceSourceType,
@@ -153,6 +154,127 @@ class FhirProfileRequest(ContractModel):
                         '{"resourceType":"Observation","status":"final",'
                         '"code":{"text":"HbA1c"}}'
                     )
+                }
+            ]
+        }
+    }
+
+
+class BulkFhirNdjsonImportRequest(ContractModel):
+    data: NonBlankStr
+    source_ref: NonBlankStr | None = None
+    allowed_resource_types: list[NonBlankStr] = Field(default_factory=list)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "data": (
+                        '{"resourceType":"Patient","id":"P001"}\n'
+                        '{"resourceType":"Observation","id":"O001","status":"final"}\n'
+                    ),
+                    "source_ref": "bulk-fhir://demo/patient-observation.ndjson",
+                    "allowed_resource_types": ["Patient", "Observation"],
+                }
+            ]
+        }
+    }
+
+
+class BulkFhirNdjsonExportRequest(ContractModel):
+    package: ClinicalPackage
+    require_approval: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "package": {
+                        "package_type": "ojtflow_clinical_package",
+                        "schema_version": "clinical_package.v0",
+                        "workflow_id": "wf_demo",
+                        "raw_input": {
+                            "dataset_ref": "storage://datasets/demo",
+                            "input_hash": "sha256:demo",
+                            "declared_format": "csv",
+                            "detected_format": "csv",
+                        },
+                        "clinical_bundle": {
+                            "resourceType": "Bundle",
+                            "type": "collection",
+                            "entry": [],
+                            "resources": [],
+                        },
+                        "operation_outcome": {"resourceType": "OperationOutcome", "issue": []},
+                    },
+                    "require_approval": True,
+                }
+            ]
+        }
+    }
+
+
+class Hl7V2MapRequest(ContractModel):
+    data: NonBlankStr
+    source_ref: NonBlankStr | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "data": (
+                        "MSH|^~\\&|LAB|HOSP|OJT|OJT|202606111200||ORU^R01|MSG1|P|2.5\r"
+                        "PID|1||P001^^^MRN||DOE^JANE\r"
+                        "OBR|1||ORD1|LAB^Lab panel\r"
+                        "OBX|1|NM|4548-4^HbA1c^LN||7.4|%^percent|4.0-5.6|H|||F|||20260611\r"
+                    ),
+                    "source_ref": "hl7v2://demo/oru-r01",
+                }
+            ]
+        }
+    }
+
+
+class DicomMetadataProfileRequest(ContractModel):
+    metadata: dict[str, Any]
+    source_ref: NonBlankStr | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "metadata": {
+                        "StudyInstanceUID": "1.2.3",
+                        "SeriesInstanceUID": "1.2.3.4",
+                        "SOPInstanceUID": "1.2.3.4.5",
+                        "Modality": "MR",
+                        "AccessionNumber": "ACC-001",
+                        "PatientIdentityRemoved": "YES",
+                    },
+                    "source_ref": "dicom://study/1.2.3",
+                }
+            ]
+        }
+    }
+
+
+class DocumentReferenceMapRequest(ContractModel):
+    document_id: NonBlankStr
+    filename: NonBlankStr
+    content_type: NonBlankStr
+    source_ref: NonBlankStr
+    description: NonBlankStr | None = None
+    status: NonBlankStr = "current"
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "document_id": "artifact_123",
+                    "filename": "lab-report.pdf",
+                    "content_type": "application/pdf",
+                    "source_ref": "storage://uploads/lab-report.pdf",
+                    "description": "Uploaded lab report",
                 }
             ]
         }
