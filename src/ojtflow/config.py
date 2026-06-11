@@ -19,6 +19,7 @@ LLMProvider = Literal["disabled", "openai"]
 ProductMode = Literal["local_dev", "demo", "pilot", "production"]
 RetrievalFramework = Literal["custom", "llamaindex"]
 RerankProvider = Literal["none", "huggingface"]
+RateLimitBackend = Literal["auto", "memory", "redis"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
 RuntimeSettingsPayload = dict[str, str | int | float | bool]
 RuntimeRetrievalSettingsPayload = RuntimeSettingsPayload
@@ -83,6 +84,7 @@ DEFAULT_DATABASE_PATH = Path("var/ojtflow.db")
 DEFAULT_DATA_DIR = Path("var")
 DEFAULT_RUNTIME_SETTINGS_PATH = Path("var/runtime_settings.json")
 DEFAULT_KNOWLEDGE_DIR = Path("knowledge")
+DEFAULT_RATE_LIMIT_POLICY_PATH = Path("knowledge/security/rate_limit_policy.json")
 DEFAULT_MIGRATIONS_DIR = Path("sql/postgres/migrations")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/api/v1/auth/google/callback"
@@ -135,6 +137,19 @@ class Settings(BaseModel):
     audit_hash_chain_required: bool = Field(
         default=False,
         alias="OJT_AUDIT_HASH_CHAIN_REQUIRED",
+    )
+    rate_limit_enabled: bool = Field(default=True, alias="OJT_RATE_LIMIT_ENABLED")
+    rate_limit_backend: RateLimitBackend = Field(
+        default="auto",
+        alias="OJT_RATE_LIMIT_BACKEND",
+    )
+    rate_limit_policy_path: Path = Field(
+        default=DEFAULT_RATE_LIMIT_POLICY_PATH,
+        alias="OJT_RATE_LIMIT_POLICY_PATH",
+    )
+    rate_limit_redis_prefix: str = Field(
+        default="ojtflow:rate_limit",
+        alias="OJT_RATE_LIMIT_REDIS_PREFIX",
     )
     storage_backend: StorageBackend = Field(
         default=DEFAULT_STORAGE_BACKEND,
@@ -463,6 +478,10 @@ class Settings(BaseModel):
         return _resolve_path(self.knowledge_dir, self.repo_root)
 
     @property
+    def resolved_rate_limit_policy_path(self) -> Path:
+        return _resolve_path(self.rate_limit_policy_path, self.repo_root)
+
+    @property
     def resolved_migrations_dir(self) -> Path:
         return _resolve_path(self.migrations_dir, self.repo_root)
 
@@ -526,6 +545,20 @@ def get_settings() -> Settings:
         OJT_AUDIT_HASH_CHAIN_REQUIRED=_parse_bool(
             os.getenv("OJT_AUDIT_HASH_CHAIN_REQUIRED"),
             default=False,
+        ),
+        OJT_RATE_LIMIT_ENABLED=_parse_bool(
+            os.getenv("OJT_RATE_LIMIT_ENABLED"),
+            default=True,
+        ),
+        OJT_RATE_LIMIT_BACKEND=_parse_rate_limit_backend(
+            os.getenv("OJT_RATE_LIMIT_BACKEND")
+        ),
+        OJT_RATE_LIMIT_POLICY_PATH=Path(
+            os.getenv("OJT_RATE_LIMIT_POLICY_PATH", str(DEFAULT_RATE_LIMIT_POLICY_PATH))
+        ),
+        OJT_RATE_LIMIT_REDIS_PREFIX=os.getenv(
+            "OJT_RATE_LIMIT_REDIS_PREFIX",
+            "ojtflow:rate_limit",
         ),
         OJT_STORAGE_BACKEND=_parse_storage_backend(os.getenv("OJT_STORAGE_BACKEND")),
         OJT_DATABASE_URL=_parse_postgres_dsn(
@@ -1246,6 +1279,16 @@ def _parse_storage_backend(value: str | None) -> StorageBackend:
     allowed = ", ".join(ALLOWED_STORAGE_BACKENDS)
     raise ValueError(
         f"Invalid storage backend environment value: {value}. Expected one of: {allowed}"
+    )
+
+
+def _parse_rate_limit_backend(value: str | None) -> RateLimitBackend:
+    normalized = "auto" if value is None else value.strip().lower()
+    if normalized in {"auto", "memory", "redis"}:
+        return normalized  # type: ignore[return-value]
+    raise ValueError(
+        "Invalid rate-limit backend environment value: "
+        f"{value}. Expected one of: auto, memory, redis"
     )
 
 

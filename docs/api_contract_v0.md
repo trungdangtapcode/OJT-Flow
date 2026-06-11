@@ -1398,6 +1398,10 @@ Response data includes:
 - `tools.registered_count`
 - `tools.approval_required_count`
 - `tools.write_gates_enabled`
+- `rate_limit.enabled`
+- `rate_limit.backend`
+- `rate_limit.policy_configured`
+- `rate_limit.redis_prefix_configured`
 - `auth.google_oauth_configured`
 - `auth.cookie_secure`
 - `auth.cookie_effective_secure`

@@ -8,7 +8,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from uuid import uuid4
 
 from ojtflow.core.errors import OJTFlowError
+from ojtflow.config import get_settings
 from ojtflow.observability.logging_guard import install_no_raw_phi_filter
+from ojtflow.interfaces.api.rate_limit import build_rate_limiter, rate_limited_response
 from ojtflow.interfaces.api.responses import (
     http_exception_handler,
     ojtflow_exception_handler,
@@ -48,6 +50,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
+    rate_limiter = build_rate_limiter(get_settings())
 
     @app.middleware("http")
     async def request_id_responses(request, call_next):
@@ -55,6 +58,22 @@ def create_app() -> FastAPI:
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
+        return response
+
+    @app.middleware("http")
+    async def rate_limit_requests(request, call_next):
+        request_id = getattr(request.state, "request_id", None)
+        if not isinstance(request_id, str) or not request_id:
+            request_id = _request_id(request.headers.get("x-request-id"))
+            request.state.request_id = request_id
+        decision = rate_limiter.check(request, settings=get_settings())
+        if decision is not None and not decision.allowed:
+            return rate_limited_response(decision, request_id=request_id)
+        response = await call_next(request)
+        if decision is not None:
+            response.headers["X-RateLimit-Limit"] = str(decision.limit)
+            response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
+            response.headers["X-RateLimit-Reset"] = str(decision.reset_seconds)
         return response
 
     @app.middleware("http")

@@ -179,6 +179,12 @@ async def runtime_config(
                 ),
                 "write_gates_enabled": True,
             },
+            "rate_limit": {
+                "enabled": settings.rate_limit_enabled,
+                "backend": settings.rate_limit_backend,
+                "policy_configured": bool(settings.rate_limit_policy_path),
+                "redis_prefix_configured": bool(settings.rate_limit_redis_prefix),
+            },
             "review_policy": {
                 "default_human_review_required": True,
                 "ocr_low_confidence_threshold": OCR_LOW_CONFIDENCE_THRESHOLD,

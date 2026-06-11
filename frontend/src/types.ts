@@ -1888,6 +1888,12 @@ export type RuntimeConfig = {
     approval_required_count: number;
     write_gates_enabled: boolean;
   };
+  rate_limit?: {
+    enabled: boolean;
+    backend: "auto" | "memory" | "redis" | string;
+    policy_configured: boolean;
+    redis_prefix_configured: boolean;
+  };
   review_policy?: {
     default_human_review_required: boolean;
     ocr_low_confidence_threshold: number;

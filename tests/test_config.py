@@ -56,6 +56,11 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.redis_url == "redis://localhost:6379/0"
     assert settings.audit_hash_chain_required is False
     assert settings.effective_audit_hash_chain_required is False
+    assert settings.rate_limit_enabled is True
+    assert settings.rate_limit_backend == "auto"
+    assert settings.resolved_rate_limit_policy_path == (
+        REPO_ROOT / "knowledge/security/rate_limit_policy.json"
+    )
     assert settings.google_client_id == ""
     assert settings.google_client_secret == ""
     assert settings.google_redirect_uri == "http://localhost:8000/api/v1/auth/google/callback"

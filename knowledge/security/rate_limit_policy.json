@@ -1,0 +1,94 @@
+{
+  "version": "rate_limit_policy.v1",
+  "rules": [
+    {
+      "key": "auth_oauth",
+      "description": "OAuth URL creation and callback protection.",
+      "methods": ["GET"],
+      "path_prefixes": ["/api/v1/auth/google/url", "/api/v1/auth/google/callback"],
+      "limit": 30,
+      "window_seconds": 60,
+      "scope": "ip",
+      "enabled": true
+    },
+    {
+      "key": "auth_session_mutation",
+      "description": "Session logout and service-account token creation protection.",
+      "methods": ["POST"],
+      "path_prefixes": ["/api/v1/auth/logout", "/api/v1/auth/service-accounts"],
+      "limit": 20,
+      "window_seconds": 60,
+      "scope": "session_or_ip",
+      "enabled": true
+    },
+    {
+      "key": "assistant_chat",
+      "description": "Assistant message and streaming chat budget.",
+      "methods": ["POST"],
+      "path_prefixes": [
+        "/api/v1/assistant/chat",
+        "/api/v1/assistant/sessions"
+      ],
+      "limit": 40,
+      "window_seconds": 60,
+      "scope": "session_or_ip",
+      "enabled": true
+    },
+    {
+      "key": "file_upload",
+      "description": "Document, image, clipboard, extraction, and upload workflow budget.",
+      "methods": ["POST"],
+      "path_prefixes": [
+        "/api/v1/parse/upload",
+        "/api/v1/parse/clipboard",
+        "/api/v1/parse/extract"
+      ],
+      "limit": 30,
+      "window_seconds": 300,
+      "scope": "session_or_ip",
+      "enabled": true
+    },
+    {
+      "key": "retrieval_search",
+      "description": "Interactive retrieval planning and search budget.",
+      "methods": ["POST"],
+      "path_prefixes": ["/api/v1/retrieval/plan", "/api/v1/retrieval/search"],
+      "limit": 120,
+      "window_seconds": 60,
+      "scope": "session_or_ip",
+      "enabled": true
+    },
+    {
+      "key": "retrieval_reindex",
+      "description": "Expensive retrieval reindex and ingestion job budget.",
+      "methods": ["POST"],
+      "path_prefixes": [
+        "/api/v1/retrieval/reindex",
+        "/api/v1/jobs/retrieval-reindex"
+      ],
+      "limit": 6,
+      "window_seconds": 3600,
+      "scope": "session_or_ip",
+      "enabled": true
+    },
+    {
+      "key": "external_connectors",
+      "description": "Routes that can trigger OpenAI-compatible calls, OCR, embeddings, or external medical search.",
+      "methods": ["POST"],
+      "path_prefixes": [
+        "/api/v1/assistant/chat",
+        "/api/v1/assistant/sessions",
+        "/api/v1/parse/upload",
+        "/api/v1/parse/clipboard",
+        "/api/v1/parse/extract",
+        "/api/v1/retrieval/search",
+        "/api/v1/retrieval/reindex",
+        "/api/v1/jobs/retrieval-reindex"
+      ],
+      "limit": 100,
+      "window_seconds": 3600,
+      "scope": "session_or_ip",
+      "enabled": true
+    }
+  ]
+}
