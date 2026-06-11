@@ -113,6 +113,7 @@ class RetrievalReindexResult(ContractModel):
     include_corpus: bool
     chunks_indexed: int
     embedding: dict[str, Any] | None = None
+    embedding_generation_id: str | None = None
     framework: dict[str, Any] | None = None
     corpus: dict[str, Any] | None = None
 

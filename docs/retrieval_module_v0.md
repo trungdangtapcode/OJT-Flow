@@ -1199,6 +1199,13 @@ setting affects only the current search query and does not leak into other
 database sessions. Increase it when recall is weak; lower it when latency is the
 stricter constraint.
 
+Postgres reindexing stamps each chunk with an `embedding_generation_id` derived
+from the configured embedding provider, model, and dimension count. Retrieval
+checks candidate chunk metadata against the current generation ID and warns the
+operator to reindex when stored vectors were produced by an older provider/model
+configuration. This prevents silent use of stale vectors after switching between
+deterministic, OpenAI, and local Hugging Face embedding modes.
+
 Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
 to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,
 `.json`, `.yaml`, `.yml`, and `.csv`. Reindexing is explicit through

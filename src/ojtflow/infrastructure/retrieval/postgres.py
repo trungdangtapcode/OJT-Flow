@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +105,9 @@ class PostgresRetrievalRepository:
             "include_corpus": include_corpus,
             "chunks_indexed": len(chunks),
             "embedding": self.embedding_provider.metadata(),
+            "embedding_generation_id": _embedding_generation_id(
+                self.embedding_provider.metadata()
+            ),
             "corpus": corpus_result.to_dict() if corpus_result else None,
         }
 
@@ -111,11 +115,18 @@ class PostgresRetrievalRepository:
         if not chunks:
             return
         vector_dimensions = self._vector_column_dimensions()
+        embedding_metadata = self.embedding_provider.metadata()
+        embedding_generation_id = _embedding_generation_id(embedding_metadata)
         chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
         embeddings = self.embedding_provider.embed_documents(chunk_texts)
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
                 for chunk, embedding in zip(chunks, embeddings, strict=True):
+                    chunk_metadata = _chunk_metadata_with_embedding_generation(
+                        chunk,
+                        embedding_metadata=embedding_metadata,
+                        embedding_generation_id=embedding_generation_id,
+                    )
                     cursor.execute(
                         """
                         insert into ojtflow.knowledge_documents (
@@ -140,7 +151,9 @@ class PostgresRetrievalRepository:
                             chunk.trust_level.value,
                             chunk.clinical_domain,
                             chunk.standard_system,
-                            chunk_metadata_json(chunk),
+                            chunk_metadata_json(
+                                _chunk_with_metadata(chunk, chunk_metadata)
+                            ),
                         ),
                     )
                     cursor.execute(
@@ -179,7 +192,7 @@ class PostgresRetrievalRepository:
                             chunk.standard_system,
                             chunk.content,
                             json.dumps(chunk.locator, sort_keys=True),
-                            json.dumps(chunk.metadata, sort_keys=True),
+                            json.dumps(chunk_metadata, sort_keys=True),
                             json.dumps(embedding),
                         ),
                     )
@@ -357,6 +370,17 @@ class PostgresRetrievalRepository:
         if rows and not any(row["lexical_match"] for row in rows):
             warnings.append(
                 "No full-text match; ranked filtered knowledge chunks by fallback scoring."
+            )
+        stale_count = _stale_embedding_generation_count(
+            rows,
+            current_generation_id=_embedding_generation_id(
+                self.embedding_provider.metadata()
+            ),
+        )
+        if stale_count:
+            warnings.append(
+                "Postgres indexed embedding generation does not match the configured "
+                f"embedding provider for {stale_count} candidate chunk(s); run retrieval reindex."
             )
         return [_row_to_chunk(row) for row in rows], warnings
 
@@ -565,6 +589,64 @@ def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:
         locator=row["locator"] or {},
         metadata=row["metadata"] or {},
     )
+
+
+def _chunk_with_metadata(chunk: KnowledgeChunk, metadata: dict[str, Any]) -> KnowledgeChunk:
+    return KnowledgeChunk(
+        chunk_id=chunk.chunk_id,
+        source_id=chunk.source_id,
+        source_type=chunk.source_type,
+        title=chunk.title,
+        content=chunk.content,
+        source_version=chunk.source_version,
+        trust_level=chunk.trust_level,
+        clinical_domain=chunk.clinical_domain,
+        standard_system=chunk.standard_system,
+        locator=chunk.locator,
+        metadata=metadata,
+    )
+
+
+def _chunk_metadata_with_embedding_generation(
+    chunk: KnowledgeChunk,
+    *,
+    embedding_metadata: dict[str, Any],
+    embedding_generation_id: str,
+) -> dict[str, Any]:
+    return {
+        **chunk.metadata,
+        "embedding_provider": embedding_metadata.get("provider"),
+        "embedding_model": embedding_metadata.get("model"),
+        "embedding_dimensions": embedding_metadata.get("dimensions"),
+        "embedding_generation_id": embedding_generation_id,
+    }
+
+
+def _embedding_generation_id(embedding_metadata: dict[str, Any]) -> str:
+    payload = {
+        "provider": embedding_metadata.get("provider"),
+        "model": embedding_metadata.get("model"),
+        "dimensions": embedding_metadata.get("dimensions"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return f"embgen:{sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _stale_embedding_generation_count(
+    rows: list[dict[str, Any]],
+    *,
+    current_generation_id: str,
+) -> int:
+    count = 0
+    for row in rows:
+        metadata = row.get("metadata")
+        if not isinstance(metadata, dict):
+            count += 1
+            continue
+        indexed_generation_id = metadata.get("embedding_generation_id")
+        if indexed_generation_id != current_generation_id:
+            count += 1
+    return count
 
 
 def _source_metadata_from_document_metadata(value: Any) -> dict[str, Any]:

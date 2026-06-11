@@ -245,10 +245,10 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F073 Add hybrid retrieval strategy presets: lexical-only, vector-only, hybrid RRF, metadata-filtered, high-recall review, and exact-source lookup.
 - [ ] F074 Add query transformation strategies from RAG research: rewrite, decomposition, step-back query, HyDE optional mode, and multi-query expansion.
 - [ ] F075 Add query router that chooses strategy by query intent, data format, clinical domain, source filters, and risk flags.
-- [ ] F076 Add cross-encoder reranking for local GPU mode with a configurable model, candidate limit, and fallback.
-- [ ] F077 Add OpenAI embedding mode and local Hugging Face embedding mode with dimension compatibility checks and reindex requirements.
-- [ ] F078 Add vector index generation IDs so retrieval can detect stale embeddings after provider/model changes.
-- [ ] F079 Add pgvector HNSW/IVFFlat index management docs and migration path for large corpora.
+- [x] F076 Add cross-encoder reranking for local GPU mode with a configurable model, candidate limit, and fallback.
+- [x] F077 Add OpenAI embedding mode and local Hugging Face embedding mode with dimension compatibility checks and reindex requirements.
+- [x] F078 Add vector index generation IDs so retrieval can detect stale embeddings after provider/model changes.
+- [x] F079 Add pgvector HNSW/IVFFlat index management docs and migration path for large corpora.
 - [ ] F080 Add metadata filter pre-application for all retrieval frameworks, including LlamaIndex adapter parity.
 - [ ] F081 Add source-aware diversity selection that can be tuned per query route.
 - [ ] F082 Add corrective RAG behavior: if evidence is weak, ask for missing filters, broaden source scope, or trigger reindex suggestion.

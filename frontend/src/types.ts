@@ -995,11 +995,13 @@ export type RetrievalReindexResult = {
   include_corpus: boolean;
   chunks_indexed: number;
   embedding?: Record<string, unknown>;
+  embedding_generation_id?: string | null;
   corpus?: {
     files_seen: number;
     files_indexed: number;
     chunks_indexed: number;
     skipped_files: string[];
+    manifest?: CorpusIngestionManifest | null;
   } | null;
 };
 

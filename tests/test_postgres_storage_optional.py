@@ -46,6 +46,15 @@ class _FakeRetrievalCursor:
         return []
 
 
+class _FakeRowsRetrievalCursor(_FakeRetrievalCursor):
+    def __init__(self, rows: list[dict]) -> None:
+        super().__init__()
+        self.rows = rows
+
+    def fetchall(self) -> list[dict]:
+        return self.rows
+
+
 class _FakeRetrievalConnection:
     def __init__(self, cursor: _FakeRetrievalCursor) -> None:
         self._cursor = cursor
@@ -67,6 +76,12 @@ class _FakeRetrievalBackbone(_FakePostgresBackbone):
 
     def connect(self) -> _FakeRetrievalConnection:
         return _FakeRetrievalConnection(self.cursor)
+
+
+class _FakeRowsRetrievalBackbone(_FakeRetrievalBackbone):
+    def __init__(self, data_dir: Path, rows: list[dict]) -> None:
+        super().__init__(data_dir)
+        self.cursor = _FakeRowsRetrievalCursor(rows)
 
 
 def test_postgres_dataset_store_rejects_file_refs_outside_artifact_roots(
@@ -148,6 +163,42 @@ def test_postgres_retrieval_uses_lexical_pool_when_vector_column_mismatches(
     assert "vector_candidates as" not in query_sql
     assert "null::double precision as vector_distance" in query_sql
     assert query_params[-1] == 200
+
+
+def test_postgres_retrieval_warns_on_stale_embedding_generation(tmp_path: Path) -> None:
+    rows = [
+        {
+            "chunk_id": "chunk_stale",
+            "source_id": "source:stale",
+            "source_type": "data_dictionary",
+            "title": "Stale vector",
+            "source_version": "1.0.0",
+            "trust_level": "approved",
+            "clinical_domain": "laboratory",
+            "standard_system": "FHIR",
+            "content": "FHIR Observation laboratory evidence.",
+            "locator": {},
+            "metadata": {"embedding_generation_id": "embgen:old"},
+            "lexical_match": True,
+        }
+    ]
+    backbone = _FakeRowsRetrievalBackbone(tmp_path / "var", rows)
+    repository = PostgresRetrievalRepository(
+        backbone,
+        ROOT / "knowledge",
+        seed_defaults=False,
+    )
+    repository._vector_column_dimensions = lambda: 64
+
+    chunks, warnings = repository._load_candidate_chunks(
+        RetrievalQuery(query="FHIR Observation lab evidence", top_k=3)
+    )
+
+    assert chunks[0].chunk_id == "chunk_stale"
+    assert warnings == [
+        "Postgres indexed embedding generation does not match the configured "
+        "embedding provider for 1 candidate chunk(s); run retrieval reindex."
+    ]
 
 
 @pytest.mark.skipif(
