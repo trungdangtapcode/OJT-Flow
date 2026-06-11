@@ -36,6 +36,7 @@ import {
   getRuntimeConfig,
   getRuntimeAiRiskRegister,
   getRuntimeDisclaimers,
+  getRetrievalFreshness,
   getRuntimeHealth,
   getRuntimeMigrations,
   getRuntimeOwaspLlmThreatModel,
@@ -159,6 +160,7 @@ export const queryKeys = {
     ["retrieval-graph-neighborhood", params] as const,
   retrievalPlan: (payload: RetrievalSearchPayload | null) => ["retrieval-plan", payload] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
+  retrievalFreshness: ["retrieval-freshness"] as const,
   extractors: ["extractors"] as const,
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
@@ -335,6 +337,7 @@ export function useRetrievalReindexJobMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["jobs"] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.job(job.job_id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalFreshness }),
       ]);
     },
   });
@@ -352,6 +355,7 @@ export function useRuntimeRetrievalSettingsMutation() {
         queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources }),
         queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSearchOptions }),
         queryClient.invalidateQueries({ queryKey: ["retrieval-integrity"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalFreshness }),
       ]);
       toast.success("Retrieval settings reloaded");
     },
@@ -451,6 +455,13 @@ export function useRetrievalIntegrityQuery(params: {
   return useQuery({
     queryKey: queryKeys.retrievalIntegrity(params),
     queryFn: () => getRetrievalIntegrity(params),
+  });
+}
+
+export function useRetrievalFreshnessQuery() {
+  return useQuery({
+    queryKey: queryKeys.retrievalFreshness,
+    queryFn: getRetrievalFreshness,
   });
 }
 

@@ -1,6 +1,7 @@
 import type {
   useRetrievalGraphContextsQuery,
   useRetrievalGraphNeighborhoodQuery,
+  useRetrievalFreshnessQuery,
   useRetrievalJudgmentSummaryQuery,
   useRetrievalJudgmentsQuery,
   useRetrievalPresetsQuery,
@@ -18,6 +19,7 @@ export type RetrievalPagePropsArgs = {
   graphContextsQuery: ReturnType<typeof useRetrievalGraphContextsQuery>;
   graphNeighborhoodQuery: RetrievalGraphNeighborhoodQuery | null;
   graphNeighborhoodResultQuery: ReturnType<typeof useRetrievalGraphNeighborhoodQuery>;
+  freshnessQuery: ReturnType<typeof useRetrievalFreshnessQuery>;
   integritySession: ReturnType<typeof useRetrievalIntegritySession>;
   presetsQuery: ReturnType<typeof useRetrievalPresetsQuery>;
   regressionJudgmentsQuery: ReturnType<typeof useRetrievalJudgmentsQuery>;

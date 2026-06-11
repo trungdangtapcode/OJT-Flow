@@ -23,6 +23,7 @@ from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
     CorpusChunkingProfileCatalog,
     CorpusIngestionManifest,
+    RetrievalFreshnessReport,
     RetrievalJudgmentEvaluationResult,
     RetrievalIntegrityReport,
     RetrievalPackage,
@@ -43,6 +44,7 @@ from ojtflow.infrastructure.retrieval.catalogs import (
     load_source_trust_policy_catalog,
 )
 from ojtflow.infrastructure.retrieval.corpus import build_corpus_ingestion_manifest
+from ojtflow.infrastructure.retrieval.freshness import build_retrieval_freshness_report
 from ojtflow.infrastructure.retrieval.presets import (
     load_retrieval_search_options,
     load_retrieval_search_presets,
@@ -134,6 +136,11 @@ class RetrievalReindexEnvelope(ContractModel):
 
 class RetrievalIntegrityEnvelope(ContractModel):
     data: RetrievalIntegrityReport
+    error: None = None
+
+
+class RetrievalFreshnessEnvelope(ContractModel):
+    data: RetrievalFreshnessReport
     error: None = None
 
 
@@ -534,6 +541,22 @@ async def retrieval_integrity(
         service.retrieval_integrity_report(
             include_seeded=include_seeded,
             include_corpus=include_corpus,
+        )
+    )
+
+
+@router.get("/retrieval/freshness", response_model=RetrievalFreshnessEnvelope)
+async def retrieval_freshness(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(
+        build_retrieval_freshness_report(
+            settings.resolved_knowledge_dir,
+            indexed_sources=service.list_retrieval_sources(),
         )
     )
 

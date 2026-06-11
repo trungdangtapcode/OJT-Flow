@@ -7,10 +7,12 @@ import {
 } from "./retrieval-runtime-status";
 import { GraphQueryPanel } from "./graph-query-panel";
 import { RetrievalTracePanel } from "./retrieval-trace-panel";
+import { RetrievalFreshnessPanel } from "./retrieval-freshness-panel";
 import { SearchResults } from "./search-results-panel";
 import { SourceInventoryPanel } from "./source-inventory-panel";
 
 export function RetrievalResultsColumn({
+  freshness,
   graph,
   graphQuery,
   integrity,
@@ -19,6 +21,7 @@ export function RetrievalResultsColumn({
   sourceInventory,
   trace,
 }: {
+  freshness: React.ComponentProps<typeof RetrievalFreshnessPanel>;
   graph: React.ComponentProps<typeof GraphPanel>;
   graphQuery: React.ComponentProps<typeof GraphQueryPanel>;
   integrity: React.ComponentProps<typeof IntegrityPanel>;
@@ -38,6 +41,7 @@ export function RetrievalResultsColumn({
           <GraphQueryPanel {...graphQuery} />
         </div>
       </div>
+      <RetrievalFreshnessPanel {...freshness} />
       <IntegrityPanel {...integrity} />
       <SourceInventoryPanel {...sourceInventory} />
     </div>

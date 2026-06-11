@@ -3,6 +3,7 @@ import * as React from "react";
 import {
   useRetrievalGraphContextsQuery,
   useRetrievalGraphNeighborhoodQuery,
+  useRetrievalFreshnessQuery,
   useRetrievalJudgmentSummaryQuery,
   useRetrievalJudgmentsQuery,
   useRetrievalPresetsQuery,
@@ -32,6 +33,7 @@ export function useRetrievalPageController(): {
   const runtimeQuery = useRuntimeConfigQuery();
   const searchMutation = useRetrievalSearchMutation();
   const integritySession = useRetrievalIntegritySession();
+  const freshnessQuery = useRetrievalFreshnessQuery();
   const presets = presetsQuery.data ?? [];
   const workspace = useRetrievalPageWorkspace({ presets, searchMutation });
   const [graphNeighborhoodQuery, setGraphNeighborhoodQuery] =
@@ -52,6 +54,7 @@ export function useRetrievalPageController(): {
     graphContextsQuery,
     graphNeighborhoodQuery,
     graphNeighborhoodResultQuery,
+    freshnessQuery,
     integritySession,
     presetsQuery,
     regressionJudgmentsQuery,

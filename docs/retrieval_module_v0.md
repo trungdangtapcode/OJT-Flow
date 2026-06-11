@@ -175,6 +175,25 @@ are declared as adapters and trust policies first. Live fetch jobs must preserve
 endpoint, query, source release or fetch timestamp, cache hash, and approval
 state before fetched records become searchable.
 
+Source freshness is now a first-class readiness gate. `GET
+/api/v1/retrieval/freshness` compares the governed corpus adapter catalog,
+source trust policy catalog, generated local corpus manifest, and active source
+inventory. Each source receives a deterministic status:
+
+- `ready`: approved, policy-covered, indexed when expected, and within its
+  freshness window.
+- `watch`: usable but operationally weak, such as configured-but-unindexed
+  local snapshots, missing governed external snapshots, or stale local files.
+- `needs_review`: source lifecycle, reviewer state, or trust policy coverage
+  blocks production confidence.
+- `blocked`: disabled, blocked, or failed sources should not be used for
+  retrieval evidence.
+
+The Retrieval page renders the same report as the `Source freshness gate`
+panel. Operators can use it before tuning RAG or judging answers, because a
+high-ranking chunk from stale or unreviewed medical evidence is still unsafe to
+treat as trusted grounding.
+
 Playbook rules are data-driven and can trigger from query profile, detected
 standards, detected concepts, decomposed query-aspect IDs, uploaded dataset
 field names, query tokens, FHIR resource type, quality signals, safety flags,

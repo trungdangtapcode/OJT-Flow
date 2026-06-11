@@ -31,6 +31,7 @@ from ojtflow.infrastructure.retrieval.corpus import (
     build_corpus_ingestion_manifest,
     load_local_corpus_chunks,
 )
+from ojtflow.infrastructure.retrieval.freshness import build_retrieval_freshness_report
 from ojtflow.infrastructure.retrieval.embeddings import (
     HuggingFaceEmbeddingProvider,
     OpenAIEmbeddingProvider,
@@ -88,6 +89,31 @@ def test_retrieval_adapters_expose_plan_contract() -> None:
     llamaindex_plan = llamaindex.plan(query)
     assert llamaindex_plan.query_analysis.query_variants
     assert llamaindex_plan.search_signature == "pending"
+
+
+def test_retrieval_freshness_report_flags_governance_and_index_gaps() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    repository.reindex(include_seeded=True, include_corpus=True)
+
+    report = build_retrieval_freshness_report(
+        ROOT / "knowledge",
+        indexed_sources=repository.list_sources(),
+    )
+
+    assert report.version == "retrieval_freshness_report.v1"
+    assert report.source_count >= report.ready_count
+    assert report.adapter_catalog_version == "corpus_adapters.v1"
+    assert report.policy_catalog_version == "source_trust_policies.v1"
+    assert report.score <= 100
+    assert report.sources
+    assert any(source.source_id == "standard:clinical_data_standards_map_v1" for source in report.sources)
+    assert any(
+        source.status in {"watch", "needs_review"}
+        for source in report.sources
+        if source.source_id.startswith("hl7_fhir_r4")
+    )
+    assert report.unindexed_count >= 0
+    assert all(source.recommended_actions or source.status == "ready" for source in report.sources)
 
 
 def test_retrieval_plan_builder_uses_query_analysis() -> None:

@@ -1083,6 +1083,52 @@ export type RetrievalIntegrityReport = {
   warnings: string[];
 };
 
+export type RetrievalFreshnessStatus = "ready" | "watch" | "needs_review" | "blocked";
+
+export type RetrievalFreshnessSource = {
+  source_id: string;
+  title: string;
+  source_type: string;
+  authority?: string | null;
+  standard_system?: string | null;
+  clinical_domain?: string | null;
+  release_version?: string | null;
+  refresh_cadence?: string | null;
+  lifecycle_state?: CorpusLifecycleState | null;
+  reviewer_state?: CorpusLifecycleState | null;
+  indexed_chunk_count: number;
+  manifest_item_count: number;
+  last_observed_at?: string | null;
+  age_days?: number | null;
+  freshness_window_days?: number | null;
+  status: RetrievalFreshnessStatus;
+  severity: string;
+  issues: string[];
+  recommended_actions: string[];
+  source_urls: Record<string, string>;
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalFreshnessReport = {
+  version: string;
+  generated_at: string;
+  status: RetrievalFreshnessStatus;
+  score: number;
+  source_count: number;
+  ready_count: number;
+  watch_count: number;
+  needs_review_count: number;
+  blocked_count: number;
+  stale_count: number;
+  unindexed_count: number;
+  missing_policy_count: number;
+  adapter_catalog_version: string;
+  manifest_version: string;
+  policy_catalog_version: string;
+  sources: RetrievalFreshnessSource[];
+  warnings: string[];
+};
+
 export type RetrievalReindexPayload = {
   include_seeded: boolean;
   include_corpus: boolean;

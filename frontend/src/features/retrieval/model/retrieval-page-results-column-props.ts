@@ -13,6 +13,7 @@ import { retrievalPageTraceProps } from "./retrieval-page-trace-props";
 import { retrievalRuntimeStatusStripView } from "./retrieval-summary-model";
 
 export function retrievalPageResultsColumnProps({
+  freshnessQuery,
   graphContextsQuery,
   graphNeighborhoodQuery,
   graphNeighborhoodResultQuery,
@@ -42,6 +43,16 @@ export function retrievalPageResultsColumnProps({
       onRefreshContexts: () => void graphContextsQuery.refetch(),
       onSubmitNeighborhoodQuery: setGraphNeighborhoodQuery,
       submittedQuery: graphNeighborhoodQuery,
+    },
+    freshness: {
+      errorMessage: freshnessQuery.error
+        ? freshnessQuery.error instanceof Error
+          ? freshnessQuery.error.message
+          : String(freshnessQuery.error)
+        : null,
+      isFetching: freshnessQuery.isFetching,
+      onRefresh: () => void freshnessQuery.refetch(),
+      report: freshnessQuery.data ?? null,
     },
     integrity: {
       checks: integritySession.integrityQuery.data

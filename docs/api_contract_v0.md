@@ -3209,6 +3209,18 @@ hashes, and a message. This endpoint is intended for operational consistency
 checks after deployment, reindexing, or source file changes.
 Requires `admin:read`.
 
+`GET /api/v1/retrieval/freshness` returns a `RetrievalFreshnessReport` for the
+governed retrieval source catalog. It combines corpus adapters, source trust
+policies, the local corpus manifest, and currently indexed source inventory.
+
+Response data includes `status`, `score`, source counts by readiness state,
+`stale_count`, `unindexed_count`, `missing_policy_count`, catalog versions, and
+`sources[]`. Each source includes lifecycle/reviewer state, refresh cadence,
+indexed chunk count, last observed snapshot time, freshness window, issues, and
+recommended actions. This endpoint is intended for RAG operations and medical
+source governance; it does not perform live external fetching.
+Requires `admin:read`.
+
 `POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from
 seeded knowledge and configured local corpus directories:
 

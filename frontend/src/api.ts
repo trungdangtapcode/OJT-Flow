@@ -58,6 +58,7 @@ import type {
   RuntimeRetrievalSettingsPayload,
   RuntimeRetrievalSettingsUpdate,
   RetrievalGraphContextRecord,
+  RetrievalFreshnessReport,
   RetrievalGraphNeighborhood,
   RetrievalGraphNeighborhoodQuery,
   SchemaEntry,
@@ -877,6 +878,10 @@ export function getRetrievalIntegrity(params: {
       include_corpus: String(params.include_corpus),
     })}`,
   );
+}
+
+export function getRetrievalFreshness(): Promise<RetrievalFreshnessReport> {
+  return request<RetrievalFreshnessReport>("/retrieval/freshness");
 }
 
 export function reindexRetrieval(
