@@ -20,6 +20,7 @@ from ojtflow.application.ports import (
 )
 from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.application.tool_registry import tool_specs_json
+from ojtflow.clinical.package_builder import build_clinical_package
 from ojtflow.core.contracts.data import (
     ParsedData,
     TransformationAction,
@@ -523,6 +524,11 @@ class WorkflowService:
             validation_result.summary,
             issue_count=len(workflow.validation_report.issues),
         )
+        self._refresh_clinical_package(
+            workflow,
+            parsed,
+            schema_id=schema_id,
+        )
 
         plan = build_transformation_plan(workflow.validation_report, target_format)
         workflow.transformation_plan = plan
@@ -561,6 +567,11 @@ class WorkflowService:
                 StepStatus.PENDING,
                 workflow.review.question,
                 issue_count=len(workflow.validation_report.issues),
+            )
+            self._refresh_clinical_package(
+                workflow,
+                parsed,
+                schema_id=schema_id,
             )
             workflow.touch()
             self.workflows.save(workflow)
@@ -1101,6 +1112,41 @@ class WorkflowService:
             "Workflow completed",
             output_ref=output_record.storage_ref,
         )
+        self._refresh_clinical_package(
+            workflow,
+            parsed,
+            schema_id=workflow.intent.options.get("schema_id"),
+            output_ref=output_record.storage_ref,
+        )
+
+    def _refresh_clinical_package(
+        self,
+        workflow: WorkflowState,
+        parsed: ParsedData,
+        *,
+        schema_id: str | None,
+        output_ref: str | None = None,
+    ) -> None:
+        package = build_clinical_package(
+            workflow=workflow,
+            parsed=parsed,
+            schema_id=schema_id,
+            output_ref=output_ref,
+        )
+        if package is None:
+            return
+        workflow.clinical_package = package
+        workflow.handoff_context["clinical_package"] = {
+            "package_id": package.package_id,
+            "schema_version": package.schema_version,
+            "resource_types": package.handoff_context.get("resource_types", []),
+            "resource_count": package.handoff_context.get("resource_count", 0),
+            "operation_outcome_issue_count": package.handoff_context.get(
+                "operation_outcome_issue_count",
+                0,
+            ),
+            "fhir_compliance": package.handoff_context.get("fhir_compliance"),
+        }
 
     def _make_review(self, workflow: WorkflowState, plan: TransformationPlan) -> HumanReview:
         actions = [action.model_dump(mode="json") for action in plan.actions]

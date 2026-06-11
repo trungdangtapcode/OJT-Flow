@@ -1146,6 +1146,69 @@ export type WorkflowEvent = {
   metadata: Record<string, unknown>;
 };
 
+export type ClinicalFieldProvenance = {
+  target_path: string;
+  source_field?: string | null;
+  source_value?: unknown | null;
+  location?: ValidationIssue["location"] | null;
+  evidence_ids: string[];
+  derivation: "source" | "derived" | "defaulted" | "review_required" | "unmapped";
+  note: string;
+};
+
+export type ClinicalResourceRecord = {
+  resource_id: string;
+  resource_type: string;
+  resource: Record<string, unknown>;
+  field_provenance: ClinicalFieldProvenance[];
+  source_row?: number | null;
+  review_required: boolean;
+  warnings: string[];
+};
+
+export type ClinicalOperationOutcomeIssue = {
+  severity: string;
+  code: string;
+  diagnostics: string;
+  expression: string[];
+  issue_id?: string | null;
+  location?: ValidationIssue["location"] | null;
+  requires_review: boolean;
+};
+
+export type ClinicalPackage = {
+  package_type: "ojtflow_clinical_package";
+  schema_version: string;
+  package_id: string;
+  workflow_id: string;
+  raw_input: {
+    dataset_ref: string;
+    input_hash: string;
+    declared_format?: string | null;
+    detected_format: string;
+  };
+  clinical_bundle: {
+    resourceType: "Bundle";
+    type: string;
+    entry: Array<Record<string, unknown>>;
+    resources: ClinicalResourceRecord[];
+  };
+  operation_outcome: {
+    resourceType: "OperationOutcome";
+    issue: ClinicalOperationOutcomeIssue[];
+  };
+  validation_report_id?: string | null;
+  evidence: Evidence[];
+  provenance: Array<Record<string, unknown>>;
+  review?: HumanReview | null;
+  audit_event_refs: string[];
+  output_refs: string[];
+  handoff_context: Record<string, unknown>;
+  warnings: string[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type WorkflowState = {
   workflow_id: string;
   owner_user_id?: string | null;
@@ -1216,6 +1279,7 @@ export type WorkflowState = {
     limitations: string[];
     requires_clinician_review: boolean;
   } | null;
+  clinical_package?: ClinicalPackage | null;
   failure?: WorkflowFailure | null;
   handoff_context?: {
     retrieval_trace?: RetrievalTrace;

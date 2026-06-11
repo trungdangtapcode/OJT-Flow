@@ -91,7 +91,7 @@ V0 should not implement every resource. V0 should define profiles and mapping co
 
 ## Internal Canonical Package
 
-The internal output should be a project envelope around FHIR-like resources, not raw FHIR alone:
+The internal output is now a project envelope around FHIR-like resources, not raw FHIR alone:
 
 ```json
 {
@@ -124,9 +124,13 @@ The internal output should be a project envelope around FHIR-like resources, not
 
 This is the right shape because OJTFlow is not only an exchange converter. It is a governed workflow system. The workflow, validation, evidence, and review state are first-class outputs.
 
+Implemented v0 contract: `WorkflowState.clinical_package`, documented in
+`docs/clinical_package_v0.md`.
+
 ## V0 Lab Mapping
 
-Current `lab_result_v1` should map into FHIR-like `Observation` resources.
+Current `lab_result_v1` maps into FHIR-like `Observation` resources in
+`ClinicalPackage.clinical_bundle`.
 
 | `lab_result_v1` field | FHIR-like target | Notes |
 | --- | --- | --- |

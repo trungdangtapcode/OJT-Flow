@@ -73,6 +73,86 @@ def test_workflow_pauses_for_review_then_completes_after_approval() -> None:
     assert completed.explanation.intended_use.startswith("Support data validation")
 
 
+def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> None:
+    service = make_service()
+    text = "date,patient_id,lab_name,value,unit\n2026-01-01,P001,HbA1c,7.4,%\n"
+
+    workflow = service.start_workflow(
+        instruction="Convert this lab row into a governed clinical package.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    assert workflow.status == WorkflowStatus.COMPLETED
+    package = workflow.clinical_package
+    assert package is not None
+    assert package.package_type == "ojtflow_clinical_package"
+    assert package.schema_version == "clinical_package.v0"
+    assert package.raw_input.detected_format == DataFormat.CSV
+    assert package.clinical_bundle.resourceType == "Bundle"
+    assert len(package.clinical_bundle.resources) == 1
+
+    observation = package.clinical_bundle.resources[0]
+    assert observation.resource_type == "Observation"
+    assert observation.resource["subject"]["reference"] == "Patient/P001"
+    assert observation.resource["code"]["text"] == "HbA1c"
+    assert observation.resource["valueQuantity"]["value"] == 7.4
+    assert observation.resource["valueQuantity"]["unit"] == "%"
+    field_paths = {item.target_path for item in observation.field_provenance}
+    assert {
+        "Observation.subject.reference",
+        "Observation.effectiveDateTime",
+        "Observation.code.text",
+        "Observation.valueQuantity.value",
+        "Observation.valueQuantity.unit",
+    }.issubset(field_paths)
+    unit_provenance = next(
+        item
+        for item in observation.field_provenance
+        if item.target_path == "Observation.valueQuantity.unit"
+    )
+    assert unit_provenance.location is not None
+    assert unit_provenance.location.row == 2
+    assert unit_provenance.location.field == "unit"
+    assert package.operation_outcome.resourceType == "OperationOutcome"
+    assert any(issue.code == "possible_phi" for issue in package.operation_outcome.issue)
+    assert package.output_refs == [workflow.output.transformation.output_ref]
+    assert package.audit_event_refs == workflow.audit_event_refs
+    assert package.handoff_context["fhir_compliance"] == "fhir_like_not_validated"
+    assert "FHIR-like package has not been validated" in package.warnings[0]
+
+
+def test_review_gated_lab_workflow_clinical_package_carries_review_and_issues() -> None:
+    service = make_service()
+    text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
+
+    workflow = service.start_workflow(
+        instruction="Prepare this lab CSV for review.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=True,
+    )
+
+    assert workflow.status == WorkflowStatus.NEEDS_HUMAN_REVIEW
+    package = workflow.clinical_package
+    assert package is not None
+    assert package.review is not None
+    assert package.review["status"] == "pending"
+    assert package.output_refs == []
+    assert any(issue.code == "missing_unit" for issue in package.operation_outcome.issue)
+    assert any(record.review_required for record in package.clinical_bundle.resources)
+    assert any(
+        "missing_unit_requires_review" in record.warnings
+        for record in package.clinical_bundle.resources
+    )
+    assert package.audit_event_refs == workflow.audit_event_refs
+
+
 def test_validate_data_rejects_missing_requested_schema() -> None:
     service = make_service()
 
@@ -600,3 +680,9 @@ def test_fhir_like_workflow_adds_profile_evidence_and_handoff_context() -> None:
     source_ids = {evidence.source_id for evidence in workflow.retrieved_context}
     assert "fhir_like:Observation" in source_ids
     assert "standard:fhir_observation_r4" in source_ids
+    assert workflow.clinical_package is not None
+    assert workflow.clinical_package.clinical_bundle.resources[0].resource_type == "Observation"
+    assert workflow.clinical_package.clinical_bundle.resources[0].resource["code"]["text"] == "HbA1c"
+    assert workflow.clinical_package.clinical_bundle.resources[0].warnings == [
+        "fhir_like_resource_preserved_without_full_hl7_validation"
+    ]

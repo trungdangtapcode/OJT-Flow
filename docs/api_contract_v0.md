@@ -414,9 +414,18 @@ Response data is a `WorkflowState`. Important fields:
 - `review`
 - `output`
 - `explanation`
+- `clinical_package`
 - `handoff_context`
 - `failure`
 - `audit_event_refs`
+
+When the workflow input has a supported healthcare mapping, `clinical_package`
+contains an `ojtflow_clinical_package` envelope with raw input identity,
+FHIR-like `Bundle`, OperationOutcome-like validation issues, linked evidence,
+internal Provenance-like records, review state, audit event refs, output refs,
+and handoff context. For v0, `lab_result_v1` maps to FHIR-like `Observation`
+resources. The package reports `fhir_like_not_validated`; clients must not call
+it HL7 FHIR compliant.
 
 If startup reaches workflow creation but fails during parsing, extraction,
 retrieval, validation, policy, or transformation preparation, the backend still

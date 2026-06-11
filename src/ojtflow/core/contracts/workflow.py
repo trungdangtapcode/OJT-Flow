@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import Field
 
 from ojtflow.core.contracts.base import ContractModel
+from ojtflow.core.contracts.clinical import ClinicalPackage
 from ojtflow.core.contracts.data import (
     DataProfile,
     ExplanationReport,
@@ -103,6 +104,7 @@ class WorkflowState(ContractModel):
     review: HumanReview | None = None
     output: WorkflowOutput | None = None
     explanation: ExplanationReport | None = None
+    clinical_package: ClinicalPackage | None = None
     failure: WorkflowFailure | None = None
     handoff_context: dict[str, Any] = Field(default_factory=dict)
     risk_flags: list[str] = Field(default_factory=list)

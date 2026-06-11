@@ -11,6 +11,16 @@ from ojtflow.core.contracts.assistant import (
     AssistantToolSpec,
 )
 from ojtflow.core.contracts.audit import AuditRecord
+from ojtflow.core.contracts.clinical import (
+    ClinicalBundle,
+    ClinicalFieldProvenance,
+    ClinicalOperationOutcome,
+    ClinicalOperationOutcomeIssue,
+    ClinicalPackage,
+    ClinicalPackageRawInput,
+    ClinicalProvenanceRecord,
+    ClinicalResourceRecord,
+)
 from ojtflow.core.contracts.data import (
     DataProfile,
     FieldProfile,
@@ -60,6 +70,14 @@ __all__ = [
     "AssistantToolResult",
     "AssistantToolSpec",
     "AuditRecord",
+    "ClinicalBundle",
+    "ClinicalFieldProvenance",
+    "ClinicalOperationOutcome",
+    "ClinicalOperationOutcomeIssue",
+    "ClinicalPackage",
+    "ClinicalPackageRawInput",
+    "ClinicalProvenanceRecord",
+    "ClinicalResourceRecord",
     "DataFormat",
     "DataProfile",
     "DatasetRecord",
