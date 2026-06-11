@@ -873,6 +873,12 @@ arguments, generated outputs, and model-visible tool metadata as untrusted
 LLM-bound surfaces. Tool metadata is scanned before Assistant service
 construction and cannot grant permissions or override backend policy.
 
+Assistant LLM-generated plans and answer summaries are validated before
+execution/display. Failed generated plans fall back to deterministic planning;
+failed generated summaries keep the deterministic answer fallback. Streaming
+answers validate cumulative output before emitting each delta. See
+`docs/generated_output_validation_v0.md`.
+
 `GET /api/v1/assistant/mcp/resources`
 
 Returns the MCP resource catalog from `knowledge/assistant/mcp_resources.json`.

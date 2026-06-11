@@ -182,6 +182,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F125 | Implemented | Added no-raw-PHI logging guard, structured log scanner, development/CI scanner command, and docs for redacting formatted log messages, args, extra fields, key-value payloads, and CSV-shaped log text. |
 | 2026-06-11 | F126 | Implemented | Added versioned external-provider policy contracts, runtime settings, OpenAI LLM/vision OCR/embedding enforcement before HTTP calls, MarkItDown OCR plugin gating, retrieval external-search hint suppression, docs, and focused tests. |
 | 2026-06-11 | F127 | Implemented | Added data-driven prompt-injection policy contracts, policy loader, assessment/envelope helpers, Assistant LLM-bound untrusted wrappers for user data/documents/retrieved chunks/tool arguments, tool-metadata scanning and planner boundary metadata, authenticated policy API, docs, and focused tests. |
+| 2026-06-11 | F128 | Implemented | Added generated-output validation contracts and policy helpers for Assistant plans, summaries, streamed summaries, and export descriptions; Assistant now validates LLM plans before execution/display and keeps deterministic fallback text when generated summaries fail validation. |
 
 ## Feature Backlog
 
@@ -329,7 +330,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F125 Add no-raw-PHI logging guard and log scanner for development and CI.
 - [x] F126 Add configurable external-provider policy controlling which data can be sent to OpenAI, OCR, embedding APIs, and external search APIs.
 - [x] F127 Add prompt-injection policy that treats user data, documents, retrieved chunks, and tool metadata as untrusted.
-- [ ] F128 Add output validation for LLM-generated plans, summaries, and export descriptions before UI display or storage mutation.
+- [x] F128 Add output validation for LLM-generated plans, summaries, and export descriptions before UI display or storage mutation.
 - [ ] F129 Add audit export endpoint for workflows, reviews, assistant tool calls, auth events, setting changes, and source ingestion.
 - [ ] F130 Add immutable audit hash chain for high-risk deployment mode.
 - [ ] F131 Add admin policy page for review thresholds, PHI handling, external providers, retention, and tool gates.

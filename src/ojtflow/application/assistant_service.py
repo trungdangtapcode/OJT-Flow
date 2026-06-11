@@ -30,6 +30,11 @@ from ojtflow.core.policy.prompt_injection_policy import (
     tool_metadata_boundary,
     wrap_untrusted_content,
 )
+from ojtflow.core.policy.generated_output_policy import (
+    validate_assistant_plan_output,
+    validate_generated_text_output,
+    validation_warning,
+)
 
 
 class AssistantService:
@@ -129,7 +134,7 @@ class AssistantService:
             and not _is_continue_recovery(clean_context)
         ):
             try:
-                message_text = await self.planner.synthesize(
+                candidate_text = await self.planner.synthesize(
                     message=message,
                     context=_context_for_llm(
                         clean_context,
@@ -147,7 +152,17 @@ class AssistantService:
                         policy=self.prompt_injection_policy,
                     ),
                 )
-                synthesis_mode = "llm"
+                validation = validate_generated_text_output(
+                    candidate_text,
+                    surface="assistant_summary",
+                    source_ref=request_id,
+                )
+                if validation.status == "blocked":
+                    warnings.append(validation_warning(validation))
+                else:
+                    message_text = candidate_text
+                    synthesis_mode = "llm"
+                    warnings.extend(_generated_output_warnings(validation))
             except OJTFlowError as exc:
                 warnings.append(f"LLM answer synthesis failed: {exc}")
         return AssistantResponse(
@@ -264,6 +279,17 @@ class AssistantService:
                 "message": plan.warnings[-1],
                 "details": exc.details,
             }
+        try:
+            plan = self._validated_generated_plan(plan)
+        except OJTFlowError as exc:
+            plan = _deterministic_plan(message, clean_context)
+            planning_mode = "deterministic"
+            plan.warnings.append(_planning_failure_warning(exc))
+            yield {
+                "type": "warning",
+                "message": plan.warnings[-1],
+                "details": exc.details,
+            }
         yield {
             "type": "plan_ready",
             "mode": planning_mode,
@@ -347,12 +373,39 @@ class AssistantService:
                         policy=self.prompt_injection_policy,
                     ),
                 ):
+                    candidate_text = "".join([*chunks, chunk]).strip()
+                    validation = validate_generated_text_output(
+                        candidate_text,
+                        surface="assistant_stream_summary",
+                        source_ref=request_id,
+                    )
+                    if validation.status == "blocked":
+                        warning = validation_warning(validation)
+                        warnings.append(warning)
+                        yield {
+                            "type": "warning",
+                            "message": warning,
+                            "details": validation.model_dump(mode="json"),
+                        }
+                        break
+                    warnings.extend(_generated_output_warnings(validation))
                     chunks.append(chunk)
                     yield {"type": "answer_delta", "delta": chunk}
                 streamed_text = "".join(chunks).strip()
                 if streamed_text:
-                    message_text = streamed_text
-                    synthesis_mode = "llm"
+                    validation = validate_generated_text_output(
+                        streamed_text,
+                        surface="assistant_stream_summary",
+                        source_ref=request_id,
+                    )
+                    if validation.status == "blocked":
+                        warning = validation_warning(validation)
+                        if warning not in warnings:
+                            warnings.append(warning)
+                    else:
+                        message_text = streamed_text
+                        synthesis_mode = "llm"
+                        warnings.extend(_generated_output_warnings(validation))
             except OJTFlowError as exc:
                 warning = f"LLM answer synthesis failed: {exc}"
                 warnings.append(warning)
@@ -368,7 +421,7 @@ class AssistantService:
                 "message": "Generating the final answer from the LLM.",
             }
             try:
-                message_text = await self.planner.synthesize(
+                candidate_text = await self.planner.synthesize(
                     message=message,
                     context=_context_for_llm(
                         clean_context,
@@ -386,8 +439,24 @@ class AssistantService:
                         policy=self.prompt_injection_policy,
                     ),
                 )
-                synthesis_mode = "llm"
-                yield {"type": "answer_delta", "delta": message_text}
+                validation = validate_generated_text_output(
+                    candidate_text,
+                    surface="assistant_summary",
+                    source_ref=request_id,
+                )
+                if validation.status == "blocked":
+                    warning = validation_warning(validation)
+                    warnings.append(warning)
+                    yield {
+                        "type": "warning",
+                        "message": warning,
+                        "details": validation.model_dump(mode="json"),
+                    }
+                else:
+                    message_text = candidate_text
+                    synthesis_mode = "llm"
+                    warnings.extend(_generated_output_warnings(validation))
+                    yield {"type": "answer_delta", "delta": message_text}
             except OJTFlowError as exc:
                 warning = f"LLM answer synthesis failed: {exc}"
                 warnings.append(warning)
@@ -414,7 +483,7 @@ class AssistantService:
         if recovery_plan:
             return recovery_plan
         if self.planner:
-            return await self.planner.plan(
+            plan = await self.planner.plan(
                 message=message,
                 context=_context_for_planner(
                     context,
@@ -424,7 +493,21 @@ class AssistantService:
                 tools=self.tool_specs,
                 max_tool_calls=self.max_tool_calls,
             )
+            return self._validated_generated_plan(plan)
         return _deterministic_plan(message, context)
+
+    def _validated_generated_plan(self, plan: AssistantPlan) -> AssistantPlan:
+        validation = validate_assistant_plan_output(
+            plan,
+            allowed_tool_names=(spec.name for spec in self.tool_specs),
+        )
+        if validation.status == "blocked":
+            raise OJTFlowError(
+                "LLM generated plan failed validation.",
+                details={"validation": validation.model_dump(mode="json")},
+            )
+        warnings = [*plan.warnings, *_generated_output_warnings(validation)]
+        return plan.model_copy(update={"warnings": warnings})
 
     def _execute_tool_call(
         self,
@@ -510,6 +593,12 @@ def _planning_failure_warning(exc: OJTFlowError) -> str:
     ]
     suffix = f" ({'; '.join(detail_parts)})" if detail_parts else ""
     return f"LLM planning failed: {exc}{suffix}"
+
+
+def _generated_output_warnings(validation) -> list[str]:
+    if validation.status == "passed":
+        return []
+    return [validation_warning(validation)]
 
 
 def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:

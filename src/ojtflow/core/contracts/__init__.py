@@ -51,6 +51,10 @@ from ojtflow.core.contracts.external_provider import (
     ExternalProviderPolicy,
     ExternalProviderRule,
 )
+from ojtflow.core.contracts.generated_output import (
+    GeneratedOutputValidationIssue,
+    GeneratedOutputValidationResult,
+)
 from ojtflow.core.contracts.governance import (
     OrganizationGroupMembershipRecord,
     OrganizationGroupRecord,
@@ -127,6 +131,8 @@ __all__ = [
     "ExternalProviderPolicy",
     "ExternalProviderRule",
     "FieldProfile",
+    "GeneratedOutputValidationIssue",
+    "GeneratedOutputValidationResult",
     "FormatDetection",
     "HumanReview",
     "Issue",
