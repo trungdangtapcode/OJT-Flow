@@ -13,10 +13,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 
+from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
+from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
 from ojtflow.core.contracts.auth import AuthenticatedSession
+from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import DataFormat
+from ojtflow.core.contracts.jobs import BackgroundJob
 from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
 from ojtflow.data_tools.extract import (
     Extractor,
@@ -28,12 +32,39 @@ from ojtflow.data_tools.extract import (
 )
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
+    get_document_intake_service,
     get_workflow_service,
     require_authentication,
 )
 from ojtflow.interfaces.api.responses import ok, raise_for_failed_workflow
 
 router = APIRouter(tags=["parse"])
+
+
+class UploadParseJobResponse(ContractModel):
+    job: BackgroundJob
+    artifact: UploadedArtifact
+    trace: ParsingPipelineTrace | None = None
+
+
+class UploadParseJobEnvelope(ContractModel):
+    data: UploadParseJobResponse
+    error: None = None
+
+
+class ArtifactEnvelope(ContractModel):
+    data: UploadedArtifact
+    error: None = None
+
+
+class ArtifactsEnvelope(ContractModel):
+    data: list[UploadedArtifact]
+    error: None = None
+
+
+class ParseTracesEnvelope(ContractModel):
+    data: list[ParsingPipelineTrace]
+    error: None = None
 
 
 async def _read_upload_bytes(file: UploadFile, settings: Settings) -> tuple[bytes, str, str]:
@@ -88,6 +119,105 @@ def _required_form_text(field_name: str, value: str) -> str:
                 "ctx": {"min_length": 1},
             }
         ]
+    )
+
+
+def _trace_from_job(job: BackgroundJob) -> ParsingPipelineTrace | None:
+    trace = job.output.get("trace")
+    if isinstance(trace, dict):
+        return ParsingPipelineTrace.model_validate(trace)
+    return None
+
+
+@router.post("/parse/upload/jobs", response_model=UploadParseJobEnvelope)
+async def create_upload_parse_job(
+    http_request: Request,
+    file: UploadFile = File(..., description="Document file to persist and parse."),
+    extractor: str = Form(
+        default=Extractor.AUTO,
+        description="Extraction engine: 'auto' | 'markitdown' | 'mineru'.",
+    ),
+    execute_now: bool = Form(
+        default=True,
+        description="Run immediately in local sync mode; false leaves a queued durable job.",
+    ),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Persist an upload as an artifact and create a traceable file-parse job."""
+
+    extractor = validate_extractor_choice(extractor)
+    file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
+    artifact = intake.register_upload(
+        owner_user_id=authenticated.user.user_id,
+        filename=filename,
+        mime_type=file.content_type or "application/octet-stream",
+        data=file_bytes,
+        source="upload",
+        request_id=getattr(http_request.state, "request_id", None),
+    )
+    job = intake.create_parse_job(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+        prefer_extractor=extractor,
+        execute_now=execute_now,
+        request_id=getattr(http_request.state, "request_id", None),
+    )
+    return ok(
+        UploadParseJobResponse(
+            job=job,
+            artifact=artifact,
+            trace=_trace_from_job(job),
+        )
+    )
+
+
+@router.get("/parse/artifacts", response_model=ArtifactsEnvelope)
+async def list_uploaded_artifacts(
+    limit: int = 100,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """List uploaded artifacts owned by the authenticated user."""
+
+    return ok(
+        intake.list_artifacts(
+            owner_user_id=authenticated.user.user_id,
+            limit=limit,
+        )
+    )
+
+
+@router.get("/parse/artifacts/{artifact_id}", response_model=ArtifactEnvelope)
+async def get_uploaded_artifact(
+    artifact_id: NonBlankStr,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Return metadata for one uploaded artifact."""
+
+    return ok(
+        intake.get_artifact(
+            owner_user_id=authenticated.user.user_id,
+            artifact_id=artifact_id,
+        )
+    )
+
+
+@router.get("/parse/artifacts/{artifact_id}/traces", response_model=ParseTracesEnvelope)
+async def list_uploaded_artifact_traces(
+    artifact_id: NonBlankStr,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Return extraction traces for one uploaded artifact."""
+
+    return ok(
+        intake.list_traces(
+            owner_user_id=authenticated.user.user_id,
+            artifact_id=artifact_id,
+        )
     )
 
 

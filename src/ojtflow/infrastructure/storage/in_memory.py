@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 
+from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -96,6 +98,112 @@ class InMemoryDatasetStore:
     def list_records(self, limit: int = 1000) -> list[DatasetRecord]:
         records = list(self._records.values())
         return [deepcopy(record) for record in records[: max(0, limit)]]
+
+
+class InMemoryUploadedArtifactRepository:
+    """In-memory uploaded artifact metadata and bytes."""
+
+    def __init__(self) -> None:
+        self._artifacts: dict[str, UploadedArtifact] = {}
+        self._bytes_by_ref: dict[str, bytes] = {}
+        self._traces: dict[str, list[ParsingPipelineTrace]] = {}
+
+    def put_bytes(
+        self,
+        *,
+        owner_user_id: str,
+        filename: str,
+        mime_type: str,
+        data: bytes,
+        source: str = "upload",
+        metadata: dict | None = None,
+    ) -> UploadedArtifact:
+        digest = sha256_bytes(data)
+        duplicate = self._canonical_for_hash(
+            owner_user_id=owner_user_id,
+            sha256=digest,
+            byte_size=len(data),
+        )
+        extension = Path(filename).suffix.lower()
+        storage_ref = (
+            duplicate.storage_ref
+            if duplicate
+            else f"memory://uploads/art_{digest[:12]}{extension or '.bin'}"
+        )
+        if duplicate is None:
+            self._bytes_by_ref[storage_ref] = bytes(data)
+        artifact = UploadedArtifact(
+            owner_user_id=owner_user_id,
+            filename=filename,
+            mime_type=mime_type or "application/octet-stream",
+            extension=extension,
+            byte_size=len(data),
+            sha256=digest,
+            source=source,
+            storage_ref=storage_ref,
+            duplicate_of_artifact_id=duplicate.artifact_id if duplicate else None,
+            metadata=metadata or {},
+        )
+        self._artifacts[artifact.artifact_id] = deepcopy(artifact)
+        return deepcopy(artifact)
+
+    def get(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact:
+        artifact = self._artifact(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        return deepcopy(artifact)
+
+    def get_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes:
+        artifact = self._artifact(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        try:
+            return bytes(self._bytes_by_ref[artifact.storage_ref])
+        except KeyError as exc:
+            raise NotFoundError(f"Uploaded artifact bytes not found: {artifact_id}") from exc
+
+    def list(self, *, owner_user_id: str, limit: int = 100) -> list[UploadedArtifact]:
+        artifacts = [
+            artifact
+            for artifact in self._artifacts.values()
+            if artifact.owner_user_id == owner_user_id
+        ]
+        artifacts.sort(key=lambda artifact: artifact.created_at, reverse=True)
+        return [deepcopy(artifact) for artifact in artifacts[: max(1, min(limit, 500))]]
+
+    def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace:
+        self._artifact(owner_user_id=trace.owner_user_id, artifact_id=trace.artifact_id)
+        self._traces.setdefault(trace.artifact_id, []).append(deepcopy(trace))
+        return deepcopy(trace)
+
+    def list_traces(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ParsingPipelineTrace]:
+        self._artifact(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        return [deepcopy(trace) for trace in self._traces.get(artifact_id, [])]
+
+    def _canonical_for_hash(
+        self,
+        *,
+        owner_user_id: str,
+        sha256: str,
+        byte_size: int,
+    ) -> UploadedArtifact | None:
+        candidates = [
+            artifact
+            for artifact in self._artifacts.values()
+            if artifact.owner_user_id == owner_user_id
+            and artifact.sha256 == sha256
+            and artifact.byte_size == byte_size
+            and artifact.duplicate_of_artifact_id is None
+        ]
+        candidates.sort(key=lambda artifact: artifact.created_at)
+        return candidates[0] if candidates else None
+
+    def _artifact(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact:
+        artifact = self._artifacts.get(artifact_id)
+        if not artifact or artifact.owner_user_id != owner_user_id:
+            raise NotFoundError(f"Uploaded artifact not found: {artifact_id}")
+        return deepcopy(artifact)
 
 
 class InMemoryWorkflowRepository:

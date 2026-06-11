@@ -12,6 +12,7 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
+from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -62,6 +63,49 @@ class DatasetStore(Protocol):
     def get_text(self, storage_ref: str) -> str: ...
 
     def list_records(self, limit: int = 1000) -> list[DatasetRecord]: ...
+
+
+class UploadedArtifactRepository(Protocol):
+    def put_bytes(
+        self,
+        *,
+        owner_user_id: str,
+        filename: str,
+        mime_type: str,
+        data: bytes,
+        source: str = "upload",
+        metadata: dict[str, Any] | None = None,
+    ) -> UploadedArtifact: ...
+
+    def get(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact: ...
+
+    def get_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        limit: int = 100,
+    ) -> list[UploadedArtifact]: ...
+
+    def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace: ...
+
+    def list_traces(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ParsingPipelineTrace]: ...
+
+
+class DocumentExtractor(Protocol):
+    def extract(
+        self,
+        *,
+        data: bytes,
+        filename: str,
+        prefer: str = "auto",
+    ) -> Any: ...
 
 
 class WorkflowRepository(Protocol):

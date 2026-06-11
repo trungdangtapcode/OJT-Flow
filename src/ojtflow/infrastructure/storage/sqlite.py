@@ -6,6 +6,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -39,9 +40,11 @@ class SQLiteBackboneStore:
         self.data_dir = Path(data_dir)
         self.datasets_dir = self.data_dir / "datasets"
         self.outputs_dir = self.data_dir / "outputs"
+        self.uploads_dir = self.data_dir / "uploads"
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
+        self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.init_schema()
 
     def connect(self) -> sqlite3.Connection:
@@ -93,6 +96,44 @@ class SQLiteBackboneStore:
                     storage_ref text not null unique,
                     created_at text default current_timestamp
                 );
+
+                create table if not exists uploaded_artifacts (
+                    artifact_id text primary key,
+                    owner_user_id text not null,
+                    filename text not null,
+                    mime_type text not null,
+                    extension text not null,
+                    byte_size integer not null,
+                    sha256 text not null,
+                    source text not null,
+                    storage_ref text not null,
+                    dataset_id text,
+                    duplicate_of_artifact_id text,
+                    retention_policy_json text not null,
+                    metadata_json text not null,
+                    created_at text not null,
+                    check (byte_size >= 0)
+                );
+
+                create index if not exists idx_uploaded_artifacts_owner_created
+                    on uploaded_artifacts(owner_user_id, created_at desc);
+
+                create index if not exists idx_uploaded_artifacts_owner_hash
+                    on uploaded_artifacts(owner_user_id, sha256, byte_size);
+
+                create table if not exists document_parse_traces (
+                    trace_id text primary key,
+                    artifact_id text not null references uploaded_artifacts(artifact_id)
+                        on delete cascade,
+                    owner_user_id text not null,
+                    job_id text,
+                    trace_json text not null,
+                    created_at text not null,
+                    completed_at text
+                );
+
+                create index if not exists idx_document_parse_traces_artifact_created
+                    on document_parse_traces(owner_user_id, artifact_id, created_at desc);
 
                 create table if not exists retrieval_relevance_judgments (
                     judgment_id text primary key,
@@ -350,6 +391,159 @@ class SQLiteDatasetStore:
                 (max(0, min(limit, 10_000)),),
             ).fetchall()
         return [_sqlite_dataset_record_from_row(row) for row in rows]
+
+
+class SQLiteUploadedArtifactRepository:
+    """SQLite-backed uploaded artifact metadata with local file bytes."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def put_bytes(
+        self,
+        *,
+        owner_user_id: str,
+        filename: str,
+        mime_type: str,
+        data: bytes,
+        source: str = "upload",
+        metadata: dict | None = None,
+    ) -> UploadedArtifact:
+        digest = sha256_bytes(data)
+        extension = Path(filename).suffix.lower()
+        duplicate = self._canonical_for_hash(
+            owner_user_id=owner_user_id,
+            sha256=digest,
+            byte_size=len(data),
+        )
+        if duplicate:
+            storage_ref = duplicate.storage_ref
+        else:
+            storage_path = self.backbone.uploads_dir / f"{new_id('blob')}{extension or '.bin'}"
+            storage_path.write_bytes(data)
+            storage_ref = storage_path.resolve().as_uri()
+
+        artifact = UploadedArtifact(
+            owner_user_id=owner_user_id,
+            filename=filename,
+            mime_type=mime_type or "application/octet-stream",
+            extension=extension,
+            byte_size=len(data),
+            sha256=digest,
+            source=source,
+            storage_ref=storage_ref,
+            duplicate_of_artifact_id=duplicate.artifact_id if duplicate else None,
+            metadata=metadata or {},
+        )
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into uploaded_artifacts (
+                    artifact_id, owner_user_id, filename, mime_type, extension,
+                    byte_size, sha256, source, storage_ref, dataset_id,
+                    duplicate_of_artifact_id, retention_policy_json, metadata_json,
+                    created_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                _sqlite_uploaded_artifact_values(artifact),
+            )
+        return artifact
+
+    def get(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact:
+        with self.backbone.connect() as connection:
+            row = connection.execute(
+                """
+                select * from uploaded_artifacts
+                where owner_user_id = ? and artifact_id = ?
+                """,
+                (owner_user_id, artifact_id),
+            ).fetchone()
+        if not row:
+            raise NotFoundError(f"Uploaded artifact not found: {artifact_id}")
+        return _sqlite_uploaded_artifact_from_row(row)
+
+    def get_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes:
+        artifact = self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        path = artifact_path_from_file_ref(
+            artifact.storage_ref,
+            [self.backbone.uploads_dir],
+        )
+        return path.read_bytes()
+
+    def list(self, *, owner_user_id: str, limit: int = 100) -> list[UploadedArtifact]:
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                """
+                select * from uploaded_artifacts
+                where owner_user_id = ?
+                order by created_at desc, artifact_id desc
+                limit ?
+                """,
+                (owner_user_id, max(1, min(limit, 500))),
+            ).fetchall()
+        return [_sqlite_uploaded_artifact_from_row(row) for row in rows]
+
+    def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace:
+        self.get(owner_user_id=trace.owner_user_id, artifact_id=trace.artifact_id)
+        with self.backbone.connect() as connection:
+            connection.execute(
+                """
+                insert into document_parse_traces (
+                    trace_id, artifact_id, owner_user_id, job_id, trace_json,
+                    created_at, completed_at
+                ) values (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    trace.trace_id,
+                    trace.artifact_id,
+                    trace.owner_user_id,
+                    trace.job_id,
+                    trace.model_dump_json(),
+                    trace.started_at,
+                    trace.completed_at,
+                ),
+            )
+        return trace
+
+    def list_traces(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ParsingPipelineTrace]:
+        self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                """
+                select trace_json from document_parse_traces
+                where owner_user_id = ? and artifact_id = ?
+                order by created_at desc, trace_id desc
+                """,
+                (owner_user_id, artifact_id),
+            ).fetchall()
+        return [ParsingPipelineTrace.model_validate_json(row["trace_json"]) for row in rows]
+
+    def _canonical_for_hash(
+        self,
+        *,
+        owner_user_id: str,
+        sha256: str,
+        byte_size: int,
+    ) -> UploadedArtifact | None:
+        with self.backbone.connect() as connection:
+            row = connection.execute(
+                """
+                select * from uploaded_artifacts
+                where owner_user_id = ?
+                  and sha256 = ?
+                  and byte_size = ?
+                  and duplicate_of_artifact_id is null
+                order by created_at asc, artifact_id asc
+                limit 1
+                """,
+                (owner_user_id, sha256, byte_size),
+            ).fetchone()
+        return _sqlite_uploaded_artifact_from_row(row) if row else None
 
 
 class SQLiteWorkflowRepository:
@@ -1079,6 +1273,44 @@ def _sqlite_dataset_record_from_row(row) -> DatasetRecord:
         byte_size=int(row["byte_size"]),
         sha256=row["sha256"],
         storage_ref=row["storage_ref"],
+    )
+
+
+def _sqlite_uploaded_artifact_values(artifact: UploadedArtifact) -> tuple[object, ...]:
+    return (
+        artifact.artifact_id,
+        artifact.owner_user_id,
+        artifact.filename,
+        artifact.mime_type,
+        artifact.extension,
+        artifact.byte_size,
+        artifact.sha256,
+        artifact.source,
+        artifact.storage_ref,
+        artifact.dataset_id,
+        artifact.duplicate_of_artifact_id,
+        artifact.retention_policy.model_dump_json(),
+        _json_dump(artifact.metadata),
+        artifact.created_at,
+    )
+
+
+def _sqlite_uploaded_artifact_from_row(row) -> UploadedArtifact:
+    return UploadedArtifact(
+        artifact_id=row["artifact_id"],
+        owner_user_id=row["owner_user_id"],
+        filename=row["filename"],
+        mime_type=row["mime_type"],
+        extension=row["extension"],
+        byte_size=int(row["byte_size"]),
+        sha256=row["sha256"],
+        source=row["source"],
+        storage_ref=row["storage_ref"],
+        dataset_id=row["dataset_id"],
+        duplicate_of_artifact_id=row["duplicate_of_artifact_id"],
+        retention_policy=_json_load(row["retention_policy_json"]),
+        metadata=_json_load(row["metadata_json"]),
+        created_at=row["created_at"],
     )
 
 

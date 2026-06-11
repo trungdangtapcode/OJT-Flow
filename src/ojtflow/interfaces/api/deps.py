@@ -13,6 +13,7 @@ from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_session_service import AssistantSessionService
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
+from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
@@ -32,11 +33,13 @@ from ojtflow.infrastructure.retrieval.reranking import build_reranker
 from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
+from ojtflow.infrastructure.extraction.document import LocalDocumentExtractor
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryAssistantSessionRepository,
+    InMemoryUploadedArtifactRepository,
     InMemoryBackgroundJobRepository,
     InMemoryDatasetStore,
     InMemoryEventRepository,
@@ -45,6 +48,7 @@ from ojtflow.infrastructure.storage.in_memory import (
 )
 from ojtflow.infrastructure.storage.postgres import (
     PostgresAssistantSessionRepository,
+    PostgresUploadedArtifactRepository,
     PostgresBackboneStore,
     PostgresBackgroundJobRepository,
     PostgresDatasetStore,
@@ -54,6 +58,7 @@ from ojtflow.infrastructure.storage.postgres import (
 )
 from ojtflow.infrastructure.storage.sqlite import (
     SQLiteAssistantSessionRepository,
+    SQLiteUploadedArtifactRepository,
     SQLiteBackboneStore,
     SQLiteBackgroundJobRepository,
     SQLiteDatasetStore,
@@ -312,6 +317,36 @@ def _build_background_job_service() -> BackgroundJobService:
     return BackgroundJobService(repository)
 
 
+@lru_cache(maxsize=1)
+def _build_document_intake_service() -> DocumentIntakeService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        artifacts = InMemoryUploadedArtifactRepository()
+        datasets = InMemoryDatasetStore()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        artifacts = SQLiteUploadedArtifactRepository(backbone)
+        datasets = SQLiteDatasetStore(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        artifacts = PostgresUploadedArtifactRepository(backbone)
+        datasets = PostgresDatasetStore(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return DocumentIntakeService(
+        artifacts=artifacts,
+        datasets=datasets,
+        jobs=_build_background_job_service(),
+        extractor=LocalDocumentExtractor(),
+    )
+
+
 async def get_workflow_service() -> WorkflowService:
     """Return the cached workflow service without FastAPI threadpool dispatch."""
 
@@ -346,6 +381,12 @@ async def get_background_job_service() -> BackgroundJobService:
     """Return durable background job service."""
 
     return _build_background_job_service()
+
+
+async def get_document_intake_service() -> DocumentIntakeService:
+    """Return uploaded document intake service."""
+
+    return _build_document_intake_service()
 
 
 async def get_auth_service() -> AuthService:
@@ -470,3 +511,4 @@ def clear_workflow_service_cache() -> None:
     _build_assistant_service.cache_clear()
     _build_assistant_session_service.cache_clear()
     _build_background_job_service.cache_clear()
+    _build_document_intake_service.cache_clear()

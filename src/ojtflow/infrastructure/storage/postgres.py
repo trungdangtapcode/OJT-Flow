@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover - exercised only when optional dependenc
     psycopg = None
     dict_row = None
 
+from ojtflow.core.contracts.artifacts import ParsingPipelineTrace, UploadedArtifact
 from ojtflow.core.contracts.assistant import (
     AssistantChatMessage,
     AssistantChatSessionDetail,
@@ -55,8 +56,10 @@ class PostgresBackboneStore:
         self.data_dir = Path(data_dir)
         self.datasets_dir = self.data_dir / "datasets"
         self.outputs_dir = self.data_dir / "outputs"
+        self.uploads_dir = self.data_dir / "uploads"
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
+        self.uploads_dir.mkdir(parents=True, exist_ok=True)
         if apply_migrations:
             self.init_schema()
 
@@ -190,6 +193,176 @@ class PostgresDatasetStore:
                 )
                 rows = cursor.fetchall()
         return [_postgres_dataset_record_from_row(row) for row in rows]
+
+
+class PostgresUploadedArtifactRepository:
+    """Postgres-backed uploaded artifact metadata with local file bytes."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def put_bytes(
+        self,
+        *,
+        owner_user_id: str,
+        filename: str,
+        mime_type: str,
+        data: bytes,
+        source: str = "upload",
+        metadata: dict | None = None,
+    ) -> UploadedArtifact:
+        digest = sha256_bytes(data)
+        extension = Path(filename).suffix.lower()
+        duplicate = self._canonical_for_hash(
+            owner_user_id=owner_user_id,
+            sha256=digest,
+            byte_size=len(data),
+        )
+        if duplicate:
+            storage_ref = duplicate.storage_ref
+        else:
+            storage_path = self.backbone.uploads_dir / f"{new_id('blob')}{extension or '.bin'}"
+            storage_path.write_bytes(data)
+            storage_ref = storage_path.resolve().as_uri()
+
+        artifact = UploadedArtifact(
+            owner_user_id=owner_user_id,
+            filename=filename,
+            mime_type=mime_type or "application/octet-stream",
+            extension=extension,
+            byte_size=len(data),
+            sha256=digest,
+            source=source,
+            storage_ref=storage_ref,
+            duplicate_of_artifact_id=duplicate.artifact_id if duplicate else None,
+            metadata=metadata or {},
+        )
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.uploaded_artifacts (
+                        artifact_id, owner_user_id, filename, mime_type, extension,
+                        byte_size, sha256, source, storage_ref, dataset_id,
+                        duplicate_of_artifact_id, retention_policy, metadata, created_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::jsonb, %s::jsonb, %s::timestamptz
+                    )
+                    """,
+                    _postgres_uploaded_artifact_values(artifact),
+                )
+            connection.commit()
+        return artifact
+
+    def get(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.uploaded_artifacts
+                    where owner_user_id = %s and artifact_id = %s
+                    """,
+                    (owner_user_id, artifact_id),
+                )
+                row = cursor.fetchone()
+        if not row:
+            raise NotFoundError(f"Uploaded artifact not found: {artifact_id}")
+        return _postgres_uploaded_artifact_from_row(row)
+
+    def get_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes:
+        artifact = self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        path = artifact_path_from_file_ref(
+            artifact.storage_ref,
+            [self.backbone.uploads_dir],
+        )
+        return path.read_bytes()
+
+    def list(self, *, owner_user_id: str, limit: int = 100) -> list[UploadedArtifact]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.uploaded_artifacts
+                    where owner_user_id = %s
+                    order by created_at desc, artifact_id desc
+                    limit %s
+                    """,
+                    (owner_user_id, max(1, min(limit, 500))),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_uploaded_artifact_from_row(row) for row in rows]
+
+    def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace:
+        self.get(owner_user_id=trace.owner_user_id, artifact_id=trace.artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.document_parse_traces (
+                        trace_id, artifact_id, owner_user_id, job_id, trace_json,
+                        created_at, completed_at
+                    ) values (
+                        %s, %s, %s, %s, %s::jsonb, %s::timestamptz,
+                        %s::timestamptz
+                    )
+                    """,
+                    (
+                        trace.trace_id,
+                        trace.artifact_id,
+                        trace.owner_user_id,
+                        trace.job_id,
+                        trace.model_dump_json(),
+                        trace.started_at,
+                        trace.completed_at,
+                    ),
+                )
+            connection.commit()
+        return trace
+
+    def list_traces(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ParsingPipelineTrace]:
+        self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select trace_json from ojtflow.document_parse_traces
+                    where owner_user_id = %s and artifact_id = %s
+                    order by created_at desc, trace_id desc
+                    """,
+                    (owner_user_id, artifact_id),
+                )
+                rows = cursor.fetchall()
+        return [ParsingPipelineTrace.model_validate(row["trace_json"]) for row in rows]
+
+    def _canonical_for_hash(
+        self,
+        *,
+        owner_user_id: str,
+        sha256: str,
+        byte_size: int,
+    ) -> UploadedArtifact | None:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.uploaded_artifacts
+                    where owner_user_id = %s
+                      and sha256 = %s
+                      and byte_size = %s
+                      and duplicate_of_artifact_id is null
+                    order by created_at asc, artifact_id asc
+                    limit 1
+                    """,
+                    (owner_user_id, sha256, byte_size),
+                )
+                row = cursor.fetchone()
+        return _postgres_uploaded_artifact_from_row(row) if row else None
 
 
 class PostgresWorkflowRepository:
@@ -1183,6 +1356,48 @@ def _postgres_dataset_record_from_row(row) -> DatasetRecord:
         byte_size=int(row["byte_size"]),
         sha256=row["sha256"],
         storage_ref=row["storage_ref"],
+    )
+
+
+def _postgres_uploaded_artifact_values(artifact: UploadedArtifact) -> tuple[object, ...]:
+    return (
+        artifact.artifact_id,
+        artifact.owner_user_id,
+        artifact.filename,
+        artifact.mime_type,
+        artifact.extension,
+        artifact.byte_size,
+        artifact.sha256,
+        artifact.source,
+        artifact.storage_ref,
+        artifact.dataset_id,
+        artifact.duplicate_of_artifact_id,
+        artifact.retention_policy.model_dump_json(),
+        json.dumps(artifact.metadata),
+        artifact.created_at,
+    )
+
+
+def _postgres_uploaded_artifact_from_row(row) -> UploadedArtifact:
+    metadata = row["metadata"] if isinstance(row["metadata"], dict) else {}
+    retention_policy = (
+        row["retention_policy"] if isinstance(row["retention_policy"], dict) else {}
+    )
+    return UploadedArtifact(
+        artifact_id=row["artifact_id"],
+        owner_user_id=row["owner_user_id"],
+        filename=row["filename"],
+        mime_type=row["mime_type"],
+        extension=row["extension"],
+        byte_size=int(row["byte_size"]),
+        sha256=row["sha256"],
+        source=row["source"],
+        storage_ref=row["storage_ref"],
+        dataset_id=row["dataset_id"],
+        duplicate_of_artifact_id=row["duplicate_of_artifact_id"],
+        retention_policy=retention_policy,
+        metadata=metadata,
+        created_at=row["created_at"].isoformat(),
     )
 
 

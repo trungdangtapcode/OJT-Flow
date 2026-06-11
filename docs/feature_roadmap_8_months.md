@@ -123,6 +123,11 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F009 | Implemented | Added `BackgroundJobService` and sync local runner mode. `/api/v1/jobs/retrieval-reindex` creates a durable job, runs retrieval reindex synchronously by default, records output/errors, and runtime readiness reports the job repository with `queue_backed=false` until a worker queue is added. |
 | 2026-06-11 | F019 | Implemented | Added `OJT_NO_MOCK_DATA` and effective no-mock policy in pilot/production modes. Workbench no longer auto-loads sample patient rows, hides starter fixtures when effective no-mock is enabled, and requires pasted/uploaded data from the user in production-like modes. |
 | 2026-06-11 | F020 | Implemented | Settings validation rejects `OJT_LLM_PROVIDER=disabled` when `OJT_PRODUCT_MODE` is `pilot` or `production`; those modes also reject memory storage. |
+| 2026-06-11 | F021 | Started | Added durable `file_parse` job creation through `POST /api/v1/parse/upload/jobs` with sync local execution or queued mode. Multi-file batch handling and queue-backed workers remain follow-up scope. |
+| 2026-06-11 | F022 | Implemented | Added `UploadedArtifact` contracts, owner-scoped artifact repositories for memory/SQLite/Postgres, raw upload storage under `var/uploads/`, artifact list/get APIs, and Postgres migration 011. |
+| 2026-06-11 | F023 | Started | Added owner-scoped raw upload deduplication by SHA-256 and byte size while preserving every upload record. Extracted-text dedupe remains follow-up because it needs extractor/version-aware normalization. |
+| 2026-06-11 | F024 | Implemented | Added `ParsingPipelineTrace` and `ExtractionStepTrace` contracts with extractor, fallback path, warnings, character/token counts, confidence, output refs, and persisted trace list API. |
+| 2026-06-11 | F025 | Implemented | Added a `DocumentExtractor` application port and `LocalDocumentExtractor` adapter around the existing MarkItDown/MinerU/OpenAI-vision extraction pipeline. |
 
 ## Feature Backlog
 
@@ -151,11 +156,11 @@ Keep this section updated when roadmap items move from planning into code.
 
 ### Month 2: Document, Image, Clipboard, And File Intelligence
 
-- [ ] F021 Make upload parsing asynchronous for large PDFs, images, spreadsheets, and multi-file batches.
-- [ ] F022 Add a first-class `UploadedArtifact` contract with file hash, MIME type, extension, byte size, source, user, and retention policy.
-- [ ] F023 Add deduplication by content hash for uploaded documents and extracted text.
-- [ ] F024 Add a parsing pipeline trace with extractor chosen, fallback path, warnings, token/character counts, and confidence.
-- [ ] F025 Add MarkItDown extraction as one extractor option behind a common `DocumentExtractor` port.
+- [ ] F021 Make upload parsing asynchronous for large PDFs, images, spreadsheets, and multi-file batches. _(Started: durable `file_parse` jobs can run immediately or remain queued; batch uploads and real worker mode remain.)_
+- [x] F022 Add a first-class `UploadedArtifact` contract with file hash, MIME type, extension, byte size, source, user, and retention policy.
+- [ ] F023 Add deduplication by content hash for uploaded documents and extracted text. _(Started: raw upload dedupe is implemented; extracted-text dedupe remains.)_
+- [x] F024 Add a parsing pipeline trace with extractor chosen, fallback path, warnings, token/character counts, and confidence.
+- [x] F025 Add MarkItDown extraction as one extractor option behind a common `DocumentExtractor` port.
 - [ ] F026 Add OpenAI vision OCR as a separate extractor option with explicit cost, model, and PHI handling metadata.
 - [ ] F027 Add local OCR adapter option for Tesseract or PaddleOCR behind the same extractor contract.
 - [ ] F028 Add image clipboard paste support that creates the same artifact/evidence records as file upload.
