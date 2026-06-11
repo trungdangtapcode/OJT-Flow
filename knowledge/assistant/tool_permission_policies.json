@@ -72,6 +72,13 @@
       "approval_reason": "Creates durable workflow state and may produce review-gated transformed output."
     },
     {
+      "tool_name": "generate_mapping_draft",
+      "permission_tags": ["write-gated", "workflow", "transform", "review", "audit", "phi-sensitive"],
+      "risk_level": "high",
+      "requires_approval": true,
+      "approval_reason": "Creates durable workflow and review state for a transformation plan that can execute after approval."
+    },
+    {
       "tool_name": "create_review_task",
       "permission_tags": ["write-gated", "review", "workflow", "audit", "phi-sensitive"],
       "risk_level": "high",

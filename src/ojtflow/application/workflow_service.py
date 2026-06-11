@@ -189,6 +189,113 @@ class WorkflowService:
             self.workflows.save(workflow)
             return workflow
 
+    def create_mapping_draft(
+        self,
+        *,
+        instruction: str,
+        data: str,
+        declared_format: DataFormat | None = None,
+        target_format: DataFormat = DataFormat.JSON,
+        schema_id: str | None = "lab_result_v1",
+        mapping_goal: str | None = None,
+        source_fields: list[str] | None = None,
+        target_fields: list[str] | None = None,
+        evidence_ids: list[str] | None = None,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+    ) -> WorkflowState:
+        """Create a review-gated transform plan without executing conversion."""
+
+        clean_instruction = instruction.strip()
+        if not clean_instruction:
+            raise PolicyBlockedError("Mapping draft instruction is required.")
+        workflow = WorkflowState(
+            owner_user_id=owner_user_id,
+            user_instruction=clean_instruction,
+            intent=WorkflowIntent(
+                task_type="mapping_draft",
+                target_format=target_format,
+                requires_explanation=False,
+                options={
+                    "schema_id": schema_id,
+                    "source": "assistant",
+                    "draft_only": True,
+                    "mapping_goal": mapping_goal,
+                    "source_fields": source_fields or [],
+                    "target_fields": target_fields or [],
+                },
+            ),
+            status=WorkflowStatus.RUNNING,
+            risk_flags=["mapping_draft", "review_gated_transformation"],
+        )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
+        workflow.handoff_context["tool_specs"] = tool_specs_json()
+        self.workflows.save(workflow)
+        dataset = self.datasets.put_text(
+            data,
+            workflow_id=workflow.workflow_id,
+            declared_format=declared_format.value if declared_format else None,
+        )
+        workflow.input = WorkflowInput(
+            dataset_ref=dataset.storage_ref,
+            input_hash=dataset.sha256,
+            declared_format=declared_format,
+        )
+        self._event(
+            workflow,
+            ActorType.SYSTEM,
+            "workflow_service",
+            EventType.WORKFLOW_CREATED,
+            "Mapping draft workflow created",
+            output_refs=[dataset.storage_ref],
+        )
+        self._step(
+            workflow,
+            "workflow_created",
+            StepStatus.COMPLETED,
+            "Mapping draft workflow created",
+            output_ref=dataset.storage_ref,
+        )
+        try:
+            parser_result = self.parser_agent.run(data, declared_format, dataset.storage_ref)
+            parsed: ParsedData = parser_result.data["parsed"]
+            workflow.input.detected_format = parsed.format
+            workflow.profile = parser_result.data["profile"]
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                self.parser_agent.agent_id,
+                EventType.AGENT_COMPLETED,
+                parser_result.summary,
+                metadata={"confidence": parser_result.confidence},
+            )
+            self._step(
+                workflow,
+                "parser",
+                StepStatus.COMPLETED,
+                parser_result.summary,
+                issue_count=len(parser_result.issues),
+            )
+            return self._run_after_parse(
+                workflow,
+                parsed,
+                instruction=clean_instruction,
+                target_format=target_format,
+                schema_id=schema_id,
+                require_human_review=True,
+                draft_review={
+                    "mapping_goal": mapping_goal,
+                    "source_fields": source_fields or [],
+                    "target_fields": target_fields or [],
+                    "evidence_ids": evidence_ids or [],
+                },
+            )
+        except Exception as exc:
+            self._fail_workflow(workflow, exc)
+            self.workflows.save(workflow)
+            return workflow
+
     def start_workflow_from_file(
         self,
         instruction: str,
@@ -455,6 +562,7 @@ class WorkflowService:
         target_format: DataFormat,
         schema_id: str | None,
         require_human_review: bool,
+        draft_review: dict[str, Any] | None = None,
     ) -> WorkflowState:
         """Run retrieval, validation, review gating, and transformation."""
 
@@ -531,6 +639,8 @@ class WorkflowService:
         )
 
         plan = build_transformation_plan(workflow.validation_report, target_format)
+        if draft_review is not None:
+            plan.requires_review = True
         workflow.transformation_plan = plan
         safety_result = self.safety_agent.run(workflow.validation_report, plan)
         self._event(
@@ -549,7 +659,11 @@ class WorkflowService:
             issue_count=len(safety_result.issues),
         )
 
-        if require_human_review and safety_result.data["requires_review"]:
+        if (
+            draft_review is None
+            and require_human_review
+            and safety_result.data["requires_review"]
+        ):
             workflow.review = self._make_review(workflow, plan)
             workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
             self._event(
@@ -560,6 +674,41 @@ class WorkflowService:
                 workflow.review.question,
                 severity=Severity.WARNING,
                 metadata={"review_id": workflow.review.review_id},
+            )
+            self._step(
+                workflow,
+                "human_review",
+                StepStatus.PENDING,
+                workflow.review.question,
+                issue_count=len(workflow.validation_report.issues),
+            )
+            self._refresh_clinical_package(
+                workflow,
+                parsed,
+                schema_id=schema_id,
+            )
+            workflow.touch()
+            self.workflows.save(workflow)
+            return workflow
+
+        if draft_review is not None:
+            workflow.review = self._make_mapping_draft_review(
+                workflow,
+                plan,
+                draft_review,
+            )
+            workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                "review_agent",
+                EventType.REVIEW_REQUESTED,
+                workflow.review.question,
+                severity=Severity.WARNING,
+                metadata={
+                    "review_id": workflow.review.review_id,
+                    "trigger": workflow.review.trigger,
+                },
             )
             self._step(
                 workflow,
@@ -1256,6 +1405,29 @@ class WorkflowService:
             trigger="reviewable_transformation_plan",
             question="Approve the proposed data cleaning and conversion actions before execution?",
             proposed_action={"plan_id": plan.plan_id, "actions": actions},
+        )
+
+    def _make_mapping_draft_review(
+        self,
+        workflow: WorkflowState,
+        plan: TransformationPlan,
+        draft_review: dict[str, Any],
+    ) -> HumanReview:
+        actions = [action.model_dump(mode="json") for action in plan.actions]
+        return HumanReview(
+            workflow_id=workflow.workflow_id,
+            trigger="mapping_draft_transform_plan",
+            question="Review the drafted mapping and transformation plan before execution.",
+            proposed_action={
+                "draft_type": "assistant_mapping_draft",
+                "plan_id": plan.plan_id,
+                "target_format": plan.target_format.value,
+                "actions": actions,
+                "mapping_goal": draft_review.get("mapping_goal"),
+                "source_fields": draft_review.get("source_fields") or [],
+                "target_fields": draft_review.get("target_fields") or [],
+                "evidence_ids": draft_review.get("evidence_ids") or [],
+            },
         )
 
     def _event(

@@ -30,6 +30,7 @@ import {
   arrayCount,
   assistantEvidenceBucketVariant,
   assistantEvidenceMatchExplanation,
+  assistantMappingDraft,
   assistantReviewTaskDraft,
   assistantStandardSearchMatchReasons,
   badgeVariant,
@@ -48,17 +49,20 @@ import {
 } from "./assistant-response-model";
 import type {
   AssistantEvidenceJumpAction,
+  AssistantMappingDraft,
   AssistantReviewTaskDraft,
 } from "./assistant-response-model";
 import type { AssistantSearchHint } from "./assistant-response-model";
 
 export function AssistantResponseDetails({
+  onGenerateMappingDraft,
   onCreateReviewTask,
   response,
   turnContext = {},
   turnId = "",
   userMessage = "",
 }: {
+  onGenerateMappingDraft?: (draft: AssistantMappingDraft) => void;
   onCreateReviewTask?: (draft: AssistantReviewTaskDraft) => void;
   response: AssistantResponse;
   turnContext?: Record<string, unknown>;
@@ -68,6 +72,10 @@ export function AssistantResponseDetails({
   const reviewTaskDraft =
     onCreateReviewTask && turnId
       ? assistantReviewTaskDraft({ response, turnContext, turnId, userMessage })
+      : null;
+  const mappingDraft =
+    onGenerateMappingDraft && turnId
+      ? assistantMappingDraft({ response, turnContext, turnId, userMessage })
       : null;
   return (
     <div className="grid gap-3">
@@ -89,6 +97,12 @@ export function AssistantResponseDetails({
         <AssistantReviewTaskAction
           draft={reviewTaskDraft}
           onCreateReviewTask={onCreateReviewTask}
+        />
+      ) : null}
+      {mappingDraft && onGenerateMappingDraft ? (
+        <AssistantMappingDraftAction
+          draft={mappingDraft}
+          onGenerateMappingDraft={onGenerateMappingDraft}
         />
       ) : null}
       {response.evidence_summary.length > 0 ? (
@@ -114,6 +128,38 @@ export function AssistantResponseDetails({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function AssistantMappingDraftAction({
+  draft,
+  onGenerateMappingDraft,
+}: {
+  draft: AssistantMappingDraft;
+  onGenerateMappingDraft: (draft: AssistantMappingDraft) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-teal-200 bg-teal-50 px-3 py-2">
+      <div className="min-w-0">
+        <div className="text-sm font-black text-teal-950">Draft before transform</div>
+        <div className="break-words text-sm leading-6 text-teal-950/85">
+          {draft.reason}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          <Badge variant="warning">{formatCount(draft.issueCount, "issue")}</Badge>
+          <Badge variant="muted">{formatCount(draft.evidenceCount, "evidence")}</Badge>
+        </div>
+      </div>
+      <Button
+        className="shrink-0"
+        onClick={() => onGenerateMappingDraft(draft)}
+        type="button"
+        variant="outline"
+      >
+        <ClipboardCheck className="h-4 w-4" />
+        Draft mapping plan
+      </Button>
     </div>
   );
 }

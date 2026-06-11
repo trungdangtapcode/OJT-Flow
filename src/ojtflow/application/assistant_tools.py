@@ -175,6 +175,31 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
             "additionalProperties": False,
         },
     ),
+    "generate_mapping_draft": AssistantToolSpec(
+        name="generate_mapping_draft",
+        description=(
+            "Create a review-gated mapping and transformation draft without "
+            "executing conversion."
+        ),
+        permission_scope=ToolPermission.DATA_TRANSFORM.value,
+        requires_approval=True,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "instruction": {"type": "string"},
+                "data": {"type": "string"},
+                "input_format": {"type": ["string", "null"]},
+                "target_format": {"type": "string"},
+                "schema_id": {"type": ["string", "null"]},
+                "mapping_goal": {"type": ["string", "null"]},
+                "source_fields": {"type": "array", "items": {"type": "string"}},
+                "target_fields": {"type": "array", "items": {"type": "string"}},
+                "evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["instruction", "data"],
+            "additionalProperties": False,
+        },
+    ),
     "create_review_task": AssistantToolSpec(
         name="create_review_task",
         description=(
@@ -249,6 +274,7 @@ class OJTFlowToolExecutor:
             "get_workflow": self._get_workflow,
             "workflow_summary": self._workflow_summary,
             "start_workflow": self._start_workflow,
+            "generate_mapping_draft": self._generate_mapping_draft,
             "create_review_task": self._create_review_task,
         }
 
@@ -629,6 +655,36 @@ class OJTFlowToolExecutor:
         }
         return payload
 
+    def _generate_mapping_draft(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        workflow = self.workflow_service.create_mapping_draft(
+            instruction=_required_str(args, "instruction"),
+            data=_required_str(args, "data"),
+            declared_format=_optional_data_format(args.get("input_format")),
+            target_format=_data_format(args.get("target_format"), default=DataFormat.JSON),
+            schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
+            mapping_goal=_optional_str(args.get("mapping_goal")),
+            source_fields=_str_list(args.get("source_fields")),
+            target_fields=_str_list(args.get("target_fields")),
+            evidence_ids=_str_list(args.get("evidence_ids")),
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+        )
+        payload = workflow.model_dump(mode="json")
+        plan = workflow.transformation_plan
+        payload["mapping_draft"] = {
+            "workflow_id": workflow.workflow_id,
+            "review_id": workflow.review.review_id if workflow.review else None,
+            "plan_id": plan.plan_id if plan else None,
+            "action_count": len(plan.actions) if plan else 0,
+            "target_format": plan.target_format.value if plan else None,
+        }
+        return payload
+
 
 def _missing_required_arguments(
     spec: AssistantToolSpec,
@@ -680,6 +736,12 @@ def _tool_summary(tool_name: str, output: dict[str, Any]) -> str:
         return (
             f"Created workflow {output.get('workflow_id', '')} "
             f"with status {output.get('status', 'unknown')}."
+        )
+    if tool_name == "generate_mapping_draft":
+        draft = output.get("mapping_draft") if isinstance(output.get("mapping_draft"), dict) else {}
+        return (
+            f"Created mapping draft {draft.get('plan_id') or ''} "
+            f"for workflow {output.get('workflow_id', '')}."
         )
     if tool_name == "create_review_task":
         review = output.get("review_task") if isinstance(output.get("review_task"), dict) else {}

@@ -278,6 +278,37 @@ def create_server():
         )
 
     @mcp.tool()
+    def generate_mapping_draft(
+        instruction: str,
+        data: str,
+        input_format: str | None = None,
+        target_format: str = "json",
+        schema_id: str | None = "lab_result_v1",
+        mapping_goal: str | None = None,
+        source_fields: list[str] | None = None,
+        target_fields: list[str] | None = None,
+        evidence_ids: list[str] | None = None,
+        execute_write_actions: bool = False,
+    ) -> dict[str, Any]:
+        """Create a review-gated mapping draft without executing conversion."""
+
+        return executor.execute_tool(
+            "generate_mapping_draft",
+            {
+                "instruction": instruction,
+                "data": data,
+                "input_format": input_format,
+                "target_format": target_format,
+                "schema_id": schema_id,
+                "mapping_goal": mapping_goal,
+                "source_fields": source_fields or [],
+                "target_fields": target_fields or [],
+                "evidence_ids": evidence_ids or [],
+            },
+            execute_write_actions=execute_write_actions,
+        )
+
+    @mcp.tool()
     def create_review_task(
         question: str,
         data: str | None = None,

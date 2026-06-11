@@ -297,7 +297,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F109 Add assistant attachment support for multiple files, pasted images, text snippets, and selected workflow/retrieval context.
 - [x] F110 Add assistant "show evidence" action that jumps to the exact source row, page box, chunk, or workflow event.
 - [x] F111 Add assistant "create review task" action for unresolved data quality or terminology decisions.
-- [ ] F112 Add assistant "generate mapping draft" action that creates a review-gated transform plan instead of directly transforming data.
+- [x] F112 Add assistant "generate mapping draft" action that creates a review-gated transform plan instead of directly transforming data.
 - [x] F113 Add MCP resources for workflows, reviews, retrieval sources, schemas, and knowledge source inventory.
 - [x] F114 Add MCP prompts for standard tasks such as validate lab CSV, profile FHIR, find UCUM evidence, and inspect pending reviews.
 - [ ] F115 Add remote MCP deployment design with OAuth/resource indicators, per-user scoping, rate limits, and audit.

@@ -85,7 +85,10 @@ import {
   transcriptItemWithStreamEvent,
 } from "./assistant-session";
 import type { AssistantChatSession } from "./assistant-session";
-import type { AssistantReviewTaskDraft } from "./assistant-response-model";
+import type {
+  AssistantMappingDraft,
+  AssistantReviewTaskDraft,
+} from "./assistant-response-model";
 import { AssistantSessionSidebar } from "./assistant-session-sidebar";
 import { ToolCatalogPanel } from "./assistant-tool-catalog-panel";
 
@@ -696,6 +699,14 @@ export function AssistantPage() {
     setFormError(null);
   }, []);
 
+  const prepareMappingDraft = React.useCallback((draft: AssistantMappingDraft) => {
+    setMessage(draft.message);
+    setContextText(formatContext(draft.context));
+    setExecuteWriteActions(true);
+    setWriteConfirmationAccepted(false);
+    setFormError(null);
+  }, []);
+
   const appendTranscriptItem = (
     sessionId: string,
     item: AssistantTranscriptItem,
@@ -825,6 +836,7 @@ export function AssistantPage() {
                       onRetryFailedTool={(failedItem, call) =>
                         void retryFailedTool(failedItem, call)
                       }
+                      onGenerateMappingDraft={prepareMappingDraft}
                       onCreateReviewTask={prepareReviewTask}
                     />
                   ))}
@@ -1155,12 +1167,14 @@ function ConversationTurn({
   item,
   onContinueAfterFailure,
   onCreateReviewTask,
+  onGenerateMappingDraft,
   onRetryFailedTool,
 }: {
   isBusy: boolean;
   item: AssistantTranscriptItem;
   onContinueAfterFailure: (item: AssistantTranscriptItem) => void;
   onCreateReviewTask: (draft: AssistantReviewTaskDraft) => void;
+  onGenerateMappingDraft: (draft: AssistantMappingDraft) => void;
   onRetryFailedTool: (
     item: AssistantTranscriptItem,
     call: AssistantToolResult,
@@ -1245,6 +1259,7 @@ function ConversationTurn({
               />
               {item.response ? (
                 <AssistantResponseDetails
+                  onGenerateMappingDraft={onGenerateMappingDraft}
                   onCreateReviewTask={onCreateReviewTask}
                   response={item.response}
                   turnContext={item.context}

@@ -1789,6 +1789,10 @@ the composer with `context.assistant_review_task` plus `execute_write_actions`
 enabled. The backend write gate remains authoritative; the browser must still
 require the operator's explicit write confirmation before creating durable
 workflow/review state.
+When the same findings include source data, response cards may also expose
+"Draft mapping plan". That action must prefill `context.assistant_mapping_draft`
+and create only a review-gated transform plan; direct conversion remains a
+separate operator command.
 Failed Assistant tool calls should expose inline recovery controls in the same
 chat turn. `Retry` must send structured `assistant_recovery.retry_tool` context
 with the original tool name and arguments; `Continue without retry` must send

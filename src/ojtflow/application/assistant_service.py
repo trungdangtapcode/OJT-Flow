@@ -426,6 +426,7 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
     target_format = _context_optional_text(context, "target_format") or "json"
     fields = context.get("fields") if isinstance(context.get("fields"), list) else []
     review_task = _review_task_context(context)
+    mapping_draft = _mapping_draft_context(context)
     workflow_id = _context_optional_text(
         context,
         "workflow_id",
@@ -492,6 +493,44 @@ def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
                 rationale=(
                     "The user asked to create a durable human-review task for "
                     "an unresolved governed data decision."
+                ),
+            )
+        )
+    elif _wants_generate_mapping_draft(normalized, mapping_draft) and data:
+        arguments: dict[str, Any] = {
+            "instruction": _mapping_draft_instruction(message, context, mapping_draft),
+            "data": data,
+            "input_format": input_format,
+            "target_format": target_format,
+            "schema_id": (
+                _optional_text(mapping_draft.get("schema_id"))
+                or schema_id
+                or "lab_result_v1"
+            ),
+            "mapping_goal": (
+                _optional_text(mapping_draft.get("mapping_goal"))
+                or _optional_text(mapping_draft.get("goal"))
+            ),
+            "source_fields": _review_task_string_list(
+                mapping_draft.get("source_fields")
+            )
+            or [str(field) for field in fields if isinstance(field, str)],
+            "target_fields": _review_task_string_list(
+                mapping_draft.get("target_fields")
+            ),
+            "evidence_ids": _review_task_string_list(mapping_draft.get("evidence_ids")),
+        }
+        tool_calls.append(
+            AssistantToolPlan(
+                tool_name="generate_mapping_draft",
+                arguments={
+                    key: value
+                    for key, value in arguments.items()
+                    if value not in (None, "", [])
+                },
+                rationale=(
+                    "The user asked to draft a mapping or transformation plan "
+                    "without executing conversion."
                 ),
             )
         )
@@ -766,6 +805,8 @@ def _findings(tool_results: list) -> list[AssistantFinding]:
             findings.append(_workflow_finding(result.output, created=True))
         elif result.tool_name == "create_review_task":
             findings.append(_review_task_finding(result.output))
+        elif result.tool_name == "generate_mapping_draft":
+            findings.append(_mapping_draft_finding(result.output))
     return findings
 
 
@@ -1062,6 +1103,25 @@ def _review_task_finding(output: dict[str, Any]) -> AssistantFinding:
         severity="warning",
         source_tool="create_review_task",
         source_ids=[value for value in (workflow_id, review_id) if value],
+    )
+
+
+def _mapping_draft_finding(output: dict[str, Any]) -> AssistantFinding:
+    workflow_id = str(output.get("workflow_id") or "workflow")
+    draft = output.get("mapping_draft") if isinstance(output.get("mapping_draft"), dict) else {}
+    plan_id = str(draft.get("plan_id") or "plan")
+    review_id = str(draft.get("review_id") or "review")
+    action_count = draft.get("action_count")
+    return AssistantFinding(
+        title="Mapping draft created",
+        detail=(
+            f"Created review-gated mapping draft {plan_id} for {workflow_id} "
+            f"with {action_count if isinstance(action_count, int) else 0} "
+            f"proposed action(s). Review task: {review_id}."
+        ),
+        severity="warning",
+        source_tool="generate_mapping_draft",
+        source_ids=[value for value in (workflow_id, plan_id, review_id) if value],
     )
 
 
@@ -1489,6 +1549,10 @@ def _suggestions(tool_results: list) -> list[str]:
             suggestions.append(
                 "Open Reviews to approve, reject, clarify, or cancel the review task."
             )
+        if result.tool_name == "generate_mapping_draft" and result.status == "completed":
+            suggestions.append(
+                "Open Reviews to inspect or edit the drafted mapping plan before execution."
+            )
     return _dedupe(suggestions)
 
 
@@ -1511,6 +1575,11 @@ def _review_task_context(context: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _mapping_draft_context(context: dict[str, Any]) -> dict[str, Any]:
+    value = context.get("assistant_mapping_draft")
+    return value if isinstance(value, dict) else {}
+
+
 def _wants_create_review_task(
     normalized_message: str,
     review_task: dict[str, Any],
@@ -1521,6 +1590,33 @@ def _wants_create_review_task(
     review_terms = ("review task", "review ticket", "human review", "manual review")
     return any(term in normalized_message for term in create_terms) and any(
         term in normalized_message for term in review_terms
+    )
+
+
+def _wants_generate_mapping_draft(
+    normalized_message: str,
+    mapping_draft: dict[str, Any],
+) -> bool:
+    if _optional_text(mapping_draft.get("action")) == "generate_mapping_draft":
+        return True
+    draft_terms = ("mapping draft", "draft mapping", "draft transform", "transform plan")
+    action_terms = ("generate", "create", "draft", "make", "prepare")
+    return any(term in normalized_message for term in draft_terms) and any(
+        term in normalized_message for term in action_terms
+    )
+
+
+def _mapping_draft_instruction(
+    message: str,
+    context: dict[str, Any],
+    mapping_draft: dict[str, Any],
+) -> str:
+    return (
+        _context_optional_text(context, "mapping_instruction")
+        or _optional_text(mapping_draft.get("instruction"))
+        or _optional_text(mapping_draft.get("question"))
+        or message.strip()
+        or "Draft a review-gated mapping and transformation plan."
     )
 
 

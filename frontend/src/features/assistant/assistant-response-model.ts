@@ -77,6 +77,14 @@ export type AssistantReviewTaskDraft = {
   reason: string;
 };
 
+export type AssistantMappingDraft = {
+  context: Record<string, unknown>;
+  evidenceCount: number;
+  issueCount: number;
+  message: string;
+  reason: string;
+};
+
 export function assistantReviewTaskDraft({
   response,
   turnContext,
@@ -88,18 +96,9 @@ export function assistantReviewTaskDraft({
   turnId: string;
   userMessage: string;
 }): AssistantReviewTaskDraft | null {
-  const issueKinds = uniqueStrings(
-    response.tool_calls.flatMap((call) =>
-      validationIssuesForToolCall(call).map((issue) => optionalStringValue(issue.kind)),
-    ),
-  );
-  const evidenceIds = uniqueStrings([
-    ...response.evidence_summary.map((item) => optionalStringValue(item.evidence_id)),
-    ...response.tool_calls
-      .flatMap(toolEvidence)
-      .map((item) => optionalStringValue(item.evidence_id)),
-  ]);
-  const unresolvedFindings = response.findings.filter(findingNeedsReview);
+  const issueKinds = issueKindsForResponse(response);
+  const evidenceIds = evidenceIdsForResponse(response);
+  const unresolvedFindings = unresolvedFindingsForResponse(response);
   if (!issueKinds.length && !evidenceIds.length && !unresolvedFindings.length) {
     return null;
   }
@@ -132,6 +131,53 @@ export function assistantReviewTaskDraft({
     issueCount: issueKinds.length || unresolvedFindings.length,
     message: "Create a review task for these unresolved assistant findings.",
     reason: `${focus}. This will create durable workflow and human-review state after write confirmation.`,
+  };
+}
+
+export function assistantMappingDraft({
+  response,
+  turnContext,
+  turnId,
+  userMessage,
+}: {
+  response: AssistantResponse;
+  turnContext: Record<string, unknown>;
+  turnId: string;
+  userMessage: string;
+}): AssistantMappingDraft | null {
+  if (!optionalStringValue(turnContext.data)) return null;
+  const issueKinds = issueKindsForResponse(response);
+  const evidenceIds = evidenceIdsForResponse(response);
+  const unresolvedFindings = unresolvedFindingsForResponse(response);
+  if (!issueKinds.length && !evidenceIds.length && !unresolvedFindings.length) {
+    return null;
+  }
+  const sourceFields = stringArrayValue(turnContext.fields);
+  const targetFields = stringArrayValue(turnContext.target_fields);
+  const mappingGoal = issueKinds.length
+    ? `Draft a transform plan for ${issueKinds.slice(0, 4).join(", ")}`
+    : "Draft a governed mapping and transformation plan";
+  const instruction = `${mappingGoal} from assistant turn ${turnId}.`;
+  const context = {
+    ...turnContext,
+    target_format: optionalStringValue(turnContext.target_format) ?? "json",
+    assistant_mapping_draft: {
+      action: "generate_mapping_draft",
+      instruction,
+      mapping_goal: mappingGoal,
+      source_message: userMessage,
+      source_turn_id: turnId,
+      source_fields: sourceFields,
+      target_fields: targetFields,
+      evidence_ids: evidenceIds,
+    },
+  };
+  return {
+    context,
+    evidenceCount: evidenceIds.length,
+    issueCount: issueKinds.length || unresolvedFindings.length,
+    message: "Generate a review-gated mapping draft for this data.",
+    reason: `${mappingGoal}. This creates a draft workflow and review task without converting output yet.`,
   };
 }
 
@@ -239,6 +285,27 @@ function validationIssuesValue(value: unknown): Record<string, unknown>[] {
   const report = recordValue(value);
   const issues = report.issues;
   return Array.isArray(issues) ? issues.map(recordValue).filter((issue) => Object.keys(issue).length) : [];
+}
+
+function issueKindsForResponse(response: AssistantResponse): string[] {
+  return uniqueStrings(
+    response.tool_calls.flatMap((call) =>
+      validationIssuesForToolCall(call).map((issue) => optionalStringValue(issue.kind)),
+    ),
+  );
+}
+
+function evidenceIdsForResponse(response: AssistantResponse): string[] {
+  return uniqueStrings([
+    ...response.evidence_summary.map((item) => optionalStringValue(item.evidence_id)),
+    ...response.tool_calls
+      .flatMap(toolEvidence)
+      .map((item) => optionalStringValue(item.evidence_id)),
+  ]);
+}
+
+function unresolvedFindingsForResponse(response: AssistantResponse): AssistantFinding[] {
+  return response.findings.filter(findingNeedsReview);
 }
 
 function findingNeedsReview(finding: AssistantFinding): boolean {

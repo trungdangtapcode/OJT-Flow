@@ -1087,6 +1087,7 @@ The assistant can call:
 - `get_workflow`
 - `workflow_summary`
 - `start_workflow`
+- `generate_mapping_draft`
 - `create_review_task`
 
 `validate_with_evidence` is the preferred assistant path for healthcare data
@@ -1096,13 +1097,17 @@ support governed source scope through `clinical_domain`, `standard_system`,
 `source_type`, exact `source_id`, and `trust_level`. `workflow_summary` is the
 preferred assistant path for chat-based workflow inspection.
 
-`start_workflow` and `create_review_task` are write actions. They return
-`status="requires_approval"` unless the request explicitly sets
-`execute_write_actions=true`. `create_review_task` creates a durable workflow in
-`needs_human_review` status with a pending human review and audit event, so
-unresolved data quality, terminology, or evidence decisions can leave the chat
-surface and enter the governed review queue. The assistant does not expose
-review approval, rejection, cancellation, or destructive artifact actions in v0.
+`start_workflow`, `generate_mapping_draft`, and `create_review_task` are write
+actions. They return `status="requires_approval"` unless the request explicitly
+sets `execute_write_actions=true`. `generate_mapping_draft` parses, validates,
+retrieves evidence, and creates a transformation plan in `needs_human_review`
+status without writing transformed output; approval or approve-with-edits can
+execute later through the review workflow. `create_review_task` creates a
+durable workflow in `needs_human_review` status with a pending human review and
+audit event, so unresolved data quality, terminology, or evidence decisions can
+leave the chat surface and enter the governed review queue. The assistant does
+not expose review approval, rejection, cancellation, or destructive artifact
+actions in v0.
 
 The browser UI adds an additional operator confirmation before sending
 `execute_write_actions=true`: it lists tools from the backend catalog where

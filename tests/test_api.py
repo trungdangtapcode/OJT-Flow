@@ -4330,6 +4330,7 @@ async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
     tool_names = {tool["name"] for tool in tools}
     assert "validate_with_evidence" in tool_names
     assert "start_workflow" in tool_names
+    assert "generate_mapping_draft" in tool_names
     assert "create_review_task" in tool_names
     start_workflow = next(tool for tool in tools if tool["name"] == "start_workflow")
     assert start_workflow["requires_approval"] is True
@@ -4338,6 +4339,13 @@ async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
     assert "write-gated" in start_workflow["permission_tags"]
     assert "Creates durable workflow state" in start_workflow["approval_reason"]
     assert start_workflow["input_schema"]["type"] == "object"
+    generate_mapping_draft = next(
+        tool for tool in tools if tool["name"] == "generate_mapping_draft"
+    )
+    assert generate_mapping_draft["requires_approval"] is True
+    assert generate_mapping_draft["permission_scope"] == "data:transform"
+    assert generate_mapping_draft["risk_level"] == "high"
+    assert "transform" in generate_mapping_draft["permission_tags"]
     create_review_task = next(tool for tool in tools if tool["name"] == "create_review_task")
     assert create_review_task["requires_approval"] is True
     assert create_review_task["permission_scope"] == "review:write"
@@ -4709,6 +4717,73 @@ async def test_assistant_chat_creates_write_gated_review_task(monkeypatch) -> No
     assert any(
         item["review"]["review_id"] == allowed_call["output"]["review_task"]["review_id"]
         for item in review_items
+    )
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_generates_write_gated_mapping_draft(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    payload = {
+        "message": "Generate a mapping draft for this lab CSV before transforming it.",
+        "context": {
+            "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+            "input_format": "csv",
+            "target_format": "json",
+            "schema_id": "lab_result_v1",
+            "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+            "assistant_mapping_draft": {
+                "action": "generate_mapping_draft",
+                "mapping_goal": "Draft a lab-result JSON mapping with missing value/unit review.",
+                "source_fields": ["date", "patient_id", "lab_name", "value", "unit"],
+                "target_fields": ["date", "patient_id", "lab_name", "value", "unit"],
+                "evidence_ids": ["schema_lab_result_v1"],
+            },
+        },
+    }
+
+    async with await _client() as client:
+        gated = await client.post("/api/v1/assistant/chat", json=payload)
+        allowed = await client.post(
+            "/api/v1/assistant/chat",
+            json={**payload, "execute_write_actions": True},
+        )
+        reviews = await client.get("/api/v1/reviews")
+
+    assert gated.status_code == 200
+    gated_call = gated.json()["data"]["tool_calls"][0]
+    assert gated_call["tool_name"] == "generate_mapping_draft"
+    assert gated_call["status"] == "requires_approval"
+    assert gated_call["requires_approval"] is True
+    assert gated.json()["data"]["findings"][0]["severity"] == "action_required"
+
+    assert allowed.status_code == 200
+    allowed_body = allowed.json()["data"]
+    allowed_call = allowed_body["tool_calls"][0]
+    assert allowed_call["tool_name"] == "generate_mapping_draft"
+    assert allowed_call["status"] == "completed"
+    output = allowed_call["output"]
+    assert output["status"] == "needs_human_review"
+    assert output["workflow_id"].startswith("wf_")
+    assert output["transformation_plan"]["requires_review"] is True
+    assert output["review"]["trigger"] == "mapping_draft_transform_plan"
+    assert output["review"]["proposed_action"]["draft_type"] == "assistant_mapping_draft"
+    assert output["review"]["proposed_action"]["mapping_goal"]
+    assert output["mapping_draft"]["plan_id"] == output["transformation_plan"]["plan_id"]
+    assert output["output"] is None
+    assert allowed_body["findings"][0]["title"] == "Mapping draft created"
+    assert any(
+        "drafted mapping plan" in suggestion
+        for suggestion in allowed_body["suggestions"]
+    )
+
+    assert reviews.status_code == 200
+    assert any(
+        item["review"]["review_id"] == output["mapping_draft"]["review_id"]
+        for item in reviews.json()["data"]
     )
 
 

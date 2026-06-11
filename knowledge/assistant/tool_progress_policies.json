@@ -227,6 +227,32 @@
       ]
     },
     {
+      "tool_name": "generate_mapping_draft",
+      "stages": [
+        {
+          "stage_id": "check_mapping_write_gate",
+          "label": "Check mapping write gate",
+          "message": "Verifying explicit approval before creating durable mapping-draft workflow state.",
+          "progress": 20,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "draft_mapping_plan",
+          "label": "Draft mapping plan",
+          "message": "Parsing data, validating schema fit, retrieving evidence, and drafting a review-gated transform plan.",
+          "progress": 70,
+          "event": "before_execute"
+        },
+        {
+          "stage_id": "return_mapping_review",
+          "label": "Return mapping review",
+          "message": "Returning the workflow, plan, and review IDs for human review before execution.",
+          "progress": 92,
+          "event": "after_execute"
+        }
+      ]
+    },
+    {
       "tool_name": "create_review_task",
       "stages": [
         {

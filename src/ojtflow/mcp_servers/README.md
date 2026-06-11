@@ -37,9 +37,9 @@ knowledge source inventory. Prompts cover standard tasks such as validating lab
 CSV with evidence, profiling FHIR-like data, finding UCUM/unit evidence,
 inspecting pending reviews, summarizing workflows, and preparing export review.
 
-`start_workflow` and `create_review_task` are write-capable and return
-`requires_approval` unless the caller explicitly passes
-`execute_write_actions=true`. The server does not expose review
+`start_workflow`, `generate_mapping_draft`, and `create_review_task` are
+write-capable and return `requires_approval` unless the caller explicitly
+passes `execute_write_actions=true`. The server does not expose review
 approval/rejection tools in v0.
 
 Install and run locally:
