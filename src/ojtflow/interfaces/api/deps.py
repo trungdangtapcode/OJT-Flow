@@ -23,6 +23,7 @@ from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings, get_settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
+from ojtflow.core.policy.external_provider_policy import external_provider_policy_from_settings
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
 from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
@@ -132,6 +133,7 @@ def _build_workflow_service() -> WorkflowService:
 
     settings = get_settings()
     knowledge_root = settings.resolved_knowledge_dir
+    external_provider_policy = external_provider_policy_from_settings(settings)
     embedding_provider = build_embedding_provider(settings)
     reranker = build_reranker(settings)
     if settings.storage_backend == "memory":
@@ -183,6 +185,7 @@ def _build_workflow_service() -> WorkflowService:
         knowledge=StaticKnowledgeRepository(knowledge_root),
         retrieval=retrieval,
         retrieval_rule_packs=retrieval_rule_packs(knowledge_root),
+        external_provider_policy=external_provider_policy,
     )
 
 
@@ -293,6 +296,7 @@ def _build_medical_evidence_service() -> MedicalEvidenceService:
 def _build_assistant_service() -> AssistantService:
     settings = get_settings()
     planner = None
+    external_provider_policy = external_provider_policy_from_settings(settings)
     if settings.llm_provider == "openai":
         planner = OpenAIResponsesPlanner(
             api_key=settings.openai_api_key,
@@ -301,6 +305,7 @@ def _build_assistant_service() -> AssistantService:
             synthesis_model=settings.llm_synthesis_model,
             base_url=settings.llm_base_url,
             timeout_seconds=settings.llm_timeout_seconds,
+            external_provider_policy=external_provider_policy,
         )
     return AssistantService(
         OJTFlowToolExecutor(

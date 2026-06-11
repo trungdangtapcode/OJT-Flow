@@ -25,7 +25,11 @@ from pathlib import Path
 import httpx
 
 from ojtflow.config import OPENAI_VISION_MODEL, get_settings
-from ojtflow.core.errors import ToolExecutionError, UnsupportedUploadError
+from ojtflow.core.errors import PolicyBlockedError, ToolExecutionError, UnsupportedUploadError
+from ojtflow.core.policy.external_provider_policy import (
+    external_provider_policy_from_settings,
+    require_external_provider_handoff,
+)
 
 
 # Map file extension → source format label
@@ -276,6 +280,19 @@ def _extract_openai_vision(
         return None
 
     model = _openai_vision_model()
+    try:
+        policy_decision = _require_openai_vision_allowed(
+            source_format=source_format,
+            filename=filename,
+            model=model,
+            adapter="openai_vision",
+        )
+    except PolicyBlockedError as exc:
+        warning = f"OpenAI vision OCR blocked by external-provider policy: {exc}"
+        warnings.append(warning)
+        if require_configured:
+            raise ToolExecutionError(warning, details=exc.details) from exc
+        return None
     base_url = (os.getenv("OJT_LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
     timeout_seconds = float(os.getenv("OJT_LLM_TIMEOUT_SECONDS", "30.0"))
     image_url = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
@@ -347,6 +364,7 @@ def _extract_openai_vision(
                 "Image bytes are sent to the configured OpenAI-compatible vision "
                 "provider. Use redaction/review policy before enabling on PHI."
             ),
+            "external_provider_policy": policy_decision.model_dump(mode="json"),
         },
     )
 
@@ -444,6 +462,29 @@ def _openai_vision_model() -> str:
     if model == "chat-latest":
         return OPENAI_VISION_MODEL
     return model
+
+
+def _require_openai_vision_allowed(
+    *,
+    source_format: str,
+    filename: str,
+    model: str,
+    adapter: str,
+):
+    settings = get_settings()
+    return require_external_provider_handoff(
+        external_provider_policy_from_settings(settings),
+        surface="openai_vision_ocr",
+        text=None,
+        contains_phi=None,
+        metadata={
+            "provider": "openai",
+            "adapter": adapter,
+            "model": model,
+            "source_format": source_format,
+            "filename": filename,
+        },
+    )
 
 
 def _env_bool(name: str, *, default: bool) -> bool:
@@ -544,6 +585,19 @@ def _build_markitdown_converter(
     if not api_key:
         deferred_warnings.append(
             "MarkItDown OCR plugin is enabled but no OpenAI API key is configured."
+        )
+        return MarkItDown(enable_plugins=False)
+
+    try:
+        _require_openai_vision_allowed(
+            source_format=source_format,
+            filename="markitdown-ocr",
+            model=_openai_vision_model(),
+            adapter="markitdown_ocr",
+        )
+    except PolicyBlockedError as exc:
+        deferred_warnings.append(
+            f"MarkItDown OCR plugin blocked by external-provider policy: {exc}"
         )
         return MarkItDown(enable_plugins=False)
 

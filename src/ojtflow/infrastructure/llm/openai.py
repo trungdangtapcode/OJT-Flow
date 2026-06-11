@@ -12,7 +12,9 @@ from ojtflow.core.contracts.assistant import (
     AssistantToolPlan,
     AssistantToolSpec,
 )
+from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
 from ojtflow.core.errors import DependencyUnavailableError, ToolExecutionError
+from ojtflow.core.policy.external_provider_policy import require_external_provider_handoff
 
 
 SYSTEM_PROMPT = """You are OJTFlow's healthcare data operations planner.
@@ -54,6 +56,7 @@ class OpenAIResponsesPlanner:
         synthesis_model: str | None = None,
         base_url: str,
         timeout_seconds: float,
+        external_provider_policy: ExternalProviderPolicy | None = None,
     ) -> None:
         self.api_key = api_key
         shared_model = model or planning_model or synthesis_model
@@ -63,6 +66,7 @@ class OpenAIResponsesPlanner:
         self.synthesis_model = synthesis_model or shared_model
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.external_provider_policy = external_provider_policy
 
     @property
     def model_name(self) -> str:
@@ -82,6 +86,10 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM planner requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
+        self._require_allowed(
+            text=json.dumps({"message": message, "context": context}, ensure_ascii=False),
+            purpose="plan",
+        )
         payload = _plan_payload(
             model=self.planning_model,
             message=message,
@@ -132,6 +140,10 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM planner requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
+        self._require_allowed(
+            text=json.dumps({"message": message, "context": context}, ensure_ascii=False),
+            purpose="plan_stream",
+        )
         yield {
             "type": "planning_step",
             "label": "Tool catalog loaded",
@@ -227,6 +239,17 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM synthesis requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
+        self._require_allowed(
+            text=_synthesis_policy_text(
+                message=message,
+                context=context,
+                plan=plan,
+                tool_results=tool_results,
+                findings=findings,
+                evidence_summary=evidence_summary,
+            ),
+            purpose="synthesize",
+        )
         payload = {
             "model": self.synthesis_model,
             "input": [
@@ -296,6 +319,17 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM synthesis requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
+        self._require_allowed(
+            text=_synthesis_policy_text(
+                message=message,
+                context=context,
+                plan=plan,
+                tool_results=tool_results,
+                findings=findings,
+                evidence_summary=evidence_summary,
+            ),
+            purpose="synthesize_stream",
+        )
         payload = {
             "model": self.synthesis_model,
             "stream": True,
@@ -368,6 +402,20 @@ class OpenAIResponsesPlanner:
                 details={"error": exc.__class__.__name__, "message": str(exc)},
             ) from exc
 
+    def _require_allowed(self, *, text: str, purpose: str) -> None:
+        if self.external_provider_policy is None:
+            return
+        require_external_provider_handoff(
+            self.external_provider_policy,
+            surface="openai_llm",
+            text=text,
+            metadata={
+                "purpose": purpose,
+                "planning_model": self.planning_model,
+                "synthesis_model": self.synthesis_model,
+            },
+        )
+
 
 def _assistant_plan_schema(max_tool_calls: int, *, tool_names: list[str]) -> dict[str, Any]:
     tool_name_schema: dict[str, Any] = {"type": "string"}
@@ -401,6 +449,28 @@ def _assistant_plan_schema(max_tool_calls: int, *, tool_names: list[str]) -> dic
         "required": ["message", "tool_calls", "warnings"],
         "additionalProperties": False,
     }
+
+
+def _synthesis_policy_text(
+    *,
+    message: str,
+    context: dict[str, Any],
+    plan: AssistantPlan,
+    tool_results: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
+    evidence_summary: list[dict[str, Any]],
+) -> str:
+    return json.dumps(
+        {
+            "message": message,
+            "context": context,
+            "plan": plan.model_dump(mode="json"),
+            "tool_results": tool_results,
+            "findings": findings,
+            "evidence_summary": evidence_summary,
+        },
+        ensure_ascii=False,
+    )
 
 
 def _plan_payload(

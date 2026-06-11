@@ -111,6 +111,15 @@ RUNTIME_ASSISTANT_SETTING_ALIASES = {
     "llm_timeout_seconds": "OJT_LLM_TIMEOUT_SECONDS",
     "llm_max_tool_calls": "OJT_LLM_MAX_TOOL_CALLS",
     "llm_planning_progress_interval_seconds": "OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS",
+    "external_openai_llm_enabled": "OJT_EXTERNAL_OPENAI_LLM_ENABLED",
+    "external_openai_llm_allow_phi": "OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI",
+    "external_openai_ocr_enabled": "OJT_EXTERNAL_OPENAI_OCR_ENABLED",
+    "external_openai_ocr_allow_phi": "OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI",
+    "external_openai_ocr_allow_unknown": "OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN",
+    "external_openai_embeddings_enabled": "OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED",
+    "external_openai_embeddings_allow_phi": "OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI",
+    "external_medical_search_enabled": "OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED",
+    "external_medical_search_allow_phi": "OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI",
 }
 RUNTIME_SETTING_ALIASES = {
     **RUNTIME_RETRIEVAL_SETTING_ALIASES,
@@ -262,6 +271,42 @@ class Settings(BaseModel):
         default=2.0,
         alias="OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS",
         gt=0,
+    )
+    external_openai_llm_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_LLM_ENABLED",
+    )
+    external_openai_llm_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI",
+    )
+    external_openai_ocr_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_OCR_ENABLED",
+    )
+    external_openai_ocr_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI",
+    )
+    external_openai_ocr_allow_unknown: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN",
+    )
+    external_openai_embeddings_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED",
+    )
+    external_openai_embeddings_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI",
+    )
+    external_medical_search_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED",
+    )
+    external_medical_search_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI",
     )
     hf_embedding_device: str = Field(default="auto", alias="OJT_HF_EMBEDDING_DEVICE")
     hf_embedding_batch_size: int = Field(
@@ -564,6 +609,42 @@ def get_settings() -> Settings:
         OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS=float(
             os.getenv("OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS", "2.0")
         ),
+        OJT_EXTERNAL_OPENAI_LLM_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_LLM_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI"),
+            default=False,
+        ),
+        OJT_EXTERNAL_OPENAI_OCR_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_OCR_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI"),
+            default=False,
+        ),
+        OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI"),
+            default=False,
+        ),
+        OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI"),
+            default=False,
+        ),
         OJT_HF_EMBEDDING_DEVICE=_parse_hf_embedding_device(
             os.getenv("OJT_HF_EMBEDDING_DEVICE")
         ),
@@ -657,6 +738,17 @@ def runtime_assistant_settings(settings: Settings) -> RuntimeAssistantSettingsPa
         "llm_planning_progress_interval_seconds": (
             settings.llm_planning_progress_interval_seconds
         ),
+        "external_openai_llm_enabled": settings.external_openai_llm_enabled,
+        "external_openai_llm_allow_phi": settings.external_openai_llm_allow_phi,
+        "external_openai_ocr_enabled": settings.external_openai_ocr_enabled,
+        "external_openai_ocr_allow_phi": settings.external_openai_ocr_allow_phi,
+        "external_openai_ocr_allow_unknown": settings.external_openai_ocr_allow_unknown,
+        "external_openai_embeddings_enabled": settings.external_openai_embeddings_enabled,
+        "external_openai_embeddings_allow_phi": (
+            settings.external_openai_embeddings_allow_phi
+        ),
+        "external_medical_search_enabled": settings.external_medical_search_enabled,
+        "external_medical_search_allow_phi": settings.external_medical_search_allow_phi,
     }
 
 
@@ -791,6 +883,22 @@ def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float 
         if isinstance(value, bool):
             raise ValueError("llm_planning_progress_interval_seconds must be a number")
         return float(value)
+    if key in {
+        "external_openai_llm_enabled",
+        "external_openai_llm_allow_phi",
+        "external_openai_ocr_enabled",
+        "external_openai_ocr_allow_phi",
+        "external_openai_ocr_allow_unknown",
+        "external_openai_embeddings_enabled",
+        "external_openai_embeddings_allow_phi",
+        "external_medical_search_enabled",
+        "external_medical_search_allow_phi",
+    }:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return _parse_bool(value, default=False)
+        raise ValueError(f"{key} must be a boolean")
     if key == "embedding_provider":
         if not isinstance(value, str):
             raise ValueError("embedding_provider must be a string")

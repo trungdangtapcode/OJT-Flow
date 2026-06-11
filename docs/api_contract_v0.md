@@ -215,6 +215,24 @@ assistant tool execution per request. `OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECOND
 controls how often the streaming assistant emits planning heartbeat events while
 an LLM planner call is still pending.
 
+External provider policy settings control which data may leave the local
+runtime boundary:
+
+- `OJT_EXTERNAL_OPENAI_LLM_ENABLED`
+- `OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI`
+- `OJT_EXTERNAL_OPENAI_OCR_ENABLED`
+- `OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI`
+- `OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN`
+- `OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED`
+- `OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI`
+- `OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED`
+- `OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI`
+
+Provider adapters enforce these checks before outbound calls. PHI is blocked
+from OpenAI-compatible LLM, OCR, embedding, and external medical-search handoffs
+by default unless policy explicitly allows it. See
+`docs/external_provider_policy_v0.md`.
+
 `OJT_MARKITDOWN_OCR_ENABLED` controls whether MarkItDown runs with OCR plugins
 for OCR-sensitive uploads such as scanned PDFs, images, and image-heavy Office
 files when an OpenAI-compatible API key is configured. `OJT_OPENAI_VISION_MODEL`
@@ -1305,6 +1323,7 @@ Response data includes:
 - `llm.max_tool_calls`
 - `llm.runtime_settings_configured`
 - `llm.runtime_settings`
+- `llm.runtime_settings.external_*` provider-policy switches
 - `policy.no_mock_data`
 - `policy.effective_no_mock_data`
 - `policy.requires_real_llm`
@@ -1390,7 +1409,16 @@ Example:
         "llm_base_url": "https://api.openai.com/v1",
         "llm_timeout_seconds": 30.0,
         "llm_max_tool_calls": 4,
-        "llm_planning_progress_interval_seconds": 2.0
+        "llm_planning_progress_interval_seconds": 2.0,
+        "external_openai_llm_enabled": true,
+        "external_openai_llm_allow_phi": false,
+        "external_openai_ocr_enabled": true,
+        "external_openai_ocr_allow_phi": false,
+        "external_openai_ocr_allow_unknown": true,
+        "external_openai_embeddings_enabled": true,
+        "external_openai_embeddings_allow_phi": false,
+        "external_medical_search_enabled": true,
+        "external_medical_search_allow_phi": false
       }
     },
     "retrieval": {
@@ -1455,7 +1483,16 @@ Request:
   "llm_base_url": "https://api.openai.com/v1",
   "llm_timeout_seconds": 30.0,
   "llm_max_tool_calls": 4,
-  "llm_planning_progress_interval_seconds": 2.0
+  "llm_planning_progress_interval_seconds": 2.0,
+  "external_openai_llm_enabled": true,
+  "external_openai_llm_allow_phi": false,
+  "external_openai_ocr_enabled": true,
+  "external_openai_ocr_allow_phi": false,
+  "external_openai_ocr_allow_unknown": true,
+  "external_openai_embeddings_enabled": true,
+  "external_openai_embeddings_allow_phi": false,
+  "external_medical_search_enabled": true,
+  "external_medical_search_allow_phi": false
 }
 ```
 
@@ -1473,7 +1510,16 @@ Response:
       "llm_base_url": "https://api.openai.com/v1",
       "llm_timeout_seconds": 30.0,
       "llm_max_tool_calls": 4,
-      "llm_planning_progress_interval_seconds": 2.0
+      "llm_planning_progress_interval_seconds": 2.0,
+      "external_openai_llm_enabled": true,
+      "external_openai_llm_allow_phi": false,
+      "external_openai_ocr_enabled": true,
+      "external_openai_ocr_allow_phi": false,
+      "external_openai_ocr_allow_unknown": true,
+      "external_openai_embeddings_enabled": true,
+      "external_openai_embeddings_allow_phi": false,
+      "external_medical_search_enabled": true,
+      "external_medical_search_allow_phi": false
     },
     "reloaded": true
   },
@@ -2002,6 +2048,12 @@ includes `task_id`, `target` (`local_corpus` or `external_medical_index`),
 `warnings`. This is the user-facing bridge between query planning and the
 backend tools that will run or launch the search.
 
+When external-provider policy blocks `external_medical_search`, retrieval keeps
+local corpus tasks but suppresses external search hints and external
+`retrieval_tasks` before returning plan/search handoff metadata. The response
+adds an `external_medical_search_policy_blocked` diagnostic or trace safety flag
+with the policy reason, rather than exposing PHI-bearing external query strings.
+
 Example response envelope:
 
 ```json
@@ -2247,6 +2299,9 @@ for workflows such as PubMed/MeSH literature search, FHIR resource search
 templates, ClinicalTrials.gov API v2 study search, and openFDA drug
 label/adverse-event search. Current targets include `pubmed`, `fhir`,
 `clinicaltrials_gov`, `openfda_drug_label`, and `openfda_drug_event`.
+If active external-provider policy blocks `external_medical_search`, these hints
+are omitted from `handoff_context.query_analysis.search_hints` and corresponding
+external tasks are omitted from `handoff_context.query_analysis.retrieval_tasks`.
 `handoff_context.retrieval_rule_packs` records sanitized active retrieval
 rule-pack fingerprints with pack name, status, source, env var, rule count,
 version, and content hash. This lets copied evaluation reports and downstream

@@ -376,6 +376,15 @@ class RuntimeAssistantSettingsRequest(ContractModel):
         gt=0,
         le=30,
     )
+    external_openai_llm_enabled: bool | None = None
+    external_openai_llm_allow_phi: bool | None = None
+    external_openai_ocr_enabled: bool | None = None
+    external_openai_ocr_allow_phi: bool | None = None
+    external_openai_ocr_allow_unknown: bool | None = None
+    external_openai_embeddings_enabled: bool | None = None
+    external_openai_embeddings_allow_phi: bool | None = None
+    external_medical_search_enabled: bool | None = None
+    external_medical_search_allow_phi: bool | None = None
 
     @model_validator(mode="after")
     def _has_runtime_update(self) -> "RuntimeAssistantSettingsRequest":
@@ -396,6 +405,15 @@ class RuntimeAssistantSettingsRequest(ContractModel):
                     "llm_timeout_seconds": 30.0,
                     "llm_max_tool_calls": 4,
                     "llm_planning_progress_interval_seconds": 2.0,
+                    "external_openai_llm_enabled": True,
+                    "external_openai_llm_allow_phi": False,
+                    "external_openai_ocr_enabled": True,
+                    "external_openai_ocr_allow_phi": False,
+                    "external_openai_ocr_allow_unknown": True,
+                    "external_openai_embeddings_enabled": True,
+                    "external_openai_embeddings_allow_phi": False,
+                    "external_medical_search_enabled": True,
+                    "external_medical_search_allow_phi": False,
                 }
             ]
         }

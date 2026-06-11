@@ -177,6 +177,10 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F120 | Implemented | Added data-driven RBAC role catalog for viewer, operator, reviewer, data steward, admin, auditor, and owner; permission-scope definitions; validated policy loader; effective role/permission computation on workspace responses; authenticated RBAC policy API; and docs/tests. Resource authorization enforcement remains scoped to F121. |
 | 2026-06-11 | F121 | Implemented | Added shared `GovernanceService.require_permission(...)` enforcement, RBAC gates for workflows, reviews, artifact upload/download/export, source inventory, retrieval reindex/integrity, runtime settings/diagnostics, governance mutations, audit reads, and background reindex jobs; preserved owner-user scoping for workflows, reviews, chat sessions, artifacts, jobs, judgments, and audit records; and documented the authorization map in `docs/ownership_authorization_v0.md` with focused tests. |
 | 2026-06-11 | F122 | Implemented | Added service-account identity for automation with `identity_type=service_account`, one-time `ojt_sa_` bearer token issuance, configurable token TTL/default role, memory/SQLite/Postgres storage, Postgres migration 017, workspace membership assignment with explicit RBAC role, authenticated list/create APIs, service-account-aware `/auth/me`, docs, and focused API/unit tests. |
+| 2026-06-11 | F123 | Implemented | Added shared PHI classification contracts and data-driven classification rules for fields, rows, chunks, chat messages, generated outputs, validation reports, conversion output, assistant payloads, and retrieval evidence locators. |
+| 2026-06-11 | F124 | Implemented | Added deterministic PHI redaction policy actions for masking, suppression, token placeholders, and review-gated reveal, with redaction preview API support and external-provider block recommendations. |
+| 2026-06-11 | F125 | Implemented | Added no-raw-PHI logging guard, structured log scanner, development/CI scanner command, and docs for redacting formatted log messages, args, extra fields, key-value payloads, and CSV-shaped log text. |
+| 2026-06-11 | F126 | Implemented | Added versioned external-provider policy contracts, runtime settings, OpenAI LLM/vision OCR/embedding enforcement before HTTP calls, MarkItDown OCR plugin gating, retrieval external-search hint suppression, docs, and focused tests. |
 
 ## Feature Backlog
 
@@ -322,7 +326,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F123 Add PHI classification contract for fields, rows, documents, chunks, chat messages, and generated outputs.
 - [x] F124 Add PHI redaction policy engine with masking, suppression, tokenization placeholder, and review-gated reveal.
 - [x] F125 Add no-raw-PHI logging guard and log scanner for development and CI.
-- [ ] F126 Add configurable external-provider policy controlling which data can be sent to OpenAI, OCR, embedding APIs, and external search APIs.
+- [x] F126 Add configurable external-provider policy controlling which data can be sent to OpenAI, OCR, embedding APIs, and external search APIs.
 - [ ] F127 Add prompt-injection policy that treats user data, documents, retrieved chunks, and tool metadata as untrusted.
 - [ ] F128 Add output validation for LLM-generated plans, summaries, and export descriptions before UI display or storage mutation.
 - [ ] F129 Add audit export endpoint for workflows, reviews, assistant tool calls, auth events, setting changes, and source ingestion.

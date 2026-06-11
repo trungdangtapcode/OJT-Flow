@@ -46,6 +46,11 @@ from ojtflow.core.contracts.enums import (
 )
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.contracts.external_provider import (
+    ExternalProviderDecision,
+    ExternalProviderPolicy,
+    ExternalProviderRule,
+)
 from ojtflow.core.contracts.governance import (
     OrganizationGroupMembershipRecord,
     OrganizationGroupRecord,
@@ -111,6 +116,9 @@ __all__ = [
     "DatasetRecord",
     "EventType",
     "Evidence",
+    "ExternalProviderDecision",
+    "ExternalProviderPolicy",
+    "ExternalProviderRule",
     "FieldProfile",
     "FormatDetection",
     "HumanReview",

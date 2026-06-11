@@ -38,6 +38,7 @@ from ojtflow.core.contracts.enums import (
     WorkflowStatus,
 )
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -90,6 +91,7 @@ class WorkflowService:
         knowledge: KnowledgeRepository,
         retrieval: RetrievalRepository,
         retrieval_rule_packs: Sequence[dict[str, Any]] | None = None,
+        external_provider_policy: ExternalProviderPolicy | None = None,
     ) -> None:
         self.datasets = datasets
         self.workflows = workflows
@@ -98,6 +100,7 @@ class WorkflowService:
         self.retrieval_service = RetrievalService(
             retrieval,
             rule_packs=retrieval_rule_packs,
+            external_provider_policy=external_provider_policy,
         )
         self.parser_agent = ParserAgent()
         self.validation_agent = ValidationAgent()
