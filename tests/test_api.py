@@ -300,6 +300,11 @@ def test_openapi_exposes_core_request_examples() -> None:
             "get",
             "RetrievalGraphExportEnvelope",
         ),
+        (
+            "/api/v1/retrieval/graph/neighborhood",
+            "get",
+            "RetrievalGraphNeighborhoodEnvelope",
+        ),
     ]
     for path, method, schema_name in retrieval_support_response_models:
         schema = openapi["paths"][path][method]["responses"]["200"]["content"]["application/json"][
@@ -343,6 +348,9 @@ def test_openapi_exposes_core_request_examples() -> None:
     )
     assert schemas["RetrievalGraphExportEnvelope"]["properties"]["data"]["$ref"] == (
         "#/components/schemas/GraphExport"
+    )
+    assert schemas["RetrievalGraphNeighborhoodEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/GraphNeighborhood"
     )
 
 
@@ -835,6 +843,39 @@ async def test_retrieval_graph_routes_use_authenticated_owner(monkeypatch) -> No
                 ),
             }
 
+        def graph_neighborhood(self, **kwargs):
+            self.calls.append({"method": "neighborhood", **kwargs})
+            return {
+                "query": kwargs["query"].model_dump(mode="json"),
+                "source_graph_ids": ["graph_api"],
+                "graph_count": 1,
+                "node_count": 2,
+                "edge_count": 1,
+                "triple_count": 1,
+                "matched_node_ids": ["standard:ucum"],
+                "matched_evidence_ids": ["ev_ucum"],
+                "nodes": [
+                    {
+                        "graph_id": "graph_api",
+                        "id": "standard:ucum",
+                        "label": "UCUM",
+                        "type": "standard",
+                    }
+                ],
+                "edges": [],
+                "triples": [
+                    {
+                        "graph_id": "graph_api",
+                        "subject": "Observation.valueQuantity.unit",
+                        "predicate": "uses",
+                        "object": "UCUM",
+                        "evidence_id": "ev_ucum",
+                    }
+                ],
+                "warnings": [],
+                "generated_at": "2026-06-11T00:00:00+00:00",
+            }
+
     fake_service = FakeWorkflowService()
     fake_governance = FakeGovernanceService({"retrieval:read"})
     app = create_app()
@@ -859,30 +900,62 @@ async def test_retrieval_graph_routes_use_authenticated_owner(monkeypatch) -> No
             "/api/v1/retrieval/graph/export",
             params={"workflow_id": "  wf_graph  ", "limit": 5, "format": "rdf_jsonl"},
         )
+        neighborhood_response = await client.get(
+            "/api/v1/retrieval/graph/neighborhood",
+            params={
+                "workflow_id": "  wf_graph  ",
+                "q": "  UCUM  ",
+                "relation": "  uses  ",
+                "limit": 5,
+                "max_depth": 1,
+            },
+        )
 
     assert contexts_response.status_code == 200
     assert export_response.status_code == 200
+    assert neighborhood_response.status_code == 200
     contexts = _assert_success_envelope(contexts_response)["data"]
     export = _assert_success_envelope(export_response)["data"]
+    neighborhood = _assert_success_envelope(neighborhood_response)["data"]
     assert contexts[0]["owner_user_id"] == "usr_api_test"
     assert contexts[0]["workflow_id"] == "wf_graph"
     assert export["format"] == "rdf_jsonl"
-    assert fake_service.calls == [
-        {
-            "method": "list",
-            "owner_user_id": "usr_api_test",
-            "workflow_id": "wf_graph",
-            "limit": 5,
-        },
-        {
-            "method": "export",
-            "owner_user_id": "usr_api_test",
-            "workflow_id": "wf_graph",
-            "limit": 5,
-            "export_format": "rdf_jsonl",
-        },
+    assert neighborhood["query"]["q"] == "UCUM"
+    assert neighborhood["query"]["relation"] == "uses"
+    assert [call["method"] for call in fake_service.calls] == [
+        "list",
+        "export",
+        "neighborhood",
     ]
+    assert fake_service.calls[0] == {
+        "method": "list",
+        "owner_user_id": "usr_api_test",
+        "workflow_id": "wf_graph",
+        "limit": 5,
+    }
+    assert fake_service.calls[1] == {
+        "method": "export",
+        "owner_user_id": "usr_api_test",
+        "workflow_id": "wf_graph",
+        "limit": 5,
+        "export_format": "rdf_jsonl",
+    }
+    assert fake_service.calls[2]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[2]["query"].model_dump(mode="json") == {
+        "workflow_id": "wf_graph",
+        "q": "UCUM",
+        "node_id": None,
+        "evidence_id": None,
+        "source_id": None,
+        "normalized_code": None,
+        "resource_type": None,
+        "field": None,
+        "relation": "uses",
+        "limit": 5,
+        "max_depth": 1,
+    }
     assert fake_governance.calls == [
+        ("usr_api_test", "retrieval:read"),
         ("usr_api_test", "retrieval:read"),
         ("usr_api_test", "retrieval:read"),
     ]

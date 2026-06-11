@@ -12,7 +12,13 @@ from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
-from ojtflow.core.contracts.graph import GraphContextRecord, GraphExport, GraphExportFormat
+from ojtflow.core.contracts.graph import (
+    GraphContextRecord,
+    GraphExport,
+    GraphExportFormat,
+    GraphNeighborhood,
+    GraphNeighborhoodQuery,
+)
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
     CorpusChunkingProfileCatalog,
@@ -141,6 +147,11 @@ class RetrievalGraphExportEnvelope(ContractModel):
     error: None = None
 
 
+class RetrievalGraphNeighborhoodEnvelope(ContractModel):
+    data: GraphNeighborhood
+    error: None = None
+
+
 class RetrievalJudgmentsEnvelope(ContractModel):
     data: list[RetrievalRelevanceJudgment]
     error: None = None
@@ -241,6 +252,44 @@ async def export_retrieval_graph_contexts(
             workflow_id=_optional_query_value(workflow_id),
             limit=limit,
             export_format=export_format,
+        )
+    )
+
+
+@router.get("/retrieval/graph/neighborhood", response_model=RetrievalGraphNeighborhoodEnvelope)
+async def get_retrieval_graph_neighborhood(
+    workflow_id: str | None = None,
+    q: str | None = None,
+    node_id: str | None = None,
+    evidence_id: str | None = None,
+    source_id: str | None = None,
+    normalized_code: str | None = None,
+    resource_type: str | None = None,
+    field: str | None = None,
+    relation: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    max_depth: int = Query(default=1, ge=0, le=2),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        service.graph_neighborhood(
+            owner_user_id=authenticated.user.user_id,
+            query=GraphNeighborhoodQuery(
+                workflow_id=_optional_query_value(workflow_id),
+                q=_optional_query_value(q),
+                node_id=_optional_query_value(node_id),
+                evidence_id=_optional_query_value(evidence_id),
+                source_id=_optional_query_value(source_id),
+                normalized_code=_optional_query_value(normalized_code),
+                resource_type=_optional_query_value(resource_type),
+                field=_optional_query_value(field),
+                relation=_optional_query_value(relation),
+                limit=limit,
+                max_depth=max_depth,
+            ),
         )
     )
 

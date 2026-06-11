@@ -41,7 +41,13 @@ from ojtflow.core.contracts.enums import (
 )
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
-from ojtflow.core.contracts.graph import GraphContextRecord, GraphExport, GraphExportFormat
+from ojtflow.core.contracts.graph import (
+    GraphContextRecord,
+    GraphExport,
+    GraphExportFormat,
+    GraphNeighborhood,
+    GraphNeighborhoodQuery,
+)
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -1103,6 +1109,29 @@ class WorkflowService:
             workflow_id=workflow_id,
             limit=limit,
             export_format=export_format,
+        )
+
+    def graph_neighborhood(
+        self,
+        *,
+        owner_user_id: str | None,
+        query: GraphNeighborhoodQuery,
+    ) -> GraphNeighborhood:
+        if self.graph_service is None:
+            from ojtflow.core.time import utc_now
+
+            return GraphNeighborhood(
+                query=query,
+                graph_count=0,
+                node_count=0,
+                edge_count=0,
+                triple_count=0,
+                warnings=["Graph persistence is not configured."],
+                generated_at=utc_now().isoformat(),
+            )
+        return self.graph_service.neighborhood(
+            owner_user_id=owner_user_id,
+            query=query,
         )
 
     def reindex_retrieval(

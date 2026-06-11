@@ -3069,6 +3069,28 @@ graph/node/edge/triple counts, `generated_at`, and `content` containing newline
 delimited JSON. This is an operational export for downstream graph/RAG tools,
 not a clinical decision-support artifact.
 
+`GET /api/v1/retrieval/graph/neighborhood` returns a bounded
+`GraphNeighborhood` from persisted Graph-NER records owned by the authenticated
+user. Query parameters:
+
+- `workflow_id`: optional workflow scope.
+- `q`: optional text search over node labels, node metadata, triples, and
+  source retrieval query text.
+- `node_id`: optional exact Graph-NER node ID.
+- `evidence_id`: optional evidence node/triple scope.
+- `source_id`: optional evidence source ID.
+- `normalized_code`: optional canonical code such as `LOINC:4548-4`.
+- `resource_type`: optional FHIR-like resource type.
+- `field`: optional data-field node label.
+- `relation`: optional edge relation or triple predicate.
+- `limit`: graph records scanned, `1..1000`, default `100`.
+- `max_depth`: graph expansion depth, `0..2`, default `1`.
+
+The response includes matching source graph IDs, aggregate node/edge/triple
+counts, matched node/evidence IDs, bounded `nodes`, `edges`, `triples`, and
+warnings when no persisted graph or criteria match exists. This endpoint is for
+GraphRAG/evidence exploration and audit, not clinical decision support.
+
 `GET /api/v1/retrieval/corpus/adapters` returns available corpus source adapter
 definitions, including adapter ID, source family, ingestion mode, license notes,
 and operational requirements.

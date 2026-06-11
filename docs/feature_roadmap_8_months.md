@@ -203,6 +203,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F085-F086 | Implemented | Expanded retrieval evaluation into a 12-case healthcare benchmark covering lab validation, FHIR Observation mapping, UCUM, LOINC, PHI review, prompt-injection review, RxNorm, diagnosis terminology, PubMed/MeSH routing, ClinicalTrials.gov routing, and openFDA routing; added source-diversity and unsupported-claim-rate metrics; and added a scheduled nightly retrieval benchmark workflow with JSON artifact upload. |
 | 2026-06-11 | F088 | Implemented | Added fixture-backed Graph-NER evaluation for lab names, units, identifiers, medications, diagnoses, procedures, and FHIR resource names/search parameters; added node, edge, and normalized-code recall metrics; and wired the evaluator into CI, deploy, release-check, release gates, docs, and focused tests. |
 | 2026-06-11 | F089, F092 | Implemented | Added persisted Graph-NER context records for retrieval packages, with owner/workflow/request/search metadata, memory/SQLite/Postgres repositories, Postgres migration 019, owner-scoped graph listing and JSONL/RDF-like export APIs, API docs, and focused restart/API tests. |
+| 2026-06-11 | F090 | Implemented | Added owner-scoped graph neighborhood retrieval over persisted Graph-NER records, with query criteria for text, node, evidence, source, normalized code, FHIR-like resource type, field, and relation; exposed a bounded API response for GraphRAG/evidence exploration with docs and focused tests. |
 
 ## Feature Backlog
 
@@ -306,7 +307,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F087 Add retrieval regression dashboard in the UI for admins.
 - [x] F088 Add Graph-NER entity extraction evaluation fixtures for lab names, units, identifiers, medications, diagnoses, procedures, and resource names.
 - [x] F089 Add graph persistence for extracted entities/triples instead of only returning graph context in retrieval packages.
-- [ ] F090 Add graph neighborhood retrieval that expands evidence by normalized concept, resource type, source, and relation.
+- [x] F090 Add graph neighborhood retrieval that expands evidence by normalized concept, resource type, source, and relation.
 - [ ] F091 Add graph query UI for entities, relationships, source evidence, and workflow references.
 - [x] F092 Add knowledge graph export as JSONL or RDF-like triples for downstream tools.
 - [ ] F093 Add GraphRAG-lite answer path: retrieve chunks, extract entities, expand neighborhood, rerank with graph support, synthesize with citations. _(Started: packages now synthesize cited answers from support matrices and Graph-NER path refs; graph neighborhood expansion and graph-aware reranking remain.)_

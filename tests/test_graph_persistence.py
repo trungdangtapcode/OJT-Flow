@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ojtflow.application.graph_service import GraphService
 from ojtflow.application.workflow_service import WorkflowService
-from ojtflow.core.contracts.graph import GraphContextRecord
+from ojtflow.core.contracts.graph import GraphContextRecord, GraphNeighborhoodQuery
 from ojtflow.core.contracts.retrieval import RetrievalQuery
 from ojtflow.infrastructure.retrieval.static import (
     StaticKnowledgeRepository,
@@ -53,6 +53,10 @@ def test_workflow_service_persists_graph_context_for_direct_retrieval() -> None:
         owner_user_id="usr_graph",
         export_format="rdf_jsonl",
     )
+    neighborhood = service.graph_neighborhood(
+        owner_user_id="usr_graph",
+        query=GraphNeighborhoodQuery(q="HbA1c", max_depth=1),
+    )
 
     assert graph_record["graph_id"] == records[0].graph_id
     assert records[0].owner_user_id == "usr_graph"
@@ -78,6 +82,14 @@ def test_workflow_service_persists_graph_context_for_direct_retrieval() -> None:
         "object",
         "evidence_id",
     }
+    assert neighborhood.graph_count == 1
+    assert neighborhood.node_count > 0
+    assert neighborhood.edge_count > 0
+    assert any(
+        node.get("normalized_code") == "LOINC:4548-4"
+        for node in neighborhood.nodes
+    )
+    assert neighborhood.triples
 
 
 def test_sqlite_graph_repository_survives_restart(tmp_path: Path) -> None:
@@ -126,9 +138,16 @@ def test_sqlite_graph_repository_survives_restart(tmp_path: Path) -> None:
     restarted = SQLiteGraphRepository(SQLiteBackboneStore(db_path, data_dir))
     records = restarted.list_contexts(owner_user_id="usr_graph", workflow_id="wf_graph")
     export = GraphService(restarted).export_contexts(owner_user_id="usr_graph")
+    neighborhood = GraphService(restarted).neighborhood(
+        owner_user_id="usr_graph",
+        query=GraphNeighborhoodQuery(workflow_id="wf_graph", q="UCUM"),
+    )
 
     assert [record.graph_id for record in records] == ["graph_restart"]
     assert records[0].graph_context["triples"][0]["object"] == "UCUM"
     assert export.graph_count == 1
     assert export.triple_count == 1
     assert json.loads(export.content.splitlines()[-1])["record_type"] == "triple"
+    assert neighborhood.graph_count == 1
+    assert "standard:ucum" in neighborhood.matched_node_ids
+    assert neighborhood.triples[0]["object"] == "UCUM"

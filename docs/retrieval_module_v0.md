@@ -101,6 +101,9 @@ neighborhood as newline-delimited JSON through
 `GET /api/v1/retrieval/graph/export?format=jsonl` or RDF-like triples through
 `format=rdf_jsonl`. The export is operational graph/RAG metadata only; it is
 not a clinical decision-support artifact.
+Operators can also call `GET /api/v1/retrieval/graph/neighborhood` to expand a
+bounded subgraph by text, node ID, evidence ID, source ID, normalized code,
+FHIR-like resource type, data field, relation, owner, and workflow scope.
 
 The package also includes a guarded `answer` object. This is deterministic
 retrieval synthesis, not open-ended clinical generation. It is built only from
@@ -1101,6 +1104,9 @@ Persisted graph records are stored in the backend spine:
 - `GET /api/v1/retrieval/graph/export` exports the same authenticated-owner
   scope as `jsonl` node/edge/triple records or `rdf_jsonl`
   subject/predicate/object triples.
+- `GET /api/v1/retrieval/graph/neighborhood` reads persisted contexts and
+  returns a bounded owner-scoped subgraph around matching nodes/triples for
+  GraphRAG/evidence exploration.
 
 Graph-NER has a deterministic evaluation gate:
 
