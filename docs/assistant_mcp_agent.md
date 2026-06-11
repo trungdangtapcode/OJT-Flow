@@ -107,6 +107,12 @@ fallback, so tool outputs that include `workflow_id` become linkable in chat
 history. The API returns sanitized session/message contracts only; it does not
 expose session tokens or auth material.
 
+Sessions created with the placeholder title `New chat` are renamed by the
+backend when the first user message is appended. Generated titles are
+operational summaries such as validation, evidence search, workflow inspection,
+conversion, or FHIR profiling; they avoid copying raw uploaded data, patient
+identifiers, SSNs, emails, or file content into the chat rail.
+
 Session listing accepts `q` to search session titles and persisted message
 content server-side within the authenticated user's boundary. The browser
 sidebar uses this query instead of relying on browser-only history.

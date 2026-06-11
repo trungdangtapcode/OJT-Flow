@@ -834,9 +834,15 @@ Creates a persisted Assistant chat session:
 
 ```json
 {
-  "title": "Lab review"
+  "title": "New chat"
 }
 ```
+
+When the title is omitted or set to `New chat`, the backend generates the
+session title from the first appended user message. Generated titles are
+intent-level summaries and avoid copying raw uploaded content or obvious
+patient identifiers into the chat list. `PATCH` remains available for explicit
+user renaming.
 
 `GET /api/v1/assistant/sessions/{session_id}`
 
@@ -874,15 +880,13 @@ Appends a persisted message or tool artifact:
 
 ```json
 {
-  "role": "assistant",
-  "content": "Two validation issues need review.",
-  "workflow_refs": ["wf_assistant_link"],
+  "role": "user",
+  "content": "Validate this lab CSV and explain the issues with trusted evidence.",
+  "workflow_refs": [],
   "payload": {
-    "finding_count": 2,
-    "response": {
-      "tool_calls": [
-        {"output": {"workflow_id": "wf_assistant_link"}}
-      ]
+    "context": {
+      "schema_id": "lab_result_v1",
+      "input_format": "csv"
     }
   }
 }

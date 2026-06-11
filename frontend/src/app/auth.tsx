@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!code || !state) throw new Error("Google callback is missing code or state.");
           const login = await completeGoogleLogin(code, state);
           setUser(login.user);
-          window.history.replaceState({}, document.title, "/workflows");
+          window.history.replaceState({}, document.title, "/assistant");
         } else {
           const session = await getCurrentAuthSession();
           setUser(session.user);

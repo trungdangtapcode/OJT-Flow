@@ -74,9 +74,14 @@ container-served asset references with the freshly built Docker image.
 
 ## UX Model
 
-The primary route is `/workflows`, an operations command center. It uses summary
-and stats endpoints for queue rendering, then loads full workflow state only for
-the selected workflow. This keeps the UI scalable as persisted workflow states
+The primary authenticated route is `/assistant`, a governed natural-language
+workspace for end users who should not need to understand every backend
+operation before starting. It exposes starter tasks, persistent chat sessions,
+file and clipboard intake, tool-call streaming, and review-gated write controls.
+OAuth callbacks should return users to this route. `/workflows` remains the
+operations command center for queue inspection: it uses summary and stats
+endpoints for queue rendering, then loads full workflow state only for the
+selected workflow. This keeps the UI scalable as persisted workflow states
 grow with evidence, audit events, output references, and handoff context.
 Queue screens use server-backed sorting and pagination rather than client-only
 table state. Desktop workflow details are allowed to scroll inside the detail
@@ -1744,7 +1749,15 @@ investigations, switch between prior transcripts, and start a clean thread
 without losing the current composer context. Sessions and messages are
 backend-owned through `/assistant/sessions`; the browser may keep optimistic
 drafts while a stream is running, but persisted history must come from the API
-instead of browser storage or hidden mock data.
+instead of browser storage or hidden mock data. The browser should create new
+threads as `New chat` and let the backend generate the durable title from the
+first user message, so PHI-safe title rules stay centralized.
+The Assistant composer is the default intake surface for end users: it must
+support starter prompts, typed commands, clipboard image paste, file attachment,
+and drag-and-drop file selection. The browser only validates configured upload
+limits and sends the file through the existing extraction hooks; parsing,
+OCR/vision fallback, artifact persistence, and assistant context generation
+stay behind the API boundary.
 The assistant workspace should keep desktop scrolling contained: session list,
 message timeline, and composer live inside a contained app-viewport chat
 surface so the LLM stream and tool timeline stay visible instead of fighting

@@ -60,7 +60,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: () => <Navigate to="/workflows" />,
+  component: () => <Navigate to="/assistant" />,
 });
 
 const workflowsRoute = createRoute({
@@ -189,7 +189,7 @@ const helpManualRoute = createRoute({
 const authCallbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/auth/callback",
-  component: () => <Navigate to="/workflows" />,
+  component: () => <Navigate to="/assistant" />,
 });
 
 const routeTree = rootRoute.addChildren([

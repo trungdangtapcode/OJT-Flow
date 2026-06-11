@@ -26,7 +26,6 @@ import {
   useDeleteAssistantSessionMutation,
   useExtractorInventoryQuery,
   useExtractFileTextMutation,
-  useRenameAssistantSessionMutation,
   useRuntimeConfigQuery,
   workflowErrorMessage,
 } from "../../lib/server-state";
@@ -36,6 +35,7 @@ import type {
   AssistantTranscriptItem,
   ExtractedDocument,
 } from "../../types";
+import { cn } from "../../lib/utils";
 import {
   assistantContextWithAttachment,
   attachmentSummariesFromContext,
@@ -63,7 +63,6 @@ import {
   assistantActiveToolName,
   assistantSessionFromDetail,
   assistantSessionFromSummary,
-  assistantSessionTitle,
   sessionWithAppendedTranscriptItem,
   streamedAnswerFromEvents,
   transcriptItemWithStreamEvent,
@@ -81,13 +80,13 @@ export function AssistantPage() {
   const clipboardParseMutation = useClipboardImageParseJobMutation();
   const extractMutation = useExtractFileTextMutation();
   const createSessionMutation = useCreateAssistantSessionMutation();
-  const renameSessionMutation = useRenameAssistantSessionMutation();
   const deleteSessionMutation = useDeleteAssistantSessionMutation();
   const appendSessionMessageMutation = useAppendAssistantSessionMessageMutation();
   const [message, setMessage] = React.useState("");
   const [contextText, setContextText] = React.useState("");
   const [selectedAttachment, setSelectedAttachment] =
     React.useState<AssistantSelectedAttachment | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = React.useState(false);
   const [executeWriteActions, setExecuteWriteActions] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [sessionSearch, setSessionSearch] = React.useState("");
@@ -187,6 +186,50 @@ export function AssistantPage() {
     createSessionMutation.isPending ||
     deleteSessionMutation.isPending;
   const llm = runtimeQuery.data?.llm;
+  const uploadExtensionHint = uploadExtensions.length
+    ? `${uploadExtensions.slice(0, 8).join(", ")}${
+        uploadExtensions.length > 8 ? ", ..." : ""
+      }`
+    : "configured file types";
+
+  const setAttachmentFromFile = React.useCallback(
+    (file: File | null, source: AssistantSelectedAttachment["source"]) => {
+      if (!file) {
+        setSelectedAttachment(null);
+        setFormError(null);
+        return;
+      }
+      const validationError = validateAssistantAttachment(
+        file,
+        uploadExtensions,
+        maxUploadBytes,
+      );
+      setSelectedAttachment({ file, source });
+      setFormError(validationError);
+    },
+    [maxUploadBytes, uploadExtensions],
+  );
+
+  const handleAttachmentDragOver = (event: React.DragEvent<HTMLFormElement>) => {
+    if (isBusy || !Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDraggingFile(true);
+  };
+
+  const handleAttachmentDragLeave = (event: React.DragEvent<HTMLFormElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setIsDraggingFile(false);
+  };
+
+  const handleAttachmentDrop = (event: React.DragEvent<HTMLFormElement>) => {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    setIsDraggingFile(false);
+    if (isBusy) return;
+    setAttachmentFromFile(event.dataTransfer.files[0] ?? null, "upload");
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -247,34 +290,13 @@ export function AssistantPage() {
     let targetSessionId = activeSessionId;
     try {
       if (!targetSessionId) {
-        const session = await createSessionMutation.mutateAsync({
-          title: assistantSessionTitle(assistantMessage),
-        });
+        const session = await createSessionMutation.mutateAsync({ title: "New chat" });
         targetSessionId = session.session_id;
         setSessionDrafts((drafts) => ({
           ...drafts,
           [session.session_id]: assistantSessionFromSummary(session),
         }));
         setActiveSessionId(targetSessionId);
-      } else if (
-        activeSession?.title === "New chat" &&
-        activeSession.messageCount === 0
-      ) {
-        setSessionDrafts((drafts) => {
-          const draft = drafts[targetSessionId];
-          if (!draft) return drafts;
-          return {
-            ...drafts,
-            [targetSessionId]: {
-              ...draft,
-              title: assistantSessionTitle(assistantMessage),
-            },
-          };
-        });
-        void renameSessionMutation.mutateAsync({
-          sessionId: targetSessionId,
-          payload: { title: assistantSessionTitle(assistantMessage) },
-        });
       }
     } catch (error) {
       setFormError(workflowErrorMessage(error));
@@ -543,10 +565,22 @@ export function AssistantPage() {
             </div>
 
             <form
-              className="border-t border-border bg-card/95 p-4"
+              className={cn(
+                "border-t border-border bg-card/95 p-4 transition-colors",
+                isDraggingFile && "bg-primary/5 ring-2 ring-inset ring-primary/50",
+              )}
+              onDragLeave={handleAttachmentDragLeave}
+              onDragOver={handleAttachmentDragOver}
+              onDrop={handleAttachmentDrop}
               onSubmit={(event) => void submit(event)}
             >
               <div className="mx-auto grid max-w-7xl gap-3">
+                {isDraggingFile ? (
+                  <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary">
+                    <Paperclip className="h-4 w-4 shrink-0" />
+                    Drop the file here to attach it to this chat.
+                  </div>
+                ) : null}
                 {formError ? (
                   <Notice title="Message blocked" tone="danger">
                     {formError}
@@ -561,14 +595,8 @@ export function AssistantPage() {
                     onPaste={(event) => {
                       const file = fileFromClipboard(event.clipboardData);
                       if (!file) return;
-                      const validationError = validateAssistantAttachment(
-                        file,
-                        uploadExtensions,
-                        maxUploadBytes,
-                      );
                       event.preventDefault();
-                      setSelectedAttachment({ file, source: "clipboard" });
-                      setFormError(validationError);
+                      setAttachmentFromFile(file, "clipboard");
                     }}
                     placeholder="Ask about your data. Paste an image, attach a file, Enter to send, Shift+Enter for newline."
                     value={message}
@@ -594,11 +622,7 @@ export function AssistantPage() {
                         disabled={isBusy}
                         onChange={(event) => {
                           const file = event.target.files?.[0] ?? null;
-                          const validationError = file
-                            ? validateAssistantAttachment(file, uploadExtensions, maxUploadBytes)
-                            : null;
-                          setSelectedAttachment(file ? { file, source: "upload" } : null);
-                          setFormError(validationError);
+                          setAttachmentFromFile(file, "upload");
                           event.target.value = "";
                         }}
                         ref={fileInputRef}
@@ -618,6 +642,9 @@ export function AssistantPage() {
                         isLoading={extractorsQuery.isLoading}
                         supportedExtensions={uploadExtensions}
                       />
+                      <div className="min-w-0 text-xs font-semibold text-muted-foreground">
+                        Drop files here or attach {uploadExtensionHint}.
+                      </div>
                       <AssistantControlsPanel
                         contextText={contextText}
                         executeWriteActions={executeWriteActions}

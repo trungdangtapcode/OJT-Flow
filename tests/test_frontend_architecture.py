@@ -10043,6 +10043,8 @@ def test_settings_page_surfaces_retrieval_rule_pack_inventory() -> None:
 
 
 def test_assistant_ui_surfaces_tool_layer() -> None:
+    app = (FRONTEND_SRC / "App.tsx").read_text(encoding="utf-8")
+    auth_provider = AUTH_PROVIDER.read_text(encoding="utf-8")
     assistant_page = ASSISTANT_PAGE.read_text(encoding="utf-8")
     assistant_attachments = (
         FRONTEND_SRC / "features" / "assistant" / "assistant-attachments.ts"
@@ -10065,6 +10067,9 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assistant_live_timeline = (
         FRONTEND_SRC / "features" / "assistant" / "assistant-live-timeline.tsx"
     ).read_text(encoding="utf-8")
+    assistant_live_timeline_model = (
+        FRONTEND_SRC / "features" / "assistant" / "assistant-live-timeline-model.ts"
+    ).read_text(encoding="utf-8")
     assistant_session = (
         FRONTEND_SRC / "features" / "assistant" / "assistant-session.ts"
     ).read_text(encoding="utf-8")
@@ -10081,6 +10086,8 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
         encoding="utf-8"
     )
 
+    assert '<Navigate to="/assistant" />' in app
+    assert 'window.history.replaceState({}, document.title, "/assistant")' in auth_provider
     assert 'to="/assistant"' in app_shell
     assert "Open assistant" in app_shell
     assert "AssistantToolSpec" in assistant_tool_catalog
@@ -10143,6 +10150,10 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "fileFromClipboard" in assistant_attachments
     assert "assistantContextWithAttachment" in assistant_attachments
     assert "Paste an image" in assistant_page
+    assert "handleAttachmentDrop" in assistant_page
+    assert "onDrop={handleAttachmentDrop}" in assistant_page
+    assert "Drop the file here to attach it to this chat." in assistant_page
+    assert "Drop files here or attach" in assistant_page
     assert "Attach" in assistant_page
     assert "ChatEmptyState" in assistant_page
     assert "No starter tasks are configured." in assistant_empty_state
@@ -10180,8 +10191,8 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert "PlanReadyPreview" in assistant_live_timeline
     assert "Validated plan" in assistant_live_timeline
     assert "planningStartedDetail" in assistant_live_timeline
-    assert "Tools available:" in assistant_live_timeline
-    assert "Max tool calls:" in assistant_live_timeline
+    assert "Tools available:" in assistant_live_timeline_model
+    assert "Max tool calls:" in assistant_live_timeline_model
     assert 'type: "error"' in (REPO_ROOT / "frontend/src/types.ts").read_text(
         encoding="utf-8"
     )
@@ -10207,6 +10218,8 @@ def test_assistant_ui_surfaces_tool_layer() -> None:
     assert '"/assistant/tools"' in api_module
     assert "assistantTools" in server_state
     assert "server allowlisted assistant/MCP tools" in frontend_architecture
+    assert "The primary authenticated route is `/assistant`" in frontend_architecture
+    assert "drag-and-drop file selection" in frontend_architecture
     assert "assistant-empty-state.tsx" in frontend_architecture
     assert "assistant-inline-guide.tsx" in frontend_architecture
     assert "assistant-tool-catalog-panel.tsx" in frontend_architecture

@@ -4365,6 +4365,44 @@ async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monk
 
 
 @pytest.mark.asyncio
+async def test_assistant_session_titles_are_generated_by_backend(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        created = await client.post(
+            "/api/v1/assistant/sessions",
+            json={"title": "New chat"},
+        )
+        session_id = created.json()["data"]["session_id"]
+        await client.post(
+            f"/api/v1/assistant/sessions/{session_id}/messages",
+            json={
+                "role": "user",
+                "content": (
+                    "Validate this lab CSV and explain PHI issues:\n"
+                    "patient_id,ssn,value\nP001,123-45-6789,7.4\n"
+                ),
+                "payload": {
+                    "context": {
+                        "schema_id": "lab_result_v1",
+                        "input_format": "csv",
+                    }
+                },
+            },
+        )
+        detail = await client.get(f"/api/v1/assistant/sessions/{session_id}")
+
+    assert created.status_code == 200
+    detail_data = _assert_success_envelope(detail)["data"]
+    assert detail_data["session"]["title"] == "Validate healthcare data / lab result v1 / CSV"
+    assert "123-45-6789" not in detail_data["session"]["title"]
+    assert "P001" not in detail_data["session"]["title"]
+
+
+@pytest.mark.asyncio
 async def test_assistant_session_routes_persist_user_scoped_chat(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")

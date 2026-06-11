@@ -52,12 +52,6 @@ export function assistantSessionFromDetail(
   };
 }
 
-export function assistantSessionTitle(message: string) {
-  const normalized = message.replace(/\s+/g, " ").trim();
-  if (!normalized) return "New chat";
-  return normalized.length > 52 ? `${normalized.slice(0, 52)}...` : normalized;
-}
-
 export function sessionWithAppendedTranscriptItem(
   session: AssistantChatSession,
   item: AssistantTranscriptItem,
@@ -65,10 +59,6 @@ export function sessionWithAppendedTranscriptItem(
   const now = new Date().toISOString();
   return {
     ...session,
-    title:
-      session.transcript.length === 0 && session.title === "New chat"
-        ? assistantSessionTitle(item.message)
-        : session.title,
     updatedAt: now,
     messageCount: session.messageCount + 1,
     transcript: [...session.transcript, item],
