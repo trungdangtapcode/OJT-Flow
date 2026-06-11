@@ -78,9 +78,9 @@ F121 does not add organization membership management, role assignment APIs,
 ownership transfer, row-level sharing, cross-organization delegation, or
 service-account identities. Those are follow-up roadmap items.
 
-Direct deterministic tool endpoints that were public before F121 are not
-changed in this pass; changing public authentication semantics is tracked as a
-separate API compatibility decision.
+Direct deterministic tool endpoints such as convert, validate, FHIR profile,
+and OCR evidence are authenticated through router-level dependencies, but F121
+does not add fine-grained RBAC scopes to those direct endpoints.
 
 ## Verification
 

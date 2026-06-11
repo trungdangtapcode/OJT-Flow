@@ -113,6 +113,33 @@ class InMemoryGovernanceRepository:
             self._groups[group.group_id] = group
             return self._workspace_for_membership(membership)
 
+    def add_membership(
+        self,
+        *,
+        organization_id: str,
+        actor_user_id: str,
+        membership: OrganizationMembershipRecord,
+    ) -> WorkspaceDetail:
+        with self._lock:
+            actor_membership = self._membership_for_user_org(
+                user_id=actor_user_id,
+                organization_id=organization_id,
+            )
+            if any(
+                existing.organization_id == organization_id
+                and existing.user_id == membership.user_id
+                for existing in self._memberships.values()
+            ):
+                raise OJTFlowError(
+                    "Organization membership already exists.",
+                    details={
+                        "organization_id": organization_id,
+                        "user_id": membership.user_id,
+                    },
+                )
+            self._memberships[membership.membership_id] = membership
+            return self._workspace_for_membership(actor_membership)
+
     def _active_memberships(self, user_id: str) -> list[OrganizationMembershipRecord]:
         return sorted(
             [

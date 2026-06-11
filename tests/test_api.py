@@ -2852,6 +2852,57 @@ async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
 
 
 @pytest.mark.asyncio
+async def test_service_account_token_authenticates_with_workspace_role(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        created = await client.post(
+            "/api/v1/auth/service-accounts",
+            json={
+                "slug": "nightly-ingestion",
+                "display_name": "Nightly Ingestion",
+                "role_key": "operator",
+                "token_ttl_seconds": 3600,
+            },
+        )
+        listed = await client.get("/api/v1/auth/service-accounts")
+        token = _assert_success_envelope(created)["data"]["access_token"]
+
+        app.dependency_overrides.pop(require_authentication)
+        headers = {"Authorization": f"Bearer {token}"}
+        me = await client.get("/api/v1/auth/me", headers=headers)
+        workflows = await client.get("/api/v1/workflows", headers=headers)
+        reindex = await client.post(
+            "/api/v1/retrieval/reindex",
+            headers=headers,
+            json={"include_seeded": True, "include_corpus": False},
+        )
+
+    assert created.status_code == 200, created.text
+    created_data = _assert_success_envelope(created)["data"]
+    assert created_data["token_type"] == "bearer"
+    assert created_data["access_token"].startswith("ojt_sa_")
+    assert created_data["service_account"]["role_key"] == "operator"
+    assert listed.status_code == 200
+    listed_items = _assert_success_envelope(listed)["data"]["items"]
+    assert [item["slug"] for item in listed_items] == ["nightly-ingestion"]
+    assert me.status_code == 200, me.text
+    me_data = _assert_success_envelope(me)["data"]
+    assert me_data["identity_type"] == "service_account"
+    assert me_data["service_account"]["slug"] == "nightly-ingestion"
+    assert workflows.status_code == 200, workflows.text
+    assert reindex.status_code == 403
+    body = _assert_error_envelope(reindex, expected_code="policy_blocked")
+    assert body["error"]["details"]["permission_scope"] == "admin:write"
+
+
+@pytest.mark.asyncio
 async def test_auth_callback_can_return_bearer_token_when_requested() -> None:
     fake_service = FakeAuthService()
     app = create_app()

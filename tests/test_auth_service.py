@@ -10,6 +10,7 @@ from ojtflow.application.auth_service import AuthService
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
     GoogleIdentityProfile,
+    ServiceAccountRecord,
     SessionRecord,
     UserRecord,
 )
@@ -74,6 +75,7 @@ class FakeAuthRepository:
     def __init__(self) -> None:
         self.users = {}
         self.sessions = {}
+        self.service_accounts = {}
         self.revoked = set()
 
     def upsert_google_user(self, profile: GoogleIdentityProfile) -> UserRecord:
@@ -91,6 +93,52 @@ class FakeAuthRepository:
         )
         self.users[user.user_id] = user
         return user
+
+    def create_service_account(
+        self,
+        *,
+        account_id,
+        organization_id,
+        slug,
+        display_name,
+        role_key,
+        created_by_user_id,
+    ):
+        now = datetime.now(timezone.utc)
+        user = UserRecord(
+            user_id=f"usr_{account_id}",
+            google_sub=f"service-account:{account_id}",
+            email=f"{slug}.{account_id}@service-account.ojtflow.local",
+            email_verified=True,
+            display_name=display_name,
+            avatar_url=None,
+            created_at=now,
+            updated_at=now,
+            last_login_at=None,
+        )
+        account = ServiceAccountRecord(
+            account_id=account_id,
+            user_id=user.user_id,
+            organization_id=organization_id,
+            slug=slug,
+            display_name=display_name,
+            role_key=role_key,
+            status="active",
+            created_by_user_id=created_by_user_id,
+            created_at=now,
+            updated_at=now,
+            last_used_at=None,
+        )
+        self.users[user.user_id] = user
+        self.service_accounts[account_id] = account
+        return account
+
+    def list_service_accounts(self, *, organization_id):
+        return [
+            account
+            for account in self.service_accounts.values()
+            if account.organization_id == organization_id
+        ]
 
     def create_session(self, user_id, token_hash, expires_at, user_agent=None, ip_address=None):
         now = datetime.now(timezone.utc)
@@ -135,6 +183,7 @@ def test_auth_service_google_login_session_and_logout() -> None:
         },
         session_ttl_seconds=3600,
         state_ttl_seconds=600,
+        service_account_token_ttl_seconds=86400,
     )
 
     auth_url = service.google_authorization_url(
@@ -159,6 +208,32 @@ def test_auth_service_google_login_session_and_logout() -> None:
 
     service.logout(login["access_token"])
     assert service.authenticate_token(login["access_token"]) is None
+
+
+def test_auth_service_issues_service_account_token() -> None:
+    repository = FakeAuthRepository()
+    service = _auth_service(repository=repository)
+
+    account = service.create_service_account_identity(
+        organization_id="org_service",
+        slug="Nightly Ingestion",
+        display_name="Nightly Ingestion",
+        role_key="operator",
+        created_by_user_id="usr_admin",
+    )
+    issued = service.issue_service_account_token(
+        service_account=account,
+        token_ttl_seconds=60,
+    )
+    authenticated = service.authenticate_token(issued["access_token"])
+
+    assert issued["token_type"] == "bearer"
+    assert issued["access_token"].startswith("ojt_sa_")
+    assert issued["service_account"].account_id == account.account_id
+    assert authenticated is not None
+    assert authenticated.identity_type == "service_account"
+    assert authenticated.service_account is not None
+    assert authenticated.service_account.role_key == "operator"
 
 
 def test_auth_service_recovers_from_malformed_cached_session() -> None:
@@ -422,6 +497,7 @@ def _auth_service(
         },
         session_ttl_seconds=3600,
         state_ttl_seconds=600,
+        service_account_token_ttl_seconds=86400,
     )
 
 

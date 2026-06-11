@@ -176,6 +176,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F119 | Implemented | Added organization/workspace governance contracts, data-driven workspace defaults, memory/SQLite/Postgres repositories, Postgres migration 016, authenticated organization APIs, workspace settings merge/versioning, group creation, and docs/tests. RBAC enforcement and cross-resource ownership checks remain scoped to F120/F121. |
 | 2026-06-11 | F120 | Implemented | Added data-driven RBAC role catalog for viewer, operator, reviewer, data steward, admin, auditor, and owner; permission-scope definitions; validated policy loader; effective role/permission computation on workspace responses; authenticated RBAC policy API; and docs/tests. Resource authorization enforcement remains scoped to F121. |
 | 2026-06-11 | F121 | Implemented | Added shared `GovernanceService.require_permission(...)` enforcement, RBAC gates for workflows, reviews, artifact upload/download/export, source inventory, retrieval reindex/integrity, runtime settings/diagnostics, governance mutations, audit reads, and background reindex jobs; preserved owner-user scoping for workflows, reviews, chat sessions, artifacts, jobs, judgments, and audit records; and documented the authorization map in `docs/ownership_authorization_v0.md` with focused tests. |
+| 2026-06-11 | F122 | Implemented | Added service-account identity for automation with `identity_type=service_account`, one-time `ojt_sa_` bearer token issuance, configurable token TTL/default role, memory/SQLite/Postgres storage, Postgres migration 017, workspace membership assignment with explicit RBAC role, authenticated list/create APIs, service-account-aware `/auth/me`, docs, and focused API/unit tests. |
 
 ## Feature Backlog
 
@@ -317,7 +318,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F119 Add tenant/organization model with users, roles, groups, and workspace-level settings.
 - [x] F120 Add RBAC roles for viewer, operator, reviewer, data steward, admin, and auditor.
 - [x] F121 Add ownership checks across workflows, reviews, chat sessions, artifacts, source inventory, runtime settings, and exports.
-- [ ] F122 Add service-account identity for ingestion jobs, CI, and automation.
+- [x] F122 Add service-account identity for ingestion jobs, CI, and automation.
 - [ ] F123 Add PHI classification contract for fields, rows, documents, chunks, chat messages, and generated outputs.
 - [ ] F124 Add PHI redaction policy engine with masking, suppression, tokenization placeholder, and review-gated reveal.
 - [ ] F125 Add no-raw-PHI logging guard and log scanner for development and CI.

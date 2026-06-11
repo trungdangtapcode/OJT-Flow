@@ -55,6 +55,18 @@ class GovernanceService:
 
         return self.rbac_policy
 
+    def validate_assignable_role(self, role_key: str) -> str:
+        """Return a normalized assignable role key from the active RBAC policy."""
+
+        cleaned = _clean_role_keys([role_key], roles_by_key=self._roles_by_key)[0]
+        role = self._roles_by_key[cleaned]
+        if not role.assignable:
+            raise PolicyBlockedError(
+                "RBAC role is not assignable.",
+                details={"role_key": cleaned},
+            )
+        return cleaned
+
     def require_permission(
         self,
         *,
@@ -79,6 +91,17 @@ class GovernanceService:
                 "role_keys": workspace.effective_role_keys,
             },
         )
+
+    def require_workspace_membership(
+        self,
+        *,
+        user: UserRecord,
+        organization_id: str,
+    ) -> WorkspaceDetail:
+        """Return a workspace only when the user is an active member."""
+
+        workspace = self._require_workspace(user=user, organization_id=organization_id)
+        return self._with_effective_permissions(workspace, user_id=user.user_id)
 
     def get_or_create_current_workspace(self, user: UserRecord) -> WorkspaceDetail:
         """Return the user's current workspace, creating a default one if needed."""
@@ -190,6 +213,33 @@ class GovernanceService:
             organization_id=organization_id,
             user_id=user.user_id,
             group=group,
+        )
+        return self._with_effective_permissions(workspace, user_id=user.user_id)
+
+    def add_organization_member(
+        self,
+        *,
+        user: UserRecord,
+        organization_id: str,
+        member_user_id: str,
+        role_key: str,
+    ) -> WorkspaceDetail:
+        """Add a user identity to an organization with an explicit role."""
+
+        self._require_workspace(user=user, organization_id=organization_id)
+        now = utc_now().isoformat()
+        membership = OrganizationMembershipRecord(
+            membership_id=new_id("mem"),
+            organization_id=organization_id,
+            user_id=member_user_id,
+            role_key=self.validate_assignable_role(role_key),
+            created_at=now,
+            updated_at=now,
+        )
+        workspace = self.repository.add_membership(
+            organization_id=organization_id,
+            actor_user_id=user.user_id,
+            membership=membership,
         )
         return self._with_effective_permissions(workspace, user_id=user.user_id)
 

@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
     GoogleIdentityProfile,
+    ServiceAccountRecord,
     SessionRecord,
     UserRecord,
 )
@@ -155,6 +156,14 @@ class GovernanceRepository(Protocol):
         group: OrganizationGroupRecord,
     ) -> WorkspaceDetail: ...
 
+    def add_membership(
+        self,
+        *,
+        organization_id: str,
+        actor_user_id: str,
+        membership: OrganizationMembershipRecord,
+    ) -> WorkspaceDetail: ...
+
 
 class DocumentExtractor(Protocol):
     def extract(
@@ -239,6 +248,23 @@ class IdentityProvider(Protocol):
 
 class AuthRepository(Protocol):
     def upsert_google_user(self, profile: GoogleIdentityProfile) -> UserRecord: ...
+
+    def create_service_account(
+        self,
+        *,
+        account_id: str,
+        organization_id: str,
+        slug: str,
+        display_name: str,
+        role_key: str,
+        created_by_user_id: str,
+    ) -> ServiceAccountRecord: ...
+
+    def list_service_accounts(
+        self,
+        *,
+        organization_id: str,
+    ) -> list[ServiceAccountRecord]: ...
 
     def create_session(
         self,

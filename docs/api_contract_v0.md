@@ -28,10 +28,11 @@ Authorization: Bearer <access_token>
 ```
 
 The auth bootstrap exceptions are `GET /api/v1/auth/google/url` and
-`GET /api/v1/auth/google/callback`, which are used to obtain the token. Direct
-deterministic tool endpoints that predate workspace auth remain unauthenticated
-in v0 for compatibility: `POST /api/v1/convert`, `POST /api/v1/validate`,
-`POST /api/v1/fhir/profile`, and `POST /api/v1/ocr/evidence`.
+`GET /api/v1/auth/google/callback`, which are used to obtain the token.
+Direct deterministic tool endpoints such as `POST /api/v1/convert`,
+`POST /api/v1/validate`, `POST /api/v1/fhir/profile`, and
+`POST /api/v1/ocr/evidence` are authenticated by router-level dependency in
+v0 but do not yet have fine-grained RBAC scopes.
 
 Cookie-authenticated write requests (`POST`, `PUT`, `PATCH`, and `DELETE`) must
 include a trusted `Origin` or `Referer` header. Trusted origins come from the
@@ -74,6 +75,8 @@ OJT_KNOWLEDGE_DIR=knowledge
 OJT_MIGRATIONS_DIR=sql/postgres/migrations
 OJT_AUTH_COOKIE_NAME=ojtflow_session
 OJT_AUTH_COOKIE_SAMESITE=lax
+OJT_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS=7776000
+OJT_SERVICE_ACCOUNT_DEFAULT_ROLE_KEY=operator
 OJT_MAX_UPLOAD_BYTES=26214400
 OJT_MAX_INLINE_DATA_BYTES=1048576
 OJT_UPLOAD_READ_CHUNK_BYTES=1048576
@@ -1790,7 +1793,48 @@ Requires either the session cookie or:
 Authorization: Bearer <access_token>
 ```
 
-Returns the active user and session metadata.
+Returns the active identity, user, session metadata, and `service_account`
+metadata when the bearer token belongs to an automation identity.
+
+`GET /api/v1/auth/service-accounts`
+
+Requires `users:read`. Returns service accounts in the current organization by
+default. `organization_id` can be supplied only when the caller is also a
+member of that organization.
+
+`POST /api/v1/auth/service-accounts`
+
+Requires `users:write`. Creates a service-account user, attaches it to the
+organization with an assignable RBAC `role_key`, and returns the first bearer
+token once. The raw token is not persisted; only the SHA-256 hash is stored in
+the existing session table.
+
+Request:
+
+```json
+{
+  "slug": "nightly-ingestion",
+  "display_name": "Nightly Ingestion",
+  "role_key": "operator",
+  "token_ttl_seconds": 3600
+}
+```
+
+Response data includes:
+
+- `service_account`
+- `token_type`
+- `access_token`
+- `expires_at`
+
+Service-account bearer tokens use the same API header:
+
+```text
+Authorization: Bearer ojt_sa_...
+```
+
+After authentication, service accounts are governed by the same ownership and
+RBAC checks as human users.
 
 `POST /api/v1/auth/logout`
 

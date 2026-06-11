@@ -197,6 +197,53 @@ class PostgresGovernanceRepository:
                 raise
         return self._workspace_for_membership(membership)
 
+    def add_membership(
+        self,
+        *,
+        organization_id: str,
+        actor_user_id: str,
+        membership: OrganizationMembershipRecord,
+    ) -> WorkspaceDetail:
+        actor_membership = self._membership_for_user_org(
+            user_id=actor_user_id,
+            organization_id=organization_id,
+        )
+        with self.backbone.connect() as connection:
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        insert into ojtflow.organization_memberships (
+                            membership_id, organization_id, user_id, role_key,
+                            status, created_at, updated_at
+                        ) values (
+                            %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz
+                        )
+                        """,
+                        (
+                            membership.membership_id,
+                            membership.organization_id,
+                            membership.user_id,
+                            membership.role_key,
+                            membership.status,
+                            membership.created_at,
+                            membership.updated_at,
+                        ),
+                    )
+                connection.commit()
+            except Exception as exc:
+                connection.rollback()
+                if "unique" in str(exc).lower():
+                    raise OJTFlowError(
+                        "Organization membership already exists.",
+                        details={
+                            "organization_id": organization_id,
+                            "user_id": membership.user_id,
+                        },
+                    ) from exc
+                raise
+        return self._workspace_for_membership(actor_membership)
+
     def _memberships_for_user(self, user_id: str) -> list[OrganizationMembershipRecord]:
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:

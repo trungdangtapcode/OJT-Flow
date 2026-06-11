@@ -89,6 +89,12 @@ async def runtime_config(
                 "cookie_samesite": settings.auth_cookie_samesite,
                 "session_ttl_seconds": settings.auth_session_ttl_seconds,
                 "state_ttl_seconds": settings.auth_state_ttl_seconds,
+                "service_account_token_ttl_seconds": (
+                    settings.service_account_token_ttl_seconds
+                ),
+                "service_account_default_role_key": (
+                    settings.service_account_default_role_key
+                ),
             },
             "embedding": {
                 "provider": settings.embedding_provider,

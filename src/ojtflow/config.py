@@ -173,6 +173,15 @@ class Settings(BaseModel):
         alias="OJT_AUTH_STATE_TTL_SECONDS",
         gt=0,
     )
+    service_account_token_ttl_seconds: int = Field(
+        default=90 * 24 * 60 * 60,
+        alias="OJT_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS",
+        gt=0,
+    )
+    service_account_default_role_key: str = Field(
+        default="operator",
+        alias="OJT_SERVICE_ACCOUNT_DEFAULT_ROLE_KEY",
+    )
     auth_cookie_name: str = Field(default="ojtflow_session", alias="OJT_AUTH_COOKIE_NAME")
     auth_cookie_secure: bool = Field(default=False, alias="OJT_AUTH_COOKIE_SECURE")
     auth_cookie_samesite: str = Field(default="lax", alias="OJT_AUTH_COOKIE_SAMESITE")

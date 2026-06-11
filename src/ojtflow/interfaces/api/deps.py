@@ -122,6 +122,7 @@ def _build_auth_service() -> AuthService:
         allowed_redirect_uris=settings.resolved_allowed_auth_redirect_uris,
         session_ttl_seconds=settings.auth_session_ttl_seconds,
         state_ttl_seconds=settings.auth_state_ttl_seconds,
+        service_account_token_ttl_seconds=settings.service_account_token_ttl_seconds,
     )
 
 
