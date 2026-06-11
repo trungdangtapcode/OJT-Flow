@@ -1,0 +1,153 @@
+[
+  {
+    "case_id": "lab_name_concepts",
+    "description": "Lab-name text should extract LOINC-grounded HbA1c and glucose concepts.",
+    "query": "Map LOINC HbA1c and blood glucose lab_name values to evidence concepts.",
+    "fields": ["lab_name", "unit"],
+    "evidence": [
+      {
+        "source_id": "eval:lab_claim",
+        "claim": "A row mentions HbA1c and blood glucose without a unit.",
+        "locator": {"standard_system": "LOINC", "clinical_domain": "laboratory"}
+      }
+    ],
+    "expected_nodes": [
+      {
+        "node_id": "clinical_concept:hba1c_lab_test",
+        "node_type": "clinical_concept",
+        "normalized_code": "LOINC:4548-4",
+        "rule_source": "medical_concepts"
+      },
+      {
+        "node_id": "clinical_concept:glucose_serum_plasma",
+        "node_type": "clinical_concept",
+        "normalized_code": "LOINC:2345-7",
+        "rule_source": "medical_concepts"
+      },
+      {"node_id": "field:lab_name", "node_type": "data_field"},
+      {"node_id": "field:unit", "node_type": "data_field"},
+      {"node_id": "standard:loinc", "node_type": "standard"}
+    ],
+    "expected_edges": [
+      {"source": "query:current", "relation": "mentions_field", "target": "field:lab_name"},
+      {"source": "query:current", "relation": "mentions_entity", "target": "clinical_concept:hba1c_lab_test"},
+      {"source": "clinical_concept:hba1c_lab_test", "relation": "normalizes_to", "target": "code:loinc:4548-4"}
+    ]
+  },
+  {
+    "case_id": "ucum_unit_mentions",
+    "description": "Unit text should extract UCUM and unit field nodes.",
+    "query": "Check UCUM standard evidence for result unit mg/dL.",
+    "fields": ["unit"],
+    "expected_nodes": [
+      {"node_id": "standard:ucum", "node_type": "standard", "rule_source": "graph_ner_rules"},
+      {"node_id": "field:unit", "node_type": "data_field"}
+    ],
+    "expected_edges": [
+      {"source": "query:current", "relation": "mentions_field", "target": "field:unit"},
+      {"source": "query:current", "relation": "mentions_entity", "target": "standard:ucum"}
+    ]
+  },
+  {
+    "case_id": "identifier_fields",
+    "description": "Identifier text should extract patient identifier and subject fields.",
+    "query": "HL7 FHIR uses subject and patient identifier patient_id requiring review.",
+    "fields": ["patient_id", "subject"],
+    "expected_nodes": [
+      {"node_id": "field:patient_id", "node_type": "data_field"},
+      {"node_id": "field:subject", "node_type": "data_field"},
+      {"node_id": "standard:fhir", "node_type": "standard", "rule_source": "graph_ner_rules"}
+    ],
+    "expected_edges": [
+      {"source": "query:current", "relation": "mentions_field", "target": "field:patient_id"},
+      {"source": "query:current", "relation": "mentions_entity", "target": "standard:fhir"}
+    ]
+  },
+  {
+    "case_id": "medication_rxnorm_resource",
+    "description": "Medication text should extract RxNorm-grounded medication concept and MedicationRequest resource metadata.",
+    "query": "Metformin medication should use RxNorm RxCUI evidence.",
+    "fields": ["medication", "patient_id", "status"],
+    "resource_type": "MedicationRequest",
+    "expected_nodes": [
+      {
+        "node_id": "clinical_concept:metformin_medication",
+        "node_type": "clinical_concept",
+        "normalized_code": "RxNorm:6809",
+        "rule_source": "medical_concepts"
+      },
+      {"node_id": "standard:rxnorm", "node_type": "standard", "rule_source": "graph_ner_rules"},
+      {"node_id": "resource:medicationrequest", "node_type": "fhir_resource"},
+      {"node_id": "fhir_search_parameter:medicationrequest:code", "node_type": "fhir_search_parameter"},
+      {"node_id": "fhir_search_parameter:medicationrequest:patient", "node_type": "fhir_search_parameter"},
+      {"node_id": "fhir_search_parameter:medicationrequest:status", "node_type": "fhir_search_parameter"}
+    ],
+    "expected_edges": [
+      {"source": "query:current", "relation": "requests_resource", "target": "resource:medicationrequest"},
+      {"source": "resource:medicationrequest", "relation": "has_search_parameter", "target": "fhir_search_parameter:medicationrequest:code"},
+      {"source": "fhir_search_parameter:medicationrequest:code", "relation": "uses_standard", "target": "standard:rxnorm"}
+    ]
+  },
+  {
+    "case_id": "diagnosis_condition_resource",
+    "description": "Diagnosis text should extract diagnosis code grounding and Condition resource metadata.",
+    "query": "Type 2 diabetes diagnosis problem should map to Condition coding evidence.",
+    "fields": ["diagnosis", "patient_id"],
+    "resource_type": "Condition",
+    "expected_nodes": [
+      {
+        "node_id": "clinical_concept:type_2_diabetes_icd10cm_seed",
+        "node_type": "clinical_concept",
+        "normalized_code": "ICD-10-CM:E11.9",
+        "rule_source": "medical_concepts"
+      },
+      {"node_id": "resource:condition", "node_type": "fhir_resource"},
+      {"node_id": "fhir_search_parameter:condition:code", "node_type": "fhir_search_parameter"},
+      {"node_id": "standard:snomed ct", "node_type": "standard"},
+      {"node_id": "standard:icd-10-cm", "node_type": "standard"}
+    ],
+    "expected_edges": [
+      {"source": "query:current", "relation": "requests_resource", "target": "resource:condition"},
+      {"source": "resource:condition", "relation": "has_search_parameter", "target": "fhir_search_parameter:condition:code"},
+      {"source": "fhir_search_parameter:condition:code", "relation": "uses_standard", "target": "standard:icd-10-cm"}
+    ]
+  },
+  {
+    "case_id": "procedure_concept",
+    "description": "Procedure text should extract a procedure concept with standard-code grounding.",
+    "query": "Colonoscopy procedure evidence requires source provenance and review.",
+    "fields": ["procedure"],
+    "expected_nodes": [
+      {
+        "node_id": "clinical_concept:colonoscopy_procedure_seed",
+        "node_type": "clinical_concept",
+        "normalized_code": "SNOMED CT:73761001",
+        "rule_source": "medical_concepts"
+      }
+    ],
+    "expected_edges": [
+      {"source": "query:current", "relation": "mentions_entity", "target": "clinical_concept:colonoscopy_procedure_seed"},
+      {"source": "clinical_concept:colonoscopy_procedure_seed", "relation": "normalizes_to", "target": "code:snomed ct:73761001"}
+    ]
+  },
+  {
+    "case_id": "diagnostic_report_resource",
+    "description": "Resource-name context should extract DiagnosticReport and its search-parameter graph.",
+    "query": "FHIR DiagnosticReport result links to Observation and patient.",
+    "fields": ["report_id", "patient_id", "result"],
+    "resource_type": "DiagnosticReport",
+    "expected_nodes": [
+      {"node_id": "standard:fhir", "node_type": "standard", "rule_source": "graph_ner_rules"},
+      {"node_id": "resource:diagnosticreport", "node_type": "fhir_resource"},
+      {"node_id": "fhir_search_parameter:diagnosticreport:code", "node_type": "fhir_search_parameter"},
+      {"node_id": "fhir_search_parameter:diagnosticreport:patient", "node_type": "fhir_search_parameter"},
+      {"node_id": "fhir_search_parameter:diagnosticreport:result", "node_type": "fhir_search_parameter"},
+      {"node_id": "standard:loinc", "node_type": "standard"}
+    ],
+    "expected_edges": [
+      {"source": "query:current", "relation": "requests_resource", "target": "resource:diagnosticreport"},
+      {"source": "resource:diagnosticreport", "relation": "has_search_parameter", "target": "fhir_search_parameter:diagnosticreport:result"},
+      {"source": "fhir_search_parameter:diagnosticreport:code", "relation": "uses_standard", "target": "standard:loinc"}
+    ]
+  }
+]

@@ -246,6 +246,19 @@
       }
     },
     {
+      "concept_id": "colonoscopy_procedure_seed",
+      "display_name": "Colonoscopy",
+      "clinical_domain": "procedure",
+      "standard_system": "SNOMED CT",
+      "code": "73761001",
+      "source": "https://browser.ihtsdotools.org/",
+      "aliases": ["colonoscopy", "colonoscopic procedure", "lower endoscopy"],
+      "metadata": {
+        "coding_system_scope": "procedure seed",
+        "review_note": "Use as retrieval grounding only; final procedure coding requires coder or clinician review."
+      }
+    },
+    {
       "concept_id": "latex_allergy_seed",
       "display_name": "Latex allergy",
       "clinical_domain": "allergy",

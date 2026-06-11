@@ -1080,6 +1080,21 @@ Concept normalization is deterministic dictionary lookup against seed
 registries, not a clinical coding decision; unmapped terms keep their plain
 `clinical_concept` node without a `normalizes_to` edge.
 
+Graph-NER has a deterministic evaluation gate:
+
+```bash
+python scripts/evaluate-graph-ner.py
+python scripts/evaluate-graph-ner.py --json
+```
+
+Cases live in `tests/fixtures/graph_ner_eval_cases.json`. The fixture set
+covers lab-name concepts, UCUM unit mentions, patient identifier fields,
+RxNorm-grounded medication concepts, diagnosis coding concepts, procedure
+concepts, and FHIR resource/search-parameter nodes. The runner reports expected
+node recall, expected edge recall, and normalized-code recall. CI, deploy, and
+`scripts/release-check.sh` run the same gate so Graph-NER extraction regressions
+are caught before release.
+
 `retrieval_trace.safety_flags` is deterministic and auditable. Current flags are:
 
 - `prompt_injection_pattern_in_query`: the retrieval query or query context

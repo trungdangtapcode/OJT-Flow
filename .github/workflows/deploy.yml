@@ -46,6 +46,11 @@ jobs:
           PYTHONPATH: src
         run: python scripts/evaluate-retrieval.py
 
+      - name: Run Graph-NER evaluation fixture
+        env:
+          PYTHONPATH: src
+        run: python scripts/evaluate-graph-ner.py
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest

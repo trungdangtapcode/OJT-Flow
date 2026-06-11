@@ -53,6 +53,16 @@
       "notes": ["Tracks hit@k, recall@k, MRR, NDCG, coverage, source diversity, and unsupported-claim rate for deterministic fixtures."]
     },
     {
+      "gate_id": "graph_ner_eval",
+      "category": "retrieval",
+      "status": "required",
+      "command": "PYTHONPATH=src python scripts/evaluate-graph-ner.py",
+      "evidence": "Graph-NER evaluation passes configured thresholds",
+      "owner": "retrieval",
+      "blocking": true,
+      "notes": ["Tracks expected node, edge, and normalized-code recall for deterministic Graph-NER fixtures."]
+    },
+    {
       "gate_id": "performance_smoke",
       "category": "deployment",
       "status": "required",

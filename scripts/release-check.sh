@@ -74,6 +74,8 @@ run_step "Postgres migration manifest" \
 
 run_step "Retrieval quality evaluation" "${python_bin}" "${repo_root}/scripts/evaluate-retrieval.py"
 
+run_step "Graph-NER quality evaluation" "${python_bin}" "${repo_root}/scripts/evaluate-graph-ner.py"
+
 run_step "Performance smoke" \
   env OJT_STORAGE_BACKEND=memory PYTHONPATH="${repo_root}/src" \
   "${python_bin}" "${repo_root}/scripts/performance-smoke.py" --mode asgi

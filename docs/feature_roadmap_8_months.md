@@ -201,6 +201,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F083, F095 | Implemented | Added deterministic retrieval answer synthesis backed only by support matrices, ranked evidence, citations, and Graph-NER path refs. Unsupported evidence now produces explicit refusal or gaps, and stale/deprecated/review-needed/unapproved/version-mismatched sources produce first-class freshness warnings. |
 | 2026-06-11 | F093-F094 | Started | Retrieval packages now include a guarded answer object and graph-path summary after Graph-NER handoff. Remaining work: graph neighborhood persistence/expansion, graph-aware reranking, and full generated-answer claim-to-triple checking. |
 | 2026-06-11 | F085-F086 | Implemented | Expanded retrieval evaluation into a 12-case healthcare benchmark covering lab validation, FHIR Observation mapping, UCUM, LOINC, PHI review, prompt-injection review, RxNorm, diagnosis terminology, PubMed/MeSH routing, ClinicalTrials.gov routing, and openFDA routing; added source-diversity and unsupported-claim-rate metrics; and added a scheduled nightly retrieval benchmark workflow with JSON artifact upload. |
+| 2026-06-11 | F088 | Implemented | Added fixture-backed Graph-NER evaluation for lab names, units, identifiers, medications, diagnoses, procedures, and FHIR resource names/search parameters; added node, edge, and normalized-code recall metrics; and wired the evaluator into CI, deploy, release-check, release gates, docs, and focused tests. |
 
 ## Feature Backlog
 
@@ -302,7 +303,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F085 Add retrieval benchmark datasets for lab validation, FHIR mapping, UCUM unit checks, PHI review, and external medical search routing.
 - [x] F086 Add nightly retrieval evaluation job that tracks recall@k, MRR, nDCG, coverage, source diversity, and unsupported-claim rate.
 - [ ] F087 Add retrieval regression dashboard in the UI for admins.
-- [ ] F088 Add Graph-NER entity extraction evaluation fixtures for lab names, units, identifiers, medications, diagnoses, procedures, and resource names.
+- [x] F088 Add Graph-NER entity extraction evaluation fixtures for lab names, units, identifiers, medications, diagnoses, procedures, and resource names.
 - [ ] F089 Add graph persistence for extracted entities/triples instead of only returning graph context in retrieval packages.
 - [ ] F090 Add graph neighborhood retrieval that expands evidence by normalized concept, resource type, source, and relation.
 - [ ] F091 Add graph query UI for entities, relationships, source evidence, and workflow references.

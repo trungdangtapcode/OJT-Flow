@@ -51,6 +51,11 @@ jobs:
           PYTHONPATH: src
         run: python scripts/evaluate-retrieval.py
 
+      - name: Run Graph-NER evaluation fixture
+        env:
+          PYTHONPATH: src
+        run: python scripts/evaluate-graph-ner.py
+
       - name: Run performance smoke
         env:
           OJT_STORAGE_BACKEND: memory
