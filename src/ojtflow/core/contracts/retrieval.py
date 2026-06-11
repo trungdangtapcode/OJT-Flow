@@ -252,6 +252,7 @@ class RetrievalTrace(ContractModel):
     """Debuggable trace for retrieval strategy and candidate selection."""
 
     strategy: str
+    request_id: str | None = None
     query_variants: list[str] = Field(default_factory=list)
     query_variant_details: list[RetrievalQueryVariant] = Field(default_factory=list)
     fusion_diagnostics: dict[str, Any] = Field(default_factory=dict)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
@@ -47,6 +47,7 @@ ReviewSummaryStatus = Literal[
 @router.post("/workflows")
 async def start_workflow(
     request: StartWorkflowRequest,
+    http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
@@ -60,6 +61,7 @@ async def start_workflow(
         schema_id=request.schema_id,
         require_human_review=request.require_human_review,
         owner_user_id=authenticated.user.user_id,
+        request_id=getattr(http_request.state, "request_id", None),
     )
     raise_for_failed_workflow(workflow)
     return ok(workflow)

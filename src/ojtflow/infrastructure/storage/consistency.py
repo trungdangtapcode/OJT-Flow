@@ -14,6 +14,7 @@ from ojtflow.core.contracts.storage_consistency import (
     StorageRepairMarker,
     StorageRepairPlan,
 )
+from ojtflow.core.contracts.retrieval import RetrievalIntegrityReport
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowState
 from ojtflow.infrastructure.storage.file_refs import artifact_path_from_file_ref
@@ -35,6 +36,7 @@ def scan_workflow_artifacts(
     data_dir: Path,
     required: bool,
     dataset_records: list[DatasetRecord] | None = None,
+    retrieval_integrity: RetrievalIntegrityReport | None = None,
 ) -> StorageConsistencyReport:
     """Check sampled workflow and dataset artifact refs without exposing local paths."""
 
@@ -43,6 +45,7 @@ def scan_workflow_artifacts(
             required=False,
             sampled_workflow_count=0,
             artifact_ref_count=0,
+            **_retrieval_consistency_fields(retrieval_integrity),
         )
 
     roots = [data_dir / "datasets", data_dir / "outputs"]
@@ -98,6 +101,7 @@ def scan_workflow_artifacts(
         *missing_dataset_files[:2],
         *hash_mismatches[:2],
         *dataset_hash_mismatches[:2],
+        *_retrieval_examples(retrieval_integrity)[:2],
     ][:5]
     return StorageConsistencyReport(
         required=True,
@@ -112,6 +116,7 @@ def scan_workflow_artifacts(
         hash_mismatch_count=len(hash_mismatches),
         dataset_hash_mismatch_count=len(dataset_hash_mismatches),
         unreferenced_dataset_record_count=unreferenced_dataset_record_count,
+        **_retrieval_consistency_fields(retrieval_integrity),
         examples=examples,
     )
 
@@ -374,6 +379,40 @@ def _dataset_example(
         label=f"dataset:{record.source_kind}",
         error_type=error_type,
     )
+
+
+def _retrieval_consistency_fields(
+    report: RetrievalIntegrityReport | None,
+) -> dict:
+    if report is None:
+        return {}
+    return {
+        "knowledge_checked_scope": report.checked_scope,
+        "knowledge_source_count": report.expected_source_count,
+        "indexed_knowledge_source_count": report.indexed_source_count,
+        "knowledge_missing_source_count": report.missing_count,
+        "knowledge_stale_source_count": report.stale_count,
+        "knowledge_extra_source_count": report.extra_count,
+        "knowledge_warning_count": len(report.warnings),
+    }
+
+
+def _retrieval_examples(
+    report: RetrievalIntegrityReport | None,
+) -> list[StorageConsistencyExample]:
+    if report is None:
+        return []
+    examples: list[StorageConsistencyExample] = []
+    for check in report.checks:
+        if check.status not in {"missing", "stale", "extra"}:
+            continue
+        examples.append(
+            StorageConsistencyExample(
+                label=f"knowledge:{check.source_id}",
+                error_type=f"RetrievalIndex{check.status.title()}",
+            )
+        )
+    return examples
 
 
 def _repair_candidate(

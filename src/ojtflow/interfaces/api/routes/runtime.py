@@ -308,8 +308,10 @@ async def runtime_storage_consistency(
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
     limit: int = Query(default=100, ge=1, le=500),
+    include_seeded: bool = Query(default=True),
+    include_corpus: bool = Query(default=True),
 ) -> dict:
-    """Return a sanitized workflow artifact consistency report."""
+    """Return a sanitized workflow, artifact, and knowledge consistency report."""
 
     if settings.storage_backend == "memory":
         report = scan_workflow_artifacts(
@@ -323,11 +325,16 @@ async def runtime_storage_consistency(
             owner_user_id=authenticated.user.user_id,
         )
         dataset_records = service.datasets.list_records(limit=max(limit * 3, 100))
+        retrieval_integrity = service.retrieval_integrity_report(
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
+        )
         report = scan_workflow_artifacts(
             workflows,
             data_dir=settings.resolved_data_dir,
             required=True,
             dataset_records=dataset_records,
+            retrieval_integrity=retrieval_integrity,
         )
     return ok(
         {
@@ -926,12 +933,16 @@ def _storage_consistency_check(
         data_dir=settings.resolved_data_dir,
         required=True,
         dataset_records=dataset_records,
+        retrieval_integrity=service.retrieval_integrity_report(
+            include_seeded=True,
+            include_corpus=False,
+        ),
     )
     status = "ok" if report.is_consistent else "error"
     summary = (
-        "Workflow artifact and dataset records are consistent for the sampled workflows."
+        "Workflow artifacts, dataset records, and retrieval source index are consistent for the sampled scope."
         if report.is_consistent
-        else "One or more sampled artifact refs, dataset rows, or local files are missing or hash-mismatched."
+        else "One or more sampled artifact refs, dataset rows, local files, or retrieval source indexes are missing, stale, or hash-mismatched."
     )
 
     return _check(

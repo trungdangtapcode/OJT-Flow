@@ -32,7 +32,7 @@ class StorageConsistencyExample(ContractModel):
 
 
 class StorageConsistencyReport(ContractModel):
-    """Artifact reference and hash consistency report."""
+    """Artifact, dataset, and retrieval index consistency report."""
 
     required: bool
     sampled_workflow_count: int = 0
@@ -46,6 +46,13 @@ class StorageConsistencyReport(ContractModel):
     hash_mismatch_count: int = 0
     dataset_hash_mismatch_count: int = 0
     unreferenced_dataset_record_count: int = 0
+    knowledge_checked_scope: str | None = None
+    knowledge_source_count: int = 0
+    indexed_knowledge_source_count: int = 0
+    knowledge_missing_source_count: int = 0
+    knowledge_stale_source_count: int = 0
+    knowledge_extra_source_count: int = 0
+    knowledge_warning_count: int = 0
     examples: list[StorageConsistencyExample] = Field(default_factory=list)
 
     @property
@@ -58,6 +65,9 @@ class StorageConsistencyReport(ContractModel):
             and self.missing_dataset_record_count == 0
             and self.hash_mismatch_count == 0
             and self.dataset_hash_mismatch_count == 0
+            and self.knowledge_missing_source_count == 0
+            and self.knowledge_stale_source_count == 0
+            and self.knowledge_extra_source_count == 0
         )
 
 

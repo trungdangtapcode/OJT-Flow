@@ -17,6 +17,7 @@ class WorkflowEvent(ContractModel):
 
     event_id: str = Field(default_factory=lambda: new_id("evt"))
     workflow_id: str
+    request_id: str | None = None
     timestamp: str = Field(default_factory=lambda: utc_now().isoformat())
     actor_type: ActorType
     actor_id: str
@@ -26,4 +27,3 @@ class WorkflowEvent(ContractModel):
     input_refs: list[str] = Field(default_factory=list)
     output_refs: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-

@@ -51,6 +51,7 @@ class AssistantService:
         context: dict[str, Any] | None = None,
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> AssistantResponse:
         """Plan a small tool sequence and execute it through the backend allowlist."""
 
@@ -67,6 +68,7 @@ class AssistantService:
                 tool_call,
                 execute_write_actions=execute_write_actions,
                 owner_user_id=owner_user_id,
+                request_id=request_id,
             )
             for tool_call in plan.tool_calls[: self.max_tool_calls]
         ]
@@ -114,6 +116,7 @@ class AssistantService:
         context: dict[str, Any] | None = None,
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream planning, tool execution, synthesis deltas, and final response."""
 
@@ -216,6 +219,7 @@ class AssistantService:
                 tool_call,
                 execute_write_actions=execute_write_actions,
                 owner_user_id=owner_user_id,
+                request_id=request_id,
             )
             tool_results.append(result)
             yield {

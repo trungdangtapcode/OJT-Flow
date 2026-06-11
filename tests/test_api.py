@@ -15,6 +15,10 @@ from ojtflow.core.contracts.auth import (
 )
 from ojtflow.core.contracts.data import TransformationOutput
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityItem,
+    RetrievalIntegrityReport,
+)
 from ojtflow.core.contracts.storage import DatasetRecord
 from ojtflow.core.contracts.workflow import WorkflowInput, WorkflowOutput, WorkflowState
 from ojtflow.core.errors import DependencyUnavailableError
@@ -555,12 +559,13 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
         def __init__(self) -> None:
             self.calls: list[dict] = []
 
-        def search_retrieval(self, query, owner_user_id=None):
+        def search_retrieval(self, query, owner_user_id=None, request_id=None):
             self.calls.append(
                 {
                     "method": "search",
                     "query": query.model_dump(mode="json"),
                     "owner_user_id": owner_user_id,
+                    "request_id": request_id,
                 }
             )
             return {
@@ -632,6 +637,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
             }
 
     fake_service = FakeWorkflowService()
+    request_id = "web_retrieval_route_123"
     app = create_app()
     app.dependency_overrides[require_authentication] = _authenticated_dependency
 
@@ -644,6 +650,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.post(
             "/api/v1/retrieval/search",
+            headers={"X-Request-ID": request_id},
             json={
                 "query": "  lab result schema  ",
                 "workflow_id": "  wf_example  ",
@@ -701,6 +708,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 },
             },
             "owner_user_id": "usr_api_test",
+            "request_id": request_id,
         },
         {
             "method": "plan",
@@ -2209,6 +2217,38 @@ def test_runtime_readiness_storage_consistency_checks_refs_and_hashes(
             assert owner_user_id == "usr_api_test"
             return [workflow]
 
+        def retrieval_integrity_report(self, *, include_seeded=True, include_corpus=False):
+            assert include_seeded is True
+            assert include_corpus is False
+            return RetrievalIntegrityReport(
+                repository="static",
+                status="warning",
+                checked_scope="seeded",
+                expected_source_count=2,
+                indexed_source_count=1,
+                ok_count=1,
+                stale_count=0,
+                missing_count=1,
+                extra_count=0,
+                checks=[
+                    RetrievalIntegrityItem(
+                        source_id="schema:lab_result_v1",
+                        status="ok",
+                        expected_chunk_count=1,
+                        indexed_chunk_count=1,
+                        message="Indexed source matches trusted source content.",
+                    ),
+                    RetrievalIntegrityItem(
+                        source_id="terminology:ucum",
+                        status="missing",
+                        expected_chunk_count=1,
+                        indexed_chunk_count=0,
+                        message="Trusted source is missing from the retrieval index.",
+                    ),
+                ],
+                warnings=["Trusted source is missing from the retrieval index."],
+            )
+
     try:
         check = runtime_routes._storage_consistency_check(
             WorkflowServiceStub(),
@@ -2230,6 +2270,11 @@ def test_runtime_readiness_storage_consistency_checks_refs_and_hashes(
     assert check["details"]["hash_mismatch_count"] == 1
     assert check["details"]["dataset_hash_mismatch_count"] == 0
     assert check["details"]["unreferenced_dataset_record_count"] == 1
+    assert check["details"]["knowledge_checked_scope"] == "seeded"
+    assert check["details"]["knowledge_source_count"] == 2
+    assert check["details"]["indexed_knowledge_source_count"] == 1
+    assert check["details"]["knowledge_missing_source_count"] == 1
+    assert check["details"]["knowledge_warning_count"] == 1
     response_text = json.dumps(check)
     assert str(tmp_path) not in response_text
 
@@ -2373,6 +2418,13 @@ async def test_runtime_storage_consistency_endpoint_returns_sanitized_report(
         "hash_mismatch_count": 0,
         "dataset_hash_mismatch_count": 0,
         "unreferenced_dataset_record_count": 0,
+        "knowledge_checked_scope": None,
+        "knowledge_source_count": 0,
+        "indexed_knowledge_source_count": 0,
+        "knowledge_missing_source_count": 0,
+        "knowledge_stale_source_count": 0,
+        "knowledge_extra_source_count": 0,
+        "knowledge_warning_count": 0,
         "examples": [],
     }
 
@@ -2922,10 +2974,12 @@ async def test_api_workflow_review_roundtrip(monkeypatch) -> None:
     clear_settings_cache()
     clear_workflow_service_cache()
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
+    request_id = "web_workflow_roundtrip_123"
 
     async with await _client() as client:
         response = await client.post(
             "/api/v1/workflows",
+            headers={"X-Request-ID": request_id},
             json={
                 "instruction": "Clean this CSV, convert it to JSON, and explain anomalies.",
                 "data": text,
@@ -2939,10 +2993,21 @@ async def test_api_workflow_review_roundtrip(monkeypatch) -> None:
         body = response.json()["data"]
         assert body["status"] == "needs_human_review"
         assert body["steps"]
+        assert body["handoff_context"]["request_id"] == request_id
+        assert body["handoff_context"]["retrieval_trace"]["request_id"] == request_id
 
         workflows = await client.get("/api/v1/workflows")
         assert workflows.status_code == 200
         assert workflows.json()["data"][0]["workflow_id"] == body["workflow_id"]
+        events = await client.get(f"/api/v1/workflows/{body['workflow_id']}/events")
+        assert events.status_code == 200
+        event_payloads = events.json()["data"]
+        assert event_payloads
+        assert {event["request_id"] for event in event_payloads} == {request_id}
+        assert all(
+            event["metadata"].get("request_id") == request_id
+            for event in event_payloads
+        )
 
         summaries = await client.get("/api/v1/workflows/summary?page=1&page_size=10")
         assert summaries.status_code == 200

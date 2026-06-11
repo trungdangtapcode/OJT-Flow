@@ -113,6 +113,7 @@ class WorkflowService:
         schema_id: str | None = "lab_result_v1",
         require_human_review: bool = True,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> WorkflowState:
         """Start and run a workflow until completion or review pause."""
 
@@ -129,6 +130,8 @@ class WorkflowService:
             ),
             status=WorkflowStatus.RUNNING,
         )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
         workflow.handoff_context["tool_specs"] = tool_specs_json()
         self.workflows.save(workflow)
         dataset = self.datasets.put_text(
@@ -195,6 +198,7 @@ class WorkflowService:
         require_human_review: bool = True,
         prefer_extractor: str = "auto",
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> WorkflowState:
         """Start a workflow from a raw document file (PDF, DOCX, image, …).
 
@@ -230,6 +234,8 @@ class WorkflowService:
             ),
             status=WorkflowStatus.RUNNING,
         )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
         workflow.handoff_context["tool_specs"] = tool_specs_json()
         self.workflows.save(workflow)
 
@@ -469,6 +475,7 @@ class WorkflowService:
             query_terms=fhir_context["query_terms"],
             top_k=5,
         )
+        retrieval_package.trace.request_id = _workflow_request_id(workflow)
         evidence = retrieval_package.evidence
         workflow.retrieved_context = [*fhir_context["evidence"], *evidence]
         workflow.handoff_context["retrieval_trace"] = retrieval_package.trace.model_dump(
@@ -746,6 +753,7 @@ class WorkflowService:
         self,
         query: RetrievalQuery,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> RetrievalPackage:
         """Run direct retrieval search."""
 
@@ -753,7 +761,9 @@ class WorkflowService:
             workflow = self.workflows.get(query.workflow_id)
             self._assert_workflow_owner(workflow, owner_user_id)
         self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
-        return self.retrieval_service.search(query)
+        package = self.retrieval_service.search(query)
+        package.trace.request_id = request_id
+        return package
 
     def plan_retrieval(
         self,
@@ -1113,8 +1123,13 @@ class WorkflowService:
         output_refs: list[str] | None = None,
         metadata: dict | None = None,
     ) -> None:
+        event_metadata = dict(metadata or {})
+        request_id = _workflow_request_id(workflow)
+        if request_id:
+            event_metadata.setdefault("request_id", request_id)
         event = WorkflowEvent(
             workflow_id=workflow.workflow_id,
+            request_id=request_id,
             actor_type=actor_type,
             actor_id=actor_id,
             event_type=event_type,
@@ -1122,7 +1137,7 @@ class WorkflowService:
             summary=summary,
             input_refs=input_refs or [],
             output_refs=output_refs or [],
-            metadata=metadata or {},
+            metadata=event_metadata,
         )
         self.events.append(event)
         workflow.audit_event_refs.append(event.event_id)
@@ -1215,6 +1230,11 @@ def _failure_code(exc: Exception) -> str:
     if isinstance(exc, OJTFlowError):
         return "ojtflow_error"
     return "workflow_failed"
+
+
+def _workflow_request_id(workflow: WorkflowState) -> str | None:
+    value = workflow.handoff_context.get("request_id")
+    return value if isinstance(value, str) and value else None
 
 
 def _direct_upload_data_format(source_format: str) -> DataFormat | None:

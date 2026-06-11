@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
@@ -138,6 +138,7 @@ async def plan_retrieval(
 @router.post("/retrieval/search", response_model=RetrievalPackageEnvelope)
 async def search_retrieval(
     request: RetrievalSearchRequest,
+    http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
@@ -146,6 +147,7 @@ async def search_retrieval(
     package = service.search_retrieval(
         _retrieval_query_from_request(request),
         owner_user_id=authenticated.user.user_id,
+        request_id=getattr(http_request.state, "request_id", None),
     )
     return ok(package)
 

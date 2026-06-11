@@ -198,6 +198,7 @@ async def append_assistant_session_message(
 @router.post("/assistant/chat")
 async def assistant_chat(
     request: AssistantChatRequest,
+    http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: AssistantService = Depends(get_assistant_service),
     settings: Settings = Depends(get_api_settings),
@@ -210,6 +211,7 @@ async def assistant_chat(
         context=request.context,
         execute_write_actions=request.execute_write_actions,
         owner_user_id=authenticated.user.user_id,
+        request_id=getattr(http_request.state, "request_id", None),
     )
     return ok(result)
 
@@ -261,6 +263,7 @@ async def assistant_chat_stream(
                 context=request.context,
                 execute_write_actions=request.execute_write_actions,
                 owner_user_id=authenticated.user.user_id,
+                request_id=request_id,
             ):
                 yield record(event)
         except Exception as exc:

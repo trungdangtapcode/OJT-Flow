@@ -187,7 +187,10 @@ class OJTFlowToolExecutor:
     ) -> None:
         self.workflow_service = workflow_service
         self.medical_evidence_service = medical_evidence_service
-        self._handlers: dict[str, Callable[[dict[str, Any], str | None], dict[str, Any]]] = {
+        self._handlers: dict[
+            str,
+            Callable[[dict[str, Any], str | None, str | None], dict[str, Any]],
+        ] = {
             "retrieval_search": self._retrieval_search,
             "validate_data": self._validate_data,
             "validate_with_evidence": self._validate_with_evidence,
@@ -210,6 +213,7 @@ class OJTFlowToolExecutor:
         *,
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> AssistantToolResult:
         spec = ASSISTANT_TOOL_SPECS.get(plan.tool_name)
         if not spec:
@@ -246,7 +250,11 @@ class OJTFlowToolExecutor:
             )
 
         try:
-            output = self._handlers[plan.tool_name](plan.arguments, owner_user_id)
+            output = self._handlers[plan.tool_name](
+                plan.arguments,
+                owner_user_id,
+                request_id,
+            )
             return AssistantToolResult(
                 tool_name=plan.tool_name,
                 status="completed",
@@ -281,6 +289,7 @@ class OJTFlowToolExecutor:
         *,
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute one tool and return a JSON-ready result for MCP wrappers."""
 
@@ -288,10 +297,16 @@ class OJTFlowToolExecutor:
             AssistantToolPlan(tool_name=tool_name, arguments=arguments or {}),
             execute_write_actions=execute_write_actions,
             owner_user_id=owner_user_id,
+            request_id=request_id,
         )
         return result.model_dump(mode="json")
 
-    def _retrieval_search(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _retrieval_search(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         filters = {
             key: value
             for key, value in {
@@ -312,19 +327,31 @@ class OJTFlowToolExecutor:
                 filters=filters,
             ),
             owner_user_id=owner_user_id,
+            request_id=request_id,
         )
         return package.model_dump(mode="json")
 
-    def _validate_data(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _validate_data(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         del owner_user_id
+        del request_id
         return self.workflow_service.validate_data(
             data=_required_str(args, "data"),
             declared_format=_optional_data_format(args.get("input_format")),
             schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
         )
 
-    def _validate_with_evidence(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
-        validation = self._validate_data(args, owner_user_id)
+    def _validate_with_evidence(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        validation = self._validate_data(args, owner_user_id, request_id)
         report = validation.get("validation_report") if isinstance(validation, dict) else {}
         issues = (
             report.get("issues")
@@ -352,6 +379,7 @@ class OJTFlowToolExecutor:
                 "trust_level": "approved",
             },
             owner_user_id,
+            request_id,
         )
         return {
             "validation": validation,
@@ -367,19 +395,37 @@ class OJTFlowToolExecutor:
             },
         }
 
-    def _convert_data(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _convert_data(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         del owner_user_id
+        del request_id
         return self.workflow_service.convert_data(
             data=_required_str(args, "data"),
             declared_format=_optional_data_format(args.get("input_format")),
             target_format=_data_format(args.get("target_format"), default=DataFormat.JSON),
         )
 
-    def _fhir_profile(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _fhir_profile(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         del owner_user_id
+        del request_id
         return self.medical_evidence_service.profile_fhir_like(_required_str(args, "data"))
 
-    def _list_workflows(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _list_workflows(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        del request_id
         status = _optional_workflow_status(args.get("status"))
         workflows = self.workflow_service.list_workflows(
             status=status,
@@ -388,7 +434,13 @@ class OJTFlowToolExecutor:
         )
         return {"items": [workflow.model_dump(mode="json") for workflow in workflows]}
 
-    def _list_reviews(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _list_reviews(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        del request_id
         reviews = self.workflow_service.list_reviews(
             status=_optional_str(args.get("status")) or "pending",
             limit=_bounded_int(args.get("limit"), default=10, minimum=1, maximum=100),
@@ -396,15 +448,26 @@ class OJTFlowToolExecutor:
         )
         return {"items": [workflow.model_dump(mode="json") for workflow in reviews]}
 
-    def _get_workflow(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _get_workflow(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        del request_id
         workflow = self.workflow_service.get_workflow(
             _required_str(args, "workflow_id"),
             owner_user_id=owner_user_id,
         )
         return workflow.model_dump(mode="json")
 
-    def _workflow_summary(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
-        workflow = self._get_workflow(args, owner_user_id)
+    def _workflow_summary(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        workflow = self._get_workflow(args, owner_user_id, request_id)
         steps = workflow.get("steps") if isinstance(workflow.get("steps"), list) else []
         validation_report = (
             workflow.get("validation_report")
@@ -459,7 +522,12 @@ class OJTFlowToolExecutor:
             "workflow": workflow,
         }
 
-    def _start_workflow(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _start_workflow(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         workflow = self.workflow_service.start_workflow(
             instruction=_required_str(args, "instruction"),
             data=_required_str(args, "data"),
@@ -468,6 +536,7 @@ class OJTFlowToolExecutor:
             schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
             require_human_review=bool(args.get("require_human_review", True)),
             owner_user_id=owner_user_id,
+            request_id=request_id,
         )
         return workflow.model_dump(mode="json")
 

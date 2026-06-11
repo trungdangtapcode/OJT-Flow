@@ -51,11 +51,11 @@ export function WorkbenchPage() {
   const [uploadInstruction, setUploadInstruction] = React.useState(
     "Extract this file, convert relevant healthcare data to JSON, and explain anomalies.",
   );
-  const [data, setData] = React.useState(inputExamples[0].data);
+  const [data, setData] = React.useState("");
   const [inputFormat, setInputFormat] = React.useState("csv");
   const [targetFormat, setTargetFormat] = React.useState("json");
   const [schemaId, setSchemaId] = React.useState("lab_result_v1");
-  const [selectedExampleId, setSelectedExampleId] = React.useState(inputExamples[0].id);
+  const [selectedExampleId, setSelectedExampleId] = React.useState("");
   const [intakeMode, setIntakeMode] = React.useState("paste");
   const [requireReview, setRequireReview] = React.useState(true);
   const [extractor, setExtractor] = React.useState("auto");
@@ -71,20 +71,32 @@ export function WorkbenchPage() {
   const acceptedUploadExtensions = uploadExtensions.join(",");
   const maxUploadBytes = runtimeUpload?.max_upload_bytes ?? null;
   const availableExtractors = extractorsQuery.data?.available ?? [];
+  const noMockData = Boolean(runtimeConfigQuery.data?.policy.effective_no_mock_data);
+  const availableInputExamples = noMockData ? [] : inputExamples;
   const selectedExample =
-    inputExamples.find((example) => example.id === selectedExampleId) ?? inputExamples[0];
+    availableInputExamples.find((example) => example.id === selectedExampleId) ??
+    availableInputExamples[0] ??
+    null;
   const failedCreateWorkflowId = workflowErrorWorkflowId(createWorkflow.error);
   const failedUploadWorkflowId = workflowErrorWorkflowId(uploadWorkflow.error);
   const dataStats = sourceDataStats(data);
   const activeSourceFormat = intakeMode === "upload" ? "auto" : inputFormat;
   const activeSchema =
-    schemaId || (selectedExample.standard ? `${selectedExample.standard} profile` : "none");
-  const activeContractSchema = schemaId || selectedExample.standard || "no schema";
+    schemaId || (selectedExample?.standard ? `${selectedExample.standard} profile` : "none");
+  const activeContractSchema = schemaId || selectedExample?.standard || "no schema";
 
   React.useEffect(() => {
     if (!file) return;
     setFileError(validateUploadFile(file, uploadExtensions, maxUploadBytes));
   }, [file, maxUploadBytes, uploadExtensionKey]);
+
+  React.useEffect(() => {
+    if (!noMockData) return;
+    setSelectedExampleId("");
+    setData((current) =>
+      inputExamples.some((example) => example.data === current) ? "" : current,
+    );
+  }, [noMockData]);
 
   const applyInputExample = (example: InputExample) => {
     setSelectedExampleId(example.id);
@@ -231,11 +243,18 @@ export function WorkbenchPage() {
                       {createFormError}
                     </Notice>
                   ) : null}
-                  <InputExampleSelector
-                    examples={inputExamples}
-                    selectedExampleId={selectedExampleId}
-                    onSelect={applyInputExample}
-                  />
+                  {noMockData ? (
+                    <Notice title="Sample data is disabled" tone="neutral">
+                      This environment blocks demo fixtures. Paste real permitted data or upload an
+                      approved file to start a workflow.
+                    </Notice>
+                  ) : (
+                    <InputExampleSelector
+                      examples={availableInputExamples}
+                      selectedExampleId={selectedExampleId}
+                      onSelect={applyInputExample}
+                    />
+                  )}
                   <Label>
                     <span className="inline-flex items-center gap-1.5">
                       Instruction

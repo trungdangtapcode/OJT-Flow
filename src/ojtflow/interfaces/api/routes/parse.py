@@ -10,7 +10,7 @@ Requires:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 
 from ojtflow.application.workflow_service import WorkflowService
@@ -93,6 +93,7 @@ def _required_form_text(field_name: str, value: str) -> str:
 
 @router.post("/parse/upload/workflow")
 async def upload_and_start_workflow(
+    http_request: Request,
     file: UploadFile = File(..., description="Document file to parse (PDF, DOCX, image, …)"),
     instruction: str = Form(
         ...,
@@ -139,6 +140,7 @@ async def upload_and_start_workflow(
         require_human_review=require_human_review,
         prefer_extractor=extractor,
         owner_user_id=authenticated.user.user_id,
+        request_id=getattr(http_request.state, "request_id", None),
     )
     raise_for_failed_workflow(workflow)
     return ok(workflow)
