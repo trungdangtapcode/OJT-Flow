@@ -483,9 +483,13 @@ contains an `ojtflow_clinical_package` envelope with raw input identity,
 FHIR-like `Bundle`, OperationOutcome-like validation issues, linked evidence,
 review-gated terminology candidates, UCUM-like unit validation results,
 internal Provenance-like records, review state, audit event refs, output refs,
-and handoff context. For v0, `lab_result_v1` maps to FHIR-like `Observation`
-resources. The package reports `fhir_like_not_validated`; clients must not call
-it HL7 FHIR compliant or automatically apply terminology candidates.
+and handoff context. For v0, `lab_result_v1` maps to FHIR-like `Patient`,
+`Observation`, `DiagnosticReport`, and `DocumentReference` resources with
+field-level source/derived/defaulted provenance. The package also includes
+profile registry metadata and FHIR search parameter hints from
+`knowledge/fhir/resource_profiles.json`. The package reports
+`fhir_like_not_validated`; clients must not call it HL7 FHIR compliant or
+automatically apply terminology candidates.
 
 If startup reaches workflow creation but fails during parsing, extraction,
 retrieval, validation, policy, or transformation preparation, the backend still
@@ -1348,6 +1352,11 @@ Response data includes:
 - `profile.is_fhir_like`
 - `profile.resource_type`
 - `profile.resource_counts`
+- `profile.profile_registry_version`
+- `profile.profiled_resource_types`
+- `profile.profile_issues`
+- `profile.search_parameters`
+- `profile.profile_evidence`
 - `profile.handoff_context`
 - `evidence`
 

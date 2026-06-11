@@ -1,0 +1,160 @@
+{
+  "version": "fhir_like_resource_profiles.v0",
+  "fhir_release": "R4",
+  "source": "https://hl7.org/fhir/R4/",
+  "disclaimer": "OJTFlow profiles are lightweight FHIR-like implementation profiles. They are not a substitute for a full HL7 FHIR validator.",
+  "profiles": [
+    {
+      "resource_type": "Patient",
+      "profile_id": "ojtflow_fhir_like_patient_v0",
+      "clinical_domain": "identity",
+      "source_url": "https://hl7.org/fhir/R4/patient.html",
+      "required_fields": [],
+      "required_any": [
+        {
+          "group_id": "patient_identity",
+          "fields": ["id", "identifier"],
+          "message": "Patient should carry id or identifier for OJTFlow package references."
+        }
+      ],
+      "search_parameters": [
+        {
+          "name": "identifier",
+          "type": "token",
+          "target_field": "Patient.identifier",
+          "example": "Patient?identifier=<system>|<value>",
+          "standard_systems": ["FHIR"]
+        }
+      ],
+      "governance_notes": [
+        "Patient identifiers are PHI-sensitive and must not be normalized silently."
+      ]
+    },
+    {
+      "resource_type": "Observation",
+      "profile_id": "ojtflow_fhir_like_observation_lab_v0",
+      "clinical_domain": "laboratory",
+      "source_url": "https://hl7.org/fhir/R4/observation.html",
+      "required_fields": ["status", "code", "subject"],
+      "required_any": [
+        {
+          "group_id": "observation_effective_time",
+          "fields": ["effectiveDateTime", "effectivePeriod", "effectiveTiming", "effectiveInstant", "issued"],
+          "message": "Observation should carry an effective or issued time for OJTFlow lab evidence."
+        },
+        {
+          "group_id": "observation_value",
+          "fields": [
+            "valueQuantity",
+            "valueCodeableConcept",
+            "valueString",
+            "valueBoolean",
+            "valueInteger",
+            "valueRange",
+            "component"
+          ],
+          "message": "Observation should carry a value[x] or component result."
+        }
+      ],
+      "search_parameters": [
+        {
+          "name": "code",
+          "type": "token",
+          "target_field": "Observation.code",
+          "example": "Observation?code=http://loinc.org|4548-4",
+          "standard_systems": ["FHIR", "LOINC"]
+        },
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "Observation.subject where subject is Patient",
+          "example": "Observation?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "date",
+          "type": "date",
+          "target_field": "Observation.effective[x]",
+          "example": "Observation?date=ge2026-01-01",
+          "standard_systems": ["FHIR"]
+        }
+      ],
+      "governance_notes": [
+        "LOINC coding and UCUM unit normalization remain review-gated."
+      ]
+    },
+    {
+      "resource_type": "DiagnosticReport",
+      "profile_id": "ojtflow_fhir_like_diagnostic_report_lab_v0",
+      "clinical_domain": "laboratory",
+      "source_url": "https://hl7.org/fhir/R4/diagnosticreport.html",
+      "required_fields": ["status", "code", "subject"],
+      "required_any": [
+        {
+          "group_id": "diagnostic_report_results",
+          "fields": ["result", "presentedForm"],
+          "message": "DiagnosticReport should link atomic results or presented form content."
+        }
+      ],
+      "search_parameters": [
+        {
+          "name": "code",
+          "type": "token",
+          "target_field": "DiagnosticReport.code",
+          "example": "DiagnosticReport?code=http://loinc.org|24323-8",
+          "standard_systems": ["FHIR", "LOINC"]
+        },
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "DiagnosticReport.subject where subject is Patient",
+          "example": "DiagnosticReport?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "result",
+          "type": "reference",
+          "target_field": "DiagnosticReport.result",
+          "example": "DiagnosticReport?result=Observation/<id>",
+          "standard_systems": ["FHIR"]
+        }
+      ],
+      "governance_notes": [
+        "DiagnosticReport groups lab Observations for exchange context; it does not add clinical interpretation."
+      ]
+    },
+    {
+      "resource_type": "DocumentReference",
+      "profile_id": "ojtflow_fhir_like_document_reference_v0",
+      "clinical_domain": "document",
+      "source_url": "https://hl7.org/fhir/R4/documentreference.html",
+      "required_fields": ["status", "content"],
+      "required_any": [
+        {
+          "group_id": "document_subject_or_context",
+          "fields": ["subject", "context"],
+          "message": "DocumentReference should carry subject or context when linked to clinical records."
+        }
+      ],
+      "search_parameters": [
+        {
+          "name": "patient",
+          "type": "reference",
+          "target_field": "DocumentReference.subject where subject is Patient",
+          "example": "DocumentReference?patient=<patient-id>",
+          "standard_systems": ["FHIR"]
+        },
+        {
+          "name": "status",
+          "type": "token",
+          "target_field": "DocumentReference.status",
+          "example": "DocumentReference?status=current",
+          "standard_systems": ["FHIR"]
+        }
+      ],
+      "governance_notes": [
+        "DocumentReference points to artifacts; raw document bytes stay in governed artifact storage."
+      ]
+    }
+  ]
+}

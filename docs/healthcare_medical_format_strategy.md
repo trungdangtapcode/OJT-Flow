@@ -129,17 +129,25 @@ Implemented v0 contract: `WorkflowState.clinical_package`, documented in
 
 ## V0 Lab Mapping
 
-Current `lab_result_v1` maps into FHIR-like `Observation` resources in
-`ClinicalPackage.clinical_bundle`.
+Current `lab_result_v1` maps into a FHIR-like resource set in
+`ClinicalPackage.clinical_bundle`: `Patient`, `Observation`,
+`DiagnosticReport`, and `DocumentReference`.
 
 | `lab_result_v1` field | FHIR-like target | Notes |
 | --- | --- | --- |
-| `patient_id` | `Observation.subject.reference` plus optional `Patient.identifier` | Treat as sensitive. Use synthetic IDs in demos. |
+| `patient_id` | `Patient.id`, `Patient.identifier`, `Observation.subject.reference`, `DiagnosticReport.subject` | Treat as sensitive. Use synthetic IDs in demos. |
 | `date` | `Observation.effectiveDateTime` | Validate ISO `YYYY-MM-DD`; normalize only after review. |
 | `lab_name` | `Observation.code.text`; review-gated LOINC candidate | Keep source text in the resource; candidate code stays separate until review. |
 | `value` | `Observation.valueQuantity.value` | Must be numeric when represented as a Quantity. |
 | `unit` | `Observation.valueQuantity.unit`; UCUM-like validation result | Missing or unknown units require review. |
-| source row | `Evidence.locator.row` and future `Provenance` | Do not lose row-level traceability. |
+| source artifact | `DocumentReference.content[0].attachment.url` | Points to governed artifact storage; raw bytes stay outside the resource. |
+| source row | `ClinicalFieldProvenance.location.row` and OperationOutcome issue locations | Do not lose row-level traceability. |
+
+Supported lightweight profiles and FHIR search hints are data-driven from
+`knowledge/fhir/resource_profiles.json`. They cover OJTFlow-required fields,
+required-any groups, source URLs, governance notes, and search parameters for
+the supported resource families. This is still FHIR-like scaffolding, not full
+HL7 validation.
 
 Current v0 also emits review-gated terminology scaffolding:
 

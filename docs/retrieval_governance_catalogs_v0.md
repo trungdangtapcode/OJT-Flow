@@ -94,7 +94,7 @@ inventory.
 Run:
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_api.py::test_openapi_documents_contract_models tests/test_api.py::test_authentication_required_for_protected_routes tests/test_api.py::test_retrieval_sources_presets_and_search_options_are_data_driven -q
+PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error -q
 ```
 
 The tests verify OpenAPI response models, authentication boundaries, and that

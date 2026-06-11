@@ -316,6 +316,14 @@ class GraphNERService:
             "graph_context": graph_context,
             "graph_rag_lite": graph_rag_summary,
         }
+        if ranked_package.interpretation is not None:
+            handoff_context["interpretation"] = ranked_package.interpretation.model_dump(
+                mode="json"
+            )
+        if ranked_package.support_matrix is not None:
+            handoff_context["support_matrix"] = ranked_package.support_matrix.model_dump(
+                mode="json"
+            )
         trace = ranked_package.trace.model_copy(
             update={
                 "fusion_diagnostics": {

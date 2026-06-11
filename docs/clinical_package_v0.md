@@ -37,7 +37,12 @@ The package includes:
 
 ## V0 Mapping
 
-`lab_result_v1` records map to FHIR-like `Observation` resources:
+`lab_result_v1` records map to a small FHIR-like package:
+
+- `Patient`: one resource per distinct `patient_id`
+- `Observation`: one atomic lab result per source row
+- `DiagnosticReport`: one grouped lab report per patient
+- `DocumentReference`: one pointer to the governed source dataset artifact
 
 - `patient_id` -> `Observation.subject.reference`
 - `date` -> `Observation.effectiveDateTime`
@@ -45,13 +50,38 @@ The package includes:
 - `value` -> `Observation.valueQuantity.value`
 - `unit` -> `Observation.valueQuantity.unit`
 
-Every mapped field receives `ClinicalFieldProvenance` with target path, source
-field/value, source row/column, source ref, derivation status, and explanatory
-note. Missing or non-numeric clinical fields do not get silently normalized;
-they set review warnings.
+Generated resource fields receive `ClinicalFieldProvenance` with target path,
+source field/value when available, source row/column/source ref, derivation
+status, and explanatory note. Source-backed fields use `source`, generated IDs
+and cross-resource references use `derived`, fixed FHIR-like constants use
+`defaulted`, and missing sensitive identity links use `review_required`.
+Missing or non-numeric clinical fields do not get silently normalized; they set
+review warnings.
 
 FHIR-like JSON submitted directly is preserved as package resources with a
 warning that full HL7 validation has not run.
+
+## FHIR-Like Profile Registry
+
+Supported resource families are declared in:
+
+`knowledge/fhir/resource_profiles.json`
+
+The registry defines the lightweight OJTFlow profile ID, FHIR release, source
+URL, required fields, required-any groups, search parameter hints, and
+governance notes for:
+
+- `Patient`
+- `Observation`
+- `DiagnosticReport`
+- `DocumentReference`
+
+Workflow clinical packages copy registry metadata into
+`clinical_package.handoff_context` as `fhir_profile_registry_version`,
+`fhir_resource_profile_ids`, `fhir_profile_sources`, and
+`fhir_search_parameters_by_resource`. This gives retrieval, Graph-NER, export,
+and reviewer UI code the same search hints without hardcoding them in React or
+tool code.
 
 ## Terminology And Units
 

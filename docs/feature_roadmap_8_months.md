@@ -163,7 +163,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F109 | Implemented | Assistant composer now supports multiple staged file attachments, multi-file clipboard paste, manual text snippets, removable selected context chips, workflow-to-Assistant context launch, and retrieval-run-to-Assistant context launch. The sent context preserves extracted attachment metadata/text, snippets, and selected workflow/retrieval refs in one structured payload. |
 | 2026-06-11 | F110 | Implemented | Assistant evidence summaries now carry stable `evidence_id` and locator metadata, render Show evidence actions, and jump to anchored Assistant evidence cards. Workflow Detail and Retrieval hit cards expose matching evidence anchors, with async hash-scroll support for persisted workflow/retrieval evidence links. |
 | 2026-06-11 | F041 | Implemented | Added `ClinicalPackage` contracts and `WorkflowState.clinical_package`, including raw input identity, FHIR-like bundle, OperationOutcome-like validation issues, evidence, review, audit refs, output refs, provenance, warnings, and handoff context. |
-| 2026-06-11 | F043 | Started | Added `ClinicalFieldProvenance` for generated lab Observation fields with target path, source field/value, row/column/source ref, derivation, and note. Remaining work: apply the same coverage across additional resource builders. |
+| 2026-06-11 | F042-F043, F048-F049 | Implemented | Added `knowledge/fhir/resource_profiles.json`, data-driven FHIR-like profile validation/search hints, and `lab_result_v1` resource builders for Patient, Observation, DiagnosticReport, and DocumentReference. Generated resources now carry source/derived/defaulted/review-required field provenance, and package handoff context includes profile IDs, source URLs, and search parameters. |
 | 2026-06-11 | F044 | Implemented | Added `lab_result_v1` to FHIR-like Observation mapping for patient reference, effective date, code text, value quantity, and unit, with review warnings instead of silent semantic normalization. |
 | 2026-06-11 | F047 | Implemented | Added OperationOutcome-like package issues derived from validation reports, preserving severity, code, diagnostics, source expression, issue ID, location, and review requirement. |
 | 2026-06-11 | F050 | Started | Added internal Provenance-like package records for parse, validate, map, retrieve evidence, review, and transform activities. Assistant/tool execution provenance remains follow-up. |
@@ -262,14 +262,14 @@ Keep this section updated when roadmap items move from planning into code.
 ### Month 3: Healthcare Standards And Clinical Package Layer
 
 - [x] F041 Define `ClinicalPackage` Pydantic contracts for raw input, clinical bundle, validation, evidence, provenance, review, audit refs, and handoff context.
-- [ ] F042 Add FHIR-like resource builders for `Patient`, `Observation`, `DiagnosticReport`, and `DocumentReference`.
-- [ ] F043 Add resource-level field provenance so every generated FHIR-like element has source evidence or an explicit derived-value note. _(Started: lab Observation fields now have source row/column provenance and derivation notes.)_
+- [x] F042 Add FHIR-like resource builders for `Patient`, `Observation`, `DiagnosticReport`, and `DocumentReference`.
+- [x] F043 Add resource-level field provenance so every generated FHIR-like element has source evidence or an explicit derived-value note.
 - [x] F044 Add `lab_result_v1` to FHIR-like `Observation` mapping with patient reference, effective date, code text, value quantity, and unit.
 - [ ] F045 Add review gates for semantic normalization of lab names, units, dates, patient IDs, diagnoses, medications, and procedures.
 - [ ] F046 Add FHIR-like `Bundle` export for approved workflow outputs.
 - [x] F047 Add FHIR `OperationOutcome`-like validation output for profile errors and warnings.
-- [ ] F048 Add lightweight FHIR profile registry files for supported resource families and required fields.
-- [ ] F049 Add FHIR search parameter generation for profile outputs and retrieval hints.
+- [x] F048 Add lightweight FHIR profile registry files for supported resource families and required fields.
+- [x] F049 Add FHIR search parameter generation for profile outputs and retrieval hints.
 - [ ] F050 Add Provenance-like internal records for parser, converter, assistant, reviewer, and retrieval-derived transformations. _(Started: ClinicalPackage records parser, validator, mapper, retrieval, reviewer, and transform activities.)_
 - [ ] F051 Add AuditEvent-like export for workflow events, review events, auth events, and tool execution.
 - [x] F052 Add LOINC candidate generation contract for observation names without automatically replacing source text.

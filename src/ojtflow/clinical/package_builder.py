@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ojtflow.clinical.terminology import terminology_candidates_for_lab_records
@@ -19,6 +20,7 @@ from ojtflow.core.contracts.data import ParsedData
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.issue import SourceLocation
 from ojtflow.core.contracts.workflow import WorkflowState
+from ojtflow.fhir.profile import load_fhir_resource_profile_catalog
 
 
 def build_clinical_package(
@@ -37,7 +39,7 @@ def build_clinical_package(
     terminology_candidates = []
     unit_validations = []
     if schema_id == "lab_result_v1":
-        resources = _lab_result_observations(parsed)
+        resources = _lab_result_resources(parsed, workflow)
         terminology_candidates, unit_validations = terminology_candidates_for_lab_records(parsed)
         if not resources:
             warnings.append("No lab_result_v1 records were available for FHIR-like mapping.")
@@ -49,6 +51,7 @@ def build_clinical_package(
     entry = [_bundle_entry(record) for record in resources]
     output_refs = [output_ref] if output_ref else []
     evidence = list(workflow.retrieved_context)
+    fhir_profile_context = _fhir_profile_context(resources)
     return ClinicalPackage(
         workflow_id=workflow.workflow_id,
         raw_input=ClinicalPackageRawInput(
@@ -97,19 +100,91 @@ def build_clinical_package(
             ],
             "fhir_like": True,
             "fhir_compliance": "fhir_like_not_validated",
+            **fhir_profile_context,
         },
         warnings=[*warnings, *_package_warnings(resources)],
     )
 
 
-def _lab_result_observations(parsed: ParsedData) -> list[ClinicalResourceRecord]:
+def _lab_result_resources(
+    parsed: ParsedData,
+    workflow: WorkflowState,
+) -> list[ClinicalResourceRecord]:
     if not parsed.records:
         return []
+    source_ref = workflow.input.dataset_ref if workflow.input else parsed.source_ref
+    patients = _lab_result_patients(parsed)
+    observations = _lab_result_observations(parsed)
+    reports = _lab_result_diagnostic_reports(parsed, patients=patients, observations=observations)
+    document = _lab_result_document_reference(
+        parsed,
+        patients=patients,
+        source_ref=source_ref,
+    )
+    return [*patients, *observations, *reports, document]
+
+
+def _lab_result_patients(parsed: ParsedData) -> list[ClinicalResourceRecord]:
+    patients: dict[str, ClinicalResourceRecord] = {}
+    for index, record in enumerate(parsed.records, start=1):
+        source_row = _source_row(record, fallback=index)
+        patient_id = _text(record.get("patient_id"))
+        resource_id = _safe_fhir_id(patient_id, fallback="unknown")
+        if resource_id in patients:
+            continue
+        warnings: list[str] = []
+        if not patient_id:
+            warnings.append("missing_patient_identifier")
+        resource = {
+            "resourceType": "Patient",
+            "id": resource_id,
+            "identifier": [{"value": patient_id}] if patient_id else [],
+        }
+        field_provenance = [
+            _constant_provenance(
+                target_path="Patient.resourceType",
+                parsed=parsed,
+                source_row=source_row,
+                note="Generated FHIR-like resourceType for Patient.",
+            ),
+            _field_provenance(
+                target_path="Patient.id",
+                record=record,
+                field="patient_id",
+                parsed=parsed,
+                source_row=source_row,
+                note="Mapped patient_id to FHIR-like Patient.id without identity normalization.",
+                review_required=not patient_id,
+            ),
+            _field_provenance(
+                target_path="Patient.identifier[0].value",
+                record=record,
+                field="patient_id",
+                parsed=parsed,
+                source_row=source_row,
+                note="Mapped patient_id to FHIR-like Patient.identifier value without normalization.",
+                review_required=not patient_id,
+            ),
+        ]
+        patients[resource_id] = ClinicalResourceRecord(
+            resource_id=resource_id,
+            resource_type="Patient",
+            resource=resource,
+            field_provenance=field_provenance,
+            source_row=source_row,
+            review_required=bool(warnings),
+            warnings=warnings,
+        )
+    return list(patients.values())
+
+
+def _lab_result_observations(parsed: ParsedData) -> list[ClinicalResourceRecord]:
     records: list[ClinicalResourceRecord] = []
     for index, record in enumerate(parsed.records, start=1):
         source_row = _source_row(record, fallback=index)
         resource_id = f"observation-{source_row}"
         patient_id = _text(record.get("patient_id"))
+        patient_resource_id = _safe_fhir_id(patient_id, fallback="unknown")
         lab_name = _text(record.get("lab_name")) or "Unknown lab"
         date_value = _text(record.get("date"))
         unit = _text(record.get("unit"))
@@ -126,7 +201,7 @@ def _lab_result_observations(parsed: ParsedData) -> list[ClinicalResourceRecord]
             "id": resource_id,
             "status": "final",
             "code": {"text": lab_name},
-            "subject": {"reference": f"Patient/{patient_id or 'unknown'}"},
+            "subject": {"reference": f"Patient/{patient_resource_id}"},
             "effectiveDateTime": date_value,
             "valueQuantity": value_quantity,
         }
@@ -140,6 +215,24 @@ def _lab_result_observations(parsed: ParsedData) -> list[ClinicalResourceRecord]
         if not unit:
             warnings.append("missing_unit_requires_review")
         field_provenance = [
+            _constant_provenance(
+                target_path="Observation.resourceType",
+                parsed=parsed,
+                source_row=source_row,
+                note="Generated FHIR-like resourceType for Observation.",
+            ),
+            _derived_provenance(
+                target_path="Observation.id",
+                parsed=parsed,
+                source_row=source_row,
+                note="Derived stable Observation.id from the parsed source row.",
+            ),
+            _constant_provenance(
+                target_path="Observation.status",
+                parsed=parsed,
+                source_row=source_row,
+                note="Defaulted Observation.status to final for parsed lab result rows.",
+            ),
             _field_provenance(
                 target_path="Observation.subject.reference",
                 record=record,
@@ -194,6 +287,197 @@ def _lab_result_observations(parsed: ParsedData) -> list[ClinicalResourceRecord]
             )
         )
     return records
+
+
+def _lab_result_diagnostic_reports(
+    parsed: ParsedData,
+    *,
+    patients: list[ClinicalResourceRecord],
+    observations: list[ClinicalResourceRecord],
+) -> list[ClinicalResourceRecord]:
+    patient_ids = {patient.resource_id for patient in patients}
+    observations_by_patient = {patient_id: [] for patient_id in patient_ids}
+    row_by_patient: dict[str, dict[str, Any]] = {}
+    for observation in observations:
+        subject = observation.resource.get("subject", {})
+        reference = subject.get("reference") if isinstance(subject, dict) else None
+        patient_id = str(reference).split("/", 1)[1] if isinstance(reference, str) and "/" in reference else "unknown"
+        observations_by_patient.setdefault(patient_id, []).append(observation)
+        if patient_id not in row_by_patient:
+            row = observation.source_row or 1
+            row_by_patient[patient_id] = _record_for_source_row(parsed, row)
+
+    reports: list[ClinicalResourceRecord] = []
+    for patient_id, patient_observations in observations_by_patient.items():
+        if not patient_observations:
+            continue
+        source_row = patient_observations[0].source_row or 1
+        source_record = row_by_patient.get(patient_id, {})
+        resource_id = f"diagnostic-report-{patient_id}"
+        first_date = _text(source_record.get("date"))
+        resource: dict[str, Any] = {
+            "resourceType": "DiagnosticReport",
+            "id": resource_id,
+            "status": "final",
+            "code": {"text": "Laboratory report"},
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "result": [
+                {"reference": f"Observation/{observation.resource_id}"}
+                for observation in patient_observations
+            ],
+        }
+        if first_date:
+            resource["effectiveDateTime"] = first_date
+        field_provenance = [
+            _constant_provenance(
+                target_path="DiagnosticReport.resourceType",
+                parsed=parsed,
+                source_row=source_row,
+                note="Generated FHIR-like resourceType for DiagnosticReport.",
+            ),
+            _derived_provenance(
+                target_path="DiagnosticReport.id",
+                parsed=parsed,
+                source_row=source_row,
+                note="Derived DiagnosticReport.id from the Patient reference.",
+            ),
+            _constant_provenance(
+                target_path="DiagnosticReport.status",
+                parsed=parsed,
+                source_row=source_row,
+                note="Defaulted DiagnosticReport.status to final for grouped lab results.",
+            ),
+            _constant_provenance(
+                target_path="DiagnosticReport.code.text",
+                parsed=parsed,
+                source_row=source_row,
+                note="Defaulted DiagnosticReport.code.text to Laboratory report for grouped lab rows.",
+            ),
+            _field_provenance(
+                target_path="DiagnosticReport.subject.reference",
+                record=source_record,
+                field="patient_id",
+                parsed=parsed,
+                source_row=source_row,
+                note="Mapped patient_id to DiagnosticReport.subject reference.",
+                review_required=patient_id == "unknown",
+            ),
+            _derived_provenance(
+                target_path="DiagnosticReport.result",
+                parsed=parsed,
+                source_row=source_row,
+                note="Derived DiagnosticReport.result references from generated Observation resources.",
+            ),
+        ]
+        if first_date:
+            field_provenance.append(
+                _field_provenance(
+                    target_path="DiagnosticReport.effectiveDateTime",
+                    record=source_record,
+                    field="date",
+                    parsed=parsed,
+                    source_row=source_row,
+                    note="Mapped source date to DiagnosticReport.effectiveDateTime.",
+                )
+            )
+        reports.append(
+            ClinicalResourceRecord(
+                resource_id=resource_id,
+                resource_type="DiagnosticReport",
+                resource=resource,
+                field_provenance=field_provenance,
+                source_row=source_row,
+                review_required=patient_id == "unknown",
+                warnings=["missing_patient_identifier"] if patient_id == "unknown" else [],
+            )
+        )
+    return reports
+
+
+def _lab_result_document_reference(
+    parsed: ParsedData,
+    *,
+    patients: list[ClinicalResourceRecord],
+    source_ref: str | None,
+) -> ClinicalResourceRecord:
+    source_row = _source_row(parsed.records[0], fallback=1) if parsed.records else 1
+    resource_id = "document-reference-source"
+    patient_refs = [
+        {"reference": f"Patient/{patient.resource_id}"}
+        for patient in patients
+        if patient.resource_id != "unknown"
+    ]
+    resource: dict[str, Any] = {
+        "resourceType": "DocumentReference",
+        "id": resource_id,
+        "status": "current",
+        "type": {"text": "Source dataset"},
+        "content": [
+            {
+                "attachment": {
+                    "url": source_ref or parsed.source_ref or "ojtflow://source/unavailable",
+                    "title": "OJTFlow source dataset",
+                }
+            }
+        ],
+    }
+    if len(patient_refs) == 1:
+        resource["subject"] = patient_refs[0]
+    elif patient_refs:
+        resource["context"] = {"related": patient_refs}
+    else:
+        resource["context"] = {"related": []}
+    return ClinicalResourceRecord(
+        resource_id=resource_id,
+        resource_type="DocumentReference",
+        resource=resource,
+        field_provenance=[
+            _constant_provenance(
+                target_path="DocumentReference.resourceType",
+                parsed=parsed,
+                source_row=source_row,
+                note="Generated FHIR-like resourceType for DocumentReference.",
+            ),
+            _derived_provenance(
+                target_path="DocumentReference.id",
+                parsed=parsed,
+                source_row=source_row,
+                note="Derived DocumentReference.id for the workflow source artifact.",
+            ),
+            _constant_provenance(
+                target_path="DocumentReference.status",
+                parsed=parsed,
+                source_row=source_row,
+                note="Defaulted DocumentReference.status to current for the source artifact pointer.",
+            ),
+            _constant_provenance(
+                target_path="DocumentReference.type.text",
+                parsed=parsed,
+                source_row=source_row,
+                note="Defaulted DocumentReference.type.text to Source dataset.",
+            ),
+            _derived_provenance(
+                target_path="DocumentReference.content[0].attachment.url",
+                parsed=parsed,
+                source_row=source_row,
+                note="Linked DocumentReference content to the governed workflow input artifact reference.",
+            ),
+            _derived_provenance(
+                target_path=(
+                    "DocumentReference.subject.reference"
+                    if len(patient_refs) == 1
+                    else "DocumentReference.context.related"
+                ),
+                parsed=parsed,
+                source_row=source_row,
+                note="Linked DocumentReference subject/context to generated Patient resources.",
+                review_required=not patient_refs,
+            ),
+        ],
+        source_row=source_row,
+        review_required=not patient_refs,
+        warnings=["missing_patient_identifier"] if not patient_refs else [],
+    )
 
 
 def _preserve_fhir_like_resources(parsed: ParsedData) -> list[ClinicalResourceRecord]:
@@ -255,6 +539,37 @@ def _field_provenance(
             source_ref=parsed.source_ref,
         ),
         derivation="review_required" if review_required else "source",
+        note=note,
+    )
+
+
+def _constant_provenance(
+    *,
+    target_path: str,
+    parsed: ParsedData,
+    source_row: int,
+    note: str,
+) -> ClinicalFieldProvenance:
+    return ClinicalFieldProvenance(
+        target_path=target_path,
+        location=SourceLocation(row=source_row, source_ref=parsed.source_ref),
+        derivation="defaulted",
+        note=note,
+    )
+
+
+def _derived_provenance(
+    *,
+    target_path: str,
+    parsed: ParsedData,
+    source_row: int,
+    note: str,
+    review_required: bool = False,
+) -> ClinicalFieldProvenance:
+    return ClinicalFieldProvenance(
+        target_path=target_path,
+        location=SourceLocation(row=source_row, source_ref=parsed.source_ref),
+        derivation="review_required" if review_required else "derived",
         note=note,
     )
 
@@ -380,6 +695,32 @@ def _rag_query_terms(resources: list[ClinicalResourceRecord], workflow: Workflow
     return terms
 
 
+def _fhir_profile_context(resources: list[ClinicalResourceRecord]) -> dict[str, Any]:
+    catalog = load_fhir_resource_profile_catalog()
+    profiles_by_type = {profile.resource_type: profile for profile in catalog.profiles}
+    resource_types = sorted({record.resource_type for record in resources})
+    profile_ids: dict[str, str] = {}
+    profile_sources: dict[str, str] = {}
+    search_parameters_by_resource: dict[str, list[dict[str, Any]]] = {}
+    for resource_type in resource_types:
+        profile = profiles_by_type.get(resource_type)
+        if profile is None:
+            continue
+        profile_ids[resource_type] = profile.profile_id
+        profile_sources[resource_type] = profile.source_url
+        search_parameters_by_resource[resource_type] = [
+            parameter.model_dump(mode="json")
+            for parameter in profile.search_parameters
+        ]
+    return {
+        "fhir_profile_registry_version": catalog.version,
+        "fhir_release": catalog.fhir_release,
+        "fhir_resource_profile_ids": profile_ids,
+        "fhir_profile_sources": profile_sources,
+        "fhir_search_parameters_by_resource": search_parameters_by_resource,
+    }
+
+
 def _package_warnings(resources: list[ClinicalResourceRecord]) -> list[str]:
     warnings = ["FHIR-like package has not been validated by a full HL7 FHIR validator."]
     if any(record.review_required for record in resources):
@@ -397,6 +738,23 @@ def _source_row(record: dict[str, Any], *, fallback: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _record_for_source_row(parsed: ParsedData, source_row: int) -> dict[str, Any]:
+    for record in parsed.records:
+        if _source_row(record, fallback=-1) == source_row:
+            return record
+    return parsed.records[0] if parsed.records else {}
+
+
+FHIR_ID_PATTERN = re.compile(r"[^A-Za-z0-9.-]+")
+
+
+def _safe_fhir_id(value: str, *, fallback: str) -> str:
+    normalized = FHIR_ID_PATTERN.sub("-", value.strip()).strip("-.")
+    if not normalized:
+        return fallback
+    return normalized[:64]
 
 
 def _text(value: Any) -> str:

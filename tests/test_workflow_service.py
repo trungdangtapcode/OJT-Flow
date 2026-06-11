@@ -31,6 +31,14 @@ def make_service() -> WorkflowService:
     )
 
 
+def _resource_by_type(package, resource_type: str):
+    return next(
+        record
+        for record in package.clinical_bundle.resources
+        if record.resource_type == resource_type
+    )
+
+
 def test_workflow_pauses_for_review_then_completes_after_approval() -> None:
     service = make_service()
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
@@ -93,9 +101,24 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
     assert package.schema_version == "clinical_package.v0"
     assert package.raw_input.detected_format == DataFormat.CSV
     assert package.clinical_bundle.resourceType == "Bundle"
-    assert len(package.clinical_bundle.resources) == 1
+    resource_types = {record.resource_type for record in package.clinical_bundle.resources}
+    assert {
+        "Patient",
+        "Observation",
+        "DiagnosticReport",
+        "DocumentReference",
+    }.issubset(resource_types)
 
-    observation = package.clinical_bundle.resources[0]
+    patient = _resource_by_type(package, "Patient")
+    assert patient.resource["id"] == "P001"
+    assert patient.resource["identifier"][0]["value"] == "P001"
+    assert {
+        "Patient.resourceType",
+        "Patient.id",
+        "Patient.identifier[0].value",
+    }.issubset({item.target_path for item in patient.field_provenance})
+
+    observation = _resource_by_type(package, "Observation")
     assert observation.resource_type == "Observation"
     assert observation.resource["subject"]["reference"] == "Patient/P001"
     assert observation.resource["code"]["text"] == "HbA1c"
@@ -103,6 +126,9 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
     assert observation.resource["valueQuantity"]["unit"] == "%"
     field_paths = {item.target_path for item in observation.field_provenance}
     assert {
+        "Observation.resourceType",
+        "Observation.id",
+        "Observation.status",
         "Observation.subject.reference",
         "Observation.effectiveDateTime",
         "Observation.code.text",
@@ -117,6 +143,33 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
     assert unit_provenance.location is not None
     assert unit_provenance.location.row == 2
     assert unit_provenance.location.field == "unit"
+    report = _resource_by_type(package, "DiagnosticReport")
+    assert report.resource["subject"]["reference"] == "Patient/P001"
+    assert report.resource["result"] == [
+        {"reference": f"Observation/{observation.resource_id}"}
+    ]
+    assert {
+        "DiagnosticReport.resourceType",
+        "DiagnosticReport.id",
+        "DiagnosticReport.status",
+        "DiagnosticReport.code.text",
+        "DiagnosticReport.subject.reference",
+        "DiagnosticReport.result",
+        "DiagnosticReport.effectiveDateTime",
+    }.issubset({item.target_path for item in report.field_provenance})
+    document = _resource_by_type(package, "DocumentReference")
+    assert document.resource["status"] == "current"
+    assert document.resource["subject"]["reference"] == "Patient/P001"
+    assert document.resource["content"][0]["attachment"]["url"] == workflow.input.dataset_ref
+    assert {
+        "DocumentReference.resourceType",
+        "DocumentReference.id",
+        "DocumentReference.status",
+        "DocumentReference.type.text",
+        "DocumentReference.content[0].attachment.url",
+        "DocumentReference.subject.reference",
+    }.issubset({item.target_path for item in document.field_provenance})
+    assert all(record.field_provenance for record in package.clinical_bundle.resources)
     assert package.operation_outcome.resourceType == "OperationOutcome"
     assert any(issue.code == "possible_phi" for issue in package.operation_outcome.issue)
     assert len(package.terminology_candidates) == 1
@@ -132,6 +185,13 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
     assert package.handoff_context["terminology_candidate_count"] == 1
     assert package.handoff_context["unit_validation_count"] == 1
     assert package.handoff_context["fhir_compliance"] == "fhir_like_not_validated"
+    assert package.handoff_context["fhir_profile_registry_version"] == (
+        "fhir_like_resource_profiles.v0"
+    )
+    assert package.handoff_context["fhir_resource_profile_ids"]["Observation"] == (
+        "ojtflow_fhir_like_observation_lab_v0"
+    )
+    assert "DiagnosticReport" in package.handoff_context["fhir_search_parameters_by_resource"]
     assert "FHIR-like package has not been validated" in package.warnings[0]
 
 
@@ -687,7 +747,14 @@ def test_fhir_like_workflow_adds_profile_evidence_and_handoff_context() -> None:
     assert workflow.status == WorkflowStatus.COMPLETED
     assert workflow.handoff_context["fhir_profile"]["is_fhir_like"] is True
     assert workflow.handoff_context["fhir_profile"]["resource_type"] == "Observation"
+    assert workflow.handoff_context["fhir_profile"]["profile_registry_version"] == (
+        "fhir_like_resource_profiles.v0"
+    )
+    assert workflow.handoff_context["fhir_profile"]["search_parameters"]["Observation"]
     assert workflow.handoff_context["fhir_handoff"]["graphner_ready"] is True
+    assert workflow.handoff_context["fhir_handoff"]["profiled_resource_types"] == [
+        "Observation"
+    ]
     assert any(step.name == "fhir_profile" for step in workflow.steps)
     source_ids = {evidence.source_id for evidence in workflow.retrieved_context}
     assert "fhir_like:Observation" in source_ids
