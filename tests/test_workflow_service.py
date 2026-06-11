@@ -247,6 +247,39 @@ def test_clinical_package_export_builds_bundle_and_reloads_losslessly() -> None:
     assert any(issue.code == "package_hash_mismatch" for issue in tampered_validation.issues)
 
 
+def test_clinical_package_adds_rxnorm_and_snomed_candidates_for_extra_fields() -> None:
+    service = make_service()
+    text = (
+        "date,patient_id,lab_name,value,unit,medication,diagnosis\n"
+        "2026-01-01,P001,HbA1c,7.4,%,metformin,type 2 diabetes\n"
+    )
+
+    workflow = service.start_workflow(
+        instruction="Create clinical terminology candidates for this lab row.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    assert workflow.clinical_package is not None
+    candidates = {
+        (candidate.standard_system, candidate.source_field): candidate
+        for candidate in workflow.clinical_package.terminology_candidates
+    }
+    rxnorm = candidates[("RxNorm", "medication")]
+    assert rxnorm.code == "6809"
+    assert rxnorm.metadata["normalization_policy"] == "review_required_no_auto_replacement"
+    assert rxnorm.requires_review is True
+
+    snomed = candidates[("SNOMED CT", "diagnosis")]
+    assert snomed.code == "44054006"
+    assert snomed.metadata["implementation_status"] == "placeholder_contract"
+    assert "license" in snomed.metadata["license_note"].lower()
+    assert snomed.requires_review is True
+
+
 def test_review_gated_lab_workflow_clinical_package_carries_review_and_issues() -> None:
     service = make_service()
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()

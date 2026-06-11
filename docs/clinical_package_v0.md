@@ -89,6 +89,12 @@ For `lab_result_v1`, the package now emits review-gated LOINC candidates from:
 
 `knowledge/terminologies/medical_concepts.json`
 
+The same registry can emit review-gated RxNorm candidates for medication-like
+fields and SNOMED CT placeholder candidates for diagnosis, finding, problem,
+procedure, and allergy fields when those fields are present in the parsed
+records. SNOMED CT candidates are license-aware placeholders; production use
+requires licensed terminology lookup and reviewer approval.
+
 Unit validation uses the seed UCUM registry:
 
 `knowledge/terminologies/ucum_units.json`

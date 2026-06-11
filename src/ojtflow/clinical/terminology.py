@@ -24,50 +24,152 @@ DEFAULT_UCUM_UNIT_REGISTRY = (
 )
 CONCEPT_REGISTRY_ENV_VAR = "OJT_MEDICAL_CONCEPT_REGISTRY_PATH"
 UCUM_UNIT_REGISTRY_ENV_VAR = "OJT_UCUM_UNIT_REGISTRY_PATH"
+MEDICATION_FIELDS = (
+    "medication",
+    "medication_name",
+    "drug",
+    "drug_name",
+    "rx",
+)
+SNOMED_CT_FIELDS = (
+    "diagnosis",
+    "condition",
+    "finding",
+    "problem",
+    "problem_name",
+    "procedure",
+    "procedure_name",
+    "allergy",
+    "allergy_name",
+)
+SNOMED_CT_LICENSE_NOTE = (
+    "SNOMED CT candidate only; verify deployment license and jurisdiction before "
+    "production lookup, storage, export, or clinical use."
+)
 
 
 def terminology_candidates_for_lab_records(
     parsed: ParsedData,
 ) -> tuple[list[TerminologyCandidate], list[UnitValidationResult]]:
-    """Generate review-gated LOINC candidates and UCUM unit checks for lab records."""
+    """Generate review-gated terminology candidates and UCUM unit checks."""
 
     candidates: list[TerminologyCandidate] = []
     unit_results: list[UnitValidationResult] = []
     for row_index, record in enumerate(parsed.records, start=1):
         source_row = _source_row(record, fallback=row_index)
         lab_name = _text(record.get("lab_name"))
+        loinc_candidate: TerminologyCandidate | None = None
         if lab_name:
-            candidate = _loinc_candidate_for_lab_name(
+            loinc_candidate = _concept_candidate_for_value(
                 lab_name,
+                source_field="lab_name",
+                standard_system="LOINC",
+                clinical_domains=("laboratory",),
                 location=SourceLocation(
                     row=source_row,
                     column="lab_name",
                     field="lab_name",
                     source_ref=parsed.source_ref,
                 ),
+                metadata_overrides={
+                    "source_note": (
+                        "Candidate only; reviewer approval required before semantic "
+                        "normalization."
+                    )
+                },
             )
-            if candidate:
-                candidates.append(candidate)
+            if loinc_candidate:
+                candidates.append(loinc_candidate)
+        candidates.extend(_field_candidates(record, parsed=parsed, source_row=source_row))
         unit_results.append(
             _unit_validation_for_record(
                 record,
                 source_row=source_row,
                 parsed=parsed,
-                candidate=candidate if lab_name else None,
+                candidate=loinc_candidate,
             )
         )
     return candidates, unit_results
 
 
-def _loinc_candidate_for_lab_name(
+def _field_candidates(
+    record: dict[str, Any],
+    *,
+    parsed: ParsedData,
+    source_row: int,
+) -> list[TerminologyCandidate]:
+    candidates: list[TerminologyCandidate] = []
+    for field in MEDICATION_FIELDS:
+        value = _text(record.get(field))
+        if not value:
+            continue
+        candidate = _concept_candidate_for_value(
+            value,
+            source_field=field,
+            standard_system="RxNorm",
+            clinical_domains=("medication", "allergy"),
+            location=SourceLocation(
+                row=source_row,
+                column=field,
+                field=field,
+                source_ref=parsed.source_ref,
+            ),
+            metadata_overrides={
+                "implementation_status": "seed_registry_contract",
+                "normalization_policy": "review_required_no_auto_replacement",
+                "source_note": (
+                    "RxNorm candidate only; reviewer approval required before "
+                    "medication normalization."
+                ),
+            },
+        )
+        if candidate:
+            candidates.append(candidate)
+    for field in SNOMED_CT_FIELDS:
+        value = _text(record.get(field))
+        if not value:
+            continue
+        candidate = _concept_candidate_for_value(
+            value,
+            source_field=field,
+            standard_system="SNOMED CT",
+            clinical_domains=("problem_list", "condition", "finding", "procedure", "allergy"),
+            location=SourceLocation(
+                row=source_row,
+                column=field,
+                field=field,
+                source_ref=parsed.source_ref,
+            ),
+            metadata_overrides={
+                "implementation_status": "placeholder_contract",
+                "license_note": SNOMED_CT_LICENSE_NOTE,
+                "normalization_policy": "review_required_no_auto_replacement",
+                "source_note": (
+                    "SNOMED CT placeholder candidate only; final clinical "
+                    "terminology assignment requires licensed lookup and review."
+                ),
+            },
+        )
+        if candidate:
+            candidates.append(candidate)
+    return candidates
+
+
+def _concept_candidate_for_value(
     value: str,
     *,
+    source_field: str,
+    standard_system: str,
+    clinical_domains: tuple[str, ...],
     location: SourceLocation,
+    metadata_overrides: dict[str, Any] | None = None,
 ) -> TerminologyCandidate | None:
     normalized_value = _normalize(value)
     best: tuple[dict[str, Any], list[str], float] | None = None
     for concept in _concept_registry():
-        if concept.get("standard_system") != "LOINC":
+        if concept.get("standard_system") != standard_system:
+            continue
+        if clinical_domains and concept.get("clinical_domain") not in clinical_domains:
             continue
         aliases = [
             str(alias)
@@ -94,24 +196,30 @@ def _loinc_candidate_for_lab_name(
     if best is None:
         return None
     concept, matched_aliases, confidence = best
+    metadata = dict(concept.get("metadata") or {})
+    metadata.update(
+        {
+            "concept_id": concept.get("concept_id"),
+            "clinical_domain": concept.get("clinical_domain"),
+        }
+    )
+    if standard_system == "LOINC":
+        metadata["preferred_units"] = _preferred_units(concept)
+        metadata["loinc_long_common_name"] = (concept.get("metadata") or {}).get(
+            "loinc_long_common_name"
+        )
+    metadata.update(metadata_overrides or {})
     return TerminologyCandidate(
-        source_field="lab_name",
+        source_field=source_field,
         source_value=value,
-        standard_system="LOINC",
+        standard_system=standard_system,
         code=str(concept["code"]),
         display=str(concept["display_name"]),
         confidence=confidence,
         matched_aliases=matched_aliases,
         source_uri=str(concept.get("source")) if concept.get("source") else None,
         location=location,
-        metadata={
-            "concept_id": concept.get("concept_id"),
-            "preferred_units": _preferred_units(concept),
-            "loinc_long_common_name": (concept.get("metadata") or {}).get(
-                "loinc_long_common_name"
-            ),
-            "source_note": "Candidate only; reviewer approval required before semantic normalization.",
-        },
+        metadata=metadata,
     )
 
 

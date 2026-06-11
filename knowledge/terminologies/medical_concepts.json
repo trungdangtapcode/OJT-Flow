@@ -209,6 +209,29 @@
       }
     },
     {
+      "concept_id": "type_2_diabetes_snomed_seed",
+      "display_name": "Type 2 diabetes mellitus",
+      "clinical_domain": "problem_list",
+      "standard_system": "SNOMED CT",
+      "code": "44054006",
+      "source": "https://browser.ihtsdotools.org/",
+      "aliases": [
+        "type 2 diabetes",
+        "type ii diabetes",
+        "t2dm",
+        "diabetes mellitus type 2",
+        "type 2 diabetes mellitus",
+        "diabetes diagnosis",
+        "diabetes problem"
+      ],
+      "metadata": {
+        "coding_system_scope": "clinical finding seed",
+        "implementation_status": "placeholder_contract",
+        "license_note": "SNOMED CT access and use depend on deployment jurisdiction and license; verify before production use.",
+        "review_note": "Use as retrieval grounding only; final SNOMED CT assignment requires licensed lookup and clinician or coder review."
+      }
+    },
+    {
       "concept_id": "essential_hypertension_icd10cm_seed",
       "display_name": "Essential hypertension diagnosis",
       "clinical_domain": "problem_list",
