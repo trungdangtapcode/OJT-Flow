@@ -1048,6 +1048,14 @@ unless the request explicitly sets `execute_write_actions=true`. The assistant
 does not expose review approval, rejection, cancellation, or destructive
 artifact actions in v0.
 
+The browser UI adds an additional operator confirmation before sending
+`execute_write_actions=true`: it lists tools from the backend catalog where
+`requires_approval=true`, shows risk and approval reason metadata, and blocks
+the send action until the operator confirms the next write-enabled command.
+The API remains the final enforcement boundary; unconfirmed or malicious clients
+cannot bypass backend tool permission checks without explicitly setting
+`execute_write_actions=true`.
+
 ## FHIR-Like Profile
 
 `POST /api/v1/fhir/profile`

@@ -57,6 +57,9 @@ Tool execution remains deterministic:
 - Tool arguments are normalized by backend code.
 - Workflow ownership is enforced by the API route through authenticated user ID.
 - `start_workflow` requires `execute_write_actions=true`.
+- The browser Assistant must also require a one-use confirmation before sending
+  `execute_write_actions=true`, using the backend tool catalog to list
+  write-gated tools and approval reasons.
 - Review approval/rejection tools are not exposed in v0.
 
 ## API Entry Point

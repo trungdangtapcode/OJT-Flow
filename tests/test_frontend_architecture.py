@@ -10724,6 +10724,10 @@ def test_help_center_surfaces_user_guidance() -> None:
     assert "Search presets help" in retrieval_search_preset_header
     assert "Source inventory filters help" in retrieval_source_inventory_filter_header
     assert "Execute write actions help" in assistant_input_panels
+    assert "Write action confirmation" in assistant_input_panels
+    assert "writeGatedTools.map" in assistant_input_panels
+    assert "writeConfirmationRequired" in assistant_page
+    assert "Confirm write-gated assistant actions before sending." in assistant_page
     assert "Optional context JSON help" in assistant_input_panels
     assert "Tool catalog help" in assistant_tool_catalog
     assert "How to create a workflow" in workbench_page

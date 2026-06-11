@@ -4,6 +4,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Label, Textarea } from "../../components/ui/form";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
+import type { AssistantToolSpec } from "../../types";
 import { formatBytes, formatCount } from "./assistant-format";
 
 export function AttachmentPreview({
@@ -85,11 +86,17 @@ export function AssistantControlsPanel({
   executeWriteActions,
   onContextTextChange,
   onExecuteWriteActionsChange,
+  onWriteConfirmationAcceptedChange,
+  writeConfirmationAccepted,
+  writeGatedTools,
 }: {
   contextText: string;
   executeWriteActions: boolean;
   onContextTextChange: (value: string) => void;
   onExecuteWriteActionsChange: (value: boolean) => void;
+  onWriteConfirmationAcceptedChange: (value: boolean) => void;
+  writeConfirmationAccepted: boolean;
+  writeGatedTools: AssistantToolSpec[];
 }) {
   return (
     <details className="group relative">
@@ -108,7 +115,12 @@ export function AssistantControlsPanel({
           <input
             checked={executeWriteActions}
             className="h-4 w-4 accent-primary"
-            onChange={(event) => onExecuteWriteActionsChange(event.target.checked)}
+            onChange={(event) => {
+              onExecuteWriteActionsChange(event.target.checked);
+              if (!event.target.checked) {
+                onWriteConfirmationAcceptedChange(false);
+              }
+            }}
             type="checkbox"
           />
           Execute write actions
@@ -116,6 +128,58 @@ export function AssistantControlsPanel({
             Keep this off for normal questions. Turn it on only when you explicitly want the assistant to run approved write-capable tools.
           </HelpTooltip>
         </label>
+        {executeWriteActions ? (
+          <div className="grid gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+            <div>
+              <div className="font-black">Write action confirmation</div>
+              <p className="mt-1 leading-6">
+                Confirm before the assistant may run write-gated tools. The
+                backend still enforces each tool permission gate.
+              </p>
+            </div>
+            <div className="grid gap-2">
+              {writeGatedTools.length ? (
+                writeGatedTools.map((tool) => (
+                  <div
+                    className="rounded-md border border-amber-200 bg-card px-3 py-2"
+                    key={tool.name}
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="break-words font-mono text-xs font-black">
+                        {tool.name}
+                      </span>
+                      <Badge variant="warning">{tool.risk_level}</Badge>
+                      <Badge variant="muted">{tool.permission_scope}</Badge>
+                    </div>
+                    {tool.approval_reason ? (
+                      <div className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
+                        {tool.approval_reason}
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-md border border-amber-200 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  No write-gated Assistant tools are advertised by the current backend catalog.
+                </div>
+              )}
+            </div>
+            <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-card px-3 py-2 text-xs font-bold">
+              <input
+                checked={writeConfirmationAccepted}
+                className="mt-0.5 h-4 w-4 accent-primary"
+                onChange={(event) =>
+                  onWriteConfirmationAcceptedChange(event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>
+                I confirm this next assistant command may execute write-gated
+                backend tools if the validated plan selects them.
+              </span>
+            </label>
+          </div>
+        ) : null}
         <Label>
           <span className="inline-flex items-center gap-1.5">
             Optional context JSON

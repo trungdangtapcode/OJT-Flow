@@ -1773,6 +1773,11 @@ chat turn. `Retry` must send structured `assistant_recovery.retry_tool` context
 with the original tool name and arguments; `Continue without retry` must send
 `assistant_recovery.continue_after_failure` and preserve the failure as
 unresolved instead of hiding it in a new prompt.
+Write-gated Assistant actions must require a second explicit UI confirmation
+after the operator enables write execution. The confirmation surface should be
+data-driven from the backend tool catalog (`requires_approval`, risk level,
+permission scope, and approval reason), reset after each write-enabled turn,
+and block sending while `execute_write_actions=true` is unconfirmed.
 Long LLM planning must not look frozen: the UI should render backend
 `planning_step` events and streamed `planning_delta` planner text before
 `plan_ready`, so users can see what the model is doing before tools execute.

@@ -91,6 +91,8 @@ export function AssistantPage() {
     React.useState<AssistantSelectedAttachment | null>(null);
   const [isDraggingFile, setIsDraggingFile] = React.useState(false);
   const [executeWriteActions, setExecuteWriteActions] = React.useState(false);
+  const [writeConfirmationAccepted, setWriteConfirmationAccepted] =
+    React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [sessionSearch, setSessionSearch] = React.useState("");
   const deferredSessionSearch = React.useDeferredValue(sessionSearch.trim());
@@ -189,6 +191,12 @@ export function AssistantPage() {
     createSessionMutation.isPending ||
     deleteSessionMutation.isPending;
   const llm = runtimeQuery.data?.llm;
+  const writeGatedTools = React.useMemo(
+    () => (toolsQuery.data ?? []).filter((tool) => tool.requires_approval),
+    [toolsQuery.data],
+  );
+  const writeConfirmationRequired =
+    executeWriteActions && !writeConfirmationAccepted;
   const uploadExtensionHint = uploadExtensions.length
     ? `${uploadExtensions.slice(0, 8).join(", ")}${
         uploadExtensions.length > 8 ? ", ..." : ""
@@ -304,6 +312,10 @@ export function AssistantPage() {
     clearComposer?: boolean;
   }) => {
     if (isBusy) return;
+    if (writeConfirmationRequired) {
+      setFormError("Confirm write-gated assistant actions before sending.");
+      return;
+    }
     setFormError(null);
     activeStreamRef.current?.abort();
     const abortController = new AbortController();
@@ -417,6 +429,9 @@ export function AssistantPage() {
     } finally {
       if (activeStreamRef.current === abortController) {
         activeStreamRef.current = null;
+      }
+      if (executeWriteActions) {
+        setWriteConfirmationAccepted(false);
       }
     }
   };
@@ -663,6 +678,12 @@ export function AssistantPage() {
                     {formError}
                   </Notice>
                 ) : null}
+                {writeConfirmationRequired ? (
+                  <Notice title="Write confirmation required">
+                    Open Advanced context and confirm the write-gated tool list
+                    before sending this command.
+                  </Notice>
+                ) : null}
                 <div className="grid gap-2">
                   <Textarea
                     aria-label="Message"
@@ -727,6 +748,11 @@ export function AssistantPage() {
                         executeWriteActions={executeWriteActions}
                         onContextTextChange={setContextText}
                         onExecuteWriteActionsChange={setExecuteWriteActions}
+                        onWriteConfirmationAcceptedChange={
+                          setWriteConfirmationAccepted
+                        }
+                        writeConfirmationAccepted={writeConfirmationAccepted}
+                        writeGatedTools={writeGatedTools}
                       />
                       <ToolCatalogPanel
                         error={toolsQuery.isError ? workflowErrorMessage(toolsQuery.error) : null}
@@ -748,7 +774,7 @@ export function AssistantPage() {
                       ) : null}
                       <Button
                         className="min-h-10 min-w-36"
-                        disabled={isBusy}
+                        disabled={isBusy || writeConfirmationRequired}
                         type="submit"
                       >
                         {isBusy ? (
