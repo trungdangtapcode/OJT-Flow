@@ -80,6 +80,25 @@ Response envelope:
 
 Returns user-owned artifact metadata. Raw file bytes are not returned.
 
+### Create Clipboard Image Parse Job
+
+`POST /api/v1/parse/clipboard/images/jobs`
+
+JSON body:
+
+```json
+{
+  "data_base64": "iVBORw0KGgo...",
+  "filename": "clipboard.png",
+  "mime_type": "image/png",
+  "extractor": "auto",
+  "execute_now": false
+}
+```
+
+The response shape is the same as `POST /api/v1/parse/upload/jobs`, with
+`artifact.source` set to `clipboard`.
+
 ### Get Uploaded Artifact
 
 `GET /api/v1/parse/artifacts/{artifact_id}`
@@ -139,6 +158,6 @@ normalization metadata to avoid merging incompatible outputs.
 - Real queue worker mode for long-running parse jobs.
 - Multi-file batch uploads.
 - Extracted-text deduplication with extractor/version awareness.
-- Clipboard artifact creation from the frontend.
+- Frontend paste UX wired to the clipboard image artifact endpoint.
 - OCR page evidence, table coordinate contracts, spreadsheet profiling, and
   redaction preview.

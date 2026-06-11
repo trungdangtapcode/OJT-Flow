@@ -10,8 +10,13 @@ Requires:
 
 from __future__ import annotations
 
+import base64
+import binascii
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
+from pydantic import Field
 
 from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.application.workflow_service import WorkflowService
@@ -40,6 +45,13 @@ from ojtflow.interfaces.api.responses import ok, raise_for_failed_workflow
 
 router = APIRouter(tags=["parse"])
 
+CLIPBOARD_IMAGE_EXTENSIONS = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
 
 class UploadParseJobResponse(ContractModel):
     job: BackgroundJob
@@ -50,6 +62,29 @@ class UploadParseJobResponse(ContractModel):
 class UploadParseJobEnvelope(ContractModel):
     data: UploadParseJobResponse
     error: None = None
+
+
+class ClipboardImageParseRequest(ContractModel):
+    data_base64: str = Field(
+        min_length=1,
+        description="Base64-encoded image bytes from the clipboard.",
+    )
+    filename: str | None = Field(
+        default=None,
+        description="Optional original clipboard filename; inferred from MIME type if absent.",
+    )
+    mime_type: str = Field(
+        default="image/png",
+        description="Clipboard image MIME type.",
+    )
+    extractor: str = Field(
+        default=Extractor.AUTO,
+        description="Extraction engine: auto, markitdown, mineru, openai_vision, or tesseract.",
+    )
+    execute_now: bool = Field(
+        default=True,
+        description="Run immediately in local sync mode; false leaves a queued durable job.",
+    )
 
 
 class ArtifactEnvelope(ContractModel):
@@ -129,6 +164,38 @@ def _trace_from_job(job: BackgroundJob) -> ParsingPipelineTrace | None:
     return None
 
 
+def _read_clipboard_image_bytes(
+    request: ClipboardImageParseRequest,
+    settings: Settings,
+) -> tuple[bytes, str, str]:
+    mime_type = request.mime_type.strip().lower()
+    extension = CLIPBOARD_IMAGE_EXTENSIONS.get(mime_type)
+    if extension is None:
+        raise UnsupportedUploadError(
+            "Clipboard image MIME type must be one of: image/png, image/jpeg, "
+            "image/webp, image/gif."
+        )
+    raw_filename = request.filename.strip() if request.filename else ""
+    filename = raw_filename or f"clipboard{extension}"
+    if not Path(filename).suffix:
+        filename = f"{filename}{extension}"
+    filename = sanitize_upload_filename(
+        filename,
+        allowed_extensions=settings.allowed_upload_extensions,
+    )
+    try:
+        data = base64.b64decode(request.data_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise UnsupportedUploadError("Clipboard image data must be valid base64.") from exc
+    if not data:
+        raise UnsupportedUploadError("Clipboard image data is empty.")
+    if len(data) > settings.max_upload_bytes:
+        raise UploadTooLargeError(
+            f"Clipboard image exceeds the {settings.max_upload_bytes} byte limit."
+        )
+    return data, filename, mime_type
+
+
 @router.post("/parse/upload/jobs", response_model=UploadParseJobEnvelope)
 async def create_upload_parse_job(
     http_request: Request,
@@ -165,6 +232,42 @@ async def create_upload_parse_job(
         artifact_id=artifact.artifact_id,
         prefer_extractor=extractor,
         execute_now=execute_now,
+        request_id=getattr(http_request.state, "request_id", None),
+    )
+    return ok(
+        UploadParseJobResponse(
+            job=job,
+            artifact=artifact,
+            trace=_trace_from_job(job),
+        )
+    )
+
+
+@router.post("/parse/clipboard/images/jobs", response_model=UploadParseJobEnvelope)
+async def create_clipboard_image_parse_job(
+    request: ClipboardImageParseRequest,
+    http_request: Request,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Persist a pasted clipboard image as an artifact and create a parse job."""
+
+    extractor = validate_extractor_choice(request.extractor)
+    image_bytes, filename, mime_type = _read_clipboard_image_bytes(request, settings)
+    artifact = intake.register_upload(
+        owner_user_id=authenticated.user.user_id,
+        filename=filename,
+        mime_type=mime_type,
+        data=image_bytes,
+        source="clipboard",
+        request_id=getattr(http_request.state, "request_id", None),
+    )
+    job = intake.create_parse_job(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+        prefer_extractor=extractor,
+        execute_now=request.execute_now,
         request_id=getattr(http_request.state, "request_id", None),
     )
     return ok(
