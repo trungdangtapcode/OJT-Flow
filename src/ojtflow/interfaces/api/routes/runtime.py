@@ -26,6 +26,7 @@ from ojtflow.config import (
     save_runtime_assistant_settings,
     save_runtime_retrieval_settings,
 )
+from ojtflow.core.policy.abuse_cost_policy import load_abuse_cost_policy
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.retrieval import RetrievalQuery
 from ojtflow.core.contracts.runtime import MigrationDiagnostics
@@ -77,6 +78,7 @@ async def runtime_config(
 
     governance.require_permission(user=authenticated.user, permission_scope="settings:read")
     tool_specs = tool_specs_json()
+    abuse_cost_policy = load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path)
     return ok(
         {
             "status": "ok",
@@ -184,6 +186,22 @@ async def runtime_config(
                 "backend": settings.rate_limit_backend,
                 "policy_configured": bool(settings.rate_limit_policy_path),
                 "redis_prefix_configured": bool(settings.rate_limit_redis_prefix),
+            },
+            "cost_controls": {
+                "policy_configured": bool(settings.abuse_cost_policy_path),
+                "llm_max_request_chars": abuse_cost_policy.llm.max_request_chars,
+                "ocr_max_openai_vision_bytes": (
+                    abuse_cost_policy.ocr.max_openai_vision_bytes
+                ),
+                "embedding_max_request_inputs": (
+                    abuse_cost_policy.embeddings.max_request_inputs
+                ),
+                "embedding_max_request_chars": (
+                    abuse_cost_policy.embeddings.max_request_chars
+                ),
+                "batch_max_total_bytes": (
+                    abuse_cost_policy.batch_ingestion.max_batch_total_bytes
+                ),
             },
             "review_policy": {
                 "default_human_review_required": True,

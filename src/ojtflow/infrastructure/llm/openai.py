@@ -12,8 +12,10 @@ from ojtflow.core.contracts.assistant import (
     AssistantToolPlan,
     AssistantToolSpec,
 )
+from ojtflow.core.contracts.abuse_cost import AbuseCostPolicy
 from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
 from ojtflow.core.errors import DependencyUnavailableError, ToolExecutionError
+from ojtflow.core.policy.abuse_cost_policy import require_llm_budget
 from ojtflow.core.policy.external_provider_policy import require_external_provider_handoff
 
 
@@ -60,6 +62,7 @@ class OpenAIResponsesPlanner:
         base_url: str,
         timeout_seconds: float,
         external_provider_policy: ExternalProviderPolicy | None = None,
+        abuse_cost_policy: AbuseCostPolicy | None = None,
     ) -> None:
         self.api_key = api_key
         shared_model = model or planning_model or synthesis_model
@@ -70,6 +73,7 @@ class OpenAIResponsesPlanner:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.external_provider_policy = external_provider_policy
+        self.abuse_cost_policy = abuse_cost_policy
 
     @property
     def model_name(self) -> str:
@@ -89,10 +93,9 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM planner requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
-        self._require_allowed(
-            text=json.dumps({"message": message, "context": context}, ensure_ascii=False),
-            purpose="plan",
-        )
+        policy_text = json.dumps({"message": message, "context": context}, ensure_ascii=False)
+        self._require_cost_budget(text=policy_text, purpose="plan")
+        self._require_allowed(text=policy_text, purpose="plan")
         payload = _plan_payload(
             model=self.planning_model,
             message=message,
@@ -143,10 +146,9 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM planner requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
-        self._require_allowed(
-            text=json.dumps({"message": message, "context": context}, ensure_ascii=False),
-            purpose="plan_stream",
-        )
+        policy_text = json.dumps({"message": message, "context": context}, ensure_ascii=False)
+        self._require_cost_budget(text=policy_text, purpose="plan_stream")
+        self._require_allowed(text=policy_text, purpose="plan_stream")
         yield {
             "type": "planning_step",
             "label": "Tool catalog loaded",
@@ -242,17 +244,16 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM synthesis requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
-        self._require_allowed(
-            text=_synthesis_policy_text(
-                message=message,
-                context=context,
-                plan=plan,
-                tool_results=tool_results,
-                findings=findings,
-                evidence_summary=evidence_summary,
-            ),
-            purpose="synthesize",
+        policy_text = _synthesis_policy_text(
+            message=message,
+            context=context,
+            plan=plan,
+            tool_results=tool_results,
+            findings=findings,
+            evidence_summary=evidence_summary,
         )
+        self._require_cost_budget(text=policy_text, purpose="synthesize")
+        self._require_allowed(text=policy_text, purpose="synthesize")
         payload = {
             "model": self.synthesis_model,
             "input": [
@@ -322,17 +323,16 @@ class OpenAIResponsesPlanner:
             raise DependencyUnavailableError(
                 "OpenAI LLM synthesis requires OJT_OPENAI_API_KEY or OPENAI_API_KEY."
             )
-        self._require_allowed(
-            text=_synthesis_policy_text(
-                message=message,
-                context=context,
-                plan=plan,
-                tool_results=tool_results,
-                findings=findings,
-                evidence_summary=evidence_summary,
-            ),
-            purpose="synthesize_stream",
+        policy_text = _synthesis_policy_text(
+            message=message,
+            context=context,
+            plan=plan,
+            tool_results=tool_results,
+            findings=findings,
+            evidence_summary=evidence_summary,
         )
+        self._require_cost_budget(text=policy_text, purpose="synthesize_stream")
+        self._require_allowed(text=policy_text, purpose="synthesize_stream")
         payload = {
             "model": self.synthesis_model,
             "stream": True,
@@ -417,6 +417,15 @@ class OpenAIResponsesPlanner:
                 "planning_model": self.planning_model,
                 "synthesis_model": self.synthesis_model,
             },
+        )
+
+    def _require_cost_budget(self, *, text: str, purpose: str) -> None:
+        if self.abuse_cost_policy is None:
+            return
+        require_llm_budget(
+            self.abuse_cost_policy,
+            surface=f"openai_llm.{purpose}",
+            request_chars=len(text),
         )
 
 

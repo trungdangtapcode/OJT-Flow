@@ -1,0 +1,18 @@
+{
+  "version": "abuse_cost_policy.v1",
+  "llm": {
+    "max_request_chars": 180000
+  },
+  "ocr": {
+    "max_openai_vision_bytes": 10485760,
+    "max_markitdown_ocr_bytes": 15728640
+  },
+  "embeddings": {
+    "max_request_inputs": 2048,
+    "max_request_chars": 1000000,
+    "max_single_text_chars": 20000
+  },
+  "batch_ingestion": {
+    "max_batch_total_bytes": 104857600
+  }
+}

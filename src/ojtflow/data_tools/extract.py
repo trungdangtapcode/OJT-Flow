@@ -26,6 +26,11 @@ import httpx
 
 from ojtflow.config import OPENAI_VISION_MODEL, get_settings
 from ojtflow.core.errors import PolicyBlockedError, ToolExecutionError, UnsupportedUploadError
+from ojtflow.core.policy.abuse_cost_policy import (
+    load_abuse_cost_policy,
+    markitdown_ocr_allowed,
+    require_openai_vision_budget,
+)
 from ojtflow.core.policy.external_provider_policy import (
     external_provider_policy_from_settings,
     require_external_provider_handoff,
@@ -280,6 +285,11 @@ def _extract_openai_vision(
         return None
 
     model = _openai_vision_model()
+    require_openai_vision_budget(
+        _abuse_cost_policy(),
+        surface="openai_vision_ocr",
+        byte_count=len(data),
+    )
     try:
         policy_decision = _require_openai_vision_allowed(
             source_format=source_format,
@@ -464,6 +474,11 @@ def _openai_vision_model() -> str:
     return model
 
 
+def _abuse_cost_policy():
+    settings = get_settings()
+    return load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path)
+
+
 def _require_openai_vision_allowed(
     *,
     source_format: str,
@@ -536,6 +551,7 @@ def _extract_markitdown(
     deferred_warnings: list[str] = []
     md = _build_markitdown_converter(
         MarkItDown=MarkItDown,
+        byte_count=len(data),
         source_format=source_format,
         deferred_warnings=deferred_warnings,
     )
@@ -575,10 +591,17 @@ def _extract_markitdown(
 def _build_markitdown_converter(
     *,
     MarkItDown,
+    byte_count: int,
     source_format: str,
     deferred_warnings: list[str],
 ):
     if not _markitdown_ocr_enabled(source_format):
+        return MarkItDown(enable_plugins=False)
+
+    if not markitdown_ocr_allowed(_abuse_cost_policy(), byte_count=byte_count):
+        deferred_warnings.append(
+            "MarkItDown OCR plugin disabled by abuse/cost policy for this file size."
+        )
         return MarkItDown(enable_plugins=False)
 
     api_key = _openai_api_key()

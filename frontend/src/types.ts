@@ -1894,6 +1894,14 @@ export type RuntimeConfig = {
     policy_configured: boolean;
     redis_prefix_configured: boolean;
   };
+  cost_controls?: {
+    policy_configured: boolean;
+    llm_max_request_chars: number;
+    ocr_max_openai_vision_bytes: number;
+    embedding_max_request_inputs: number;
+    embedding_max_request_chars: number;
+    batch_max_total_bytes: number;
+  };
   review_policy?: {
     default_human_review_required: boolean;
     ocr_low_confidence_threshold: number;

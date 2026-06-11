@@ -1402,6 +1402,12 @@ Response data includes:
 - `rate_limit.backend`
 - `rate_limit.policy_configured`
 - `rate_limit.redis_prefix_configured`
+- `cost_controls.policy_configured`
+- `cost_controls.llm_max_request_chars`
+- `cost_controls.ocr_max_openai_vision_bytes`
+- `cost_controls.embedding_max_request_inputs`
+- `cost_controls.embedding_max_request_chars`
+- `cost_controls.batch_max_total_bytes`
 - `auth.google_oauth_configured`
 - `auth.cookie_secure`
 - `auth.cookie_effective_secure`

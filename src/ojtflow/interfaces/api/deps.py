@@ -23,6 +23,7 @@ from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings, get_settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
+from ojtflow.core.policy.abuse_cost_policy import load_abuse_cost_policy
 from ojtflow.core.policy.external_provider_policy import external_provider_policy_from_settings
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
@@ -300,6 +301,7 @@ def _build_assistant_service() -> AssistantService:
     settings = get_settings()
     planner = None
     external_provider_policy = external_provider_policy_from_settings(settings)
+    abuse_cost_policy = load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path)
     if settings.llm_provider == "openai":
         planner = OpenAIResponsesPlanner(
             api_key=settings.openai_api_key,
@@ -309,6 +311,7 @@ def _build_assistant_service() -> AssistantService:
             base_url=settings.llm_base_url,
             timeout_seconds=settings.llm_timeout_seconds,
             external_provider_policy=external_provider_policy,
+            abuse_cost_policy=abuse_cost_policy,
         )
     return AssistantService(
         OJTFlowToolExecutor(

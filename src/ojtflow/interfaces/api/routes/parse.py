@@ -37,6 +37,10 @@ from ojtflow.core.contracts.jobs import BackgroundJob
 from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
 from ojtflow.core.ids import new_id
+from ojtflow.core.policy.abuse_cost_policy import (
+    load_abuse_cost_policy,
+    require_batch_ingestion_budget,
+)
 from ojtflow.data_tools.redaction import build_redaction_preview
 from ojtflow.data_tools.extract import (
     Extractor,
@@ -374,13 +378,20 @@ async def create_batch_upload_parse_jobs(
         raise UploadTooLargeError(
             f"Batch upload supports at most {settings.max_batch_upload_files} files."
         )
+    uploaded_files = [
+        await _read_upload_bytes(file, settings)
+        for file in files
+    ]
+    require_batch_ingestion_budget(
+        load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path),
+        total_bytes=sum(len(file_bytes) for file_bytes, _filename, _source_format in uploaded_files),
+    )
     batch_id = new_id("batch")
     items: list[UploadParseJobResponse] = []
     request_id = getattr(http_request.state, "request_id", None)
     normalized_case_id = _optional_form_text(case_id)
     normalized_project_id = _optional_form_text(project_id)
-    for file in files:
-        file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
+    for file_bytes, filename, _source_format in uploaded_files:
         artifact = intake.register_upload(
             owner_user_id=authenticated.user.user_id,
             filename=filename,

@@ -9,8 +9,13 @@ from typing import Any, Protocol
 import httpx
 
 from ojtflow.config import Settings
+from ojtflow.core.contracts.abuse_cost import AbuseCostPolicy
 from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
 from ojtflow.core.errors import DependencyUnavailableError, OJTFlowError
+from ojtflow.core.policy.abuse_cost_policy import (
+    load_abuse_cost_policy,
+    require_embedding_budget,
+)
 from ojtflow.core.policy.external_provider_policy import (
     external_provider_policy_from_settings,
     require_external_provider_handoff,
@@ -55,6 +60,7 @@ class OpenAIEmbeddingProvider:
         base_url: str,
         timeout_seconds: float,
         external_provider_policy: ExternalProviderPolicy | None = None,
+        abuse_cost_policy: AbuseCostPolicy | None = None,
         client: httpx.Client | None = None,
     ) -> None:
         if not api_key:
@@ -68,6 +74,7 @@ class OpenAIEmbeddingProvider:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.external_provider_policy = external_provider_policy
+        self.abuse_cost_policy = abuse_cost_policy
         self._client = client
         self._cache: dict[str, list[float]] = {}
 
@@ -110,6 +117,12 @@ class OpenAIEmbeddingProvider:
             raise OJTFlowError(
                 "Embedding input cannot be blank.",
                 details={"provider": self.provider_name, "model": self.model},
+            )
+        if self.abuse_cost_policy is not None:
+            require_embedding_budget(
+                self.abuse_cost_policy,
+                surface="openai_embeddings",
+                texts=clean_texts,
             )
         if self.external_provider_policy is not None:
             require_external_provider_handoff(
@@ -325,6 +338,7 @@ def build_embedding_provider(settings: Settings) -> EmbeddingProvider:
     if settings.embedding_provider == "deterministic":
         return DeterministicEmbeddingProvider(settings.embedding_dimensions)
     if settings.embedding_provider == "openai":
+        abuse_cost_policy = load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path)
         return OpenAIEmbeddingProvider(
             api_key=settings.openai_api_key,
             model=settings.embedding_model,
@@ -332,6 +346,7 @@ def build_embedding_provider(settings: Settings) -> EmbeddingProvider:
             base_url=settings.openai_embedding_base_url,
             timeout_seconds=settings.openai_embedding_timeout_seconds,
             external_provider_policy=external_provider_policy_from_settings(settings),
+            abuse_cost_policy=abuse_cost_policy,
         )
     if settings.embedding_provider == "huggingface":
         return HuggingFaceEmbeddingProvider(

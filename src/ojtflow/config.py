@@ -85,6 +85,7 @@ DEFAULT_DATA_DIR = Path("var")
 DEFAULT_RUNTIME_SETTINGS_PATH = Path("var/runtime_settings.json")
 DEFAULT_KNOWLEDGE_DIR = Path("knowledge")
 DEFAULT_RATE_LIMIT_POLICY_PATH = Path("knowledge/security/rate_limit_policy.json")
+DEFAULT_ABUSE_COST_POLICY_PATH = Path("knowledge/security/abuse_cost_policy.json")
 DEFAULT_MIGRATIONS_DIR = Path("sql/postgres/migrations")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/api/v1/auth/google/callback"
@@ -146,6 +147,10 @@ class Settings(BaseModel):
     rate_limit_policy_path: Path = Field(
         default=DEFAULT_RATE_LIMIT_POLICY_PATH,
         alias="OJT_RATE_LIMIT_POLICY_PATH",
+    )
+    abuse_cost_policy_path: Path = Field(
+        default=DEFAULT_ABUSE_COST_POLICY_PATH,
+        alias="OJT_ABUSE_COST_POLICY_PATH",
     )
     rate_limit_redis_prefix: str = Field(
         default="ojtflow:rate_limit",
@@ -482,6 +487,10 @@ class Settings(BaseModel):
         return _resolve_path(self.rate_limit_policy_path, self.repo_root)
 
     @property
+    def resolved_abuse_cost_policy_path(self) -> Path:
+        return _resolve_path(self.abuse_cost_policy_path, self.repo_root)
+
+    @property
     def resolved_migrations_dir(self) -> Path:
         return _resolve_path(self.migrations_dir, self.repo_root)
 
@@ -555,6 +564,9 @@ def get_settings() -> Settings:
         ),
         OJT_RATE_LIMIT_POLICY_PATH=Path(
             os.getenv("OJT_RATE_LIMIT_POLICY_PATH", str(DEFAULT_RATE_LIMIT_POLICY_PATH))
+        ),
+        OJT_ABUSE_COST_POLICY_PATH=Path(
+            os.getenv("OJT_ABUSE_COST_POLICY_PATH", str(DEFAULT_ABUSE_COST_POLICY_PATH))
         ),
         OJT_RATE_LIMIT_REDIS_PREFIX=os.getenv(
             "OJT_RATE_LIMIT_REDIS_PREFIX",

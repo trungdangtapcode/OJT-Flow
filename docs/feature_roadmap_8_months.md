@@ -189,6 +189,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F132 | Implemented | Added file-backed runtime settings history with actor, email, reason, old/new value presence, changed values, history listing API, rollback API, rollback history entries, docs, and focused rollback tests. |
 | 2026-06-11 | F133 | Implemented | Added sanitized runtime secret health endpoint for OAuth, OpenAI, Postgres, and Redis configuration without exposing values; added secret configuration guide and API docs. |
 | 2026-06-11 | F134 | Implemented | Added data-driven API rate limiting middleware with fixed-window memory/Redis stores, route-category policy for auth, Assistant chat, file upload, retrieval search, reindex, and external-provider-capable routes, 429 envelopes and rate-limit headers, runtime config exposure, docs, and focused tests. |
+| 2026-06-11 | F135 | Implemented | Added data-driven abuse/cost policy for LLM request size, OpenAI vision OCR bytes, MarkItDown OCR plugin bytes, OpenAI embedding request size/input count, and batch ingestion total bytes; enforced limits before expensive provider calls or artifact creation; exposed sanitized runtime facts; and added docs/tests. |
 
 ## Feature Backlog
 
@@ -343,7 +344,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F132 Add runtime setting history with who changed what, old value, new value, reason, and rollback.
 - [x] F133 Add secret configuration guide and runtime secret health checks without exposing secret values.
 - [x] F134 Add rate limiting for auth, assistant chat, file upload, retrieval search, reindex, and external connectors.
-- [ ] F135 Add abuse and cost controls for LLM calls, OCR calls, embedding reindex, and batch ingestion.
+- [x] F135 Add abuse and cost controls for LLM calls, OCR calls, embedding reindex, and batch ingestion.
 - [ ] F136 Add NIST AI RMF-aligned risk register covering intended use, limitations, monitoring, and human oversight.
 - [ ] F137 Add OWASP LLM Top 10 threat model with concrete mitigations mapped to code and tests.
 - [ ] F138 Add legal/compliance disclaimer surfaces for non-diagnostic, non-treatment, human-reviewed intended use.
