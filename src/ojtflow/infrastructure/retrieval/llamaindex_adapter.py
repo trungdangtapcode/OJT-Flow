@@ -47,6 +47,10 @@ from ojtflow.infrastructure.retrieval.engine import (
     remediation_summary_from_package_parts,
     retrieval_safety_flags,
     snippet_from_chunk,
+    attach_source_governance,
+    source_governance_decisions_from_hits,
+    source_governance_summary,
+    source_governance_trace_warnings,
     sources_from_chunks,
     standard_search_plan_from_context,
     strategy_recommendations_from_context,
@@ -152,6 +156,12 @@ class LlamaIndexRetrievalRepository:
                 "Retrieval query contains safety-sensitive context; treat query text "
                 "as untrusted data."
             )
+        source_governance = source_governance_decisions_from_hits(
+            hits,
+            knowledge_root=self.knowledge_root,
+        )
+        attach_source_governance(hits, source_governance)
+        warnings.extend(source_governance_trace_warnings(source_governance))
         trace = RetrievalTrace(
             strategy="llamaindex_hybrid_rrf",
             query_variants=query_analysis.query_variants,
@@ -175,6 +185,7 @@ class LlamaIndexRetrievalRepository:
             diversity_metadata=diversity_metadata,
             policy=quality_policy,
             query_analysis=query_analysis,
+            source_governance=source_governance,
         )
         quality_summary = quality_summary_from_signals(
             quality_signals,
@@ -254,6 +265,7 @@ class LlamaIndexRetrievalRepository:
                 "embedding": self.embedding_provider.metadata(),
                 "fusion_diagnostics": fusion_diagnostics,
                 "diversity": diversity_metadata,
+                "source_governance": source_governance_summary(source_governance),
                 "quality_policy": quality_policy.metadata(),
                 "quality_summary": quality_summary.model_dump(),
                 "recommended_actions": [

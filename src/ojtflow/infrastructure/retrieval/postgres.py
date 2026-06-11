@@ -233,6 +233,7 @@ class PostgresRetrievalRepository:
             diversity_lambda=diversity_lambda,
             strategy="postgres_fts_vector_rrf",
             warnings=postgres_warnings,
+            knowledge_root=self.knowledge_root,
         )
 
     def list_sources(self) -> list[RetrievalSource]:

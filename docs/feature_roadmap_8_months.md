@@ -213,6 +213,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F063-F068 | Implemented | Completed governed external medical source adapter coverage for LOINC, UCUM, RxNav/RxNorm, PubMed/NCBI E-utilities, ClinicalTrials.gov API v2, and openFDA with source trust policies, connector IDs, cache/provenance expectations, query transparency boundaries, docs, and catalog consistency tests. |
 | 2026-06-11 | F087 | Implemented | Added a Retrieval regression dashboard in the admin retrieval workspace, backed by aggregate relevance judgment list/summary APIs and active-run evaluation metrics for coverage@k, precision@k, MAP, MRR, nDCG, readiness, unjudged hits, and recent labeled query slices. |
 | 2026-06-11 | F061, F069-F070, F095 | Implemented | Added a retrieval source freshness gate with typed report contracts, `/api/v1/retrieval/freshness`, data-driven source readiness scoring from corpus adapters, trust policies, corpus manifest, and indexed inventory, plus a Retrieval page admin panel for stale, unindexed, unreviewed, or policy-missing sources. |
+| 2026-06-11 | Month 4 hardening | Implemented | Added package-time source governance for ranked retrieval evidence: selected hits now carry source policy/adapter decisions in locators and handoff context, quality signals flag review-gated/blocked/unregistered sources, corrective actions route source-governance review, and seeded SNOMED CT, ICD-10-CM, OMOP, and MeSH source policies close governance gaps. |
 
 ## Feature Backlog
 

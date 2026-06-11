@@ -170,6 +170,7 @@ copy, so the assistant, retrieval console, exports, and future MCP tools can
 all use the same route guidance.
 
 The governed external medical-source scope now includes LOINC, UCUM, RxNav,
+SNOMED CT placeholder/lookup boundaries, ICD-10-CM, OMOP CDM, MeSH,
 PubMed/NCBI E-utilities, ClinicalTrials.gov API v2, and openFDA. These sources
 are declared as adapters and trust policies first. Live fetch jobs must preserve
 endpoint, query, source release or fetch timestamp, cache hash, and approval
@@ -193,6 +194,23 @@ The Retrieval page renders the same report as the `Source freshness gate`
 panel. Operators can use it before tuning RAG or judging answers, because a
 high-ranking chunk from stale or unreviewed medical evidence is still unsafe to
 treat as trusted grounding.
+
+Ranked packages now also carry package-time source governance. Every selected
+hit is matched against `knowledge/source_catalog/source_trust_policies.json`
+and `knowledge/source_catalog/corpus_adapters.json` by source ID, canonical
+source ID, adapter policy mapping, or standard/domain. The resulting
+`source_governance` payload is copied into:
+
+- `hits[].source_locator.source_governance`
+- `hits[].evidence.locator.source_governance`
+- `hits[].match_explanation.source_governance`
+- `handoff_context.source_governance`
+
+The same decisions emit `source_governance_ok`,
+`source_governance_review_required`, or `source_governance_blocked` quality
+signals. This keeps corrective RAG honest: a highly ranked chunk can still be
+review-gated when its source policy requires reviewer approval, its adapter is
+candidate/deprecated, or its governed healthcare source has no trust policy.
 
 Playbook rules are data-driven and can trigger from query profile, detected
 standards, detected concepts, decomposed query-aspect IDs, uploaded dataset

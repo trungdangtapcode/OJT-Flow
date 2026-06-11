@@ -99,6 +99,119 @@
       "policy_notes": ["Drug normalization remains a reviewer decision."]
     },
     {
+      "source_id": "snomed_ct",
+      "source_name": "SNOMED CT",
+      "authority": "SNOMED International",
+      "domain": "clinical_terminology",
+      "standard_system": "SNOMED CT",
+      "clinical_scope": ["diagnosis concepts", "clinical findings", "allergy findings", "problem-list terminology"],
+      "intended_use": [
+        "Support review-gated clinical concept candidates",
+        "Ground Graph-NER entities and FHIR-like Condition or AllergyIntolerance mappings"
+      ],
+      "prohibited_use": [
+        "Do not store or distribute licensed SNOMED CT release content without verifying deployment rights",
+        "Do not auto-code diagnoses or findings without licensed lookup and clinical review"
+      ],
+      "refresh_cadence": "per_release_or_before_terminology_demo",
+      "license_constraints": [
+        "SNOMED CT access and use depend on national member/license terms",
+        "Preserve source URL, version, and reviewer decision for any terminology candidate"
+      ],
+      "access_mode": "licensed_release_or_public_browser_metadata",
+      "ingestion_mode": "license_aware_lookup_or_placeholder_contract",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "browser": "https://browser.ihtsdotools.org/",
+        "license": "https://www.snomed.org/snomed-ct/get-snomed"
+      },
+      "policy_notes": [
+        "The current implementation may emit placeholder candidates only; production coding requires licensed terminology services."
+      ]
+    },
+    {
+      "source_id": "cdc_icd10cm",
+      "source_name": "ICD-10-CM",
+      "authority": "CDC National Center for Health Statistics",
+      "domain": "diagnosis_classification",
+      "standard_system": "ICD-10-CM",
+      "clinical_scope": ["diagnosis classification", "analytics and billing context", "problem-list review"],
+      "intended_use": [
+        "Route diagnosis-code evidence to human coders or reviewers",
+        "Ground analytics export warnings for diagnosis classification"
+      ],
+      "prohibited_use": [
+        "Do not use retrieval evidence as automatic billing code assignment",
+        "Do not infer clinical diagnosis from code candidates alone"
+      ],
+      "refresh_cadence": "annual_release_or_before_coding_demo",
+      "license_constraints": ["Use official CDC/NCHS release metadata and preserve version year"],
+      "access_mode": "public_web_or_release_download",
+      "ingestion_mode": "selected_public_guidance_or_runtime_release_snapshot",
+      "evidence_tier": "authoritative_classification",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://www.cdc.gov/nchs/icd/icd-10-cm/",
+        "guidelines": "https://www.cdc.gov/nchs/icd/icd-10-cm-guidelines.html"
+      },
+      "policy_notes": ["Final code assignment remains a coder or clinician decision."]
+    },
+    {
+      "source_id": "ohdsi_omop_cdm",
+      "source_name": "OMOP Common Data Model",
+      "authority": "OHDSI",
+      "domain": "analytics",
+      "standard_system": "OMOP",
+      "clinical_scope": ["observational analytics export", "CDM table mapping", "vocabulary coverage review"],
+      "intended_use": [
+        "Ground analytics export previews and unmapped-field warnings",
+        "Explain why source provenance and terminology coverage are required before OMOP export"
+      ],
+      "prohibited_use": [
+        "Do not represent preview exports as production CDM loads without validation",
+        "Do not drop source provenance or review metadata during analytics mapping"
+      ],
+      "refresh_cadence": "per_cdm_release_or_before_analytics_demo",
+      "license_constraints": ["Preserve OMOP CDM version and vocabulary release context"],
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_spec_pages_or_runtime_snapshot",
+      "evidence_tier": "analytics_standard",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "cdm": "https://ohdsi.github.io/CommonDataModel/",
+        "vocabulary": "https://www.ohdsi.org/data-standardization/"
+      },
+      "policy_notes": ["OMOP is analytics context, not clinical decision support."]
+    },
+    {
+      "source_id": "nlm_mesh",
+      "source_name": "Medical Subject Headings",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "biomedical_literature",
+      "standard_system": "MeSH",
+      "clinical_scope": ["literature subject headings", "query expansion", "PubMed search review"],
+      "intended_use": [
+        "Support transparent literature-search query expansion",
+        "Explain MeSH/text-word search boundaries before external PubMed handoff"
+      ],
+      "prohibited_use": [
+        "Do not treat literature-search routing as clinical recommendation",
+        "Do not export PHI or patient identifiers into public literature search queries"
+      ],
+      "refresh_cadence": "annual_release_or_before_literature_demo",
+      "license_constraints": ["Preserve MeSH release year and NLM source URL when cached"],
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_public_guidance_or_runtime_lookup_cache",
+      "evidence_tier": "literature_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://www.nlm.nih.gov/mesh/meshhome.html",
+        "browser": "https://meshb.nlm.nih.gov/"
+      },
+      "policy_notes": ["Use MeSH to improve search transparency, not to make clinical claims."]
+    },
+    {
       "source_id": "ncbi_pubmed_eutilities",
       "source_name": "PubMed and NCBI E-utilities",
       "authority": "U.S. National Library of Medicine / NCBI",

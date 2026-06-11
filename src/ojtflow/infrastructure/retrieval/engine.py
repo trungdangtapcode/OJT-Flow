@@ -47,6 +47,13 @@ from ojtflow.core.contracts.retrieval import (
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
 from ojtflow.data_tools.phi import classify_text
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
+from ojtflow.infrastructure.retrieval.source_governance import (
+    SourceGovernanceDecision,
+    attach_source_governance,
+    source_governance_decisions_from_hits,
+    source_governance_summary,
+    source_governance_trace_warnings,
+)
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
 SNIPPET_SEGMENT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n{2,}|\r\n{2,}")
@@ -394,6 +401,7 @@ def rank_chunks(
     diversity_lambda: float = 0.72,
     strategy: str = "deterministic_hybrid",
     warnings: list[str] | None = None,
+    knowledge_root: Path | str | None = None,
 ) -> RetrievalPackage:
     """Rank chunks using lexical overlap, vectors, optional reranking, and traceable boosts."""
 
@@ -538,6 +546,12 @@ def rank_chunks(
         trace_warnings.append(
             "Retrieval results include repeated source IDs after diversity selection."
         )
+    source_governance = source_governance_decisions_from_hits(
+        top_hits,
+        knowledge_root=knowledge_root,
+    )
+    attach_source_governance(top_hits, source_governance)
+    trace_warnings.extend(source_governance_trace_warnings(source_governance))
     trace = RetrievalTrace(
         strategy=strategy,
         query_variants=variants,
@@ -561,6 +575,7 @@ def rank_chunks(
         diversity_metadata=diversity_metadata,
         policy=quality_policy,
         query_analysis=query_analysis,
+        source_governance=source_governance,
     )
     quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
     recommended_actions = recommended_actions_from_context(
@@ -629,6 +644,7 @@ def rank_chunks(
             "reranker": reranker_metadata,
             "fusion_diagnostics": fusion_diagnostics,
             "diversity": diversity_metadata,
+            "source_governance": source_governance_summary(source_governance),
             "quality_policy": quality_policy.metadata(),
             "quality_summary": quality_summary.model_dump(),
             "recommended_actions": [
@@ -794,6 +810,11 @@ def _support_row_warnings(
         warnings.append("low_confidence_evidence")
     if _support_status_from_hit(hit) in {"weak", "unsupported"}:
         warnings.append("manual_evidence_review_recommended")
+    governance = explanation.get("source_governance")
+    if isinstance(governance, dict):
+        status = str(governance.get("status") or "")
+        if status in {"blocked", "review_required", "unregistered"}:
+            warnings.append(f"source_governance_{status}")
     return _unique_strings(warnings)
 
 
@@ -879,12 +900,18 @@ def hit_match_explanation(
         "provenance_fields": provenance_fields[:12],
         "ranking_signal_count": len(ranking_rule_ids),
         "ranking_signal_rule_ids": ranking_rule_ids[:12],
+        "source_governance": _locator_source_governance(hit.source_locator),
     }
 
 
 def _locator_query_aspect_matches(locator: dict[str, Any]) -> list[dict[str, Any]]:
     matches = locator.get("query_aspect_matches")
     return [match for match in matches if isinstance(match, dict)] if isinstance(matches, list) else []
+
+
+def _locator_source_governance(locator: dict[str, Any]) -> dict[str, Any]:
+    value = locator.get("source_governance")
+    return value if isinstance(value, dict) else {}
 
 
 def _ranking_signal_rule_ids(locator: dict[str, Any]) -> list[str]:
@@ -1069,6 +1096,7 @@ def quality_signals_from_results(
     diversity_metadata: dict[str, Any] | None = None,
     policy: RetrievalQualityPolicy | None = None,
     query_analysis: RetrievalQueryAnalysis | None = None,
+    source_governance: dict[str, SourceGovernanceDecision] | None = None,
 ) -> list[RetrievalQualitySignal]:
     """Build deterministic package-level retrieval quality signals."""
 
@@ -1365,6 +1393,11 @@ def quality_signals_from_results(
                     },
                 )
             )
+    signals.extend(
+        source_governance_quality_signals(
+            source_governance or source_governance_decisions_from_hits(hits),
+        )
+    )
     return signals
 
 
@@ -1400,6 +1433,65 @@ def _required_evidence_bucket_gaps(
             }
         )
     return gaps
+
+
+def source_governance_quality_signals(
+    decisions: dict[str, SourceGovernanceDecision],
+) -> list[RetrievalQualitySignal]:
+    """Turn source-governance decisions into package quality signals."""
+
+    if not decisions:
+        return []
+    summary = source_governance_summary(decisions)
+    highest = str(summary.get("severity") or "success")
+    if highest == "success":
+        return [
+            RetrievalQualitySignal(
+                code="source_governance_ok",
+                severity="success",
+                message="Selected evidence sources satisfy configured source-governance checks.",
+                suggested_action=(
+                    "Continue normal evidence review and preserve source governance metadata "
+                    "in downstream exports."
+                ),
+                evidence_ids=_decision_evidence_ids(decisions.values()),
+                metadata=summary,
+            )
+        ]
+
+    code = "source_governance_blocked" if highest == "destructive" else "source_governance_review_required"
+    message = (
+        "Selected evidence includes blocked or failed source-governance state."
+        if highest == "destructive"
+        else "Selected evidence requires source-governance review before downstream use."
+    )
+    suggested_action = (
+        "Remove blocked evidence, replace it with an approved source, or clear the "
+        "source lifecycle state before use."
+        if highest == "destructive"
+        else "Review source policies, license constraints, lifecycle state, and reviewer "
+        "state before using this evidence package."
+    )
+    return [
+        RetrievalQualitySignal(
+            code=code,
+            severity=highest,
+            message=message,
+            suggested_action=suggested_action,
+            evidence_ids=_decision_evidence_ids(decisions.values()),
+            metadata=summary,
+        )
+    ]
+
+
+def _decision_evidence_ids(
+    decisions: Iterable[SourceGovernanceDecision],
+) -> list[str]:
+    return _unique_strings(
+        evidence_id
+        for decision in decisions
+        for evidence_id in decision.evidence_ids
+    )
 
 
 def quality_summary_from_signals(

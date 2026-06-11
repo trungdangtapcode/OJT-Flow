@@ -1430,7 +1430,8 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert any(item.value == "UCUM" for item in package.coverage.standard_system)
     assert package.quality_summary is not None
     assert package.quality_summary.status == "review"
-    assert package.quality_summary.score == 55
+    assert package.quality_summary.score == 50
+    assert package.quality_summary.info_count == 1
     assert "query_context_safety_flags" in package.quality_summary.warning_codes
     buckets = {bucket.bucket_id: bucket for bucket in package.evidence_buckets}
     assert {
@@ -1467,6 +1468,11 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert isinstance(top_explanation["aspect_ids"], list)
     assert isinstance(top_explanation["provenance_fields"], list)
     assert isinstance(top_explanation["ranking_signal_rule_ids"], list)
+    assert top_explanation["source_governance"]["status"] in {
+        "approved",
+        "review_required",
+    }
+    assert package.handoff_context["source_governance"]["source_count"] >= 1
     assert package.handoff_context["quality_summary"]["score"] == package.quality_summary.score
     assert package.strategy_recommendations
     assert package.strategy_recommendations[0].recommendation_id.startswith("strategy:")
@@ -2696,6 +2702,67 @@ def test_retrieval_quality_signals_flag_missing_concept_grounding(
     assert package.quality_summary is not None
     assert package.quality_summary.status == "review"
     assert "missing_concept_grounding" in package.quality_summary.warning_codes
+
+
+def test_retrieval_source_governance_attaches_policy_metadata() -> None:
+    package = StaticRetrievalRepository(ROOT / "knowledge").search(
+        RetrievalQuery(
+            query="RxNorm medication terminology",
+            top_k=1,
+            filters={"source_id": "terminology:rxnorm"},
+        )
+    )
+    signals = {signal.code: signal for signal in package.quality_signals}
+
+    assert "source_governance_review_required" in signals
+    governance = package.handoff_context["source_governance"]
+    assert governance["status"] == "review_recommended"
+    assert governance["review_required_count"] == 1
+    decision = governance["decisions"][0]
+    assert decision["source_id"] == "terminology:rxnorm"
+    assert decision["policy_source_id"] == "nlm_rxnorm"
+    assert decision["authority"] == "U.S. National Library of Medicine"
+    assert decision["requires_reviewer_approval"] is True
+    assert "review_required_by_source_policy" in decision["issues"]
+    assert decision["license_constraints"] == ["Cache API results with source release metadata"]
+    assert package.hits[0].source_locator["source_governance"] == decision
+    assert package.hits[0].match_explanation["source_governance"] == decision
+    assert any(
+        action.metadata["corrective_rule_id"] == "source_governance_review_gate"
+        for action in package.recommended_actions
+    )
+
+
+def test_retrieval_source_governance_flags_unregistered_governed_source() -> None:
+    package = rank_chunks(
+        [
+            KnowledgeChunk(
+                chunk_id="unknown_standard",
+                source_id="standard:unknown_external",
+                source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+                title="Unregistered External Standard",
+                content="Unknown external standard mentions value and unit behavior.",
+                source_version="2026",
+                standard_system="Unknown Standard",
+                locator={"url": "https://example.invalid/standard"},
+            )
+        ],
+        RetrievalQuery(query="unknown standard value unit", top_k=1),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=16),
+        diversity_enabled=False,
+    )
+    signals = {signal.code: signal for signal in package.quality_signals}
+
+    source_signal = signals["source_governance_review_required"]
+    assert source_signal.severity == "warning"
+    assert source_signal.metadata["missing_policy_count"] == 1
+    decision = source_signal.metadata["decisions"][0]
+    assert decision["source_id"] == "standard:unknown_external"
+    assert decision["policy_source_id"] is None
+    assert decision["status"] == "unregistered"
+    assert decision["issues"] == ["missing_source_trust_policy"]
+    assert "source_governance_unregistered" in package.support_matrix.rows[0].warnings
+    assert "source_governance_review_required" in package.quality_summary.warning_codes
 
 
 def test_retrieval_snippet_extracts_query_focused_segment() -> None:

@@ -133,6 +133,7 @@ class StaticRetrievalRepository:
             diversity_lambda=diversity_lambda,
             strategy="static_hybrid_rrf",
             warnings=warnings,
+            knowledge_root=self.root,
         )
 
     def list_sources(self) -> list[RetrievalSource]:
