@@ -10,7 +10,13 @@ from ojtflow.core.contracts.assistant import (
     AssistantToolResult,
     AssistantToolSpec,
 )
-from ojtflow.core.contracts.audit import AuditRecord
+from ojtflow.core.contracts.audit import (
+    AuditExportCoverageItem,
+    AuditExportFilters,
+    AuditExportPackage,
+    AuditExportSummary,
+    AuditRecord,
+)
 from ojtflow.core.contracts.clinical import (
     ClinicalBundle,
     ClinicalFieldProvenance,
@@ -113,6 +119,10 @@ __all__ = [
     "AssistantToolPlan",
     "AssistantToolResult",
     "AssistantToolSpec",
+    "AuditExportCoverageItem",
+    "AuditExportFilters",
+    "AuditExportPackage",
+    "AuditExportSummary",
     "AuditRecord",
     "ClinicalBundle",
     "ClinicalFieldProvenance",

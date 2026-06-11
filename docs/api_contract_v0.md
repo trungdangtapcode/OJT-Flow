@@ -1248,6 +1248,62 @@ Example response data:
 ]
 ```
 
+`GET /api/v1/audit/export`
+
+Builds an owner-scoped JSON audit export package for compliance review.
+Query parameters:
+
+- `action`: optional exact action filter.
+- `workflow_id`: optional workflow correlation filter.
+- `assistant_session_id`: optional Assistant chat session correlation filter.
+- `include_workflow_events`: includes append-only workflow events when
+  `workflow_id` is supplied; default `true`.
+- `limit`: maximum generic audit records to return; default `100`, maximum `500`.
+
+The export package combines sanitized generic audit records with workflow events
+when available. It also includes explicit coverage metadata for workflows,
+reviews, Assistant/MCP tool calls, auth events, runtime setting changes, and
+source ingestion. Scopes without current audit producers are reported as
+`not_available` instead of being silently omitted.
+
+Example response data:
+
+```json
+{
+  "export_id": "audexp_abc123",
+  "generated_at": "2026-06-11T00:00:00+00:00",
+  "owner_user_id": "usr_123",
+  "export_format": "json",
+  "filters": {
+    "workflow_id": "wf_456",
+    "action": null,
+    "assistant_session_id": null,
+    "limit": 100,
+    "include_workflow_events": true
+  },
+  "summary": {
+    "record_count": 1,
+    "workflow_event_count": 2,
+    "covered_scope_count": 1,
+    "partial_scope_count": 2,
+    "unavailable_scope_count": 3,
+    "includes_raw_payloads": false
+  },
+  "coverage": [
+    {
+      "scope": "assistant_tool_calls",
+      "status": "covered",
+      "record_count": 1,
+      "event_count": 0,
+      "description": "Assistant and local MCP tool calls write sanitized generic audit records with input/output hashes and correlation metadata.",
+      "limitations": ["Raw tool arguments and raw tool output are intentionally excluded."]
+    }
+  ],
+  "records": [],
+  "workflow_events": []
+}
+```
+
 ## FHIR-Like Profile
 
 `POST /api/v1/fhir/profile`
