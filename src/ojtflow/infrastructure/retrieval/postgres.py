@@ -22,6 +22,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     build_query_variants,
     chunk_metadata_json,
     default_healthcare_chunks,
+    diversity_settings_from_query,
     rank_chunks,
 )
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
@@ -212,6 +213,11 @@ class PostgresRetrievalRepository:
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         chunks, postgres_warnings = self._load_candidate_chunks(query)
+        diversity_enabled, diversity_lambda = diversity_settings_from_query(
+            query,
+            default_enabled=self.diversity_enabled,
+            default_lambda=self.diversity_lambda,
+        )
         if not chunks:
             postgres_warnings.append(
                 "No retrieval chunks matched filters; returning empty package."
@@ -223,8 +229,8 @@ class PostgresRetrievalRepository:
             reranker=self.reranker,
             rerank_candidate_limit=self.rerank_candidate_limit,
             rerank_score_weight=self.rerank_score_weight,
-            diversity_enabled=self.diversity_enabled,
-            diversity_lambda=self.diversity_lambda,
+            diversity_enabled=diversity_enabled,
+            diversity_lambda=diversity_lambda,
             strategy="postgres_fts_vector_rrf",
             warnings=postgres_warnings,
         )

@@ -20,6 +20,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
     default_healthcare_chunks,
+    diversity_settings_from_query,
     rank_chunks,
     sources_from_chunks,
 )
@@ -111,6 +112,11 @@ class StaticRetrievalRepository:
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         chunks = self._filter_chunks(self._chunks, query)
+        diversity_enabled, diversity_lambda = diversity_settings_from_query(
+            query,
+            default_enabled=self.diversity_enabled,
+            default_lambda=self.diversity_lambda,
+        )
         warnings = (
             []
             if chunks
@@ -123,8 +129,8 @@ class StaticRetrievalRepository:
             reranker=self.reranker,
             rerank_candidate_limit=self.rerank_candidate_limit,
             rerank_score_weight=self.rerank_score_weight,
-            diversity_enabled=self.diversity_enabled,
-            diversity_lambda=self.diversity_lambda,
+            diversity_enabled=diversity_enabled,
+            diversity_lambda=diversity_lambda,
             strategy="static_hybrid_rrf",
             warnings=warnings,
         )

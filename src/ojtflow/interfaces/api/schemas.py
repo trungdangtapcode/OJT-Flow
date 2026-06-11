@@ -184,6 +184,8 @@ class RetrievalSearchFilters(ContractModel):
     standard_system: NonBlankStr | None = None
     source_type: EvidenceSourceType | None = None
     source_id: NonBlankStr | None = None
+    diversity_enabled: bool | None = None
+    diversity_lambda: float | None = Field(default=None, ge=0.0, le=1.0)
 
     model_config = {
         "json_schema_extra": {
@@ -194,6 +196,8 @@ class RetrievalSearchFilters(ContractModel):
                     "standard_system": "UCUM",
                     "source_type": "terminology_system",
                     "source_id": "terminology:ucum",
+                    "diversity_enabled": True,
+                    "diversity_lambda": 0.72,
                 }
             ]
         }

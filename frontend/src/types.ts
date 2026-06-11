@@ -936,6 +936,8 @@ export type RetrievalSearchFilters = {
   standard_system?: string | null;
   source_type?: string | null;
   source_id?: string | null;
+  diversity_enabled?: boolean | null;
+  diversity_lambda?: number | null;
 };
 
 export type RetrievalSource = {

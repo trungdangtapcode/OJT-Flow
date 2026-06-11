@@ -363,6 +363,24 @@ def build_query_variants(query: RetrievalQuery) -> list[str]:
     return analyze_query(query).query_variants
 
 
+def diversity_settings_from_query(
+    query: RetrievalQuery,
+    *,
+    default_enabled: bool,
+    default_lambda: float,
+) -> tuple[bool, float]:
+    """Resolve per-query diversity controls from allowlisted retrieval filters."""
+
+    enabled = _filter_bool(query.filters.get("diversity_enabled"), default_enabled)
+    lambda_value = _filter_float(
+        query.filters.get("diversity_lambda"),
+        default_lambda,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    return enabled, lambda_value
+
+
 def rank_chunks(
     chunks: list[KnowledgeChunk],
     query: RetrievalQuery,
@@ -4942,6 +4960,38 @@ def _reranker_metadata(reranker: Any | None) -> dict[str, Any]:
         "model": getattr(reranker, "model", "unknown"),
         "enabled": _reranker_enabled(reranker),
     }
+
+
+def _filter_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return default
+
+
+def _filter_float(
+    value: Any,
+    default: float,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < minimum or parsed > maximum:
+        return default
+    return parsed
 
 
 def _select_diverse_hits(

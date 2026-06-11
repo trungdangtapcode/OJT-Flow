@@ -1190,6 +1190,22 @@ candidate source count, selected source count, and duplicate selected source
 count under the first-class `diversity` field and mirror that data to
 `handoff_context.diversity`.
 
+Direct retrieval requests can override diversity for a specific query through
+allowlisted filters:
+
+```json
+{
+  "filters": {
+    "diversity_enabled": true,
+    "diversity_lambda": 0.35
+  }
+}
+```
+
+Use lower lambda values for broad review routes where source spread matters
+more, and higher values for exact-source lookups where rank confidence matters
+more.
+
 `OJT_RETRIEVAL_HNSW_EF_SEARCH` controls the per-query pgvector HNSW search
 candidate depth for the Postgres vector candidate pool. pgvector defaults this
 value to 40; OJTFlow defaults to 100 for healthcare evidence retrieval where

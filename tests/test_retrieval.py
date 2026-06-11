@@ -2760,6 +2760,32 @@ def test_retrieval_diversity_selection_reduces_redundant_sources() -> None:
     assert "balancing relevance" in diversity["selected_hits"][1]["reason"]
 
 
+def test_static_retrieval_allows_per_query_diversity_override() -> None:
+    repository = StaticRetrievalRepository(
+        ROOT / "knowledge",
+        diversity_enabled=False,
+        diversity_lambda=0.72,
+    )
+
+    package = repository.search(
+        RetrievalQuery(
+            query="FHIR Observation lab units patient identifier",
+            top_k=4,
+            filters={
+                "trust_level": "approved",
+                "diversity_enabled": True,
+                "diversity_lambda": 0.35,
+            },
+        )
+    )
+
+    assert package.diversity is not None
+    assert package.diversity.enabled is True
+    assert package.diversity.lambda_value == 0.35
+    assert package.trace.filters_applied["diversity_enabled"] is True
+    assert package.trace.filters_applied["diversity_lambda"] == 0.35
+
+
 def test_local_corpus_loader_chunks_trusted_healthcare_docs(tmp_path: Path) -> None:
     corpus_dir = tmp_path / "knowledge" / "corpus"
     corpus_dir.mkdir(parents=True)
