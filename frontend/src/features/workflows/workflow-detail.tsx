@@ -24,6 +24,7 @@ import {
   WorkflowFailureNotice,
 } from "./workflow-detail-chrome";
 import { ReviewTab } from "./workflow-detail-review";
+import { ClinicalPackagePanel } from "./workflow-detail-clinical-package";
 import {
   Audit,
   Evidence,
@@ -151,6 +152,7 @@ export function WorkflowDetail({
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="issues">Issues</TabsTrigger>
           <TabsTrigger value="evidence">Evidence</TabsTrigger>
+          <TabsTrigger value="clinical">Clinical package</TabsTrigger>
           <TabsTrigger value="review">Review</TabsTrigger>
           <TabsTrigger value="output">Output</TabsTrigger>
           <TabsTrigger value="audit">Audit</TabsTrigger>
@@ -171,6 +173,9 @@ export function WorkflowDetail({
         </TabsContent>
         <TabsContent value="evidence">
           <Evidence workflow={workflow} />
+        </TabsContent>
+        <TabsContent value="clinical">
+          <ClinicalPackagePanel workflow={workflow} />
         </TabsContent>
         <TabsContent value="review">
           <ReviewTab

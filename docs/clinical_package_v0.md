@@ -138,10 +138,28 @@ and returns the typed package without writing to storage. This gives downstream
 ETL or interoperability code a deterministic way to prove that an exported
 package can be loaded without dropping evidence or provenance.
 
+## Workflow Detail UI
+
+Workflow Detail includes a `Clinical package` tab for operators and reviewers.
+It separates:
+
+- terminology candidates by source text, candidate code, confidence, source
+  terminology, and reviewer state
+- unit validation by source unit, normalized unit, standard system, confidence,
+  and review requirement
+- package summary, resource counts, OperationOutcome-like issues, and package
+  warnings
+- raw source fields and values mapped to generated FHIR-like resource fields
+  with derivation state, evidence IDs, notes, and generated resource JSON
+
+The tab repeats the v0 boundary clearly: output is FHIR-like and must not be
+treated as HL7 FHIR compliant until a real target validator accepts it.
+
 ## Verification
 
 Run:
 
 ```bash
 python -m pytest tests/test_workflow_service.py::test_clean_lab_workflow_builds_clinical_package_with_field_provenance tests/test_workflow_service.py::test_clinical_package_export_builds_bundle_and_reloads_losslessly tests/test_workflow_service.py::test_review_gated_lab_workflow_clinical_package_carries_review_and_issues tests/test_workflow_service.py::test_fhir_like_workflow_adds_profile_evidence_and_handoff_context -q
+npm --prefix frontend run build
 ```

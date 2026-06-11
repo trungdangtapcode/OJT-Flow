@@ -170,6 +170,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F050 | Started | Added internal Provenance-like package records for parse, validate, map, retrieve evidence, review, and transform activities. Assistant/tool execution provenance remains follow-up. |
 | 2026-06-11 | F052 | Implemented | Added review-gated `TerminologyCandidate` contract and deterministic LOINC candidate generation for `lab_result_v1.lab_name` from `knowledge/terminologies/medical_concepts.json`, carried in `ClinicalPackage.terminology_candidates`. |
 | 2026-06-11 | F053 | Implemented | Added `UnitValidationResult`, `knowledge/terminologies/ucum_units.json`, and UCUM-like unit checks for `lab_result_v1.unit`, carried in `ClinicalPackage.unit_validations` with missing/unknown/not-preferred review flags. |
+| 2026-06-11 | F056-F057, F060 | Implemented | Added a Workflow Detail Clinical Package tab that separates terminology source text, candidate codes, confidence, source terminology, reviewer state, unit checks, OperationOutcome-like issues, raw-to-resource field provenance, generated resource JSON, package warnings, and explicit FHIR-like/non-HL7-validation wording. |
 | 2026-06-11 | F116 | Implemented | Added durable generic audit records for Assistant and MCP tool calls, with memory/SQLite/Postgres repositories, Postgres migration 015, owner-scoped `GET /api/v1/audit/records`, redacted tool input/output hashes, request/session/workflow/workflow-event correlation, and docs/tests. |
 | 2026-06-11 | F115 | Implemented | Added a data-driven remote MCP deployment policy at `knowledge/assistant/remote_mcp_deployment_policy.json`, authenticated `GET /api/v1/assistant/mcp/remote-policy`, MCP resource `ojtflow://assistant/mcp/remote-policy`, and docs/tests. Remote exposure remains blocked until OAuth protected-resource metadata, resource indicators, per-user scoping, rate limits, and remote audit metadata are implemented and verified. |
 | 2026-06-11 | F117 | Implemented | Added data-driven Assistant evaluation fixtures at `knowledge/assistant/evaluation_cases.json`, typed suite/case contracts, fixture loader, evaluation docs, and deterministic tests for tool selection, write-gate preservation, answer terms, and evidence-source requirements. |
@@ -277,11 +278,11 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F053 Add UCUM validation contract for units with source unit, normalized candidate, validation result, and review requirement.
 - [ ] F054 Add RxNorm candidate generation contract for medication fields.
 - [ ] F055 Add SNOMED CT placeholder contract for diagnoses/findings with license-aware implementation notes.
-- [ ] F056 Add terminology evidence UI that separates source text, candidate code, confidence, source terminology, and reviewer decision.
-- [ ] F057 Add clinical package diff view showing raw fields vs generated resources vs approved changes.
+- [x] F056 Add terminology evidence UI that separates source text, candidate code, confidence, source terminology, and reviewer decision.
+- [x] F057 Add clinical package diff view showing raw fields vs generated resources vs approved changes.
 - [x] F058 Add canonical package export as JSON with all evidence and review metadata included.
 - [x] F059 Add package import validation so OJTFlow can reload its own exported package without losing provenance.
-- [ ] F060 Add clear wording in UI and docs that v0 output is FHIR-like unless validated by a real FHIR validator.
+- [x] F060 Add clear wording in UI and docs that v0 output is FHIR-like unless validated by a real FHIR validator.
 
 ### Month 4: Retrieval, RAG, Corpus, And Graph-NER
 
