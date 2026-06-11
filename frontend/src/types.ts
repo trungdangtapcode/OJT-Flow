@@ -103,6 +103,27 @@ export type Evidence = {
   trust_level: string;
 };
 
+export type OcrEvidenceFieldInput = {
+  page: number;
+  name: string;
+  value: string;
+  bbox: number[];
+  confidence: number;
+  source_ref: string;
+  normalized_to?: string | null;
+};
+
+export type OcrField = OcrEvidenceFieldInput & {
+  field_id: string;
+  requires_review: boolean;
+};
+
+export type OcrEvidenceResponse = {
+  fields: OcrField[];
+  evidence: Evidence[];
+  requires_review: boolean;
+};
+
 export type RetrievalTrace = {
   strategy: string;
   query_variants: string[];

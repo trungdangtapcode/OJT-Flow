@@ -36,6 +36,7 @@ import {
   WorkflowStartError,
 } from "./workbench-controls";
 import { inputExamples, type InputExample } from "./workbench-examples";
+import { OcrEvidencePanel } from "./ocr-evidence-panel";
 import { formatBytes, sourceDataStats, validateUploadFile } from "./workbench-utils";
 
 export function WorkbenchPage() {
@@ -439,6 +440,7 @@ export function WorkbenchPage() {
             targetFormat={targetFormat}
           />
           <WorkbenchExecutionPath />
+          <OcrEvidencePanel />
           <WorkbenchPayloadStandards />
         </div>
       </div>

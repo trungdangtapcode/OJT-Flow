@@ -39,6 +39,7 @@ import {
   listReviewSummaries,
   listSchemas,
   listWorkflowEvents,
+  normalizeOcrEvidence,
   listWorkflowSummaries,
   planRetrieval,
   reindexRetrieval,
@@ -64,6 +65,8 @@ import type {
   AssistantStreamEvent,
   AssistantStreamReplay,
   BackgroundJob,
+  OcrEvidenceFieldInput,
+  OcrEvidenceResponse,
   UploadParseJobResponse,
   RetrievalReindexJobPayload,
   RetrievalJudgmentEvaluationPayload,
@@ -542,6 +545,12 @@ export function useAppendAssistantSessionMessageMutation() {
 
 export function useAssistantToolsQuery() {
   return useQuery({ queryKey: queryKeys.assistantTools, queryFn: listAssistantTools });
+}
+
+export function useOcrEvidenceMutation() {
+  return useMutation<OcrEvidenceResponse, Error, OcrEvidenceFieldInput[]>({
+    mutationFn: normalizeOcrEvidence,
+  });
 }
 
 export function useAssistantExamplesQuery() {

@@ -18,6 +18,8 @@ import type {
   ExtractedDocument,
   ExtractorInventory,
   MigrationDiagnostics,
+  OcrEvidenceFieldInput,
+  OcrEvidenceResponse,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentEvaluationResult,
   RetrievalIntegrityReport,
@@ -744,6 +746,15 @@ export function listAssistantExamples(): Promise<AssistantExample[]> {
 
 export function listAssistantTools(): Promise<AssistantToolSpec[]> {
   return request<AssistantToolSpec[]>("/assistant/tools");
+}
+
+export function normalizeOcrEvidence(
+  fields: OcrEvidenceFieldInput[],
+): Promise<OcrEvidenceResponse> {
+  return request<OcrEvidenceResponse>("/ocr/evidence", {
+    method: "POST",
+    body: JSON.stringify({ fields }),
+  });
 }
 
 export function listRetrievalSources(): Promise<RetrievalSource[]> {

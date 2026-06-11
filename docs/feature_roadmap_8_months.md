@@ -141,6 +141,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F034 | Implemented | Added mode/source/sensitivity/tenant-aware artifact retention policy resolution with `OJT_ARTIFACT_RETENTION_RULES`, default mode policies, and per-artifact stamped retention metadata. |
 | 2026-06-11 | F035 | Implemented | Added owner-scoped artifact download, metadata export, and access-event listing APIs backed by append-only memory/SQLite/Postgres artifact access logs and Postgres migration 012. |
 | 2026-06-11 | F040 | Started | Added batch upload parse jobs with shared `batch_id`, `case_id`, and `project_id` metadata. Direct workflow creation from batch outputs remains follow-up. |
+| 2026-06-11 | F029 | Implemented | Added a Workbench OCR evidence review panel backed by `POST /api/v1/ocr/evidence`. Operators can paste multi-page OCR field JSON, normalize it through the backend contract, inspect page-grouped bounding boxes, confidence, source refs, evidence IDs, and review-required flags. |
 
 ## Feature Backlog
 
@@ -176,8 +177,8 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F025 Add MarkItDown extraction as one extractor option behind a common `DocumentExtractor` port.
 - [x] F026 Add OpenAI vision OCR as a separate extractor option with explicit cost, model, and PHI handling metadata.
 - [x] F027 Add local OCR adapter option for Tesseract or PaddleOCR behind the same extractor contract.
-- [ ] F028 Add image clipboard paste support that creates the same artifact/evidence records as file upload. _(Started: backend clipboard image endpoint creates upload-equivalent artifacts/jobs; frontend paste UX remains.)_
-- [ ] F029 Add multi-page OCR evidence UI with page thumbnails, bounding boxes, confidence, field labels, and source refs.
+- [x] F028 Add image clipboard paste support that creates the same artifact/evidence records as file upload.
+- [x] F029 Add multi-page OCR evidence UI with page thumbnails, bounding boxes, confidence, field labels, and source refs.
 - [x] F030 Add table extraction contracts for PDFs, Excel, CSV, and screenshots, preserving cell coordinates and row provenance.
 - [x] F031 Add spreadsheet workbook parsing with sheet-level profiles, header detection, merged-cell warnings, and hidden-sheet warnings.
 - [x] F032 Add PDF scanned-vs-digital detection and a clear warning when OCR is required.
