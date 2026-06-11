@@ -136,3 +136,59 @@ class ClinicalPackage(ContractModel):
     warnings: list[NonBlankStr] = Field(default_factory=list)
     created_at: NonBlankStr = Field(default_factory=lambda: utc_now().isoformat())
     updated_at: NonBlankStr = Field(default_factory=lambda: utc_now().isoformat())
+
+
+class ClinicalPackageImportIssue(ContractModel):
+    """Validation issue found while reloading an exported clinical package."""
+
+    severity: Severity
+    code: NonBlankStr
+    message: NonBlankStr
+    path: NonBlankStr | None = None
+
+
+class ClinicalPackageExport(ContractModel):
+    """Canonical export envelope for one governed clinical package."""
+
+    export_id: NonBlankStr = Field(default_factory=lambda: new_id("cpkgexp"))
+    export_type: Literal["ojtflow_clinical_package_export"] = (
+        "ojtflow_clinical_package_export"
+    )
+    schema_version: NonBlankStr = "clinical_package_export.v0"
+    generated_at: NonBlankStr = Field(default_factory=lambda: utc_now().isoformat())
+    workflow_id: NonBlankStr
+    package_id: NonBlankStr
+    package_schema_version: NonBlankStr
+    package_hash: NonBlankStr
+    fhir_like_bundle_hash: NonBlankStr
+    approved_for_export: bool
+    review_status: NonBlankStr | None = None
+    resource_count: int = Field(ge=0)
+    evidence_count: int = Field(ge=0)
+    provenance_count: int = Field(ge=0)
+    operation_outcome_issue_count: int = Field(ge=0)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    clinical_package: ClinicalPackage
+    fhir_like_bundle: dict[str, Any]
+
+
+class ClinicalPackageImportValidation(ContractModel):
+    """Result of validating that an exported package can be reloaded losslessly."""
+
+    validation_id: NonBlankStr = Field(default_factory=lambda: new_id("cpkgimp"))
+    valid: bool
+    package_hash: NonBlankStr | None = None
+    expected_package_hash: NonBlankStr | None = None
+    fhir_like_bundle_hash: NonBlankStr | None = None
+    expected_fhir_like_bundle_hash: NonBlankStr | None = None
+    workflow_id: NonBlankStr | None = None
+    package_id: NonBlankStr | None = None
+    resource_count: int = Field(default=0, ge=0)
+    evidence_count: int = Field(default=0, ge=0)
+    provenance_count: int = Field(default=0, ge=0)
+    operation_outcome_issue_count: int = Field(default=0, ge=0)
+    issues: list[ClinicalPackageImportIssue] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    clinical_package: ClinicalPackage | None = None
+    fhir_like_bundle: dict[str, Any] | None = None

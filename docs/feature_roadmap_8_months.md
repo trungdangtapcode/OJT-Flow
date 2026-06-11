@@ -166,6 +166,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F042-F043, F048-F049 | Implemented | Added `knowledge/fhir/resource_profiles.json`, data-driven FHIR-like profile validation/search hints, and `lab_result_v1` resource builders for Patient, Observation, DiagnosticReport, and DocumentReference. Generated resources now carry source/derived/defaulted/review-required field provenance, and package handoff context includes profile IDs, source URLs, and search parameters. |
 | 2026-06-11 | F044 | Implemented | Added `lab_result_v1` to FHIR-like Observation mapping for patient reference, effective date, code text, value quantity, and unit, with review warnings instead of silent semantic normalization. |
 | 2026-06-11 | F047 | Implemented | Added OperationOutcome-like package issues derived from validation reports, preserving severity, code, diagnostics, source expression, issue ID, location, and review requirement. |
+| 2026-06-11 | F046, F058-F059 | Implemented | Added workflow-scoped clinical package export for completed approved outputs, canonical package and FHIR-like Bundle hashes, FHIR-like Bundle projection with OperationOutcome and Provenance entries, and import validation that rehydrates exported packages without dropping evidence/review/provenance metadata. |
 | 2026-06-11 | F050 | Started | Added internal Provenance-like package records for parse, validate, map, retrieve evidence, review, and transform activities. Assistant/tool execution provenance remains follow-up. |
 | 2026-06-11 | F052 | Implemented | Added review-gated `TerminologyCandidate` contract and deterministic LOINC candidate generation for `lab_result_v1.lab_name` from `knowledge/terminologies/medical_concepts.json`, carried in `ClinicalPackage.terminology_candidates`. |
 | 2026-06-11 | F053 | Implemented | Added `UnitValidationResult`, `knowledge/terminologies/ucum_units.json`, and UCUM-like unit checks for `lab_result_v1.unit`, carried in `ClinicalPackage.unit_validations` with missing/unknown/not-preferred review flags. |
@@ -266,7 +267,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F043 Add resource-level field provenance so every generated FHIR-like element has source evidence or an explicit derived-value note.
 - [x] F044 Add `lab_result_v1` to FHIR-like `Observation` mapping with patient reference, effective date, code text, value quantity, and unit.
 - [ ] F045 Add review gates for semantic normalization of lab names, units, dates, patient IDs, diagnoses, medications, and procedures.
-- [ ] F046 Add FHIR-like `Bundle` export for approved workflow outputs.
+- [x] F046 Add FHIR-like `Bundle` export for approved workflow outputs.
 - [x] F047 Add FHIR `OperationOutcome`-like validation output for profile errors and warnings.
 - [x] F048 Add lightweight FHIR profile registry files for supported resource families and required fields.
 - [x] F049 Add FHIR search parameter generation for profile outputs and retrieval hints.
@@ -278,8 +279,8 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F055 Add SNOMED CT placeholder contract for diagnoses/findings with license-aware implementation notes.
 - [ ] F056 Add terminology evidence UI that separates source text, candidate code, confidence, source terminology, and reviewer decision.
 - [ ] F057 Add clinical package diff view showing raw fields vs generated resources vs approved changes.
-- [ ] F058 Add canonical package export as JSON with all evidence and review metadata included.
-- [ ] F059 Add package import validation so OJTFlow can reload its own exported package without losing provenance.
+- [x] F058 Add canonical package export as JSON with all evidence and review metadata included.
+- [x] F059 Add package import validation so OJTFlow can reload its own exported package without losing provenance.
 - [ ] F060 Add clear wording in UI and docs that v0 output is FHIR-like unless validated by a real FHIR validator.
 
 ### Month 4: Retrieval, RAG, Corpus, And Graph-NER

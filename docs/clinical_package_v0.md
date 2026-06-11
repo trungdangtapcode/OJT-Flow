@@ -106,10 +106,42 @@ Validation issues are copied into:
 Each issue carries severity, code, diagnostics, expression, original issue ID,
 source location, and review requirement.
 
+## Export And Reload
+
+Completed workflows can export their clinical package through:
+
+`GET /api/v1/workflows/{workflow_id}/clinical-package/export`
+
+The response data is an `ojtflow_clinical_package_export` envelope containing:
+
+- `clinical_package`: the canonical OJTFlow package with evidence, review,
+  audit refs, output refs, terminology candidates, units, and provenance
+- `fhir_like_bundle`: a cleaner FHIR-like `Bundle` projection for downstream
+  interoperability handoff
+- `package_hash`: SHA-256 hash of canonical package JSON
+- `fhir_like_bundle_hash`: SHA-256 hash of canonical Bundle JSON
+- `approved_for_export`: whether the package passed the review/export rule
+- counts for resources, evidence, provenance, and OperationOutcome issues
+
+By default, export requires a completed workflow and an export-approved package.
+Packages with pending review, rejected review, or resources that still require
+review are blocked unless the caller explicitly disables approval enforcement
+for inspection.
+
+Reload validation is available through:
+
+`POST /api/v1/interoperability/clinical-package/validate-import`
+
+It rehydrates the package, validates required shape, verifies package and Bundle
+hashes when present, checks that Bundle entries include all package resources,
+and returns the typed package without writing to storage. This gives downstream
+ETL or interoperability code a deterministic way to prove that an exported
+package can be loaded without dropping evidence or provenance.
+
 ## Verification
 
 Run:
 
 ```bash
-python -m pytest tests/test_workflow_service.py::test_clean_lab_workflow_builds_clinical_package_with_field_provenance tests/test_workflow_service.py::test_review_gated_lab_workflow_clinical_package_carries_review_and_issues tests/test_workflow_service.py::test_fhir_like_workflow_adds_profile_evidence_and_handoff_context -q
+python -m pytest tests/test_workflow_service.py::test_clean_lab_workflow_builds_clinical_package_with_field_provenance tests/test_workflow_service.py::test_clinical_package_export_builds_bundle_and_reloads_losslessly tests/test_workflow_service.py::test_review_gated_lab_workflow_clinical_package_carries_review_and_issues tests/test_workflow_service.py::test_fhir_like_workflow_adds_profile_evidence_and_handoff_context -q
 ```

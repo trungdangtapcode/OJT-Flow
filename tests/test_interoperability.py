@@ -97,10 +97,17 @@ def test_approved_clinical_package_exports_bulk_fhir_ndjson() -> None:
     exported = export_clinical_package_as_bulk_fhir_ndjson(workflow.clinical_package)
 
     assert exported.approved_for_export is True
-    assert exported.resource_count == 1
-    assert exported.files[0].filename == "Observation.ndjson"
-    assert '"resourceType":"Observation"' in exported.files[0].ndjson
-    assert exported.files[0].output_hash
+    assert exported.resource_count == 4
+    files_by_resource = {file.resource_type: file for file in exported.files}
+    assert {
+        "Patient",
+        "Observation",
+        "DiagnosticReport",
+        "DocumentReference",
+    }.issubset(files_by_resource)
+    assert files_by_resource["Observation"].filename == "Observation.ndjson"
+    assert '"resourceType":"Observation"' in files_by_resource["Observation"].ndjson
+    assert all(file.output_hash for file in exported.files)
 
 
 def test_hl7_v2_oru_obx_maps_to_fhir_like_observation_with_provenance() -> None:
@@ -256,7 +263,11 @@ async def test_interoperability_api_endpoints_return_envelopes(monkeypatch) -> N
     assert bulk.status_code == 200
     assert bulk.json()["data"]["resource_count"] == 1
     assert export.status_code == 200
-    assert export.json()["data"]["files"][0]["filename"] == "Observation.ndjson"
+    exported_files = {
+        file["resource_type"]: file for file in export.json()["data"]["files"]
+    }
+    assert exported_files["Observation"]["filename"] == "Observation.ndjson"
+    assert exported_files["Patient"]["filename"] == "Patient.ndjson"
     assert hl7.status_code == 200
     assert hl7.json()["data"]["observations"][0]["resource_type"] == "Observation"
     assert dicom.status_code == 200

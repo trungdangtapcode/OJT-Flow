@@ -26,6 +26,7 @@ from ojtflow.core.contracts.interoperability import (
 )
 from ojtflow.core.contracts.issue import SourceLocation
 from ojtflow.core.errors import ToolExecutionError
+from ojtflow.clinical.package_io import clinical_package_export_approval
 from ojtflow.data_tools.hashing import sha256_text
 
 
@@ -122,7 +123,7 @@ def export_clinical_package_as_bulk_fhir_ndjson(
 ) -> BulkFhirNdjsonExportPackage:
     """Export approved clinical package resources as FHIR Bulk Data NDJSON files."""
 
-    approved, approval_warnings = _clinical_package_export_approval(package)
+    approved, approval_warnings = clinical_package_export_approval(package)
     if require_approval and not approved:
         raise ToolExecutionError(
             "Clinical package is not approved for Bulk FHIR export.",
@@ -436,21 +437,6 @@ def build_document_reference(
         warnings=["DocumentReference is FHIR-like and has not been validated by a full HL7 validator."],
     )
     return DocumentReferenceMapping(resource=record, warnings=list(record.warnings))
-
-
-def _clinical_package_export_approval(package: ClinicalPackage) -> tuple[bool, list[str]]:
-    warnings: list[str] = []
-    review_status = (package.review or {}).get("status")
-    if review_status in {"approved", "approved_with_edits"}:
-        return True, warnings
-    if review_status:
-        warnings.append(f"clinical package review status is {review_status}")
-        return False, warnings
-    if any(record.review_required for record in package.clinical_bundle.resources):
-        warnings.append("clinical package has resources that still require review")
-        return False, warnings
-    warnings.append("clinical package has no explicit review record; export allowed because no resource is review-gated")
-    return True, warnings
 
 
 def _first_segment(segments: list[Hl7V2Segment], segment_id: str) -> Hl7V2Segment | None:

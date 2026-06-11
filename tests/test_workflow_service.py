@@ -195,6 +195,58 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
     assert "FHIR-like package has not been validated" in package.warnings[0]
 
 
+def test_clinical_package_export_builds_bundle_and_reloads_losslessly() -> None:
+    service = make_service()
+    text = "date,patient_id,lab_name,value,unit\n2026-01-01,P001,HbA1c,7.4,%\n"
+
+    workflow = service.start_workflow(
+        instruction="Convert this lab row into an exportable clinical package.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    package_export = service.export_workflow_clinical_package(workflow.workflow_id)
+    assert package_export.approved_for_export is True
+    assert package_export.workflow_id == workflow.workflow_id
+    assert package_export.package_hash
+    assert package_export.fhir_like_bundle_hash
+    assert package_export.fhir_like_bundle["resourceType"] == "Bundle"
+    exported_resource_types = {
+        entry["resource"]["resourceType"]
+        for entry in package_export.fhir_like_bundle["entry"]
+    }
+    assert {
+        "Patient",
+        "Observation",
+        "DiagnosticReport",
+        "DocumentReference",
+        "OperationOutcome",
+        "Provenance",
+    }.issubset(exported_resource_types)
+    assert package_export.evidence_count == len(workflow.clinical_package.evidence)
+    assert package_export.provenance_count == len(workflow.clinical_package.provenance)
+
+    validation = service.validate_clinical_package_import(
+        package_export.model_dump(mode="json")
+    )
+    assert validation.valid is True
+    assert validation.package_hash == package_export.package_hash
+    assert validation.fhir_like_bundle_hash == package_export.fhir_like_bundle_hash
+    assert validation.clinical_package is not None
+    assert validation.clinical_package.package_id == workflow.clinical_package.package_id
+    assert validation.provenance_count == len(workflow.clinical_package.provenance)
+    assert validation.evidence_count == len(workflow.clinical_package.evidence)
+
+    tampered = package_export.model_dump(mode="json")
+    tampered["clinical_package"]["workflow_id"] = "wf_tampered"
+    tampered_validation = service.validate_clinical_package_import(tampered)
+    assert tampered_validation.valid is False
+    assert any(issue.code == "package_hash_mismatch" for issue in tampered_validation.issues)
+
+
 def test_review_gated_lab_workflow_clinical_package_carries_review_and_issues() -> None:
     service = make_service()
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()

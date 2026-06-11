@@ -22,7 +22,15 @@ from ojtflow.application.ports import (
 from ojtflow.application.graph_service import GraphService
 from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.application.tool_registry import tool_specs_json
+from ojtflow.clinical.package_io import (
+    export_clinical_package as build_clinical_package_export,
+    validate_clinical_package_export,
+)
 from ojtflow.clinical.package_builder import build_clinical_package
+from ojtflow.core.contracts.clinical import (
+    ClinicalPackageExport,
+    ClinicalPackageImportValidation,
+)
 from ojtflow.core.contracts.data import (
     ParsedData,
     TransformationAction,
@@ -1255,6 +1263,56 @@ class WorkflowService:
             content=content,
             warnings=output.warnings,
             diff_summary=output.diff_summary,
+        )
+
+    def export_workflow_clinical_package(
+        self,
+        workflow_id: str,
+        *,
+        owner_user_id: str | None = None,
+        require_approval: bool = True,
+    ) -> ClinicalPackageExport:
+        """Export a completed workflow ClinicalPackage with reload metadata."""
+
+        workflow = self.workflows.get(workflow_id)
+        self._assert_workflow_owner(workflow, owner_user_id)
+        if workflow.status != WorkflowStatus.COMPLETED:
+            raise PolicyBlockedError(
+                "Clinical package export requires a completed workflow.",
+                workflow_id=workflow.workflow_id,
+                details={"workflow_status": workflow.status.value},
+            )
+        if not workflow.output or not workflow.output.transformation:
+            raise NotFoundError(
+                f"Workflow output not generated: {workflow_id}",
+                workflow_id=workflow.workflow_id,
+            )
+        if workflow.clinical_package is None:
+            raise NotFoundError(
+                f"Clinical package not generated: {workflow_id}",
+                workflow_id=workflow.workflow_id,
+            )
+        return build_clinical_package_export(
+            workflow.clinical_package,
+            require_approval=require_approval,
+            metadata={
+                "workflow_status": workflow.status.value,
+                "output_refs": list(workflow.clinical_package.output_refs),
+                "audit_event_refs": list(workflow.clinical_package.audit_event_refs),
+            },
+        )
+
+    def validate_clinical_package_import(
+        self,
+        payload: dict[str, Any] | str,
+        *,
+        require_hash_match: bool = True,
+    ) -> ClinicalPackageImportValidation:
+        """Validate that an exported ClinicalPackage can be reloaded."""
+
+        return validate_clinical_package_export(
+            payload,
+            require_hash_match=require_hash_match,
         )
 
     def submit_review(

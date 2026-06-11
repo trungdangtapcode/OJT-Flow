@@ -163,6 +163,24 @@ async def get_workflow_output(
     )
 
 
+@router.get("/workflows/{workflow_id}/clinical-package/export")
+async def export_workflow_clinical_package(
+    workflow_id: NonBlankStr,
+    require_approval: bool = Query(default=True),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:export")
+    return ok(
+        service.export_workflow_clinical_package(
+            workflow_id,
+            owner_user_id=authenticated.user.user_id,
+            require_approval=require_approval,
+        )
+    )
+
+
 @router.get("/reviews")
 async def list_reviews(
     status: str | None = "pending",

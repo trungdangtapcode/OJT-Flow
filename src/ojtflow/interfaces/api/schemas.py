@@ -214,6 +214,56 @@ class BulkFhirNdjsonExportRequest(ContractModel):
     }
 
 
+class ClinicalPackageImportValidationRequest(ContractModel):
+    payload: dict[str, Any]
+    require_hash_match: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "payload": {
+                        "export_type": "ojtflow_clinical_package_export",
+                        "schema_version": "clinical_package_export.v0",
+                        "workflow_id": "wf_demo",
+                        "package_id": "cpkg_demo",
+                        "package_hash": "expected-package-sha256",
+                        "fhir_like_bundle_hash": "expected-bundle-sha256",
+                        "approved_for_export": True,
+                        "clinical_package": {
+                            "package_type": "ojtflow_clinical_package",
+                            "schema_version": "clinical_package.v0",
+                            "workflow_id": "wf_demo",
+                            "raw_input": {
+                                "dataset_ref": "storage://datasets/demo",
+                                "input_hash": "sha256:demo",
+                                "declared_format": "csv",
+                                "detected_format": "csv",
+                            },
+                            "clinical_bundle": {
+                                "resourceType": "Bundle",
+                                "type": "collection",
+                                "entry": [],
+                                "resources": [],
+                            },
+                            "operation_outcome": {
+                                "resourceType": "OperationOutcome",
+                                "issue": [],
+                            },
+                        },
+                        "fhir_like_bundle": {
+                            "resourceType": "Bundle",
+                            "type": "collection",
+                            "entry": [],
+                        },
+                    },
+                    "require_hash_match": True,
+                }
+            ]
+        }
+    }
+
+
 class Hl7V2MapRequest(ContractModel):
     data: NonBlankStr
     source_ref: NonBlankStr | None = None

@@ -570,6 +570,77 @@ standard `not_found` error envelope. If the stored artifact content no longer
 matches the workflow's recorded output hash, the endpoint returns HTTP `409`
 with `error.code = "artifact_integrity_error"`.
 
+`GET /api/v1/workflows/{workflow_id}/clinical-package/export`
+
+Exports the completed workflow's canonical clinical package plus a FHIR-like
+Bundle projection. The endpoint requires `data:export`, owner access to the
+workflow, a completed workflow output, and an export-approved package unless
+`require_approval=false` is passed for inspection.
+
+Response data:
+
+```json
+{
+  "export_type": "ojtflow_clinical_package_export",
+  "schema_version": "clinical_package_export.v0",
+  "workflow_id": "wf_example",
+  "package_id": "cpkg_example",
+  "package_hash": "sha256...",
+  "fhir_like_bundle_hash": "sha256...",
+  "approved_for_export": true,
+  "review_status": "approved",
+  "resource_count": 4,
+  "evidence_count": 5,
+  "provenance_count": 6,
+  "operation_outcome_issue_count": 2,
+  "clinical_package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0"
+  },
+  "fhir_like_bundle": {
+    "resourceType": "Bundle",
+    "type": "collection",
+    "entry": []
+  },
+  "warnings": [
+    "FHIR-like Bundle export has not been validated by a full HL7 FHIR validator."
+  ]
+}
+```
+
+`POST /api/v1/interoperability/clinical-package/validate-import`
+
+Validates that an OJTFlow clinical package export can be reloaded without
+dropping evidence, review metadata, or provenance. This is a validation-only
+endpoint; it does not write workflows or artifacts.
+
+Request:
+
+```json
+{
+  "payload": {
+    "export_type": "ojtflow_clinical_package_export",
+    "schema_version": "clinical_package_export.v0",
+    "package_hash": "sha256...",
+    "fhir_like_bundle_hash": "sha256...",
+    "clinical_package": {
+      "package_type": "ojtflow_clinical_package",
+      "schema_version": "clinical_package.v0"
+    },
+    "fhir_like_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": []
+    }
+  },
+  "require_hash_match": true
+}
+```
+
+Response data includes `valid`, the computed and expected hashes, package ID,
+workflow ID, resource/evidence/provenance counts, `issues[]`, `warnings[]`, the
+rehydrated `clinical_package`, and the supplied or rebuilt `fhir_like_bundle`.
+
 Review approval uses the same integrity rule for stored input. An input hash
 mismatch during `POST /api/v1/review/{review_id}` returns HTTP `409`, records a
 `workflow.failed` audit event, and leaves `output` unset. If the input still

@@ -3485,6 +3485,35 @@ async def test_api_workflow_review_roundtrip(monkeypatch) -> None:
         assert "[MASKED]" in output_body["content"]
         assert output_body["diff_summary"]["target_row_count"] == 3
 
+        package_export = await client.get(
+            f"/api/v1/workflows/{body['workflow_id']}/clinical-package/export"
+        )
+        assert package_export.status_code == 200
+        package_export_body = package_export.json()["data"]
+        assert package_export_body["workflow_id"] == body["workflow_id"]
+        assert package_export_body["approved_for_export"] is True
+        assert package_export_body["review_status"] == "approved"
+        assert package_export_body["clinical_package"]["package_type"] == (
+            "ojtflow_clinical_package"
+        )
+        assert package_export_body["fhir_like_bundle"]["resourceType"] == "Bundle"
+        assert package_export_body["fhir_like_bundle"]["entry"]
+
+        import_validation = await client.post(
+            "/api/v1/interoperability/clinical-package/validate-import",
+            json={"payload": package_export_body, "require_hash_match": True},
+        )
+        assert import_validation.status_code == 200
+        import_validation_body = import_validation.json()["data"]
+        assert import_validation_body["valid"] is True
+        assert import_validation_body["package_hash"] == package_export_body["package_hash"]
+        assert import_validation_body["fhir_like_bundle_hash"] == (
+            package_export_body["fhir_like_bundle_hash"]
+        )
+        assert import_validation_body["clinical_package"]["package_id"] == (
+            package_export_body["clinical_package"]["package_id"]
+        )
+
         service = await get_workflow_service()
         output_ref = approved_body["output"]["transformation"]["output_ref"]
         service.datasets._text_by_ref[output_ref] = "tampered output"

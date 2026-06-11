@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
-from ojtflow.interfaces.api.deps import get_api_settings
+from ojtflow.interfaces.api.deps import get_api_settings, get_workflow_service
 from ojtflow.interfaces.api.limits import enforce_inline_text_limit
 from ojtflow.interfaces.api.responses import ok
 from ojtflow.interfaces.api.schemas import (
     BulkFhirNdjsonExportRequest,
     BulkFhirNdjsonImportRequest,
+    ClinicalPackageImportValidationRequest,
     DicomMetadataProfileRequest,
     DocumentReferenceMapRequest,
     EtlExportPackageRequest,
@@ -225,6 +227,21 @@ async def export_bulk_fhir_package(request: BulkFhirNdjsonExportRequest) -> dict
         export_clinical_package_as_bulk_fhir_ndjson(
             request.package,
             require_approval=request.require_approval,
+        )
+    )
+
+
+@router.post("/interoperability/clinical-package/validate-import")
+async def validate_clinical_package_import(
+    request: ClinicalPackageImportValidationRequest,
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    """Validate that an OJTFlow clinical package export can be reloaded."""
+
+    return ok(
+        service.validate_clinical_package_import(
+            request.payload,
+            require_hash_match=request.require_hash_match,
         )
     )
 
