@@ -1391,6 +1391,13 @@ Response data includes:
 - `audit.hash_chain_written`
 - `audit.hash_chain_required`
 - `audit.hash_chain_required_configured`
+- `review_policy.default_human_review_required`
+- `review_policy.ocr_low_confidence_threshold`
+- `retention.artifact_rule_count`
+- `retention.artifact_policy_configured`
+- `tools.registered_count`
+- `tools.approval_required_count`
+- `tools.write_gates_enabled`
 - `auth.google_oauth_configured`
 - `auth.cookie_secure`
 - `auth.cookie_effective_secure`

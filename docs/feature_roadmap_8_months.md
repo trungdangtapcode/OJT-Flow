@@ -185,6 +185,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F128 | Implemented | Added generated-output validation contracts and policy helpers for Assistant plans, summaries, streamed summaries, and export descriptions; Assistant now validates LLM plans before execution/display and keeps deterministic fallback text when generated summaries fail validation. |
 | 2026-06-11 | F129 | Implemented | Added owner-scoped JSON audit export packages with typed filters, coverage metadata, sanitized generic audit records, optional workflow event inclusion, explicit coverage for workflows/reviews/Assistant tool calls/auth/settings/source ingestion, docs, and focused API tests. |
 | 2026-06-11 | F130 | Implemented | Added deterministic audit hash-chain fields, repository-level chain linking for memory/SQLite/Postgres audit records, Postgres migration 018, high-risk deployment config signal, runtime config exposure, docs, and focused persistence tests. |
+| 2026-06-11 | F131 | Implemented | Added runtime config policy facts for review thresholds, retention, tool gates, and audit chain status; exposed external-provider PHI gates in the Assistant runtime settings form; added an Admin policy controls panel covering review, PHI, external providers, retention, tool gates, and audit status; and documented the admin policy page. |
 
 ## Feature Backlog
 
@@ -335,7 +336,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F128 Add output validation for LLM-generated plans, summaries, and export descriptions before UI display or storage mutation.
 - [x] F129 Add audit export endpoint for workflows, reviews, assistant tool calls, auth events, setting changes, and source ingestion.
 - [x] F130 Add immutable audit hash chain for high-risk deployment mode.
-- [ ] F131 Add admin policy page for review thresholds, PHI handling, external providers, retention, and tool gates.
+- [x] F131 Add admin policy page for review thresholds, PHI handling, external providers, retention, and tool gates.
 - [ ] F132 Add runtime setting history with who changed what, old value, new value, reason, and rollback.
 - [ ] F133 Add secret configuration guide and runtime secret health checks without exposing secret values.
 - [ ] F134 Add rate limiting for auth, assistant chat, file upload, retrieval search, reindex, and external connectors.

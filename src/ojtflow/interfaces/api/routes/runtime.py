@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.application.background_job_service import BackgroundJobService
+from ojtflow.application.medical_evidence_service import OCR_LOW_CONFIDENCE_THRESHOLD
 from ojtflow.config import (
     Settings,
     clear_settings_cache,
@@ -68,6 +69,7 @@ async def runtime_config(
     """Return non-secret runtime facts for operations UI."""
 
     governance.require_permission(user=authenticated.user, permission_scope="settings:read")
+    tool_specs = tool_specs_json()
     return ok(
         {
             "status": "ok",
@@ -158,6 +160,21 @@ async def runtime_config(
                 "max_inline_data_bytes": settings.max_inline_data_bytes,
                 "read_chunk_bytes": settings.upload_read_chunk_bytes,
                 "allowed_extensions": list(settings.allowed_upload_extensions),
+            },
+            "retention": {
+                "artifact_rule_count": len(settings.artifact_retention_rules),
+                "artifact_policy_configured": bool(settings.artifact_retention_rules),
+            },
+            "tools": {
+                "registered_count": len(tool_specs),
+                "approval_required_count": sum(
+                    1 for spec in tool_specs if bool(spec.get("requires_approval"))
+                ),
+                "write_gates_enabled": True,
+            },
+            "review_policy": {
+                "default_human_review_required": True,
+                "ocr_low_confidence_threshold": OCR_LOW_CONFIDENCE_THRESHOLD,
             },
             "policy": {
                 "no_mock_data": settings.no_mock_data,

@@ -1783,6 +1783,15 @@ export type RuntimeAssistantSettings = {
   llm_timeout_seconds: number;
   llm_max_tool_calls: number;
   llm_planning_progress_interval_seconds: number;
+  external_openai_llm_enabled: boolean;
+  external_openai_llm_allow_phi: boolean;
+  external_openai_ocr_enabled: boolean;
+  external_openai_ocr_allow_phi: boolean;
+  external_openai_ocr_allow_unknown: boolean;
+  external_openai_embeddings_enabled: boolean;
+  external_openai_embeddings_allow_phi: boolean;
+  external_medical_search_enabled: boolean;
+  external_medical_search_allow_phi: boolean;
 };
 
 export type RuntimeAssistantSettingsPayload = Partial<RuntimeAssistantSettings>;
@@ -1800,6 +1809,11 @@ export type RuntimeConfig = {
   postgres_configured: boolean;
   redis_configured: boolean;
   data_dir_configured: boolean;
+  audit?: {
+    hash_chain_written: boolean;
+    hash_chain_required: boolean;
+    hash_chain_required_configured: boolean;
+  };
   auth: {
     google_oauth_configured: boolean;
     hosted_domain_restricted: boolean;
@@ -1864,6 +1878,19 @@ export type RuntimeConfig = {
     max_inline_data_bytes: number;
     read_chunk_bytes: number;
     allowed_extensions: string[];
+  };
+  retention?: {
+    artifact_rule_count: number;
+    artifact_policy_configured: boolean;
+  };
+  tools?: {
+    registered_count: number;
+    approval_required_count: number;
+    write_gates_enabled: boolean;
+  };
+  review_policy?: {
+    default_human_review_required: boolean;
+    ocr_low_confidence_threshold: number;
   };
   policy: {
     no_mock_data: boolean;

@@ -466,26 +466,7 @@ export function SettingsPage() {
           />
         </div>
 
-        <Card className="min-w-0 overflow-hidden xl:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              Operational policy
-            </CardTitle>
-            <CardDescription>How this backend should be operated before production expansion.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-0 text-sm text-muted-foreground">
-            <PolicyItem title="Reviewer accountability">
-              Review decisions use the authenticated session user, not client-supplied identity.
-            </PolicyItem>
-            <PolicyItem title="Audit durability">
-              Workflow events and step state are persisted before a user-facing transition is returned.
-            </PolicyItem>
-            <PolicyItem title="FHIR/OCR scope">
-              FHIR-like profiling and OCR evidence are contract stubs until dedicated validators are added.
-            </PolicyItem>
-          </CardContent>
-        </Card>
+        <AdminPolicyPanel isLoading={runtimeConfigQuery.isLoading} runtime={runtime} />
       </div>
     </div>
   );
@@ -613,6 +594,131 @@ function MigrationAdminPanel({
   );
 }
 
+function AdminPolicyPanel({
+  isLoading,
+  runtime,
+}: {
+  isLoading: boolean;
+  runtime: RuntimeConfig | undefined;
+}) {
+  const assistantPolicy = runtimeAssistantSettingsFromRuntime(runtime);
+  const providerPolicies = assistantPolicy
+    ? [
+        {
+          label: "LLM planning",
+          enabled: assistantPolicy.external_openai_llm_enabled,
+          phiAllowed: assistantPolicy.external_openai_llm_allow_phi,
+        },
+        {
+          label: "Vision OCR",
+          enabled: assistantPolicy.external_openai_ocr_enabled,
+          phiAllowed: assistantPolicy.external_openai_ocr_allow_phi,
+        },
+        {
+          label: "Embeddings",
+          enabled: assistantPolicy.external_openai_embeddings_enabled,
+          phiAllowed: assistantPolicy.external_openai_embeddings_allow_phi,
+        },
+        {
+          label: "External medical search",
+          enabled: assistantPolicy.external_medical_search_enabled,
+          phiAllowed: assistantPolicy.external_medical_search_allow_phi,
+        },
+      ]
+    : [];
+  const phiAllowedCount = providerPolicies.filter((policy) => policy.phiAllowed).length;
+  const ocrThreshold = runtime?.review_policy?.ocr_low_confidence_threshold;
+
+  return (
+    <Card className="min-w-0 overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Admin policy controls
+            </CardTitle>
+            <CardDescription>
+              Review gates, PHI handling, provider boundaries, retention, and tool approvals.
+            </CardDescription>
+          </div>
+          <Badge variant={phiAllowedCount ? "warning" : "success"}>
+            {phiAllowedCount ? `${phiAllowedCount} PHI exceptions` : "PHI blocked externally"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5 xl:grid-cols-2">
+        <div className="grid gap-0 text-sm text-muted-foreground">
+          <PolicyItem title="Review threshold">
+            {isLoading
+              ? "Loading review policy"
+              : `Human review is required by default; OCR evidence below ${
+                  typeof ocrThreshold === "number"
+                    ? `${Math.round(ocrThreshold * 100)}% confidence`
+                    : "the configured threshold"
+                } is routed for review.`}
+          </PolicyItem>
+          <PolicyItem title="Reviewer accountability">
+            Review decisions use the authenticated session user, not client-supplied identity.
+          </PolicyItem>
+          <PolicyItem title="Audit chain">
+            {runtime?.audit?.hash_chain_written
+              ? `Hash-chain fields are written${
+                  runtime.audit.hash_chain_required ? " and required" : ""
+                } for this deployment.`
+              : "Audit hash-chain status is unavailable from runtime config."}
+          </PolicyItem>
+          <PolicyItem title="Retention">
+            {runtime?.retention?.artifact_policy_configured
+              ? `${runtime.retention.artifact_rule_count} artifact retention rule(s) configured.`
+              : "No artifact retention override is configured; backend defaults apply."}
+          </PolicyItem>
+          <PolicyItem title="Tool gates">
+            {runtime?.tools
+              ? `${runtime.tools.approval_required_count} of ${
+                  runtime.tools.registered_count
+                } registered tool(s) require explicit approval.`
+              : "Tool registry facts are unavailable from runtime config."}
+          </PolicyItem>
+        </div>
+
+        <div className="grid gap-3">
+          <div>
+            <div className="text-sm font-bold text-foreground">External provider PHI policy</div>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              These switches are persisted in Assistant runtime settings and enforced
+              before outbound provider calls.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            {providerPolicies.map((policy) => (
+              <div
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
+                key={policy.label}
+              >
+                <span className="font-semibold">{policy.label}</span>
+                <span className="flex flex-wrap gap-2">
+                  <Badge variant={policy.enabled ? "success" : "muted"}>
+                    {policy.enabled ? "enabled" : "disabled"}
+                  </Badge>
+                  <Badge variant={policy.phiAllowed ? "warning" : "success"}>
+                    {policy.phiAllowed ? "PHI allowed" : "PHI blocked"}
+                  </Badge>
+                </span>
+              </div>
+            ))}
+            {!providerPolicies.length ? (
+              <Notice title="Policy loading">
+                Runtime Assistant policy has not been returned by the backend yet.
+              </Notice>
+            ) : null}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 type RetrievalSettingsFormState = {
   embeddingProvider: "deterministic" | "openai" | "huggingface";
   embeddingModel: string;
@@ -637,6 +743,15 @@ type AssistantSettingsFormState = {
   timeoutSeconds: string;
   maxToolCalls: string;
   planningProgressIntervalSeconds: string;
+  externalOpenAiLlmEnabled: boolean;
+  externalOpenAiLlmAllowPhi: boolean;
+  externalOpenAiOcrEnabled: boolean;
+  externalOpenAiOcrAllowPhi: boolean;
+  externalOpenAiOcrAllowUnknown: boolean;
+  externalOpenAiEmbeddingsEnabled: boolean;
+  externalOpenAiEmbeddingsAllowPhi: boolean;
+  externalMedicalSearchEnabled: boolean;
+  externalMedicalSearchAllowPhi: boolean;
 };
 
 function AssistantSettingsForm({
@@ -665,6 +780,15 @@ function AssistantSettingsForm({
       planningProgressIntervalSeconds: String(
         settings.llm_planning_progress_interval_seconds,
       ),
+      externalOpenAiLlmEnabled: settings.external_openai_llm_enabled,
+      externalOpenAiLlmAllowPhi: settings.external_openai_llm_allow_phi,
+      externalOpenAiOcrEnabled: settings.external_openai_ocr_enabled,
+      externalOpenAiOcrAllowPhi: settings.external_openai_ocr_allow_phi,
+      externalOpenAiOcrAllowUnknown: settings.external_openai_ocr_allow_unknown,
+      externalOpenAiEmbeddingsEnabled: settings.external_openai_embeddings_enabled,
+      externalOpenAiEmbeddingsAllowPhi: settings.external_openai_embeddings_allow_phi,
+      externalMedicalSearchEnabled: settings.external_medical_search_enabled,
+      externalMedicalSearchAllowPhi: settings.external_medical_search_allow_phi,
     });
   }, [runtime]);
 
@@ -830,6 +954,73 @@ function AssistantSettingsForm({
                   value={form.planningProgressIntervalSeconds}
                 />
               </Label>
+            </div>
+
+            <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-3">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-foreground">
+                  External provider policy
+                </div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Controls what backend surfaces may send data to OpenAI-compatible
+                  services or external medical search.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <PolicyToggle
+                  checked={form.externalOpenAiLlmEnabled}
+                  label="OpenAI LLM calls"
+                  onChange={(checked) => updateField("externalOpenAiLlmEnabled", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiLlmAllowPhi}
+                  label="Allow PHI to OpenAI LLM"
+                  onChange={(checked) => updateField("externalOpenAiLlmAllowPhi", checked)}
+                  tone={form.externalOpenAiLlmAllowPhi ? "danger" : "default"}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiOcrEnabled}
+                  label="OpenAI vision OCR"
+                  onChange={(checked) => updateField("externalOpenAiOcrEnabled", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiOcrAllowPhi}
+                  label="Allow PHI to vision OCR"
+                  onChange={(checked) => updateField("externalOpenAiOcrAllowPhi", checked)}
+                  tone={form.externalOpenAiOcrAllowPhi ? "danger" : "default"}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiOcrAllowUnknown}
+                  label="Allow unknown image text to OCR"
+                  onChange={(checked) => updateField("externalOpenAiOcrAllowUnknown", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiEmbeddingsEnabled}
+                  label="OpenAI embeddings"
+                  onChange={(checked) =>
+                    updateField("externalOpenAiEmbeddingsEnabled", checked)
+                  }
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiEmbeddingsAllowPhi}
+                  label="Allow PHI to embeddings"
+                  onChange={(checked) =>
+                    updateField("externalOpenAiEmbeddingsAllowPhi", checked)
+                  }
+                  tone={form.externalOpenAiEmbeddingsAllowPhi ? "danger" : "default"}
+                />
+                <PolicyToggle
+                  checked={form.externalMedicalSearchEnabled}
+                  label="External medical search"
+                  onChange={(checked) => updateField("externalMedicalSearchEnabled", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalMedicalSearchAllowPhi}
+                  label="Allow PHI to external search"
+                  onChange={(checked) => updateField("externalMedicalSearchAllowPhi", checked)}
+                  tone={form.externalMedicalSearchAllowPhi ? "danger" : "default"}
+                />
+              </div>
             </div>
 
             <div className="flex min-w-0 flex-wrap gap-2">
@@ -1199,7 +1390,7 @@ function runtimeAssistantSettingsFromRuntime(
 ): RuntimeAssistantSettings | null {
   const llm = runtime?.llm;
   const settings = llm?.runtime_settings;
-  if (settings) return settings;
+  if (settings) return runtimeAssistantSettingsWithPolicyDefaults(settings);
   if (!llm) return null;
   const provider = llm.provider === "openai" ? "openai" : "disabled";
   if (
@@ -1210,7 +1401,7 @@ function runtimeAssistantSettingsFromRuntime(
   ) {
     return null;
   }
-  return {
+  return runtimeAssistantSettingsWithPolicyDefaults({
     llm_provider: provider,
     llm_model: llm.model,
     llm_planning_model:
@@ -1238,7 +1429,24 @@ function runtimeAssistantSettingsFromRuntime(
     )
       ? llm.planning_progress_interval_seconds
       : 2,
+  } as RuntimeAssistantSettings);
+}
+
+function runtimeAssistantSettingsWithPolicyDefaults(
+  settings: RuntimeAssistantSettings,
+): RuntimeAssistantSettings {
+  const defaults = {
+    external_openai_llm_enabled: true,
+    external_openai_llm_allow_phi: false,
+    external_openai_ocr_enabled: true,
+    external_openai_ocr_allow_phi: false,
+    external_openai_ocr_allow_unknown: true,
+    external_openai_embeddings_enabled: true,
+    external_openai_embeddings_allow_phi: false,
+    external_medical_search_enabled: true,
+    external_medical_search_allow_phi: false,
   };
+  return { ...defaults, ...settings };
 }
 
 function runtimeAssistantPayloadFromForm(
@@ -1273,6 +1481,15 @@ function runtimeAssistantPayloadFromForm(
       0.25,
       30,
     ),
+    external_openai_llm_enabled: form.externalOpenAiLlmEnabled,
+    external_openai_llm_allow_phi: form.externalOpenAiLlmAllowPhi,
+    external_openai_ocr_enabled: form.externalOpenAiOcrEnabled,
+    external_openai_ocr_allow_phi: form.externalOpenAiOcrAllowPhi,
+    external_openai_ocr_allow_unknown: form.externalOpenAiOcrAllowUnknown,
+    external_openai_embeddings_enabled: form.externalOpenAiEmbeddingsEnabled,
+    external_openai_embeddings_allow_phi: form.externalOpenAiEmbeddingsAllowPhi,
+    external_medical_search_enabled: form.externalMedicalSearchEnabled,
+    external_medical_search_allow_phi: form.externalMedicalSearchAllowPhi,
   };
 }
 
@@ -1777,6 +1994,36 @@ function ControlStatus({
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{children}</p>
       </div>
     </div>
+  );
+}
+
+function PolicyToggle({
+  checked,
+  label,
+  onChange,
+  tone = "default",
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+  tone?: "default" | "danger";
+}) {
+  return (
+    <label
+      className={
+        tone === "danger"
+          ? "flex min-w-0 items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950"
+          : "flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground"
+      }
+    >
+      <input
+        checked={checked}
+        className="h-4 w-4 rounded border-input accent-primary"
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span className="min-w-0 truncate">{label}</span>
+    </label>
   );
 }
 

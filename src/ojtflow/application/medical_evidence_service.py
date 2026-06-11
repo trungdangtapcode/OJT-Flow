@@ -7,6 +7,8 @@ from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.fhir.profile import profile_fhir_like
 from ojtflow.medical.contracts import OcrEvidenceInput, OcrField
 
+OCR_LOW_CONFIDENCE_THRESHOLD = 0.8
+
 
 class MedicalEvidenceService:
     """Own lightweight FHIR-like and OCR evidence contracts outside web routes."""
@@ -18,7 +20,7 @@ class MedicalEvidenceService:
         normalized_fields: list[OcrField] = []
         evidence: list[Evidence] = []
         for item in fields:
-            requires_review = item.confidence < 0.8
+            requires_review = item.confidence < OCR_LOW_CONFIDENCE_THRESHOLD
             field = OcrField(
                 name=item.name,
                 value=item.value,
