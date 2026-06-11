@@ -1803,6 +1803,58 @@ Example:
 }
 ```
 
+`GET /api/v1/runtime/disclaimers`
+
+Returns user-facing product boundary disclaimers for authenticated users. This
+route is intentionally available to normal users because the non-diagnostic,
+non-treatment, human-reviewed intended-use boundary must be visible during
+ordinary operation.
+
+Response data includes:
+
+- `version`
+- `intended_use`
+- `non_diagnostic_statement`
+- `human_review_requirement`
+- `prohibited_uses[]`
+- `surfaces[].surface_id`
+- `surfaces[].title`
+- `surfaces[].message`
+- `surfaces[].severity`
+- `surfaces[].review_required`
+- `surfaces[].prohibited_uses[]`
+- `surfaces[].human_review_text`
+- `surfaces[].evidence_text`
+
+Example:
+
+```json
+{
+  "data": {
+    "version": "disclaimer_policy.v1",
+    "intended_use": "OJTFlow supports healthcare data operations: parsing, validation, evidence retrieval, workflow review, and governed export preparation.",
+    "non_diagnostic_statement": "OJTFlow is not a diagnostic, treatment, triage, or patient-specific medical advice system.",
+    "human_review_requirement": "Meaning-changing transformations, sensitive-field decisions, weak evidence, terminology choices, and workflow outputs require qualified human review before operational use.",
+    "prohibited_uses": [
+      "Do not use OJTFlow to diagnose, treat, triage, or recommend patient care."
+    ],
+    "surfaces": [
+      {
+        "surface_id": "assistant",
+        "title": "Assistant Boundary",
+        "message": "The Assistant can explain data quality issues, find trusted evidence, and run governed tools. It must not diagnose, recommend treatment, or approve clinical actions.",
+        "severity": "caution",
+        "review_required": true,
+        "prohibited_uses": ["Clinical advice"],
+        "human_review_text": "Write actions and meaning-changing outputs stay review-gated.",
+        "evidence_text": "Assistant answers should cite evidence or clearly state missing evidence."
+      }
+    ]
+  },
+  "error": null
+}
+```
+
 `GET /api/v1/runtime/owasp-llm-threat-model`
 
 Returns the data-driven OWASP LLM Top 10 threat model for admins. Requires

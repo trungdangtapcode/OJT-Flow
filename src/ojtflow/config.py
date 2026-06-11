@@ -90,6 +90,7 @@ DEFAULT_AI_RISK_REGISTER_PATH = Path("knowledge/governance/ai_risk_register.json
 DEFAULT_OWASP_LLM_THREAT_MODEL_PATH = Path(
     "knowledge/security/owasp_llm_threat_model.json"
 )
+DEFAULT_DISCLAIMER_POLICY_PATH = Path("knowledge/governance/disclaimer_policy.json")
 DEFAULT_MIGRATIONS_DIR = Path("sql/postgres/migrations")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/api/v1/auth/google/callback"
@@ -163,6 +164,10 @@ class Settings(BaseModel):
     owasp_llm_threat_model_path: Path = Field(
         default=DEFAULT_OWASP_LLM_THREAT_MODEL_PATH,
         alias="OJT_OWASP_LLM_THREAT_MODEL_PATH",
+    )
+    disclaimer_policy_path: Path = Field(
+        default=DEFAULT_DISCLAIMER_POLICY_PATH,
+        alias="OJT_DISCLAIMER_POLICY_PATH",
     )
     rate_limit_redis_prefix: str = Field(
         default="ojtflow:rate_limit",
@@ -511,6 +516,10 @@ class Settings(BaseModel):
         return _resolve_path(self.owasp_llm_threat_model_path, self.repo_root)
 
     @property
+    def resolved_disclaimer_policy_path(self) -> Path:
+        return _resolve_path(self.disclaimer_policy_path, self.repo_root)
+
+    @property
     def resolved_migrations_dir(self) -> Path:
         return _resolve_path(self.migrations_dir, self.repo_root)
 
@@ -596,6 +605,9 @@ def get_settings() -> Settings:
                 "OJT_OWASP_LLM_THREAT_MODEL_PATH",
                 str(DEFAULT_OWASP_LLM_THREAT_MODEL_PATH),
             )
+        ),
+        OJT_DISCLAIMER_POLICY_PATH=Path(
+            os.getenv("OJT_DISCLAIMER_POLICY_PATH", str(DEFAULT_DISCLAIMER_POLICY_PATH))
         ),
         OJT_RATE_LIMIT_REDIS_PREFIX=os.getenv(
             "OJT_RATE_LIMIT_REDIS_PREFIX",

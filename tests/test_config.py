@@ -70,6 +70,9 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     assert settings.resolved_owasp_llm_threat_model_path == (
         REPO_ROOT / "knowledge/security/owasp_llm_threat_model.json"
     )
+    assert settings.resolved_disclaimer_policy_path == (
+        REPO_ROOT / "knowledge/governance/disclaimer_policy.json"
+    )
     assert settings.google_client_id == ""
     assert settings.google_client_secret == ""
     assert settings.google_redirect_uri == "http://localhost:8000/api/v1/auth/google/callback"

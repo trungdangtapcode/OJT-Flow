@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Bot,
   ClipboardCheck,
   Database,
@@ -18,10 +19,11 @@ import {
 
 import { useAuth } from "../../app/auth";
 import { API_BASE_URL } from "../../api";
-import { useRuntimeConfigQuery } from "../../lib/server-state";
+import { useRuntimeConfigQuery, useRuntimeDisclaimersQuery } from "../../lib/server-state";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { PageGuide } from "./page-guide";
+import type { DisclaimerMessage, DisclaimerSurface } from "../../types";
 
 const navGroups = [
   {
@@ -52,6 +54,7 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
   const runtimeConfigQuery = useRuntimeConfigQuery();
+  const disclaimersQuery = useRuntimeDisclaimersQuery();
   const [refreshing, setRefreshing] = React.useState(false);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const runtimeConfig = runtimeConfigQuery.data;
@@ -176,12 +179,106 @@ export function AppShell() {
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain max-lg:overflow-visible">
           <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4 max-sm:p-2">
             <PageGuide pathname={pathname} />
+            <ClinicalBoundaryBanner
+              message={disclaimerMessageForPath(disclaimersQuery.data?.surfaces, pathname)}
+            />
             <Outlet />
           </div>
         </div>
       </main>
     </div>
   );
+}
+
+function ClinicalBoundaryBanner({ message }: { message?: DisclaimerMessage | null }) {
+  if (!message) return null;
+  const severityClass =
+    message.severity === "critical"
+      ? "border-red-200 bg-red-50 text-red-950"
+      : message.severity === "caution"
+        ? "border-amber-200 bg-amber-50 text-amber-950"
+        : "border-border bg-muted/40 text-muted-foreground";
+  const iconClass =
+    message.severity === "critical"
+      ? "text-red-700"
+      : message.severity === "caution"
+        ? "text-amber-700"
+        : "text-muted-foreground";
+  return (
+    <section className={cn("mb-4 rounded-md border px-3 py-2.5 text-sm", severityClass)}>
+      <div className="grid gap-2 sm:grid-cols-[20px_minmax(0,1fr)]">
+        <AlertTriangle className={cn("mt-0.5 h-4 w-4", iconClass)} />
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="font-black">{message.title}</div>
+            {message.review_required ? (
+              <span className="rounded-full border border-current/20 bg-white/50 px-2 py-0.5 text-[11px] font-bold">
+                human review required
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 leading-6">{message.message}</p>
+          <details className="mt-1">
+            <summary className="cursor-pointer text-xs font-bold uppercase tracking-normal">
+              Boundary details
+            </summary>
+            <div className="mt-2 grid gap-2 text-xs leading-5 sm:grid-cols-2">
+              <div>
+                <div className="font-bold">Review</div>
+                <p>{message.human_review_text}</p>
+              </div>
+              <div>
+                <div className="font-bold">Evidence</div>
+                <p>{message.evidence_text}</p>
+              </div>
+              {message.prohibited_uses.length ? (
+                <div className="sm:col-span-2">
+                  <div className="font-bold">Do not use for</div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {message.prohibited_uses.map((use) => (
+                      <span
+                        className="rounded-full border border-current/20 bg-white/45 px-2 py-0.5 font-semibold"
+                        key={use}
+                      >
+                        {use}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function disclaimerMessageForPath(
+  surfaces: DisclaimerMessage[] | undefined,
+  pathname: string,
+): DisclaimerMessage | null {
+  if (!surfaces?.length) return null;
+  const surfaceId = disclaimerSurfaceForPath(pathname);
+  return (
+    surfaces.find((surface) => surface.surface_id === surfaceId) ??
+    surfaces.find((surface) => surface.surface_id === "global") ??
+    null
+  );
+}
+
+function disclaimerSurfaceForPath(pathname: string): DisclaimerSurface {
+  if (pathname.startsWith("/assistant")) return "assistant";
+  if (pathname.startsWith("/workbench")) return "workbench";
+  if (pathname.startsWith("/workflows/")) return "workflow_detail";
+  if (pathname.startsWith("/workflows")) return "workflows";
+  if (pathname.startsWith("/reviews")) return "reviews";
+  if (pathname.startsWith("/retrieval")) return "retrieval";
+  if (pathname.startsWith("/audit")) return "audit";
+  if (pathname.startsWith("/schemas")) return "schemas";
+  if (pathname.startsWith("/settings")) return "settings";
+  if (pathname.startsWith("/help")) return "help";
+  return "global";
 }
 
 function UserAvatar({

@@ -34,6 +34,7 @@ import {
   getRetrievalStrategies,
   getRuntimeConfig,
   getRuntimeAiRiskRegister,
+  getRuntimeDisclaimers,
   getRuntimeHealth,
   getRuntimeMigrations,
   getRuntimeOwaspLlmThreatModel,
@@ -83,6 +84,7 @@ import type {
   AssistantStreamEvent,
   AssistantStreamReplay,
   BackgroundJob,
+  DisclaimerPolicy,
   OcrEvidenceFieldInput,
   OcrEvidenceResponse,
   UploadParseJobResponse,
@@ -154,6 +156,7 @@ export const queryKeys = {
   health: ["runtime-health"] as const,
   runtimeConfig: ["runtime-config"] as const,
   runtimeAiRiskRegister: ["runtime-ai-risk-register"] as const,
+  runtimeDisclaimers: ["runtime-disclaimers"] as const,
   runtimeOwaspLlmThreatModel: ["runtime-owasp-llm-threat-model"] as const,
   runtimeMigrations: ["runtime-migrations"] as const,
   runtimeReadiness: ["runtime-readiness"] as const,
@@ -273,6 +276,13 @@ export function useRuntimeAiRiskRegisterQuery() {
   return useQuery<AiRiskRegister>({
     queryKey: queryKeys.runtimeAiRiskRegister,
     queryFn: getRuntimeAiRiskRegister,
+  });
+}
+
+export function useRuntimeDisclaimersQuery() {
+  return useQuery<DisclaimerPolicy>({
+    queryKey: queryKeys.runtimeDisclaimers,
+    queryFn: getRuntimeDisclaimers,
   });
 }
 

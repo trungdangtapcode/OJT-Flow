@@ -1884,6 +1884,41 @@ export type OwaspLlmThreatModel = {
   categories: OwaspLlmThreatCategory[];
 };
 
+export type DisclaimerSeverity = "info" | "caution" | "critical";
+
+export type DisclaimerSurface =
+  | "global"
+  | "assistant"
+  | "workbench"
+  | "workflows"
+  | "workflow_detail"
+  | "reviews"
+  | "retrieval"
+  | "audit"
+  | "schemas"
+  | "settings"
+  | "help";
+
+export type DisclaimerMessage = {
+  surface_id: DisclaimerSurface;
+  title: string;
+  message: string;
+  severity: DisclaimerSeverity;
+  review_required: boolean;
+  prohibited_uses: string[];
+  human_review_text: string;
+  evidence_text: string;
+};
+
+export type DisclaimerPolicy = {
+  version: string;
+  intended_use: string;
+  non_diagnostic_statement: string;
+  human_review_requirement: string;
+  prohibited_uses: string[];
+  surfaces: DisclaimerMessage[];
+};
+
 export type RuntimeConfig = {
   status: string;
   product_mode: "local_dev" | "demo" | "pilot" | "production";

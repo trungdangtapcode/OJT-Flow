@@ -24,6 +24,7 @@ import type {
   CorpusAdapterCatalog,
   CorpusChunkingProfileCatalog,
   CorpusIngestionManifest,
+  DisclaimerPolicy,
   ExtractedDocument,
   ExtractorInventory,
   MigrationDiagnostics,
@@ -931,6 +932,10 @@ export function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 export function getRuntimeAiRiskRegister(): Promise<AiRiskRegister> {
   return request<AiRiskRegister>("/runtime/ai-risk-register");
+}
+
+export function getRuntimeDisclaimers(): Promise<DisclaimerPolicy> {
+  return request<DisclaimerPolicy>("/runtime/disclaimers");
 }
 
 export function getRuntimeOwaspLlmThreatModel(): Promise<OwaspLlmThreatModel> {
