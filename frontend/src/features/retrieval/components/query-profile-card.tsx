@@ -1,29 +1,17 @@
-import { CheckCircle2, ListFilter, Loader2 } from "lucide-react";
-
 import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
 import { humanize } from "../../../lib/utils";
 import type { FilterSuggestionStack } from "./search-plan-detail-panels";
 import { TokenList } from "./token-list";
-
-export type QueryProfileCardView = {
-  complexity: string;
-  description: string;
-  label: string;
-  profileId: string;
-  retrievalMode: string;
-  route: string;
-  ruleIds: string[];
-};
-
-export type QueryProfileFilterEntryView = {
-  applied: boolean;
-  displayValue: string;
-  field: string;
-  label: string;
-  supported: boolean;
-  value: string;
-};
+import { QueryProfileFilterActions } from "./query-profile-filter-actions";
+import { QueryProfileRuleList } from "./query-profile-rule-list";
+import type {
+  QueryProfileCardView,
+  QueryProfileFilterEntryView,
+} from "./query-profile-card-types";
+export type {
+  QueryProfileCardView,
+  QueryProfileFilterEntryView,
+} from "./query-profile-card-types";
 
 export function QueryProfileCard({
   filterEntries,
@@ -64,56 +52,13 @@ export function QueryProfileCard({
           </Badge>
         ))}
       </div>
-      {filterEntries.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {filterEntries.map((entry) =>
-            entry.supported ? (
-              <Button
-                disabled={isSearchPending || entry.applied}
-                key={`${entry.field}-${entry.value}-apply`}
-                onClick={() =>
-                  onApplyFilter({
-                    applied: false,
-                    confidence: 1,
-                    field: entry.field,
-                    reason: `Suggested by query profile ${profile.profileId}.`,
-                    value: entry.value,
-                  })
-                }
-                size="sm"
-                title={`Apply ${entry.label}=${entry.displayValue}`}
-                type="button"
-                variant={entry.applied ? "secondary" : "outline"}
-              >
-                {entry.applied ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : isSearchPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ListFilter className="h-4 w-4" />
-                )}
-                {entry.applied ? `${entry.label} applied` : `Apply ${entry.label}`}
-              </Button>
-            ) : (
-              <Badge key={`${entry.field}-${entry.value}-unsupported`} variant="warning">
-                unsupported {humanize(entry.field)}
-              </Badge>
-            ),
-          )}
-        </div>
-      ) : null}
-      {profile.ruleIds.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {profile.ruleIds.map((ruleId) => (
-            <code
-              className="max-w-full break-words rounded bg-muted px-1.5 py-1 font-mono text-[11px]"
-              key={ruleId}
-            >
-              {ruleId}
-            </code>
-          ))}
-        </div>
-      ) : null}
+      <QueryProfileFilterActions
+        filterEntries={filterEntries}
+        isSearchPending={isSearchPending}
+        onApplyFilter={onApplyFilter}
+        profile={profile}
+      />
+      <QueryProfileRuleList ruleIds={profile.ruleIds} />
     </div>
   );
 }

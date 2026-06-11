@@ -7,6 +7,11 @@ import {
   searchRunScopeLabels,
   type SearchRunSummaryView,
 } from "../model/search-run-presentation";
+import {
+  coverageGapSummaryBadgeView,
+  groundedConceptSummaryBadgeView,
+  searchAspectSummaryBadgeView,
+} from "./search-run-evidence-summary-view";
 
 type SearchRunEvidenceSummaryRun = {
   payload: RetrievalSearchPayload;
@@ -22,6 +27,12 @@ export function SearchRunEvidenceSummary({ run }: { run: SearchRunEvidenceSummar
   const qualitySummary = run.summary.qualitySummary;
   const remediationSummary =
     run.summary.remediationSummary ?? searchRunRemediationSummary(run.summary);
+  const coverageGapBadge = coverageGapSummaryBadgeView(run.summary.coverage.length);
+  const groundedConceptBadge = groundedConceptSummaryBadgeView(
+    run.summary.conceptGrounding.length,
+  );
+  const searchAspectBadge = searchAspectSummaryBadgeView(run.summary.queryAspects.length);
+
   return (
     <span className="grid min-w-0 gap-1 rounded-md border border-border/70 bg-background/55 p-2">
       <span className="text-xs font-bold uppercase text-muted-foreground">
@@ -33,15 +44,9 @@ export function SearchRunEvidenceSummary({ run }: { run: SearchRunEvidenceSummar
             quality {humanize(qualitySummary.status)} {qualitySummary.score}
           </Badge>
         ) : null}
-        <Badge variant={run.summary.coverage.length ? "warning" : "muted"}>
-          {formatCount(run.summary.coverage.length, "coverage gap")}
-        </Badge>
-        <Badge variant={run.summary.conceptGrounding.length ? "success" : "warning"}>
-          {formatCount(run.summary.conceptGrounding.length, "grounded concept")}
-        </Badge>
-        <Badge variant={run.summary.queryAspects.length ? "success" : "muted"}>
-          {formatCount(run.summary.queryAspects.length, "search aspect")}
-        </Badge>
+        <Badge variant={coverageGapBadge.variant}>{coverageGapBadge.label}</Badge>
+        <Badge variant={groundedConceptBadge.variant}>{groundedConceptBadge.label}</Badge>
+        <Badge variant={searchAspectBadge.variant}>{searchAspectBadge.label}</Badge>
         {scopeLabels.map((label) => (
           <Badge key={label} variant="muted">
             {label}
@@ -60,8 +65,4 @@ export function SearchRunEvidenceSummary({ run }: { run: SearchRunEvidenceSummar
       ) : null}
     </span>
   );
-}
-
-function formatCount(count: number, singular: string) {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }

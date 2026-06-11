@@ -1,28 +1,10 @@
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Database,
-  FileSearch,
-  ListFilter,
-  ShieldCheck,
-} from "lucide-react";
-
 import { Badge } from "../../../components/ui/badge";
 import { HelpTooltip } from "../../../components/ui/help-tooltip";
-import { cn } from "../../../lib/utils";
 import type { RetrievalPackage } from "../../../types";
-import {
-  buildRetrievalReviewPath,
-  type RetrievalReviewCheck,
-  type RetrievalReviewCheckStatus,
-} from "../model/retrieval-review-path";
-
-const checkIcons: Record<RetrievalReviewCheck["code"], typeof CheckCircle2> = {
-  readiness: ShieldCheck,
-  required_support: Database,
-  top_hit_support: FileSearch,
-  warnings: AlertTriangle,
-};
+import { buildRetrievalReviewPath } from "../model/retrieval-review-path";
+import { RetrievalReviewPathActionCard } from "./retrieval-review-path-action-card";
+import { RetrievalReviewPathCheckList } from "./retrieval-review-path-check-list";
+import { reviewStatusBadgeVariant } from "./retrieval-review-path-format";
 
 export function RetrievalReviewPathPanel({
   packageData,
@@ -61,75 +43,9 @@ export function RetrievalReviewPathPanel({
       </div>
 
       <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.7fr)]">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {reviewPath.checks.map((item) => (
-            <ReviewPathCheckCard item={item} key={item.code} />
-          ))}
-        </div>
-        <div className="grid content-start gap-2 rounded-md border border-border bg-muted/20 p-3">
-          <div className="flex items-center gap-2 text-sm font-black">
-            <ListFilter className="h-4 w-4 text-primary" />
-            Next operator action
-          </div>
-          <div className="break-words text-sm font-black">
-            {reviewPath.primaryAction?.title ?? reviewPath.guidance.actionTitle}
-          </div>
-          <p className="break-words text-sm leading-6 text-muted-foreground">
-            {reviewPath.primaryAction?.description ?? reviewPath.guidance.actionDetail}
-          </p>
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {reviewPath.topSourceId ? (
-              <Badge className="max-w-full whitespace-normal break-words" variant="muted">
-                top source: {reviewPath.topSourceId}
-              </Badge>
-            ) : null}
-            <Badge variant="muted">
-              {formatCount(reviewPath.hitCount, "hit")}
-            </Badge>
-            <Badge variant="muted">
-              {formatCount(reviewPath.candidateCount, "candidate")}
-            </Badge>
-          </div>
-        </div>
+        <RetrievalReviewPathCheckList checks={reviewPath.checks} />
+        <RetrievalReviewPathActionCard reviewPath={reviewPath} />
       </div>
     </section>
   );
-}
-
-function ReviewPathCheckCard({ item }: { item: RetrievalReviewCheck }) {
-  const Icon = checkIcons[item.code];
-  return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex min-w-0 items-start gap-2">
-        <Icon
-          className={cn(
-            "mt-0.5 h-4 w-4 shrink-0",
-            item.status === "ok"
-              ? "text-emerald-600"
-              : item.status === "blocked"
-                ? "text-destructive"
-                : "text-amber-600",
-          )}
-        />
-        <div className="min-w-0">
-          <div className="break-words text-sm font-black">{item.label}</div>
-          <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">
-            {item.detail}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function reviewStatusBadgeVariant(
-  status: RetrievalReviewCheckStatus,
-): "success" | "warning" | "destructive" {
-  if (status === "ok") return "success";
-  if (status === "blocked") return "destructive";
-  return "warning";
-}
-
-function formatCount(count: number, singular: string) {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }

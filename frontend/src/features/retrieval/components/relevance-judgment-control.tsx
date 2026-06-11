@@ -1,39 +1,17 @@
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { HelpTooltip } from "../../../components/ui/help-tooltip";
+import {
+  judgmentBadgeVariant,
+  judgmentLabel,
+  relevanceJudgmentOptions,
+  type RelevanceJudgmentValue,
+} from "../model/retrieval-judgment-model";
 import { SectionHelpText } from "./section-help-text";
-
-export type RelevanceJudgmentValue = "relevant" | "partial" | "not_relevant";
 
 export type RelevanceJudgmentControlValue = {
   value: RelevanceJudgmentValue;
 } | null;
-
-const relevanceJudgmentOptions: Array<{
-  activeVariant: "default" | "secondary" | "destructive";
-  description: string;
-  label: string;
-  value: RelevanceJudgmentValue;
-}> = [
-  {
-    activeVariant: "default",
-    description: "Mark this evidence as relevant for the submitted query.",
-    label: "Relevant",
-    value: "relevant",
-  },
-  {
-    activeVariant: "secondary",
-    description: "Mark this evidence as partially relevant for the submitted query.",
-    label: "Partial",
-    value: "partial",
-  },
-  {
-    activeVariant: "destructive",
-    description: "Mark this evidence as not relevant for the submitted query.",
-    label: "Not relevant",
-    value: "not_relevant",
-  },
-];
 
 export function RelevanceJudgmentControl({
   judgment,
@@ -82,18 +60,4 @@ export function RelevanceJudgmentControl({
       </div>
     </div>
   );
-}
-
-function judgmentLabel(value: RelevanceJudgmentValue): string {
-  if (value === "relevant") return "Relevant";
-  if (value === "partial") return "Partial";
-  return "Not relevant";
-}
-
-function judgmentBadgeVariant(
-  value: RelevanceJudgmentValue,
-): "success" | "warning" | "destructive" {
-  if (value === "relevant") return "success";
-  if (value === "partial") return "warning";
-  return "destructive";
 }

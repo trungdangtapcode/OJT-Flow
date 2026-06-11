@@ -1,23 +1,9 @@
-import { ListFilter, Loader2 } from "lucide-react";
-
 import { Badge } from "../../../components/ui/badge";
-import { cn, humanize } from "../../../lib/utils";
-import type { RetrievalFacetBucket, RetrievalFacets } from "../../../types";
-
-export type ResultFacetFilterField =
-  | "clinical_domain"
-  | "standard_system"
-  | "source_type"
-  | "trust_level";
-
-export type ResultFacetFilters = Partial<Record<ResultFacetFilterField | "source_id", string>>;
-
-type FacetSection = {
-  field: ResultFacetFilterField;
-  label: string;
-  values: RetrievalFacetBucket[];
-  formatter: (value: string) => string;
-};
+import type { RetrievalFacets } from "../../../types";
+import { ResultFacetBucketButton } from "./result-facet-bucket-button";
+import { resultFacetSections } from "./result-facet-sections";
+export type { ResultFacetFilterField, ResultFacetFilters } from "./result-facet-types";
+import type { ResultFacetFilterField, ResultFacetFilters } from "./result-facet-types";
 
 export function ResultFacets({
   activeFilters,
@@ -30,14 +16,7 @@ export function ResultFacets({
   isSearchPending: boolean;
   onApplyFacet: (field: ResultFacetFilterField, value: string) => void;
 }) {
-  if (!facets) return null;
-  const facetSections: FacetSection[] = [
-    { field: "source_type", label: "Source type", values: facets.source_type, formatter: humanize },
-    { field: "clinical_domain", label: "Domain", values: facets.clinical_domain, formatter: humanize },
-    { field: "standard_system", label: "Standard", values: facets.standard_system, formatter: (value: string) => value },
-    { field: "trust_level", label: "Trust", values: facets.trust_level, formatter: humanize },
-  ];
-  const sections = facetSections.filter((section) => section.values.length > 0);
+  const sections = resultFacetSections(facets);
   if (!sections.length) return null;
   return (
     <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
@@ -55,34 +34,16 @@ export function ResultFacets({
               {section.values.map((bucket) => {
                 const applied = activeFilters[section.field] === bucket.value;
                 return (
-                  <button
-                    aria-label={`Filter by ${section.label} ${section.formatter(bucket.value)}`}
-                    aria-pressed={applied}
-                    className={cn(
-                      "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-bold transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-70",
-                      applied
-                        ? "border-emerald-200 bg-emerald-100 text-emerald-900"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-foreground",
-                    )}
-                    disabled={applied || isSearchPending}
+                  <ResultFacetBucketButton
+                    applied={applied}
+                    bucket={bucket}
+                    field={section.field}
+                    formatter={section.formatter}
+                    isSearchPending={isSearchPending}
                     key={`${section.label}-${bucket.value}`}
-                    onClick={() => onApplyFacet(section.field, bucket.value)}
-                    title={
-                      applied
-                        ? `${section.formatter(bucket.value)} is already applied`
-                        : `Apply ${section.label}=${section.formatter(bucket.value)}`
-                    }
-                    type="button"
-                  >
-                    {isSearchPending && !applied ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <ListFilter className="h-3 w-3" />
-                    )}
-                    <span className="break-words">{section.formatter(bucket.value)}</span>
-                    <span className="tabular-nums text-foreground">{bucket.count}</span>
-                    {applied ? <span>applied</span> : null}
-                  </button>
+                    label={section.label}
+                    onApplyFacet={onApplyFacet}
+                  />
                 );
               })}
             </div>

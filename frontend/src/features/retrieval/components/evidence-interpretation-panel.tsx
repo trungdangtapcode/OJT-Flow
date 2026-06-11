@@ -4,8 +4,8 @@ import type { RetrievalPackage } from "../../../types";
 import {
   buildEvidenceInterpretationViewModel,
   evidenceSupportBadgeVariant,
-  type EvidenceInterpretationCard,
 } from "../model/evidence-interpretation";
+import { EvidenceInterpretationCard } from "./evidence-interpretation-card";
 
 export function EvidenceInterpretationPanel({
   packageData,
@@ -47,36 +47,9 @@ export function EvidenceInterpretationPanel({
 
       <div className="grid gap-2 lg:grid-cols-3">
         {interpretation.cards.map((card) => (
-          <InterpretationCard card={card} key={card.label} />
+          <EvidenceInterpretationCard card={card} key={card.label} />
         ))}
       </div>
     </section>
-  );
-}
-
-function InterpretationCard({ card }: { card: EvidenceInterpretationCard }) {
-  return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 p-3">
-      <div className="text-xs font-black uppercase text-muted-foreground">
-        {card.label}
-      </div>
-      <div className="break-words text-sm font-black">{card.title}</div>
-      <p className="break-words text-sm leading-6 text-muted-foreground">
-        {card.detail}
-      </p>
-      {card.items.length ? (
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {card.items.map((item) => (
-            <Badge
-              className="max-w-full whitespace-normal break-words leading-4"
-              key={item}
-              variant="muted"
-            >
-              {item}
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
   );
 }
