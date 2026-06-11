@@ -24,6 +24,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQueryAspect,
     RetrievalQueryDiagnostic,
     RetrievalQueryProfile,
+    RetrievalQueryRoute,
     RetrievalQueryVariant,
     RetrievalSearchHint,
     RetrievalSearchTask,
@@ -53,6 +54,12 @@ DEFAULT_QUERY_TRANSFORMATION_RULE_REGISTRY = (
     / "knowledge"
     / "retrieval"
     / "query_transformation_rules.json"
+)
+DEFAULT_QUERY_ROUTE_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "query_route_rules.json"
 )
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
@@ -204,6 +211,41 @@ class QueryTransformationRule:
 
 
 @dataclass(frozen=True)
+class QueryRouteMatch:
+    """Matcher for a data-driven retrieval strategy route."""
+
+    any_profile_ids: tuple[str, ...] = ()
+    any_profile_routes: tuple[str, ...] = ()
+    any_retrieval_modes: tuple[str, ...] = ()
+    any_detected_formats: tuple[str, ...] = ()
+    any_resource_types: tuple[str, ...] = ()
+    any_filter_keys: tuple[str, ...] = ()
+    any_filter_values: tuple[str, ...] = ()
+    any_diagnostic_codes: tuple[str, ...] = ()
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    require_fields: bool = False
+
+
+@dataclass(frozen=True)
+class QueryRouteRule:
+    """One data-driven strategy selection rule."""
+
+    rule_id: str
+    route_id: str
+    strategy_id: str
+    label: str
+    retrieval_mode: str
+    rationale: str
+    priority: int
+    confidence: float
+    suggested_filters: dict[str, str]
+    risk_controls: tuple[str, ...]
+    match: QueryRouteMatch
+
+
+@dataclass(frozen=True)
 class SearchHintTarget:
     """Operator-facing metadata for one external search target."""
 
@@ -337,6 +379,14 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         standards=standards,
         concept_candidates=concept_candidates,
     )
+    query_route = _query_route(
+        query,
+        concepts=concepts,
+        standards=standards,
+        tokens=tokens,
+        query_profile=query_profile,
+        diagnostics=diagnostics,
+    )
     return RetrievalQueryAnalysis(
         detected_concepts=concepts,
         concept_candidates=concept_candidates,
@@ -349,6 +399,7 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         diagnostics=diagnostics,
         search_hints=search_hints,
         query_profile=query_profile,
+        query_route=query_route,
         query_aspects=query_aspects,
         retrieval_tasks=_retrieval_tasks(
             query,
@@ -1486,6 +1537,325 @@ def _ensure_unique_query_transformation_rule_ids(
         raise ValueError(
             f"Invalid query transformation registry at {path}: duplicate rule_id {duplicate_text}"
         )
+
+
+def _query_route(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    tokens: set[str],
+    query_profile: RetrievalQueryProfile | None,
+    diagnostics: list[RetrievalQueryDiagnostic],
+) -> RetrievalQueryRoute | None:
+    matched = [
+        (rule, criteria)
+        for rule in _query_route_rules()
+        if (criteria := _query_route_match_criteria(
+            rule,
+            query=query,
+            concepts=concepts,
+            standards=standards,
+            tokens=tokens,
+            query_profile=query_profile,
+            diagnostics=diagnostics,
+        ))
+    ]
+    if not matched:
+        return None
+    matched.sort(key=lambda item: (item[0].priority, item[0].route_id))
+    selected, criteria = matched[0]
+    metadata = {
+        "profile_id": query_profile.profile_id if query_profile else None,
+        "profile_route": query_profile.route if query_profile else None,
+        "detected_format": query.detected_format,
+        "resource_type": query.resource_type,
+        "filter_keys": sorted(query.filters),
+        "diagnostic_codes": [diagnostic.code for diagnostic in diagnostics],
+    }
+    return RetrievalQueryRoute(
+        route_id=selected.route_id,
+        strategy_id=selected.strategy_id,
+        label=selected.label,
+        retrieval_mode=selected.retrieval_mode,
+        rationale=selected.rationale,
+        rule_id=selected.rule_id,
+        priority=selected.priority,
+        confidence=selected.confidence,
+        matched_criteria=criteria,
+        suggested_filters=dict(selected.suggested_filters),
+        risk_controls=list(selected.risk_controls),
+        metadata={key: value for key, value in metadata.items() if value},
+    )
+
+
+def _query_route_match_criteria(
+    rule: QueryRouteRule,
+    *,
+    query: RetrievalQuery,
+    concepts: list[str],
+    standards: list[str],
+    tokens: set[str],
+    query_profile: RetrievalQueryProfile | None,
+    diagnostics: list[RetrievalQueryDiagnostic],
+) -> list[str]:
+    match = rule.match
+    criteria: list[str] = []
+    profile_ids = [query_profile.profile_id] if query_profile else []
+    profile_routes = [query_profile.route] if query_profile else []
+    retrieval_modes = [query_profile.retrieval_mode] if query_profile else []
+    detected_formats = [query.detected_format] if query.detected_format else []
+    resource_types = [query.resource_type] if query.resource_type else []
+    filter_keys = [str(key) for key in query.filters]
+    filter_values = [str(value) for value in query.filters.values() if value is not None]
+    diagnostic_codes = [diagnostic.code for diagnostic in diagnostics]
+    checks = [
+        ("profile_id", _intersection_values(profile_ids, match.any_profile_ids)),
+        ("profile_route", _intersection_values(profile_routes, match.any_profile_routes)),
+        (
+            "retrieval_mode",
+            _intersection_values(retrieval_modes, match.any_retrieval_modes),
+        ),
+        (
+            "detected_format",
+            _intersection_values(detected_formats, match.any_detected_formats),
+        ),
+        ("resource_type", _intersection_values(resource_types, match.any_resource_types)),
+        ("filter_key", _intersection_values(filter_keys, match.any_filter_keys)),
+        ("filter_value", _intersection_values(filter_values, match.any_filter_values)),
+        (
+            "diagnostic_code",
+            _intersection_values(diagnostic_codes, match.any_diagnostic_codes),
+        ),
+        ("concept", _intersection_values(concepts, match.any_concepts)),
+        ("standard", _intersection_values(standards, match.any_standards)),
+        ("token", _intersection_values(tokens, match.any_tokens)),
+    ]
+    for label, values in checks:
+        criteria.extend(f"{label}:{value}" for value in values)
+    if match.require_fields and query.fields:
+        criteria.append("fields:present")
+    return criteria
+
+
+def _query_route_rules() -> tuple[QueryRouteRule, ...]:
+    path = os.environ.get("OJT_QUERY_ROUTE_RULES_PATH")
+    return _load_query_route_rules(path or str(DEFAULT_QUERY_ROUTE_RULE_REGISTRY))
+
+
+def _load_query_route_rules(path_text: str) -> tuple[QueryRouteRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid query route registry at {path}: expected rules list")
+    rules = tuple(_query_route_rule(record, path=path) for record in records)
+    _ensure_unique_query_route_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_route_rule(record: Any, *, path: Path) -> QueryRouteRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid query route registry at {path}: rule must be an object")
+    required = (
+        "rule_id",
+        "route_id",
+        "strategy_id",
+        "label",
+        "retrieval_mode",
+        "rationale",
+        "match",
+    )
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(f"Invalid query route registry at {path}: missing {missing_text}")
+    match = record["match"]
+    if not isinstance(match, dict):
+        raise ValueError(f"Invalid query route registry at {path}: match must be an object")
+    route_match = QueryRouteMatch(
+        any_profile_ids=_query_route_text_tuple(match.get("any_profile_ids"), path=path),
+        any_profile_routes=_query_route_text_tuple(match.get("any_profile_routes"), path=path),
+        any_retrieval_modes=_query_route_text_tuple(
+            match.get("any_retrieval_modes"),
+            path=path,
+        ),
+        any_detected_formats=_query_route_text_tuple(
+            match.get("any_detected_formats"),
+            path=path,
+        ),
+        any_resource_types=_query_route_text_tuple(match.get("any_resource_types"), path=path),
+        any_filter_keys=_query_route_text_tuple(match.get("any_filter_keys"), path=path),
+        any_filter_values=_query_route_text_tuple(match.get("any_filter_values"), path=path),
+        any_diagnostic_codes=_query_route_text_tuple(
+            match.get("any_diagnostic_codes"),
+            path=path,
+        ),
+        any_concepts=_query_route_text_tuple(match.get("any_concepts"), path=path),
+        any_standards=_query_route_text_tuple(match.get("any_standards"), path=path),
+        any_tokens=_query_route_text_tuple(match.get("any_tokens"), path=path),
+        require_fields=_optional_query_route_bool(
+            match.get("require_fields"),
+            default=False,
+            path=path,
+            field="match.require_fields",
+        ),
+    )
+    if not any(
+        (
+            route_match.any_profile_ids,
+            route_match.any_profile_routes,
+            route_match.any_retrieval_modes,
+            route_match.any_detected_formats,
+            route_match.any_resource_types,
+            route_match.any_filter_keys,
+            route_match.any_filter_values,
+            route_match.any_diagnostic_codes,
+            route_match.any_concepts,
+            route_match.any_standards,
+            route_match.any_tokens,
+            route_match.require_fields,
+        )
+    ):
+        raise ValueError(f"Invalid query route registry at {path}: match must include criteria")
+    suggested_filters = record.get("suggested_filters", {})
+    if not isinstance(suggested_filters, dict):
+        raise ValueError(
+            f"Invalid query route registry at {path}: suggested_filters must be an object"
+        )
+    return QueryRouteRule(
+        rule_id=_required_query_route_text(record["rule_id"], field="rule_id", path=path),
+        route_id=_required_query_route_text(record["route_id"], field="route_id", path=path),
+        strategy_id=_required_query_route_text(
+            record["strategy_id"],
+            field="strategy_id",
+            path=path,
+        ),
+        label=_required_query_route_text(record["label"], field="label", path=path),
+        retrieval_mode=_required_query_route_text(
+            record["retrieval_mode"],
+            field="retrieval_mode",
+            path=path,
+        ),
+        rationale=_required_query_route_text(
+            record["rationale"],
+            field="rationale",
+            path=path,
+        ),
+        priority=_optional_query_route_int(record.get("priority"), default=100, path=path),
+        confidence=_optional_query_route_float(
+            record.get("confidence"),
+            default=0.8,
+            path=path,
+        ),
+        suggested_filters=_query_route_text_map(
+            suggested_filters,
+            key_field="suggested_filters key",
+            value_field="suggested_filters value",
+            path=path,
+        ),
+        risk_controls=_query_route_text_tuple(record.get("risk_controls"), path=path),
+        match=route_match,
+    )
+
+
+def _required_query_route_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid query route registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _optional_query_route_int(value: Any, *, default: int, path: Path) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, int):
+        raise ValueError(f"Invalid query route registry at {path}: priority must be an integer")
+    if value < 1:
+        raise ValueError(f"Invalid query route registry at {path}: priority must be positive")
+    return value
+
+
+def _optional_query_route_float(value: Any, *, default: float, path: Path) -> float:
+    if value is None:
+        return default
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"Invalid query route registry at {path}: confidence must be a number")
+    confidence = float(value)
+    if confidence < 0.0 or confidence > 1.0:
+        raise ValueError(
+            f"Invalid query route registry at {path}: confidence must be between 0 and 1"
+        )
+    return confidence
+
+
+def _optional_query_route_bool(
+    value: Any,
+    *,
+    default: bool,
+    path: Path,
+    field: str,
+) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(f"Invalid query route registry at {path}: {field} must be boolean")
+    return value
+
+
+def _query_route_text_tuple(value: Any, *, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid query route registry at {path}: match values must be lists")
+    return tuple(_required_query_route_text(item, field="match value", path=path) for item in value)
+
+
+def _query_route_text_map(
+    value: dict[Any, Any],
+    *,
+    key_field: str,
+    value_field: str,
+    path: Path,
+) -> dict[str, str]:
+    return {
+        _required_query_route_text(key, field=key_field, path=path): _required_query_route_text(
+            item,
+            field=value_field,
+            path=path,
+        )
+        for key, item in value.items()
+    }
+
+
+def _ensure_unique_query_route_rule_ids(
+    rules: tuple[QueryRouteRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query route registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
+def _intersection_values(values: Iterable[str], candidates: tuple[str, ...]) -> list[str]:
+    candidate_lookup = {candidate.casefold(): candidate for candidate in candidates}
+    matched: list[str] = []
+    for value in values:
+        candidate = candidate_lookup.get(str(value).casefold())
+        if candidate:
+            matched.append(candidate)
+    return _dedupe(matched)
 
 
 def _search_hint_target(target: str) -> SearchHintTarget:

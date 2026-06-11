@@ -2898,6 +2898,9 @@ Response data is a `RetrievalPackage`:
   clients
 - `handoff_context.graph_context`
 - `handoff_context.query_analysis`
+- `handoff_context.query_route` with selected route ID, strategy ID,
+  retrieval mode, rationale, matched criteria, suggested filters, and risk
+  controls from the data-driven query router
 - `handoff_context.diversity` mirrors top-level `diversity` for assistant and
   agent handoff compatibility
 - `handoff_context.quality_policy`
@@ -2938,6 +2941,13 @@ of deterministic query-quality checks with `code`, `severity`, `message`, and
 query token count, active metadata filters, applied standard, suggested
 standards, detected concepts, and schema/format/resource context when relevant.
 Warning diagnostics are copied into `trace.warnings`.
+`query_analysis.query_route` is selected from
+`knowledge/retrieval/query_route_rules.json` using query profile, input format,
+resource type, active filters, diagnostics, concepts, standards, and tokens.
+It is copied to `handoff_context.query_route` and mirrored to
+`trace.fusion_diagnostics.query_route` for observability. This is an auditable
+route-selection contract; v0 does not silently switch storage adapters or
+bypass evidence-quality/review checks based on the route alone.
 Diagnostics can flag low-specificity searches, missing healthcare concepts,
 conflicting standard filters, and over-constrained metadata filters when the
 query scope is narrow but clinical/schema context is weak. It

@@ -1036,6 +1036,104 @@ def test_query_analysis_uses_data_driven_transformation_rules(
     assert reloaded_variants[0].metadata["strategy"] == "step_back_query"
 
 
+def test_query_analysis_selects_data_driven_query_route() -> None:
+    lab_analysis = analyze_query(
+        RetrievalQuery(
+            query="A1c CSV missing units",
+            fields=["lab_name", "unit"],
+            schema_id="lab_result_v1",
+            detected_format="csv",
+            resource_type="Observation",
+        )
+    )
+    source_scoped = analyze_query(
+        RetrievalQuery(
+            query="Inspect exact FHIR Observation source",
+            filters={"source_id": "standard:fhir_observation_r4"},
+        )
+    )
+
+    assert lab_analysis.query_route is not None
+    assert lab_analysis.query_route.strategy_id == "hybrid_rrf"
+    assert lab_analysis.query_route.route_id == "laboratory_hybrid_rrf"
+    assert "profile_id:laboratory_standardization" in lab_analysis.query_route.matched_criteria
+    assert lab_analysis.query_route.suggested_filters == {
+        "clinical_domain": "laboratory",
+        "trust_level": "approved",
+    }
+
+    assert source_scoped.query_route is not None
+    assert source_scoped.query_route.strategy_id == "exact_source_lookup"
+    assert source_scoped.query_route.route_id == "exact_source_lookup"
+    assert "filter_key:source_id" in source_scoped.query_route.matched_criteria
+
+
+def test_query_analysis_uses_data_driven_query_route_rules(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    registry_path = tmp_path / "query_route_rules.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_route_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "custom_route_rule",
+                        "route_id": "custom_route",
+                        "strategy_id": "metadata_filtered",
+                        "label": "Custom route",
+                        "retrieval_mode": "custom_filtered_mode",
+                        "rationale": "Custom route from test registry.",
+                        "priority": 1,
+                        "confidence": 0.91,
+                        "suggested_filters": {"clinical_domain": "custom"},
+                        "risk_controls": ["custom_review"],
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OJT_QUERY_ROUTE_RULES_PATH", str(registry_path))
+
+    analysis = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert analysis.query_route is not None
+    assert analysis.query_route.route_id == "custom_route"
+    assert analysis.query_route.strategy_id == "metadata_filtered"
+    assert analysis.query_route.retrieval_mode == "custom_filtered_mode"
+    assert analysis.query_route.confidence == 0.91
+    assert analysis.query_route.risk_controls == ["custom_review"]
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "retrieval_query_route_rules.v1",
+                "rules": [
+                    {
+                        "rule_id": "updated_route_rule",
+                        "route_id": "updated_route",
+                        "strategy_id": "high_recall_review",
+                        "label": "Updated route",
+                        "retrieval_mode": "updated_mode",
+                        "rationale": "Updated route from test registry.",
+                        "match": {"any_tokens": ["cardioxyz"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = analyze_query(RetrievalQuery(query="cardioxyz intake"))
+
+    assert reloaded.query_route is not None
+    assert reloaded.query_route.route_id == "updated_route"
+    assert reloaded.query_route.strategy_id == "high_recall_review"
+
+
 def test_query_analysis_uses_data_driven_medical_concepts() -> None:
     analysis = analyze_query(RetrievalQuery(query="serum glucose mg/dL"))
 
@@ -1342,6 +1440,13 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.handoff_context["strategy_recommendations"] == [
         item.model_dump(mode="json") for item in package.strategy_recommendations
     ]
+    assert package.handoff_context["query_route"]["strategy_id"] == "metadata_filtered"
+    assert package.handoff_context["query_route"]["route_id"] == (
+        "metadata_filtered_standard_scope"
+    )
+    assert package.trace.fusion_diagnostics["query_route"]["rule_id"] == (
+        "route_metadata_filtered_standard_scope"
+    )
     assert package.standard_search_plan is not None
     assert package.standard_search_plan.primary_route in {
         "terminology_lookup",
@@ -1361,6 +1466,7 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert analysis["strategy"] == "deterministic_clinical_expansion_v0"
     assert "unit_normalization" in analysis["detected_concepts"]
     assert "UCUM" in analysis["standards"]
+    assert analysis["query_route"]["strategy_id"] == "metadata_filtered"
     aspect_matches = [
         match
         for hit in package.hits
@@ -1948,6 +2054,8 @@ def test_knowledge_json_sources_are_valid() -> None:
         ROOT / "knowledge/terminologies/medical_concepts.json",
         ROOT / "knowledge/terminologies/fhir_search_parameters.json",
         ROOT / "knowledge/retrieval/query_expansion_rules.json",
+        ROOT / "knowledge/retrieval/query_transformation_rules.json",
+        ROOT / "knowledge/retrieval/query_route_rules.json",
         ROOT / "knowledge/retrieval/filter_suggestion_rules.json",
         ROOT / "knowledge/retrieval/ranking_boost_rules.json",
         ROOT / "knowledge/retrieval/evaluation_policy.json",

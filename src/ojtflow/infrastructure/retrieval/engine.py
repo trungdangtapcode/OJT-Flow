@@ -529,6 +529,8 @@ def rank_chunks(
         top_hits=top_hits,
         top_k=query.top_k,
     )
+    if query_analysis.query_route is not None:
+        fusion_diagnostics["query_route"] = query_analysis.query_route.model_dump(mode="json")
     facets = facets_from_chunks(selected_chunks)
     coverage = coverage_from_chunks(selected_chunks, query_analysis)
     trace_warnings.extend(coverage.warnings)
@@ -617,6 +619,11 @@ def rank_chunks(
             "query_fields": query.fields,
             "schema_id": query.schema_id,
             "strategy": strategy,
+            "query_route": (
+                query_analysis.query_route.model_dump(mode="json")
+                if query_analysis.query_route
+                else None
+            ),
             "safety_flags": safety_flags,
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,

@@ -205,6 +205,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F089, F092 | Implemented | Added persisted Graph-NER context records for retrieval packages, with owner/workflow/request/search metadata, memory/SQLite/Postgres repositories, Postgres migration 019, owner-scoped graph listing and JSONL/RDF-like export APIs, API docs, and focused restart/API tests. |
 | 2026-06-11 | F090 | Implemented | Added owner-scoped graph neighborhood retrieval over persisted Graph-NER records, with query criteria for text, node, evidence, source, normalized code, FHIR-like resource type, field, and relation; exposed a bounded API response for GraphRAG/evidence exploration with docs and focused tests. |
 | 2026-06-11 | F074 | Implemented | Added data-driven query transformation rules for rewrite, step-back query, multi-query expansion, and optional HyDE-style hypothetical evidence variants; integrated them into query variant provenance, rule-pack fingerprints, docs, and focused tests. |
+| 2026-06-11 | F075 | Implemented | Added a data-driven query router that selects an auditable retrieval strategy route from query profile, format, resource type, metadata filters, diagnostics, concepts, standards, and tokens; exposed route metadata in query analysis, package handoff, fusion diagnostics, docs, and focused tests. |
 
 ## Feature Backlog
 
@@ -293,7 +294,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F072 Add metadata extraction for resource type, standard system, clinical domain, field names, version, section heading, and source locator.
 - [x] F073 Add hybrid retrieval strategy presets: lexical-only, vector-only, hybrid RRF, metadata-filtered, high-recall review, and exact-source lookup.
 - [x] F074 Add query transformation strategies from RAG research: rewrite, decomposition, step-back query, HyDE optional mode, and multi-query expansion.
-- [ ] F075 Add query router that chooses strategy by query intent, data format, clinical domain, source filters, and risk flags.
+- [x] F075 Add query router that chooses strategy by query intent, data format, clinical domain, source filters, and risk flags.
 - [x] F076 Add cross-encoder reranking for local GPU mode with a configurable model, candidate limit, and fallback.
 - [x] F077 Add OpenAI embedding mode and local Hugging Face embedding mode with dimension compatibility checks and reindex requirements.
 - [x] F078 Add vector index generation IDs so retrieval can detect stale embeddings after provider/model changes.

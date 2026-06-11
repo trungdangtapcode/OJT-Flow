@@ -1,0 +1,116 @@
+{
+  "version": "retrieval_query_route_rules.v1",
+  "rules": [
+    {
+      "rule_id": "route_exact_source_lookup",
+      "route_id": "exact_source_lookup",
+      "strategy_id": "exact_source_lookup",
+      "label": "Exact source lookup",
+      "retrieval_mode": "source_filtered_hybrid",
+      "rationale": "A source_id filter means the operator is inspecting one known source, so preserve exact scope before broad recall.",
+      "priority": 5,
+      "confidence": 0.96,
+      "suggested_filters": {},
+      "risk_controls": ["scope_transparency", "manual_broaden_option"],
+      "match": {
+        "any_filter_keys": ["source_id"]
+      }
+    },
+    {
+      "rule_id": "route_metadata_filtered_standard_scope",
+      "route_id": "metadata_filtered_standard_scope",
+      "strategy_id": "metadata_filtered",
+      "label": "Metadata-filtered standard search",
+      "retrieval_mode": "postgres_filtered_hybrid",
+      "rationale": "Explicit metadata filters should be applied before ranking so standard, domain, trust, or source-type scope is auditable.",
+      "priority": 10,
+      "confidence": 0.9,
+      "suggested_filters": {},
+      "risk_controls": ["filter_transparency", "missing_bucket_warning"],
+      "match": {
+        "any_filter_keys": ["standard_system", "clinical_domain", "source_type", "trust_level"]
+      }
+    },
+    {
+      "rule_id": "route_sensitive_review_context",
+      "route_id": "sensitive_review_context",
+      "strategy_id": "high_recall_review",
+      "label": "High-recall review route",
+      "retrieval_mode": "retrieval_plan_tasks",
+      "rationale": "Sensitive or low-specificity context should favor explicit coverage planning, local evidence, and human review before downstream use.",
+      "priority": 20,
+      "confidence": 0.86,
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "risk_controls": ["human_review", "external_hint_suppression", "coverage_summary"],
+      "match": {
+        "any_diagnostic_codes": ["low_specificity_query", "no_healthcare_concept_detected"],
+        "any_concepts": ["sensitive_identifier_review"],
+        "any_tokens": ["patient_id", "ssn", "identifier"]
+      }
+    },
+    {
+      "rule_id": "route_laboratory_hybrid_rrf",
+      "route_id": "laboratory_hybrid_rrf",
+      "strategy_id": "hybrid_rrf",
+      "label": "Hybrid laboratory standards route",
+      "retrieval_mode": "postgres_fts_vector_rrf",
+      "rationale": "Laboratory standardization needs exact terminology matches plus semantic recall across FHIR, LOINC, UCUM, schemas, and workflow language.",
+      "priority": 30,
+      "confidence": 0.9,
+      "suggested_filters": {
+        "clinical_domain": "laboratory",
+        "trust_level": "approved"
+      },
+      "risk_controls": ["source_diversity", "evidence_support_matrix"],
+      "match": {
+        "any_profile_ids": ["laboratory_standardization"],
+        "any_profile_routes": ["clinical_data_normalization"],
+        "any_retrieval_modes": ["hybrid_with_standard_coverage"],
+        "any_detected_formats": ["csv", "json", "yaml"],
+        "any_resource_types": ["Observation"],
+        "require_fields": true
+      }
+    },
+    {
+      "rule_id": "route_external_medical_hint_review",
+      "route_id": "external_medical_hint_review",
+      "strategy_id": "high_recall_review",
+      "label": "Governed external-medical follow-up route",
+      "retrieval_mode": "retrieval_plan_tasks",
+      "rationale": "Literature, trial, regulatory, or medication questions should keep local trusted evidence while surfacing governed external search hints for review.",
+      "priority": 40,
+      "confidence": 0.84,
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "risk_controls": ["external_provider_policy", "manual_followup_tasks"],
+      "match": {
+        "any_profile_routes": ["biomedical_literature_grounding", "drug_knowledge_grounding"],
+        "any_retrieval_modes": ["hybrid_with_external_medical_hints", "hybrid_with_pubmed_hint"],
+        "any_standards": ["MeSH", "ClinicalTrials.gov", "openFDA", "RxNorm"]
+      }
+    },
+    {
+      "rule_id": "route_observational_analytics_schema",
+      "route_id": "observational_analytics_schema",
+      "strategy_id": "metadata_filtered",
+      "label": "Analytics schema grounding route",
+      "retrieval_mode": "static_filtered_hybrid",
+      "rationale": "OMOP and analytics questions should prioritize schema and mapping evidence over broad clinical text.",
+      "priority": 50,
+      "confidence": 0.82,
+      "suggested_filters": {
+        "standard_system": "OMOP",
+        "trust_level": "approved"
+      },
+      "risk_controls": ["schema_priority", "cohort_boundary_review"],
+      "match": {
+        "any_profile_ids": ["observational_analytics"],
+        "any_profile_routes": ["analytics_schema_grounding"],
+        "any_standards": ["OMOP"]
+      }
+    }
+  ]
+}

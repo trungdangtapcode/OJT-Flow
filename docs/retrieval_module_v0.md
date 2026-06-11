@@ -163,6 +163,31 @@ The transformations are data-driven and rendered as first-class
 They do not call an LLM and do not bypass source filters, evidence support
 checks, or human review gates.
 
+## Query Router
+
+The selected query route lives in `query_analysis.query_route` and is copied to
+`handoff_context.query_route`; the same object is also mirrored into
+`trace.fusion_diagnostics.query_route` for package-level observability.
+Routes are loaded from `knowledge/retrieval/query_route_rules.json` and are
+included in the sanitized `handoff_context.retrieval_rule_packs` fingerprint
+list.
+
+The router selects a strategy recommendation from trusted rule data using:
+
+- query profile ID, profile route, and retrieval mode
+- detected input format and FHIR-like resource type
+- active metadata filter keys and values
+- query diagnostic codes and safety-sensitive concepts
+- detected concepts, standards, tokens, and whether fields are present
+
+Current route outputs include `exact_source_lookup`, `metadata_filtered`,
+`hybrid_rrf`, and `high_recall_review` strategy IDs. The route object includes
+the selected rule ID, route ID, strategy ID, retrieval mode, rationale,
+confidence, matched criteria, suggested filters, and risk controls. In this
+backend version the router is an auditable selection contract; it does not
+silently switch storage adapters or bypass the existing evidence-quality,
+source-filter, review, and support-matrix checks.
+
 ## Search Presets
 
 Operator-facing retrieval examples live in

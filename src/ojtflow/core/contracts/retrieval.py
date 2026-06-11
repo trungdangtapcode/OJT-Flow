@@ -411,6 +411,23 @@ class RetrievalQueryProfile(ContractModel):
     rule_ids: list[NonBlankStr] = Field(default_factory=list)
 
 
+class RetrievalQueryRoute(ContractModel):
+    """Selected retrieval strategy route for the normalized query context."""
+
+    route_id: NonBlankStr
+    strategy_id: NonBlankStr
+    label: NonBlankStr
+    retrieval_mode: NonBlankStr
+    rationale: NonBlankStr
+    rule_id: NonBlankStr
+    priority: int = Field(ge=1)
+    confidence: float = Field(ge=0.0, le=1.0)
+    matched_criteria: list[NonBlankStr] = Field(default_factory=list)
+    suggested_filters: dict[str, str] = Field(default_factory=dict)
+    risk_controls: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalQueryAspect(ContractModel):
     """Data-driven search aspect for decomposed healthcare retrieval planning."""
 
@@ -683,6 +700,7 @@ class RetrievalQueryAnalysis(ContractModel):
     diagnostics: list[RetrievalQueryDiagnostic] = Field(default_factory=list)
     search_hints: list[RetrievalSearchHint] = Field(default_factory=list)
     query_profile: RetrievalQueryProfile | None = None
+    query_route: RetrievalQueryRoute | None = None
     query_aspects: list[RetrievalQueryAspect] = Field(default_factory=list)
     retrieval_tasks: list[RetrievalSearchTask] = Field(default_factory=list)
 
