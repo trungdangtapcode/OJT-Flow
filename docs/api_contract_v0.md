@@ -3234,6 +3234,21 @@ and operational requirements.
 `GET /api/v1/retrieval/corpus/manifest` returns the reviewed corpus source
 manifest used by ingestion and readiness checks.
 
+`GET /api/v1/retrieval/corpus/ledger` returns a chunk-level ingestion ledger for
+the configured retrieval corpus. Each record links an indexed chunk to:
+
+- `ingestion_run_id`
+- source `item_id`
+- `chunk_id`
+- raw artifact hash
+- chunk content hash
+- adapter ID and adapter catalog version
+- reviewer decision and lifecycle state
+- chunk source locator
+
+This endpoint is intended for enterprise retrieval audit, index debugging, and
+evidence-lineage review. It does not expose raw corpus text.
+
 `GET /api/v1/retrieval/corpus/chunking-profiles` returns data-driven chunking
 profiles for standards pages, terminology pages, structured records, PDFs, and
 internal policies.

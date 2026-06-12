@@ -28,6 +28,7 @@ from ojtflow.infrastructure.retrieval.catalogs import (
     load_source_trust_policy_catalog,
 )
 from ojtflow.infrastructure.retrieval.corpus import (
+    build_corpus_ingestion_ledger,
     build_corpus_ingestion_manifest,
     load_local_corpus_chunks,
 )
@@ -3603,6 +3604,35 @@ def test_corpus_adapter_catalog_and_manifest_are_governed() -> None:
     assert policies["clinicaltrials_gov"].standard_system == "ClinicalTrials.gov"
 
 
+def test_corpus_ingestion_ledger_links_chunks_to_source_run() -> None:
+    ledger = build_corpus_ingestion_ledger(
+        (ROOT / "knowledge" / "corpus",),
+        knowledge_root=ROOT / "knowledge",
+        max_chars=1200,
+        overlap_chars=160,
+    )
+
+    assert ledger.version == "corpus_ingestion_ledger.v1"
+    assert ledger.ingestion_run_id.startswith("corpus_run:")
+    assert ledger.adapter_catalog_version == "corpus_adapters.v1"
+    assert ledger.summary.chunk_count == len(ledger.records)
+    assert ledger.summary.approved_chunk_count > 0
+
+    record = next(
+        item
+        for item in ledger.records
+        if item.adapter_id == "local_medical_search_playbook_v1"
+    )
+    assert record.ledger_record_id.startswith("corpus_ledger:")
+    assert record.raw_artifact_hash.startswith("sha256:")
+    assert record.chunk_content_hash.startswith("sha256:")
+    assert record.adapter_version == "corpus_adapters.v1"
+    assert record.reviewer_decision == "approved"
+    assert record.approved_for_indexing is True
+    assert record.path == "knowledge/corpus/medical_search_playbook.md"
+    assert record.chunk_start_char <= record.chunk_end_char
+
+
 def test_static_retrieval_source_inventory_includes_corpus_governance_metadata() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
     result = repository.reindex(include_seeded=False, include_corpus=True)
@@ -3615,6 +3645,8 @@ def test_static_retrieval_source_inventory_includes_corpus_governance_metadata()
     ]
 
     assert result["corpus"]["manifest"]["adapter_catalog_version"] == "corpus_adapters.v1"
+    assert result["corpus"]["ledger"]["version"] == "corpus_ingestion_ledger.v1"
+    assert result["corpus"]["ledger"]["summary"]["chunk_count"] == result["corpus"]["chunks_indexed"]
     assert corpus_sources
     assert corpus_sources[0].reviewer_state == "approved"
     assert corpus_sources[0].license_id == "project_internal"
@@ -3634,6 +3666,11 @@ def test_static_retrieval_corpus_chunks_include_section_and_field_metadata() -> 
 
     assert chunk.metadata["chunk_profile"] == "section_window_v0"
     assert chunk.metadata["chunk_boundary_strategy"] == "markdown_section"
+    assert chunk.metadata["ingestion_run_id"].startswith("corpus_run:")
+    assert chunk.metadata["ingestion_ledger_record_id"].startswith("corpus_ledger:")
+    assert chunk.metadata["adapter_version"] == "corpus_adapters.v1"
+    assert chunk.metadata["chunk_content_hash"].startswith("sha256:")
+    assert chunk.metadata["approved_for_indexing"] is True
     assert chunk.locator["section_heading"]
     assert "section_heading" in chunk.metadata
     assert "field_names" in chunk.metadata

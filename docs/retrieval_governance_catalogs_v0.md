@@ -89,12 +89,41 @@ retrieval before relying on medical evidence. The Retrieval page renders this
 report in the `Source freshness gate` panel next to integrity and source
 inventory.
 
+## Corpus Ingestion Ledger
+
+`GET /api/v1/retrieval/corpus/ledger`
+
+The ledger is the chunk-level lineage layer for governed retrieval. The source
+manifest describes source files; the ledger describes the exact chunks that were
+made searchable from those files.
+
+Each ledger record links:
+
+- the stable corpus ingestion run ID
+- the source manifest item ID
+- the indexed chunk ID
+- raw artifact hash and chunk content hash
+- adapter ID and adapter catalog version
+- reviewer decision and lifecycle state
+- chunk profile, parser, source path, source URL, and character span
+
+The retrieval index also carries the ledger record ID and ingestion run ID in
+`KnowledgeChunk.metadata`, so search results, source inventories, and future
+index manifests can trace evidence back to the governed ingestion input without
+storing raw payloads in the ledger response.
+
+The ledger intentionally does not block current indexing behavior by itself. If
+a source is indexed while its reviewer state is `needs_review` or deprecated,
+the record makes that visible through `index_decision`,
+`approved_for_indexing`, and reviewer/lifecycle fields. Enforcement belongs in
+source approval and production-mode policy gates.
+
 ## Verification
 
 Run:
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error -q
+PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_retrieval.py::test_corpus_ingestion_ledger_links_chunks_to_source_run tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error -q
 ```
 
 The tests verify OpenAPI response models, authentication boundaries, and that

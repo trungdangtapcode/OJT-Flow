@@ -6,12 +6,16 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
+import json
 from pathlib import Path
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
     CorpusChunkingProfile,
+    CorpusIngestionLedger,
+    CorpusIngestionLedgerRecord,
+    CorpusIngestionLedgerSummary,
     CorpusIngestionItem,
     CorpusIngestionManifest,
     CorpusLicenseMetadata,
@@ -36,6 +40,7 @@ class CorpusIndexResult:
     chunks_indexed: int
     skipped_files: list[str]
     manifest: CorpusIngestionManifest | None = None
+    ledger: CorpusIngestionLedger | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -45,6 +50,9 @@ class CorpusIndexResult:
             "skipped_files": list(self.skipped_files),
             "manifest": (
                 self.manifest.model_dump(mode="json") if self.manifest is not None else None
+            ),
+            "ledger": (
+                self.ledger.model_dump(mode="json") if self.ledger is not None else None
             ),
         }
 
@@ -79,6 +87,7 @@ def build_corpus_ingestion_manifest(
                 text,
                 knowledge_root=knowledge_root,
                 adapter=adapter,
+                adapter_catalog_version=catalog.version,
             )
         )
     return CorpusIngestionManifest(
@@ -94,6 +103,36 @@ def build_corpus_ingestion_manifest(
         ),
         items=items,
     )
+
+
+def build_corpus_ingestion_ledger(
+    corpus_dirs: tuple[Path, ...],
+    *,
+    knowledge_root: Path,
+    max_chars: int,
+    overlap_chars: int,
+) -> CorpusIngestionLedger:
+    """Build a chunk-level lineage ledger for the configured local corpus."""
+
+    _chunks, result = load_local_corpus_chunks(
+        corpus_dirs,
+        knowledge_root=knowledge_root,
+        max_chars=max_chars,
+        overlap_chars=overlap_chars,
+    )
+    if result.ledger is None:
+        manifest = result.manifest or build_corpus_ingestion_manifest(
+            corpus_dirs,
+            knowledge_root=knowledge_root,
+        )
+        return _ledger_from_chunks(
+            [],
+            manifest=manifest,
+            knowledge_root=knowledge_root,
+            max_chars=max_chars,
+            overlap_chars=overlap_chars,
+        )
+    return result.ledger
 
 
 def load_local_corpus_chunks(
@@ -157,15 +196,25 @@ def load_local_corpus_chunks(
                     overlap_chars=overlap_chars,
                     manifest_item=manifest_item,
                     chunking_profiles=chunking_profiles,
+                    ingestion_run_id=_ingestion_run_id(manifest),
+                    adapter_catalog_version=manifest.adapter_catalog_version,
                 )
             )
 
+    ledger = _ledger_from_chunks(
+        chunks,
+        manifest=manifest,
+        knowledge_root=knowledge_root,
+        max_chars=max_chars,
+        overlap_chars=overlap_chars,
+    )
     return chunks, CorpusIndexResult(
         files_seen=files_seen,
         files_indexed=files_indexed,
         chunks_indexed=len(chunks),
         skipped_files=skipped_files[:50],
         manifest=manifest,
+        ledger=ledger,
     )
 
 
@@ -178,6 +227,8 @@ def _chunks_for_file(
     overlap_chars: int,
     manifest_item: CorpusIngestionItem | None = None,
     chunking_profiles: dict[str, CorpusChunkingProfile] | None = None,
+    ingestion_run_id: str | None = None,
+    adapter_catalog_version: str | None = None,
 ) -> list[KnowledgeChunk]:
     relative = _display_path(path, knowledge_root)
     title = _title_from_text(path, text)
@@ -210,6 +261,12 @@ def _chunks_for_file(
         overlap_chars=effective_overlap_chars,
         profile=profile,
     )
+    run_id = ingestion_run_id or "corpus_run:untracked"
+    catalog_version = adapter_catalog_version or (
+        str(manifest_item.metadata.get("adapter_catalog_version"))
+        if manifest_item is not None
+        else "unknown"
+    )
 
     chunks: list[KnowledgeChunk] = []
     for index, record in enumerate(chunk_records):
@@ -226,6 +283,22 @@ def _chunks_for_file(
         chunk_metadata = {
             **metadata,
             **_metadata_from_chunk_record(record, profile=profile),
+            "ingestion_run_id": run_id,
+            "ingestion_ledger_record_id": _ledger_record_id(
+                ingestion_run_id=run_id,
+                chunk_id=f"chunk_corpus_{chunk_hash}",
+                raw_artifact_hash=str(metadata.get("content_hash") or "unknown"),
+            ),
+            "adapter_version": catalog_version,
+            "chunk_content_hash": f"sha256:{sha256(chunk_text.encode('utf-8')).hexdigest()}",
+            "index_decision": _index_decision(
+                reviewer_state=str(metadata.get("reviewer_state") or "needs_review"),
+                lifecycle_state=str(metadata.get("lifecycle_state") or "needs_review"),
+            ),
+            "approved_for_indexing": (
+                metadata.get("reviewer_state") == "approved"
+                and metadata.get("lifecycle_state") == "approved"
+            ),
         }
         chunks.append(
             KnowledgeChunk(
@@ -251,6 +324,7 @@ def _manifest_item_for_file(
     *,
     knowledge_root: Path,
     adapter: CorpusSourceAdapter | None,
+    adapter_catalog_version: str,
 ) -> CorpusIngestionItem:
     relative = _display_path(path, knowledge_root)
     stat = path.stat()
@@ -294,6 +368,7 @@ def _manifest_item_for_file(
         warnings=warnings,
         metadata={
             "canonical_source_id": adapter.source_id if adapter else None,
+            "adapter_catalog_version": adapter_catalog_version,
             "authority": adapter.authority if adapter else None,
             "access_mode": adapter.access_mode if adapter else "local_file",
             "ingestion_mode": adapter.ingestion_mode if adapter else "operator_local_file",
@@ -310,6 +385,7 @@ def _metadata_from_manifest_item(item: CorpusIngestionItem) -> dict:
     return {
         "corpus_item_id": item.item_id,
         "adapter_id": item.adapter_id,
+        "adapter_catalog_version": item.metadata.get("adapter_catalog_version"),
         "canonical_source_id": item.metadata.get("canonical_source_id"),
         "authority": item.metadata.get("authority"),
         "access_mode": item.metadata.get("access_mode"),
@@ -330,6 +406,207 @@ def _metadata_from_manifest_item(item: CorpusIngestionItem) -> dict:
         "source_url": item.source_url,
         "warnings": list(item.warnings),
     }
+
+
+def _ledger_from_chunks(
+    chunks: list[KnowledgeChunk],
+    *,
+    manifest: CorpusIngestionManifest,
+    knowledge_root: Path,
+    max_chars: int,
+    overlap_chars: int,
+) -> CorpusIngestionLedger:
+    ingestion_run_id = _ingestion_run_id(manifest)
+    items_by_id = {item.item_id: item for item in manifest.items}
+    records = [
+        _ledger_record_for_chunk(
+            chunk,
+            manifest=manifest,
+            ingestion_run_id=ingestion_run_id,
+            item=items_by_id.get(str(chunk.metadata.get("corpus_item_id") or "")),
+        )
+        for chunk in chunks
+    ]
+    approved_count = sum(1 for record in records if record.approved_for_indexing)
+    needs_review_count = sum(
+        1 for record in records if record.reviewer_state == "needs_review"
+    )
+    deprecated_count = sum(
+        1 for record in records if record.lifecycle_state == "deprecated"
+    )
+    warning_count = sum(len(record.warnings) for record in records)
+    return CorpusIngestionLedger(
+        version="corpus_ingestion_ledger.v1",
+        generated_at=manifest.generated_at,
+        ingestion_run_id=ingestion_run_id,
+        adapter_catalog_version=manifest.adapter_catalog_version,
+        knowledge_root=_display_path(knowledge_root, knowledge_root),
+        chunking={
+            "max_chars": max_chars,
+            "overlap_chars": overlap_chars,
+        },
+        summary=CorpusIngestionLedgerSummary(
+            source_count=len({record.source_id for record in records}),
+            chunk_count=len(records),
+            approved_chunk_count=approved_count,
+            needs_review_chunk_count=needs_review_count,
+            deprecated_chunk_count=deprecated_count,
+            unapproved_chunk_count=len(records) - approved_count,
+            warning_count=warning_count,
+        ),
+        records=records,
+    )
+
+
+def _ledger_record_for_chunk(
+    chunk: KnowledgeChunk,
+    *,
+    manifest: CorpusIngestionManifest,
+    ingestion_run_id: str,
+    item: CorpusIngestionItem | None,
+) -> CorpusIngestionLedgerRecord:
+    metadata = chunk.metadata
+    raw_artifact_hash = str(
+        (item.content_hash if item is not None else None)
+        or metadata.get("content_hash")
+        or "sha256:unknown"
+    )
+    reviewer_state = (
+        item.reviewer_state if item is not None else metadata.get("reviewer_state") or "needs_review"
+    )
+    lifecycle_state = (
+        item.lifecycle_state if item is not None else metadata.get("lifecycle_state") or "needs_review"
+    )
+    chunk_index = _int_metadata(chunk.locator.get("chunk_index"), default=0)
+    chunk_start = _int_metadata(
+        chunk.locator.get("start_char") or metadata.get("chunk_start_char"),
+        default=0,
+    )
+    chunk_end = _int_metadata(
+        chunk.locator.get("end_char") or metadata.get("chunk_end_char"),
+        default=chunk_start,
+    )
+    warning_values = [
+        str(value)
+        for value in (
+            item.warnings if item is not None else metadata.get("warnings", [])
+        )
+        if str(value)
+    ]
+    index_decision = _index_decision(
+        reviewer_state=str(reviewer_state),
+        lifecycle_state=str(lifecycle_state),
+    )
+    approved = index_decision == "indexed"
+    ledger_record_id = _ledger_record_id(
+        ingestion_run_id=ingestion_run_id,
+        chunk_id=chunk.chunk_id,
+        raw_artifact_hash=raw_artifact_hash,
+    )
+    return CorpusIngestionLedgerRecord(
+        ledger_record_id=ledger_record_id,
+        ingestion_run_id=ingestion_run_id,
+        item_id=str(
+            (item.item_id if item is not None else None)
+            or metadata.get("corpus_item_id")
+            or chunk.source_id
+        ),
+        chunk_id=chunk.chunk_id,
+        source_id=chunk.source_id,
+        adapter_id=(
+            item.adapter_id if item is not None else _optional_str(metadata.get("adapter_id"))
+        ),
+        adapter_version=str(
+            metadata.get("adapter_version")
+            or metadata.get("adapter_catalog_version")
+            or manifest.adapter_catalog_version
+        ),
+        title=chunk.title,
+        source_type=chunk.source_type,
+        clinical_domain=chunk.clinical_domain or "general",
+        standard_system=chunk.standard_system or "local_corpus",
+        source_version=chunk.source_version,
+        path=_optional_str(item.path if item is not None else chunk.locator.get("path")),
+        source_url=item.source_url if item is not None else _optional_str(metadata.get("source_url")),
+        raw_artifact_hash=raw_artifact_hash,
+        chunk_content_hash=str(
+            metadata.get("chunk_content_hash")
+            or f"sha256:{sha256(chunk.content.encode('utf-8')).hexdigest()}"
+        ),
+        chunk_index=chunk_index,
+        chunk_start_char=chunk_start,
+        chunk_end_char=max(chunk_end, chunk_start),
+        chunk_profile=_optional_str(metadata.get("chunk_profile")),
+        parser=_optional_str(metadata.get("parser")),
+        reviewer_state=reviewer_state,
+        lifecycle_state=lifecycle_state,
+        reviewer_decision=reviewer_state,
+        index_decision=index_decision,
+        approved_for_indexing=approved,
+        warnings=warning_values,
+        metadata={
+            "fetch_time_source": metadata.get("fetch_time_source"),
+            "fetched_at": metadata.get("fetched_at"),
+            "license_id": metadata.get("license_id"),
+            "canonical_source_id": metadata.get("canonical_source_id"),
+            "ingestion_mode": metadata.get("ingestion_mode"),
+        },
+    )
+
+
+def _ingestion_run_id(manifest: CorpusIngestionManifest) -> str:
+    payload = {
+        "version": manifest.version,
+        "adapter_catalog_version": manifest.adapter_catalog_version,
+        "knowledge_root": manifest.knowledge_root,
+        "items": [
+            {
+                "item_id": item.item_id,
+                "source_id": item.source_id,
+                "adapter_id": item.adapter_id,
+                "release_version": item.release_version,
+                "content_hash": item.content_hash,
+                "reviewer_state": item.reviewer_state,
+                "lifecycle_state": item.lifecycle_state,
+                "enabled": item.enabled,
+                "path": item.path,
+            }
+            for item in sorted(manifest.items, key=lambda entry: entry.item_id)
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return f"corpus_run:{sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _ledger_record_id(
+    *,
+    ingestion_run_id: str,
+    chunk_id: str,
+    raw_artifact_hash: str,
+) -> str:
+    payload = f"{ingestion_run_id}:{chunk_id}:{raw_artifact_hash}"
+    return f"corpus_ledger:{sha256(payload.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _index_decision(*, reviewer_state: str, lifecycle_state: str) -> str:
+    if reviewer_state == "approved" and lifecycle_state == "approved":
+        return "indexed"
+    return "indexed_needs_review"
+
+
+def _int_metadata(value: object, *, default: int) -> int:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(parsed, 0)
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _chunking_profile_for_item(

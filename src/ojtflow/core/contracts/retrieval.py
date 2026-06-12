@@ -560,6 +560,67 @@ class CorpusIngestionManifest(ContractModel):
     items: list[CorpusIngestionItem] = Field(default_factory=list)
 
 
+CorpusIndexDecision = Literal["indexed", "indexed_needs_review", "skipped"]
+
+
+class CorpusIngestionLedgerRecord(ContractModel):
+    """Chunk-level lineage record for one indexed corpus chunk."""
+
+    ledger_record_id: NonBlankStr
+    ingestion_run_id: NonBlankStr
+    item_id: NonBlankStr
+    chunk_id: NonBlankStr
+    source_id: NonBlankStr
+    adapter_id: NonBlankStr | None = None
+    adapter_version: NonBlankStr
+    title: NonBlankStr
+    source_type: EvidenceSourceType
+    clinical_domain: NonBlankStr
+    standard_system: NonBlankStr
+    source_version: NonBlankStr
+    path: NonBlankStr | None = None
+    source_url: str | None = None
+    raw_artifact_hash: NonBlankStr
+    chunk_content_hash: NonBlankStr
+    chunk_index: int = Field(ge=0)
+    chunk_start_char: int = Field(ge=0)
+    chunk_end_char: int = Field(ge=0)
+    chunk_profile: NonBlankStr | None = None
+    parser: NonBlankStr | None = None
+    reviewer_state: CorpusLifecycleState
+    lifecycle_state: CorpusLifecycleState
+    reviewer_decision: CorpusLifecycleState
+    index_decision: CorpusIndexDecision
+    approved_for_indexing: bool = False
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CorpusIngestionLedgerSummary(ContractModel):
+    """Aggregate chunk-level lineage state for a corpus ingestion run."""
+
+    source_count: int = Field(ge=0)
+    chunk_count: int = Field(ge=0)
+    approved_chunk_count: int = Field(ge=0)
+    needs_review_chunk_count: int = Field(ge=0)
+    deprecated_chunk_count: int = Field(ge=0)
+    unapproved_chunk_count: int = Field(ge=0)
+    warning_count: int = Field(ge=0)
+
+
+class CorpusIngestionLedger(ContractModel):
+    """Versioned chunk-level ledger for auditable corpus indexing."""
+
+    version: NonBlankStr
+    generated_at: NonBlankStr
+    ingestion_run_id: NonBlankStr
+    adapter_catalog_version: NonBlankStr
+    knowledge_root: NonBlankStr
+    chunking: dict[str, int] = Field(default_factory=dict)
+    summary: CorpusIngestionLedgerSummary
+    records: list[CorpusIngestionLedgerRecord] = Field(default_factory=list)
+
+
 class RetrievalSearchTask(ContractModel):
     """Executable retrieval task derived from query analysis before ranking."""
 

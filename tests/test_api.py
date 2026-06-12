@@ -1664,6 +1664,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         retrieval_source_policies = await client.get("/api/v1/retrieval/source-policies")
         retrieval_corpus_adapters = await client.get("/api/v1/retrieval/corpus/adapters")
         retrieval_corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
+        retrieval_corpus_ledger = await client.get("/api/v1/retrieval/corpus/ledger")
         retrieval_corpus_chunking_profiles = await client.get(
             "/api/v1/retrieval/corpus/chunking-profiles"
         )
@@ -1754,6 +1755,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_corpus_adapters, expected_code="unauthorized")
     assert retrieval_corpus_manifest.status_code == 401
     _assert_error_envelope(retrieval_corpus_manifest, expected_code="unauthorized")
+    assert retrieval_corpus_ledger.status_code == 401
+    _assert_error_envelope(retrieval_corpus_ledger, expected_code="unauthorized")
     assert retrieval_corpus_chunking_profiles.status_code == 401
     _assert_error_envelope(
         retrieval_corpus_chunking_profiles,
@@ -4452,6 +4455,21 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             and item["content_hash"].startswith("sha256:")
             and item["reviewer_state"] == "approved"
             for item in manifest_data["items"]
+        )
+
+        corpus_ledger = await client.get("/api/v1/retrieval/corpus/ledger")
+        assert corpus_ledger.status_code == 200
+        ledger_data = corpus_ledger.json()["data"]
+        assert ledger_data["version"] == "corpus_ingestion_ledger.v1"
+        assert ledger_data["adapter_catalog_version"] == "corpus_adapters.v1"
+        assert ledger_data["summary"]["chunk_count"] == len(ledger_data["records"])
+        assert any(
+            record["adapter_id"] == "local_medical_search_playbook_v1"
+            and record["raw_artifact_hash"].startswith("sha256:")
+            and record["chunk_content_hash"].startswith("sha256:")
+            and record["adapter_version"] == "corpus_adapters.v1"
+            and record["reviewer_decision"] == "approved"
+            for record in ledger_data["records"]
         )
 
         chunking_profiles = await client.get("/api/v1/retrieval/corpus/chunking-profiles")

@@ -22,6 +22,7 @@ from ojtflow.core.contracts.graph import (
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
     CorpusChunkingProfileCatalog,
+    CorpusIngestionLedger,
     CorpusIngestionManifest,
     RetrievalFreshnessReport,
     RetrievalJudgmentEvaluationResult,
@@ -43,7 +44,10 @@ from ojtflow.infrastructure.retrieval.catalogs import (
     load_retrieval_strategy_catalog,
     load_source_trust_policy_catalog,
 )
-from ojtflow.infrastructure.retrieval.corpus import build_corpus_ingestion_manifest
+from ojtflow.infrastructure.retrieval.corpus import (
+    build_corpus_ingestion_ledger,
+    build_corpus_ingestion_manifest,
+)
 from ojtflow.infrastructure.retrieval.freshness import build_retrieval_freshness_report
 from ojtflow.infrastructure.retrieval.presets import (
     load_retrieval_search_options,
@@ -100,6 +104,11 @@ class RetrievalCorpusAdaptersEnvelope(ContractModel):
 
 class RetrievalCorpusManifestEnvelope(ContractModel):
     data: CorpusIngestionManifest
+    error: None = None
+
+
+class RetrievalCorpusLedgerEnvelope(ContractModel):
+    data: CorpusIngestionLedger
     error: None = None
 
 
@@ -378,8 +387,25 @@ async def get_retrieval_corpus_manifest(
     knowledge_root = settings.resolved_knowledge_dir
     return ok(
         build_corpus_ingestion_manifest(
-            (knowledge_root / "corpus",),
+            settings.resolved_retrieval_corpus_dirs,
             knowledge_root=knowledge_root,
+        )
+    )
+
+
+@router.get("/retrieval/corpus/ledger", response_model=RetrievalCorpusLedgerEnvelope)
+async def get_retrieval_corpus_ledger(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        build_corpus_ingestion_ledger(
+            settings.resolved_retrieval_corpus_dirs,
+            knowledge_root=settings.resolved_knowledge_dir,
+            max_chars=settings.retrieval_chunk_max_chars,
+            overlap_chars=settings.retrieval_chunk_overlap_chars,
         )
     )
 
