@@ -3357,14 +3357,21 @@ Requires `admin:read`.
 
 `GET /api/v1/retrieval/freshness` returns a `RetrievalFreshnessReport` for the
 governed retrieval source catalog. It combines corpus adapters, source trust
-policies, the local corpus manifest, and currently indexed source inventory.
+policies, the medical source-quality policy, the local corpus manifest, and
+currently indexed source inventory.
 
 Response data includes `status`, `score`, source counts by readiness state,
-`stale_count`, `unindexed_count`, `missing_policy_count`, catalog versions, and
-`sources[]`. Each source includes lifecycle/reviewer state, refresh cadence,
-indexed chunk count, last observed snapshot time, freshness window, issues, and
-recommended actions. This endpoint is intended for RAG operations and medical
-source governance; it does not perform live external fetching.
+`stale_count`, `unindexed_count`, `missing_policy_count`,
+`average_quality_score`, `low_quality_count`, `quality_review_count`, catalog
+versions, and `sources[]`. Each source includes lifecycle/reviewer state,
+refresh cadence, indexed chunk count, last observed snapshot time, freshness
+window, issues, recommended actions, and `quality`. The `quality` object is an
+explainable medical source-quality score driven by
+`knowledge/retrieval/source_quality_policy.json`; it combines trust policy
+coverage, evidence tier, lifecycle state, reviewer state, freshness status,
+source/index coverage, and license or use restrictions. This endpoint is
+intended for RAG operations and medical source governance; it does not perform
+live external fetching.
 Requires `admin:read`.
 
 `POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from

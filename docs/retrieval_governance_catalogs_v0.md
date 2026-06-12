@@ -83,6 +83,17 @@ The report scores each source as `ready`, `watch`, `needs_review`, or
 policy coverage, last observed fetch/snapshot time, refresh cadence, and
 whether a configured external source has a governed local snapshot.
 
+Each source also includes a separate `quality` object. This is not the same as
+the freshness readiness state: readiness answers whether the source can be used
+operationally, while quality answers how strong the medical evidence source is
+after combining trust policy coverage, evidence tier, lifecycle state, reviewer
+state, freshness status, source/index coverage, and license or use restrictions.
+The scorer is data-driven by
+`knowledge/retrieval/source_quality_policy.json`. Operators can tune thresholds
+and rule deltas without changing Python code, then verify the effect through
+`average_quality_score`, `low_quality_count`, `quality_review_count`, and each
+source's applied `quality.signals[]`.
+
 The gate does not fetch external sites. It is the control surface that tells an
 operator which source should be refreshed, approved, indexed, or kept out of
 retrieval before relying on medical evidence. The Retrieval page renders this
@@ -178,7 +189,7 @@ or rerun the prior corpus/embedding configuration.
 Run:
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_retrieval.py::test_corpus_ingestion_ledger_links_chunks_to_source_run tests/test_retrieval.py::test_static_retrieval_index_manifest_reports_active_generations tests/test_retrieval.py::test_embedding_reindex_safety_report_marker_and_comparison tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error tests/test_api.py::test_embedding_reindex_job_requires_dry_run_approval -q
+PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_retrieval.py::test_medical_source_quality_policy_loads_from_trusted_data tests/test_retrieval.py::test_corpus_ingestion_ledger_links_chunks_to_source_run tests/test_retrieval.py::test_static_retrieval_index_manifest_reports_active_generations tests/test_retrieval.py::test_embedding_reindex_safety_report_marker_and_comparison tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error tests/test_api.py::test_embedding_reindex_job_requires_dry_run_approval -q
 ```
 
 The tests verify OpenAPI response models, authentication boundaries, and that

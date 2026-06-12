@@ -1,0 +1,299 @@
+{
+  "version": "medical_source_quality_policy.v1",
+  "base_score": 70,
+  "status_thresholds": {
+    "ready_min": 85,
+    "watch_min": 70,
+    "needs_review_min": 45
+  },
+  "rules": [
+    {
+      "rule_id": "trust_policy_present",
+      "dimension": "source_policy_presence",
+      "match_values": ["present"],
+      "score_delta": 8,
+      "severity": "info",
+      "message": "A source trust policy is registered for this source.",
+      "suggested_action": "Keep policy metadata synchronized with the upstream source."
+    },
+    {
+      "rule_id": "trust_policy_missing",
+      "dimension": "source_policy_presence",
+      "match_values": ["missing"],
+      "score_delta": -18,
+      "severity": "warning",
+      "message": "No explicit source trust policy is registered.",
+      "suggested_action": "Add source authority, intended use, prohibited use, license, and refresh metadata before production use."
+    },
+    {
+      "rule_id": "tier_authoritative_standard",
+      "dimension": "evidence_tier",
+      "match_values": ["authoritative_standard"],
+      "score_delta": 12,
+      "severity": "info",
+      "message": "The source is an authoritative healthcare standard.",
+      "suggested_action": "Preserve version and locator metadata in downstream citations."
+    },
+    {
+      "rule_id": "tier_authoritative_terminology",
+      "dimension": "evidence_tier",
+      "match_values": ["authoritative_terminology"],
+      "score_delta": 10,
+      "severity": "info",
+      "message": "The source is an authoritative terminology source.",
+      "suggested_action": "Keep terminology changes reviewer-gated and versioned."
+    },
+    {
+      "rule_id": "tier_authoritative_classification",
+      "dimension": "evidence_tier",
+      "match_values": ["authoritative_classification"],
+      "score_delta": 8,
+      "severity": "info",
+      "message": "The source is an authoritative classification source.",
+      "suggested_action": "Preserve coding context and reviewer decisions."
+    },
+    {
+      "rule_id": "tier_analytics_standard",
+      "dimension": "evidence_tier",
+      "match_values": ["analytics_standard"],
+      "score_delta": 4,
+      "severity": "info",
+      "message": "The source is suitable for analytics mapping context.",
+      "suggested_action": "Keep analytics context separate from clinical decision support."
+    },
+    {
+      "rule_id": "tier_literature_terminology",
+      "dimension": "evidence_tier",
+      "match_values": ["literature_terminology"],
+      "score_delta": 2,
+      "severity": "info",
+      "message": "The source helps literature-search routing but is not direct clinical evidence.",
+      "suggested_action": "Use it for query transparency, not diagnostic or treatment claims."
+    },
+    {
+      "rule_id": "tier_unknown",
+      "dimension": "evidence_tier",
+      "match_values": ["unknown"],
+      "score_delta": -8,
+      "severity": "warning",
+      "message": "The source evidence tier is unknown.",
+      "suggested_action": "Classify the source tier before relying on it for medical evidence."
+    },
+    {
+      "rule_id": "lifecycle_approved",
+      "dimension": "lifecycle_state",
+      "match_values": ["approved"],
+      "score_delta": 10,
+      "severity": "info",
+      "message": "The source lifecycle state is approved.",
+      "suggested_action": "Continue monitoring freshness and index coverage."
+    },
+    {
+      "rule_id": "lifecycle_candidate",
+      "dimension": "lifecycle_state",
+      "match_values": ["candidate"],
+      "score_delta": -12,
+      "severity": "warning",
+      "message": "The source is still a candidate.",
+      "suggested_action": "Approve or reject the source before production retrieval."
+    },
+    {
+      "rule_id": "lifecycle_needs_review",
+      "dimension": "lifecycle_state",
+      "match_values": ["needs_review"],
+      "score_delta": -18,
+      "severity": "warning",
+      "message": "The source lifecycle requires review.",
+      "suggested_action": "Route the source through source governance review."
+    },
+    {
+      "rule_id": "lifecycle_deprecated",
+      "dimension": "lifecycle_state",
+      "match_values": ["deprecated"],
+      "score_delta": -25,
+      "severity": "warning",
+      "message": "The source is deprecated.",
+      "suggested_action": "Replace the source with a current upstream release."
+    },
+    {
+      "rule_id": "lifecycle_blocked_or_failed",
+      "dimension": "lifecycle_state",
+      "match_values": ["blocked", "failed"],
+      "score_delta": -60,
+      "severity": "destructive",
+      "message": "The source lifecycle state blocks retrieval use.",
+      "suggested_action": "Keep this source out of retrieval until governance clears it."
+    },
+    {
+      "rule_id": "reviewer_approved",
+      "dimension": "reviewer_state",
+      "match_values": ["approved"],
+      "score_delta": 10,
+      "severity": "info",
+      "message": "A reviewer approved this source state.",
+      "suggested_action": "Keep the reviewer decision visible in source lineage."
+    },
+    {
+      "rule_id": "reviewer_not_approved",
+      "dimension": "reviewer_state",
+      "match_values": ["candidate", "needs_review", "deprecated"],
+      "score_delta": -18,
+      "severity": "warning",
+      "message": "The source reviewer state is not approved.",
+      "suggested_action": "Complete reviewer approval before production use."
+    },
+    {
+      "rule_id": "reviewer_blocked_or_failed",
+      "dimension": "reviewer_state",
+      "match_values": ["blocked", "failed"],
+      "score_delta": -60,
+      "severity": "destructive",
+      "message": "The reviewer state blocks source use.",
+      "suggested_action": "Remove this source from retrieval until reviewer issues are resolved."
+    },
+    {
+      "rule_id": "freshness_ready",
+      "dimension": "freshness_status",
+      "match_values": ["ready"],
+      "score_delta": 8,
+      "severity": "info",
+      "message": "The source passes the freshness gate.",
+      "suggested_action": "Use with normal citation and review controls."
+    },
+    {
+      "rule_id": "freshness_watch",
+      "dimension": "freshness_status",
+      "match_values": ["watch"],
+      "score_delta": -6,
+      "severity": "warning",
+      "message": "The source needs operational follow-up.",
+      "suggested_action": "Refresh or index the source before relying on it broadly."
+    },
+    {
+      "rule_id": "freshness_needs_review",
+      "dimension": "freshness_status",
+      "match_values": ["needs_review"],
+      "score_delta": -14,
+      "severity": "warning",
+      "message": "The source freshness gate requires review.",
+      "suggested_action": "Resolve policy, lifecycle, or reviewer gaps before production use."
+    },
+    {
+      "rule_id": "freshness_blocked",
+      "dimension": "freshness_status",
+      "match_values": ["blocked"],
+      "score_delta": -40,
+      "severity": "destructive",
+      "message": "The source is blocked by the freshness gate.",
+      "suggested_action": "Do not use this source for retrieval until the block is cleared."
+    },
+    {
+      "rule_id": "coverage_indexed_manifested",
+      "dimension": "coverage_state",
+      "match_values": ["indexed_manifested"],
+      "score_delta": 10,
+      "severity": "info",
+      "message": "The source has both indexed chunks and manifest lineage.",
+      "suggested_action": "Continue using ingestion ledger metadata for citations and audits."
+    },
+    {
+      "rule_id": "coverage_indexed_only",
+      "dimension": "coverage_state",
+      "match_values": ["indexed_only"],
+      "score_delta": -8,
+      "severity": "warning",
+      "message": "The source is indexed but lacks current manifest lineage.",
+      "suggested_action": "Rebuild the ingestion manifest and ledger for this source."
+    },
+    {
+      "rule_id": "coverage_manifest_only",
+      "dimension": "coverage_state",
+      "match_values": ["manifest_only"],
+      "score_delta": -8,
+      "severity": "warning",
+      "message": "The source has observed input artifacts but no indexed chunks.",
+      "suggested_action": "Run corpus reindex after source approval."
+    },
+    {
+      "rule_id": "coverage_unindexed",
+      "dimension": "coverage_state",
+      "match_values": ["unindexed"],
+      "score_delta": -12,
+      "severity": "warning",
+      "message": "The source is configured but has no indexed coverage.",
+      "suggested_action": "Index approved source snapshots before relying on this source."
+    },
+    {
+      "rule_id": "coverage_external_without_snapshot",
+      "dimension": "coverage_state",
+      "match_values": ["external_without_snapshot"],
+      "score_delta": -15,
+      "severity": "warning",
+      "message": "The source points to an external upstream location without a governed local snapshot.",
+      "suggested_action": "Create a reviewed source snapshot or use a transparent external-search handoff."
+    },
+    {
+      "rule_id": "issue_stale_source",
+      "dimension": "issue",
+      "match_values": ["stale_source"],
+      "score_delta": -12,
+      "severity": "warning",
+      "message": "The source is outside its freshness window.",
+      "suggested_action": "Refresh or re-ingest the source before treating it as authoritative."
+    },
+    {
+      "rule_id": "issue_not_indexed",
+      "dimension": "issue",
+      "match_values": ["not_indexed"],
+      "score_delta": -10,
+      "severity": "warning",
+      "message": "Approved source input is not currently indexed.",
+      "suggested_action": "Run corpus reindex for approved local snapshots."
+    },
+    {
+      "rule_id": "issue_missing_source_adapter",
+      "dimension": "issue",
+      "match_values": ["missing_source_adapter"],
+      "score_delta": -25,
+      "severity": "warning",
+      "message": "The indexed source is missing a governed adapter entry.",
+      "suggested_action": "Register the source adapter before relying on retrieved chunks."
+    },
+    {
+      "rule_id": "issue_adapter_disabled",
+      "dimension": "issue",
+      "match_values": ["adapter_disabled"],
+      "score_delta": -50,
+      "severity": "destructive",
+      "message": "The source adapter is disabled.",
+      "suggested_action": "Do not retrieve this source until the adapter is intentionally enabled."
+    },
+    {
+      "rule_id": "license_requires_account",
+      "dimension": "license_constraint_keyword",
+      "match_values": ["account", "license"],
+      "score_delta": -10,
+      "severity": "warning",
+      "message": "The source has account or license constraints.",
+      "suggested_action": "Verify enterprise rights before ingesting or redistributing source content."
+    },
+    {
+      "rule_id": "license_no_auto_clinical_use",
+      "dimension": "license_constraint_keyword",
+      "match_values": ["clinical decision", "billing", "diagnostic", "treatment"],
+      "score_delta": -10,
+      "severity": "warning",
+      "message": "The source policy restricts clinical, billing, diagnostic, or treatment use.",
+      "suggested_action": "Keep downstream use review-gated and avoid clinical decision-support claims."
+    },
+    {
+      "rule_id": "license_phi_or_distribution_sensitive",
+      "dimension": "license_constraint_keyword",
+      "match_values": ["phi", "do not store", "do not distribute", "publication terms"],
+      "score_delta": -8,
+      "severity": "warning",
+      "message": "The source has privacy, distribution, or publication constraints.",
+      "suggested_action": "Preserve license metadata and avoid committing restricted source payloads."
+    }
+  ]
+}

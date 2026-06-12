@@ -11,6 +11,8 @@ from ojtflow.core.contracts.retrieval import (
     CorpusChunkingProfile,
     CorpusChunkingProfileCatalog,
     CorpusSourceAdapter,
+    MedicalSourceQualityPolicyCatalog,
+    MedicalSourceQualityRule,
     RetrievalSourceTrustPolicy,
     RetrievalSourceTrustPolicyCatalog,
     RetrievalStrategyCatalog,
@@ -21,6 +23,7 @@ from ojtflow.core.contracts.retrieval import (
 DEFAULT_CORPUS_ADAPTER_CATALOG_PATH = Path("source_catalog/corpus_adapters.json")
 DEFAULT_CORPUS_CHUNKING_PROFILE_CATALOG_PATH = Path("retrieval/chunking_profiles.json")
 DEFAULT_SOURCE_POLICY_PATH = Path("source_catalog/source_trust_policies.json")
+DEFAULT_SOURCE_QUALITY_POLICY_PATH = Path("retrieval/source_quality_policy.json")
 DEFAULT_STRATEGY_CATALOG_PATH = Path("retrieval/strategy_catalog.json")
 
 
@@ -44,6 +47,33 @@ def load_source_trust_policy_catalog(knowledge_root: Path) -> RetrievalSourceTru
         [_PolicyKey(policy) for policy in catalog.policies],
         path=path,
         field="source_id",
+    )
+    return catalog
+
+
+def load_medical_source_quality_policy_catalog(
+    knowledge_root: Path,
+) -> MedicalSourceQualityPolicyCatalog:
+    """Load source-level medical quality scoring policy from trusted data."""
+
+    path = knowledge_root / DEFAULT_SOURCE_QUALITY_POLICY_PATH
+    if not path.exists():
+        return MedicalSourceQualityPolicyCatalog(
+            version="medical_source_quality_policy.empty",
+            base_score=50,
+            status_thresholds={
+                "ready_min": 85,
+                "watch_min": 70,
+                "needs_review_min": 45,
+            },
+            rules=[],
+        )
+    raw = _read_json_object(path)
+    catalog = MedicalSourceQualityPolicyCatalog.model_validate(raw)
+    _ensure_unique(
+        [_SourceQualityRuleKey(rule) for rule in catalog.rules],
+        path=path,
+        field="rule_id",
     )
     return catalog
 
@@ -134,6 +164,11 @@ def _ensure_unique(items: list[_HasId], *, path: Path, field: str) -> None:
 class _PolicyKey:
     def __init__(self, policy: RetrievalSourceTrustPolicy) -> None:
         self.key = policy.source_id
+
+
+class _SourceQualityRuleKey:
+    def __init__(self, rule: MedicalSourceQualityRule) -> None:
+        self.key = rule.rule_id
 
 
 class _AdapterKey:

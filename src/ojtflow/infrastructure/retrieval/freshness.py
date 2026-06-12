@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from ojtflow.core.contracts.retrieval import (
     CorpusIngestionItem,
     CorpusSourceAdapter,
+    MedicalSourceQualityPolicyCatalog,
+    MedicalSourceQualityScore,
     RetrievalFreshnessReport,
     RetrievalFreshnessSource,
     RetrievalSource,
@@ -17,9 +18,11 @@ from ojtflow.core.contracts.retrieval import (
 )
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
+    load_medical_source_quality_policy_catalog,
     load_source_trust_policy_catalog,
 )
 from ojtflow.infrastructure.retrieval.corpus import build_corpus_ingestion_manifest
+from ojtflow.infrastructure.retrieval.source_quality import score_medical_source_quality
 
 
 def build_retrieval_freshness_report(
@@ -33,6 +36,7 @@ def build_retrieval_freshness_report(
     generated_at_value = generated_at or datetime.now(UTC)
     adapter_catalog = load_corpus_adapter_catalog(knowledge_root)
     policy_catalog = load_source_trust_policy_catalog(knowledge_root)
+    quality_policy = load_medical_source_quality_policy_catalog(knowledge_root)
     manifest = build_corpus_ingestion_manifest(
         (knowledge_root / "corpus",),
         knowledge_root=knowledge_root,
@@ -48,6 +52,7 @@ def build_retrieval_freshness_report(
             indexed=indexed_by_source.get(adapter.source_id),
             manifest_items=manifest_by_source.get(adapter.source_id, []),
             policy=_policy_for_adapter(adapter, policies),
+            quality_policy=quality_policy,
             generated_at=generated_at_value,
         )
         for adapter in adapter_catalog.adapters
@@ -58,6 +63,7 @@ def build_retrieval_freshness_report(
         adapter_sources[source.source_id] = _indexed_only_source_status(
             source,
             policy=policies.by_source_id.get(source.source_id),
+            quality_policy=quality_policy,
         )
 
     sources = sorted(
@@ -68,6 +74,17 @@ def build_retrieval_freshness_report(
     stale_count = sum(1 for source in sources if "stale_source" in source.issues)
     unindexed_count = sum(1 for source in sources if "not_indexed" in source.issues)
     missing_policy_count = sum(1 for source in sources if "missing_trust_policy" in source.issues)
+    average_quality_score = _average_quality_score(sources)
+    low_quality_count = sum(
+        1
+        for source in sources
+        if source.quality is not None and source.quality.status in {"needs_review", "blocked"}
+    )
+    quality_review_count = sum(
+        1
+        for source in sources
+        if source.quality is not None and source.quality.status != "ready"
+    )
     score = _readiness_score(
         source_count=len(sources),
         blocked_count=counts["blocked"],
@@ -95,14 +112,19 @@ def build_retrieval_freshness_report(
         stale_count=stale_count,
         unindexed_count=unindexed_count,
         missing_policy_count=missing_policy_count,
+        average_quality_score=average_quality_score,
+        low_quality_count=low_quality_count,
+        quality_review_count=quality_review_count,
         adapter_catalog_version=adapter_catalog.version,
         manifest_version=manifest.version,
         policy_catalog_version=policy_catalog.version,
+        quality_policy_version=quality_policy.version,
         sources=sources,
         warnings=_report_warnings(
             stale_count=stale_count,
             unindexed_count=unindexed_count,
             missing_policy_count=missing_policy_count,
+            low_quality_count=low_quality_count,
         ),
     )
 
@@ -113,6 +135,7 @@ def _source_status(
     indexed: RetrievalSource | None,
     manifest_items: list[CorpusIngestionItem],
     policy: RetrievalSourceTrustPolicy | None,
+    quality_policy: MedicalSourceQualityPolicyCatalog,
     generated_at: datetime,
 ) -> RetrievalFreshnessSource:
     issues: list[str] = []
@@ -156,6 +179,16 @@ def _source_status(
         actions.append("Refresh or re-ingest this source before using it as authoritative evidence.")
 
     status, severity = _status_for_issues(issues)
+    quality = _source_quality_for_adapter(
+        adapter,
+        policy=policy,
+        quality_policy=quality_policy,
+        indexed_chunk_count=indexed_chunk_count,
+        manifest_item_count=len(manifest_items),
+        status=status,
+        severity=severity,
+        issues=issues,
+    )
     return RetrievalFreshnessSource(
         source_id=adapter.source_id,
         title=adapter.title,
@@ -177,6 +210,7 @@ def _source_status(
         issues=_dedupe(issues),
         recommended_actions=_dedupe(actions),
         source_urls=adapter.source_urls,
+        quality=quality,
         metadata={
             "adapter_id": adapter.adapter_id,
             "access_mode": adapter.access_mode,
@@ -193,6 +227,7 @@ def _indexed_only_source_status(
     source: RetrievalSource,
     *,
     policy: RetrievalSourceTrustPolicy | None,
+    quality_policy: MedicalSourceQualityPolicyCatalog,
 ) -> RetrievalFreshnessSource:
     issues = ["missing_source_adapter"]
     actions = ["Register the indexed source in the governed corpus adapter catalog."]
@@ -200,6 +235,14 @@ def _indexed_only_source_status(
         issues.append("missing_trust_policy")
         actions.append("Add a source trust policy with intended use and license boundaries.")
     status, severity = _status_for_issues(issues)
+    quality = _source_quality_for_indexed_only(
+        source,
+        policy=policy,
+        quality_policy=quality_policy,
+        status=status,
+        severity=severity,
+        issues=issues,
+    )
     return RetrievalFreshnessSource(
         source_id=source.source_id,
         title=source.title,
@@ -218,6 +261,7 @@ def _indexed_only_source_status(
         issues=issues,
         recommended_actions=actions,
         source_urls=policy.source_urls if policy else {},
+        quality=quality,
         metadata={
             "canonical_source_id": source.canonical_source_id,
             "chunk_profile": source.chunk_profile,
@@ -271,6 +315,117 @@ def _policy_for_adapter(
         return candidates[0]
     candidates = policies.by_standard.get(adapter.standard_system.lower(), [])
     return candidates[0] if len(candidates) == 1 else None
+
+
+def _source_quality_for_adapter(
+    adapter: CorpusSourceAdapter,
+    *,
+    policy: RetrievalSourceTrustPolicy | None,
+    quality_policy: MedicalSourceQualityPolicyCatalog,
+    indexed_chunk_count: int,
+    manifest_item_count: int,
+    status: str,
+    severity: str,
+    issues: list[str],
+) -> MedicalSourceQualityScore:
+    return score_medical_source_quality(
+        quality_policy,
+        dimensions={
+            "source_id": adapter.source_id,
+            "source_type": adapter.source_type.value,
+            "authority": adapter.authority,
+            "standard_system": adapter.standard_system,
+            "clinical_domain": adapter.clinical_domain,
+            "source_policy_presence": "present" if policy is not None else "missing",
+            "adapter_presence": "present",
+            "adapter_enabled": "true" if adapter.enabled else "false",
+            "evidence_tier": policy.evidence_tier if policy is not None else "unknown",
+            "lifecycle_state": adapter.lifecycle_state,
+            "reviewer_state": adapter.reviewer_state,
+            "freshness_status": status,
+            "freshness_severity": severity,
+            "issue": _dedupe(issues),
+            "coverage_state": _coverage_state(
+                indexed_chunk_count=indexed_chunk_count,
+                manifest_item_count=manifest_item_count,
+                local_path_count=len(adapter.local_paths),
+                access_mode=adapter.access_mode,
+            ),
+            "indexed_chunk_count": indexed_chunk_count,
+            "manifest_item_count": manifest_item_count,
+            "license_constraint_keyword": _license_constraint_texts(adapter, policy=policy),
+            "requires_reviewer_approval": (
+                "true" if policy is not None and policy.requires_reviewer_approval else "false"
+            ),
+        },
+    )
+
+
+def _source_quality_for_indexed_only(
+    source: RetrievalSource,
+    *,
+    policy: RetrievalSourceTrustPolicy | None,
+    quality_policy: MedicalSourceQualityPolicyCatalog,
+    status: str,
+    severity: str,
+    issues: list[str],
+) -> MedicalSourceQualityScore:
+    return score_medical_source_quality(
+        quality_policy,
+        dimensions={
+            "source_id": source.source_id,
+            "source_type": source.source_type.value,
+            "authority": source.authority,
+            "standard_system": source.standard_system,
+            "clinical_domain": source.clinical_domain,
+            "source_policy_presence": "present" if policy is not None else "missing",
+            "adapter_presence": "missing",
+            "adapter_enabled": "unknown",
+            "evidence_tier": policy.evidence_tier if policy is not None else "unknown",
+            "lifecycle_state": source.lifecycle_state or "unknown",
+            "reviewer_state": source.reviewer_state or "unknown",
+            "freshness_status": status,
+            "freshness_severity": severity,
+            "issue": _dedupe(issues),
+            "coverage_state": "indexed_only",
+            "indexed_chunk_count": source.chunk_count,
+            "manifest_item_count": 0,
+            "license_constraint_keyword": list(policy.license_constraints) if policy else [],
+            "requires_reviewer_approval": (
+                "true" if policy is not None and policy.requires_reviewer_approval else "false"
+            ),
+        },
+    )
+
+
+def _coverage_state(
+    *,
+    indexed_chunk_count: int,
+    manifest_item_count: int,
+    local_path_count: int,
+    access_mode: str,
+) -> str:
+    if indexed_chunk_count > 0 and manifest_item_count > 0:
+        return "indexed_manifested"
+    if indexed_chunk_count > 0:
+        return "indexed_only"
+    if manifest_item_count > 0:
+        return "manifest_only"
+    if local_path_count == 0 and access_mode != "local_curated_file":
+        return "external_without_snapshot"
+    return "unindexed"
+
+
+def _license_constraint_texts(
+    adapter: CorpusSourceAdapter,
+    *,
+    policy: RetrievalSourceTrustPolicy | None,
+) -> list[str]:
+    values = list(adapter.license.constraints)
+    if policy is not None:
+        values.extend(policy.license_constraints)
+        values.extend(policy.prohibited_use)
+    return _dedupe(values)
 
 
 def _last_observed_at(items: list[CorpusIngestionItem]) -> datetime | None:
@@ -377,6 +532,7 @@ def _report_warnings(
     stale_count: int,
     unindexed_count: int,
     missing_policy_count: int,
+    low_quality_count: int,
 ) -> list[str]:
     warnings: list[str] = []
     if stale_count:
@@ -385,7 +541,16 @@ def _report_warnings(
         warnings.append(f"{unindexed_count} source(s) are configured but not indexed.")
     if missing_policy_count:
         warnings.append(f"{missing_policy_count} source(s) lack an explicit trust policy.")
+    if low_quality_count:
+        warnings.append(f"{low_quality_count} source(s) have low medical source quality scores.")
     return warnings
+
+
+def _average_quality_score(sources: list[RetrievalFreshnessSource]) -> int:
+    scores = [source.quality.score for source in sources if source.quality is not None]
+    if not scores:
+        return 0
+    return round(sum(scores) / len(scores))
 
 
 def _status_sort_key(status: str) -> int:

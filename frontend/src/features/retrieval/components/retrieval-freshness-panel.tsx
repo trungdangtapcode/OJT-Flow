@@ -59,9 +59,12 @@ export function RetrievalFreshnessPanel({
 
       <div className="grid gap-2 sm:grid-cols-4">
         <FreshnessMetric label="Score" value={report ? `${report.score}/100` : "loading"} />
+        <FreshnessMetric
+          label="Source quality"
+          value={report ? `${report.average_quality_score}/100` : "loading"}
+        />
         <FreshnessMetric label="Sources" value={String(report?.source_count ?? 0)} />
-        <FreshnessMetric label="Needs review" value={String(report?.needs_review_count ?? 0)} />
-        <FreshnessMetric label="Unindexed" value={String(report?.unindexed_count ?? 0)} />
+        <FreshnessMetric label="Quality review" value={String(report?.quality_review_count ?? 0)} />
       </div>
 
       {report?.warnings.length ? (
@@ -97,6 +100,9 @@ export function RetrievalFreshnessPanel({
         <div className="flex min-w-0 flex-wrap gap-1.5 text-xs text-muted-foreground">
           <Badge variant="muted">{report.adapter_catalog_version}</Badge>
           <Badge variant="muted">{report.policy_catalog_version}</Badge>
+          {report.quality_policy_version ? (
+            <Badge variant="muted">{report.quality_policy_version}</Badge>
+          ) : null}
           <Badge variant="muted">{new Date(report.generated_at).toLocaleString()}</Badge>
         </div>
       ) : null}
@@ -115,7 +121,9 @@ function FreshnessMetric({ label, value }: { label: string; value: string }) {
 
 function FreshnessSourceRow({ source }: { source: RetrievalFreshnessSource }) {
   const statusView = freshnessStatusView(source.status);
+  const qualityView = freshnessStatusView(source.quality?.status ?? "watch");
   const primaryAction = source.recommended_actions[0] ?? "Review source governance metadata.";
+  const qualityAction = source.quality?.top_action;
   return (
     <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
@@ -131,6 +139,9 @@ function FreshnessSourceRow({ source }: { source: RetrievalFreshnessSource }) {
         {source.standard_system ? <Badge variant="muted">{source.standard_system}</Badge> : null}
         {source.refresh_cadence ? <Badge variant="muted">{source.refresh_cadence}</Badge> : null}
         <Badge variant="muted">{source.indexed_chunk_count} chunks</Badge>
+        {source.quality ? (
+          <Badge variant={qualityView.variant}>quality {source.quality.score}/100</Badge>
+        ) : null}
         {source.age_days !== null && source.age_days !== undefined ? (
           <Badge variant={source.age_days > (source.freshness_window_days ?? 999999) ? "warning" : "muted"}>
             {source.age_days}d old
@@ -147,6 +158,9 @@ function FreshnessSourceRow({ source }: { source: RetrievalFreshnessSource }) {
         </div>
       ) : null}
       <div className="text-xs leading-5 text-muted-foreground">{primaryAction}</div>
+      {qualityAction && qualityAction !== primaryAction ? (
+        <div className="text-xs leading-5 text-muted-foreground">{qualityAction}</div>
+      ) : null}
     </div>
   );
 }

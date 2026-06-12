@@ -30,6 +30,7 @@ from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
     load_corpus_chunking_profile_catalog,
+    load_medical_source_quality_policy_catalog,
     load_source_trust_policy_catalog,
 )
 from ojtflow.infrastructure.retrieval.corpus import (
@@ -113,8 +114,17 @@ def test_retrieval_freshness_report_flags_governance_and_index_gaps() -> None:
     assert report.source_count >= report.ready_count
     assert report.adapter_catalog_version == "corpus_adapters.v1"
     assert report.policy_catalog_version == "source_trust_policies.v1"
+    assert report.quality_policy_version == "medical_source_quality_policy.v1"
     assert report.score <= 100
+    assert 0 <= report.average_quality_score <= 100
     assert report.sources
+    assert all(source.quality is not None for source in report.sources)
+    assert all(source.quality.policy_version == report.quality_policy_version for source in report.sources if source.quality)
+    assert any(
+        signal.rule_id == "trust_policy_missing"
+        for source in report.sources
+        for signal in (source.quality.signals if source.quality else [])
+    )
     assert any(source.source_id == "standard:clinical_data_standards_map_v1" for source in report.sources)
     assert any(
         source.status in {"watch", "needs_review"}
@@ -123,6 +133,20 @@ def test_retrieval_freshness_report_flags_governance_and_index_gaps() -> None:
     )
     assert report.unindexed_count >= 0
     assert all(source.recommended_actions or source.status == "ready" for source in report.sources)
+
+
+def test_medical_source_quality_policy_loads_from_trusted_data() -> None:
+    catalog = load_medical_source_quality_policy_catalog(ROOT / "knowledge")
+
+    assert catalog.version == "medical_source_quality_policy.v1"
+    assert catalog.base_score == 70
+    assert catalog.status_thresholds.ready_min > catalog.status_thresholds.watch_min
+    assert {rule.rule_id for rule in catalog.rules} >= {
+        "trust_policy_present",
+        "trust_policy_missing",
+        "coverage_external_without_snapshot",
+        "license_requires_account",
+    }
 
 
 def test_retrieval_plan_builder_uses_query_analysis() -> None:

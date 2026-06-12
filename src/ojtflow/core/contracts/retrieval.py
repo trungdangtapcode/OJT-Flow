@@ -841,6 +841,67 @@ class RetrievalSourceTrustPolicyCatalog(ContractModel):
     policies: list[RetrievalSourceTrustPolicy] = Field(default_factory=list)
 
 
+RetrievalFreshnessStatus = Literal["ready", "watch", "needs_review", "blocked"]
+
+
+class MedicalSourceQualityThresholds(ContractModel):
+    """Score thresholds for source-level medical evidence quality."""
+
+    ready_min: int = Field(ge=0, le=100)
+    watch_min: int = Field(ge=0, le=100)
+    needs_review_min: int = Field(ge=0, le=100)
+
+
+class MedicalSourceQualityRule(ContractModel):
+    """Data-driven scoring rule for one source-quality dimension."""
+
+    rule_id: NonBlankStr
+    dimension: NonBlankStr
+    match_values: list[NonBlankStr] = Field(default_factory=list)
+    score_delta: int = Field(ge=-100, le=100)
+    severity: NonBlankStr
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MedicalSourceQualityPolicyCatalog(ContractModel):
+    """Versioned source-quality scoring policy loaded from trusted data."""
+
+    version: NonBlankStr
+    base_score: int = Field(ge=0, le=100)
+    status_thresholds: MedicalSourceQualityThresholds
+    rules: list[MedicalSourceQualityRule] = Field(default_factory=list)
+
+
+class MedicalSourceQualitySignal(ContractModel):
+    """One applied source-quality scoring signal."""
+
+    rule_id: NonBlankStr
+    dimension: NonBlankStr
+    matched_value: NonBlankStr
+    score_delta: int = Field(ge=-100, le=100)
+    severity: NonBlankStr
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MedicalSourceQualityScore(ContractModel):
+    """Explainable source-quality score for medical retrieval governance."""
+
+    policy_version: NonBlankStr
+    score: int = Field(ge=0, le=100)
+    status: RetrievalFreshnessStatus
+    severity: NonBlankStr
+    base_score: int = Field(ge=0, le=100)
+    positive_delta: int = Field(ge=0)
+    negative_delta: int = Field(ge=0)
+    top_action: NonBlankStr
+    signals: list[MedicalSourceQualitySignal] = Field(default_factory=list)
+    dimensions: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalStrategyProfile(ContractModel):
     """Operator-facing retrieval/RAG strategy preset and runtime contract."""
 
@@ -1144,9 +1205,6 @@ class RetrievalIntegrityReport(ContractModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-RetrievalFreshnessStatus = Literal["ready", "watch", "needs_review", "blocked"]
-
-
 class RetrievalFreshnessSource(ContractModel):
     """Operational freshness/readiness status for one retrievable source."""
 
@@ -1170,6 +1228,7 @@ class RetrievalFreshnessSource(ContractModel):
     issues: list[NonBlankStr] = Field(default_factory=list)
     recommended_actions: list[NonBlankStr] = Field(default_factory=list)
     source_urls: dict[NonBlankStr, NonBlankStr] = Field(default_factory=dict)
+    quality: MedicalSourceQualityScore | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1188,8 +1247,12 @@ class RetrievalFreshnessReport(ContractModel):
     stale_count: int = Field(ge=0)
     unindexed_count: int = Field(ge=0)
     missing_policy_count: int = Field(ge=0)
+    average_quality_score: int = Field(default=0, ge=0, le=100)
+    low_quality_count: int = Field(default=0, ge=0)
+    quality_review_count: int = Field(default=0, ge=0)
     adapter_catalog_version: NonBlankStr
     manifest_version: NonBlankStr
     policy_catalog_version: NonBlankStr
+    quality_policy_version: NonBlankStr | None = None
     sources: list[RetrievalFreshnessSource] = Field(default_factory=list)
     warnings: list[NonBlankStr] = Field(default_factory=list)

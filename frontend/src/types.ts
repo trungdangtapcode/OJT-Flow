@@ -1115,6 +1115,30 @@ export type RetrievalIntegrityReport = {
 
 export type RetrievalFreshnessStatus = "ready" | "watch" | "needs_review" | "blocked";
 
+export type MedicalSourceQualitySignal = {
+  rule_id: string;
+  dimension: string;
+  matched_value: string;
+  score_delta: number;
+  severity: string;
+  message: string;
+  suggested_action: string;
+  metadata: Record<string, unknown>;
+};
+
+export type MedicalSourceQualityScore = {
+  policy_version: string;
+  score: number;
+  status: RetrievalFreshnessStatus;
+  severity: string;
+  base_score: number;
+  positive_delta: number;
+  negative_delta: number;
+  top_action: string;
+  signals: MedicalSourceQualitySignal[];
+  dimensions: Record<string, unknown>;
+};
+
 export type RetrievalFreshnessSource = {
   source_id: string;
   title: string;
@@ -1136,6 +1160,7 @@ export type RetrievalFreshnessSource = {
   issues: string[];
   recommended_actions: string[];
   source_urls: Record<string, string>;
+  quality?: MedicalSourceQualityScore | null;
   metadata: Record<string, unknown>;
 };
 
@@ -1152,9 +1177,13 @@ export type RetrievalFreshnessReport = {
   stale_count: number;
   unindexed_count: number;
   missing_policy_count: number;
+  average_quality_score: number;
+  low_quality_count: number;
+  quality_review_count: number;
   adapter_catalog_version: string;
   manifest_version: string;
   policy_catalog_version: string;
+  quality_policy_version?: string | null;
   sources: RetrievalFreshnessSource[];
   warnings: string[];
 };
