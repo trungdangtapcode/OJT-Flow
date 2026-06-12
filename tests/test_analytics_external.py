@@ -240,9 +240,11 @@ def test_etl_export_package_preserves_resource_hashes_and_provenance_refs() -> N
     assert export.package_id == package.package_id
     assert export.workflow_id == package.workflow_id
     assert export.clinical_package_hash
-    assert export.resource_manifest[0].resource_type == "Observation"
-    assert export.resource_manifest[0].resource_hash
-    assert export.resource_manifest[0].provenance_ref_count > 0
+    observation_manifest = next(
+        item for item in export.resource_manifest if item.resource_type == "Observation"
+    )
+    assert observation_manifest.resource_hash
+    assert observation_manifest.provenance_ref_count > 0
     assert export.included_resources == []
     assert export.package is None
 
@@ -344,7 +346,13 @@ async def test_analytics_external_api_endpoints_return_envelopes(monkeypatch) ->
     ]
     assert all(response.status_code == 200 for response in responses)
     assert mapping.json()["data"]["profile_id"] == "ojtflow_omop_preview_v0"
-    assert preview.json()["data"]["total_rows"] == 1
+    assert preview.json()["data"]["total_rows"] == 3
+    measurement = next(
+        table
+        for table in preview.json()["data"]["table_previews"]
+        if table["table_name"] == "measurement"
+    )
+    assert measurement["row_count"] == 1
     assert "Data Quality Dashboard" in dqd.json()["data"]["target_tool"]
     assert "clinical decision support" in " ".join(cohort.json()["data"]["prohibited_uses"]).lower()
     assert len(connectors.json()["data"]["connectors"]) >= 7
@@ -354,4 +362,7 @@ async def test_analytics_external_api_endpoints_return_envelopes(monkeypatch) ->
     assert ingestion_preview.json()["data"]["searchable"] is True
     assert len(launchers.json()["data"]["launchers"]) >= 7
     assert launch.json()["data"]["external_network_call_performed"] is False
-    assert etl.json()["data"]["resource_manifest"][0]["resource_type"] == "Observation"
+    assert any(
+        item["resource_type"] == "Observation"
+        for item in etl.json()["data"]["resource_manifest"]
+    )

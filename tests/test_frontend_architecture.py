@@ -10825,7 +10825,10 @@ def test_help_center_surfaces_user_guidance() -> None:
     assert "Confirm write-gated assistant actions before sending." in assistant_page
     assert "Optional context JSON help" in assistant_input_panels
     assert "Tool catalog help" in assistant_tool_catalog
-    assert "How to create a workflow" in workbench_page
+    assert "WorkbenchQuickGuide" in workbench_page
+    assert "How to create a workflow" in (
+        FRONTEND_SRC / "features" / "workbench" / "workbench-side-panel.tsx"
+    ).read_text(encoding="utf-8")
     assert "Workflow instruction help" in workbench_page
     assert "Source data help" in workbench_page
     assert "Upload file help" in workbench_page

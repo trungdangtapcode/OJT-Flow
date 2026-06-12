@@ -58,7 +58,10 @@ _ARTIFACT_REF_KEYS = {
     "output_ref",
     "output_refs",
     "source_ref",
+    "source_refs",
     "storage_ref",
+    "target_refs",
+    "url",
 }
 
 

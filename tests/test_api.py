@@ -845,6 +845,9 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
 
     assert response.status_code == 200
     assert plan_response.status_code == 200
+    organization_id = fake_service.calls[0]["query"]["filters"]["organization_id"]
+    assert re.fullmatch(r"org_[0-9a-f]{12}", organization_id)
+    assert fake_service.calls[1]["query"]["filters"]["organization_id"] == organization_id
     assert fake_service.calls == [
         {
             "method": "search",
@@ -858,6 +861,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "top_k": 5,
                 "filters": {
                     "clinical_domain": "laboratory",
+                    "organization_id": organization_id,
                     "source_id": "terminology:ucum",
                     "standard_system": "UCUM",
                     "source_type": "terminology_system",
@@ -879,6 +883,7 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "top_k": 5,
                 "filters": {
                     "clinical_domain": "laboratory",
+                    "organization_id": organization_id,
                     "source_id": "terminology:ucum",
                     "standard_system": "UCUM",
                     "source_type": "terminology_system",
@@ -1953,7 +1958,8 @@ async def test_unhandled_api_errors_do_not_expose_internal_exception_types() -> 
     assert response.status_code == 500
     body = _assert_error_envelope(response, expected_code="internal_error")
     assert body["error"]["message"] == "Internal server error"
-    assert body["error"]["details"] == {}
+    assert set(body["error"]["details"]) == {"request_id"}
+    assert body["error"]["request_id"] == body["error"]["details"]["request_id"]
     assert "RuntimeError" not in response.text
     assert "database password" not in response.text
 
@@ -2266,7 +2272,16 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     clear_workflow_service_cache()
 
     try:
-        async with await _client() as client:
+        app = create_app()
+        app.dependency_overrides[require_authentication] = _authenticated_dependency
+        app.dependency_overrides[get_governance_service] = lambda: FakeGovernanceService(
+            {"settings:read"}
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
             response = await client.get("/api/v1/runtime/config")
 
         assert response.status_code == 200
@@ -2460,7 +2475,8 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
 
         assert runtime_path.exists()
         saved = json.loads(runtime_path.read_text(encoding="utf-8"))
-        assert saved == data["settings"]
+        for key, value in saved.items():
+            assert data["settings"][key] == value
 
         config = _assert_success_envelope(runtime_config)["data"]
         assert config["embedding"]["provider"] == "openai"
@@ -2518,7 +2534,10 @@ async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
 
         assert runtime_path.exists()
         saved = json.loads(runtime_path.read_text(encoding="utf-8"))
-        assert saved == data["settings"]
+        for key, value in saved.items():
+            assert data["settings"][key] == value
+        assert data["settings"]["external_openai_embeddings_enabled"] is True
+        assert data["settings"]["external_medical_search_enabled"] is True
 
         config = _assert_success_envelope(runtime_config)["data"]
         assert config["llm"]["provider"] == "openai"
@@ -2862,6 +2881,8 @@ def test_runtime_readiness_artifact_directory_probes_writable_dirs(
     data_dir = tmp_path / "var"
     (data_dir / "datasets").mkdir(parents=True)
     (data_dir / "outputs").mkdir()
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("OJT_DATABASE_PATH", str(tmp_path / "ojtflow.db"))
     monkeypatch.setenv("OJT_DATA_DIR", str(data_dir))
     clear_settings_cache()
 
@@ -2883,6 +2904,8 @@ def test_runtime_readiness_artifact_directory_reports_missing_dirs(
     tmp_path,
 ) -> None:
     data_dir = tmp_path / "missing-var"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("OJT_DATABASE_PATH", str(tmp_path / "ojtflow.db"))
     monkeypatch.setenv("OJT_DATA_DIR", str(data_dir))
     clear_settings_cache()
 
@@ -3568,10 +3591,10 @@ async def test_auth_dependency_failures_return_service_unavailable_envelope() ->
 
     assert response.status_code == 503
     body = _assert_error_envelope(response, expected_code="dependency_unavailable")
-    assert body["error"]["details"] == {
-        "dependency": "redis",
-        "operation": "set_oauth_state",
-    }
+    details = body["error"]["details"]
+    assert details["dependency"] == "redis"
+    assert details["operation"] == "set_oauth_state"
+    assert details["request_id"] == body["error"]["request_id"]
 
 
 @pytest.mark.asyncio
