@@ -35,6 +35,10 @@ from ojtflow.core.contracts.assistant import (
     AssistantToolSpec,
 )
 from ojtflow.core.contracts.audit import (
+    AuditEventLikeAgent,
+    AuditEventLikeEntity,
+    AuditEventLikeRecord,
+    AuditEventLikeSource,
     AuditExportCoverageItem,
     AuditExportFilters,
     AuditExportPackage,
@@ -173,6 +177,10 @@ __all__ = [
     "AssistantToolPlan",
     "AssistantToolResult",
     "AssistantToolSpec",
+    "AuditEventLikeAgent",
+    "AuditEventLikeEntity",
+    "AuditEventLikeRecord",
+    "AuditEventLikeSource",
     "AuditExportCoverageItem",
     "AuditExportFilters",
     "AuditExportPackage",

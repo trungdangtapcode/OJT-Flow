@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from ojtflow.application.tool_audit import append_tool_audit_record
+from ojtflow.config import clear_settings_cache
 from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.auth import AuthenticatedSession, SessionRecord, UserRecord
 from ojtflow.core.contracts.enums import ActorType, EventType, Severity
@@ -196,7 +197,9 @@ async def test_audit_records_api_is_owner_scoped() -> None:
 
 
 @pytest.mark.asyncio
-async def test_audit_export_api_packages_records_events_and_coverage() -> None:
+async def test_audit_export_api_packages_records_events_and_coverage(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
     repository = InMemoryAuditRepository()
     repository.append(
         AuditRecord(
@@ -215,6 +218,18 @@ async def test_audit_export_api_packages_records_events_and_coverage() -> None:
     )
     repository.append(
         AuditRecord(
+            owner_user_id="usr_audit_export",
+            workflow_id="wf_audit_export",
+            action="auth.login",
+            actor_id="usr_audit_export",
+            actor_type="user",
+            status="completed",
+            request_id="req_auth_audit_export",
+            metadata={"provider": "google"},
+        )
+    )
+    repository.append(
+        AuditRecord(
             owner_user_id="usr_other",
             workflow_id="wf_audit_export",
             action="assistant.tool.validate_with_evidence",
@@ -223,7 +238,16 @@ async def test_audit_export_api_packages_records_events_and_coverage() -> None:
             status="completed",
         )
     )
-    event = WorkflowEvent(
+    created_event = WorkflowEvent(
+        event_id="evt_workflow_created",
+        workflow_id="wf_audit_export",
+        actor_type=ActorType.SYSTEM,
+        actor_id="workflow_service",
+        event_type=EventType.WORKFLOW_CREATED,
+        severity=Severity.INFO,
+        summary="Workflow created",
+    )
+    review_event = WorkflowEvent(
         event_id="evt_review_decided",
         workflow_id="wf_audit_export",
         actor_type=ActorType.USER,
@@ -242,7 +266,7 @@ async def test_audit_export_api_packages_records_events_and_coverage() -> None:
         ) -> list[WorkflowEvent]:
             assert workflow_id == "wf_audit_export"
             assert owner_user_id == "usr_audit_export"
-            return [event]
+            return [created_event, review_event]
 
     async def authenticated() -> AuthenticatedSession:
         now = datetime.now(timezone.utc)
@@ -293,18 +317,65 @@ async def test_audit_export_api_packages_records_events_and_coverage() -> None:
     package = body["data"]
     assert package["owner_user_id"] == "usr_audit_export"
     assert package["export_format"] == "json"
-    assert package["summary"]["record_count"] == 1
-    assert package["summary"]["workflow_event_count"] == 1
+    assert package["summary"]["record_count"] == 2
+    assert package["summary"]["workflow_event_count"] == 2
+    assert package["summary"]["audit_event_like_count"] == 4
     assert package["summary"]["includes_raw_payloads"] is False
     assert package["records"][0]["owner_user_id"] == "usr_audit_export"
-    assert package["workflow_events"][0]["event_type"] == "review.decided"
+    assert [event["event_type"] for event in package["workflow_events"]] == [
+        "workflow.created",
+        "review.decided",
+    ]
+    audit_events_like = package["audit_events_like"]
+    categories = {item["category"] for item in audit_events_like}
+    assert {"workflow_event", "review_event", "auth_event", "tool_execution"}.issubset(
+        categories
+    )
+    workflow_audit_event = next(
+        item for item in audit_events_like if item["category"] == "workflow_event"
+    )
+    assert workflow_audit_event["source_event_ref"] == "evt_workflow_created"
+    assert workflow_audit_event["action"] == "C"
+    review_audit_event = next(
+        item for item in audit_events_like if item["category"] == "review_event"
+    )
+    assert review_audit_event["resourceType"] == "AuditEvent"
+    assert review_audit_event["source_event_ref"] == "evt_review_decided"
+    assert review_audit_event["workflow_id"] == "wf_audit_export"
+    assert review_audit_event["action"] == "U"
+    assert any(
+        entity["what"] == "rev_audit_export" and entity["type"] == "review"
+        for entity in review_audit_event["entity"]
+    )
+    tool_record = next(
+        record
+        for record in package["records"]
+        if record["action"] == "assistant.tool.validate_with_evidence"
+    )
+    tool_audit_event = next(
+        item for item in audit_events_like if item["category"] == "tool_execution"
+    )
+    assert tool_audit_event["source_record_ref"] == tool_record["audit_id"]
+    assert tool_audit_event["agent"][0]["type"] == "assistant"
+    assert any(entity["role"] == "input_hash" for entity in tool_audit_event["entity"])
+    assert "validate_with_evidence" in str(tool_audit_event["metadata"])
+    auth_audit_event = next(
+        item for item in audit_events_like if item["category"] == "auth_event"
+    )
+    assert auth_audit_event["request_id"] == "req_auth_audit_export"
+    assert auth_audit_event["action"] == "C"
+    exported_json = str(package)
+    assert "patient_id,ssn" not in exported_json
+    assert "123-45-6789" not in exported_json
 
     coverage = {item["scope"]: item for item in package["coverage"]}
     assert coverage["assistant_tool_calls"]["status"] == "covered"
     assert coverage["assistant_tool_calls"]["record_count"] == 1
     assert coverage["workflows"]["status"] == "partial"
-    assert coverage["workflows"]["event_count"] == 1
+    assert coverage["workflows"]["event_count"] == 2
     assert coverage["reviews"]["event_count"] == 1
-    assert coverage["auth_events"]["status"] == "not_available"
+    assert coverage["auth_events"]["status"] == "covered"
+    assert coverage["auth_events"]["record_count"] == 1
     assert coverage["setting_changes"]["status"] == "not_available"
     assert coverage["source_ingestion"]["status"] == "not_available"
+    clear_settings_cache()

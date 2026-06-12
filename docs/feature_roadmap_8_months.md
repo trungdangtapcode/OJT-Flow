@@ -168,6 +168,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F047 | Implemented | Added OperationOutcome-like package issues derived from validation reports, preserving severity, code, diagnostics, source expression, issue ID, location, and review requirement. |
 | 2026-06-11 | F046, F058-F059 | Implemented | Added workflow-scoped clinical package export for completed approved outputs, canonical package and FHIR-like Bundle hashes, FHIR-like Bundle projection with OperationOutcome and Provenance entries, and import validation that rehydrates exported packages without dropping evidence/review/provenance metadata. |
 | 2026-06-11 | F050 | Implemented | Added workflow-level Provenance-like records for upload/extraction, parser, FHIR profiling, retrieval, validation, safety/review gates, assistant-created review and mapping tasks, converter output, retrieval-derived transformations, explanation, completion, and failure. Workflow Detail now renders provenance beside audit events, and ClinicalPackage handoff context links back to workflow provenance IDs. |
+| 2026-06-12 | F051 | Implemented | Added sanitized AuditEvent-like export records to `GET /api/v1/audit/export`, projecting workflow events, review events, auth audit records, and Assistant/MCP tool execution records into a healthcare interoperability-friendly `AuditEvent`-shaped contract without exposing raw payloads. |
 | 2026-06-11 | F052 | Implemented | Added review-gated `TerminologyCandidate` contract and deterministic LOINC candidate generation for `lab_result_v1.lab_name` from `knowledge/terminologies/medical_concepts.json`, carried in `ClinicalPackage.terminology_candidates`. |
 | 2026-06-11 | F053 | Implemented | Added `UnitValidationResult`, `knowledge/terminologies/ucum_units.json`, and UCUM-like unit checks for `lab_result_v1.unit`, carried in `ClinicalPackage.unit_validations` with missing/unknown/not-preferred review flags. |
 | 2026-06-11 | F056-F057, F060 | Implemented | Added a Workflow Detail Clinical Package tab that separates terminology source text, candidate codes, confidence, source terminology, reviewer state, unit checks, OperationOutcome-like issues, raw-to-resource field provenance, generated resource JSON, package warnings, and explicit FHIR-like/non-HL7-validation wording. |
@@ -276,7 +277,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F048 Add lightweight FHIR profile registry files for supported resource families and required fields.
 - [x] F049 Add FHIR search parameter generation for profile outputs and retrieval hints.
 - [x] F050 Add Provenance-like internal records for parser, converter, assistant, reviewer, and retrieval-derived transformations.
-- [ ] F051 Add AuditEvent-like export for workflow events, review events, auth events, and tool execution.
+- [x] F051 Add AuditEvent-like export for workflow events, review events, auth events, and tool execution.
 - [x] F052 Add LOINC candidate generation contract for observation names without automatically replacing source text.
 - [x] F053 Add UCUM validation contract for units with source unit, normalized candidate, validation result, and review requirement.
 - [x] F054 Add RxNorm candidate generation contract for medication fields.
@@ -288,6 +289,94 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F060 Add clear wording in UI and docs that v0 output is FHIR-like unless validated by a real FHIR validator.
 
 ### Month 4: Retrieval, RAG, Corpus, And Graph-NER
+
+Month 4 is the evidence layer for the whole product. The target is not a
+generic chatbot RAG feature. It is a governed healthcare retrieval subsystem
+that can explain why a workflow validation issue, terminology candidate,
+clinical package field, or assistant answer is supported by trusted sources.
+
+The system should treat retrieval as an auditable pipeline:
+
+1. Source registration: every source enters through a catalog record with owner,
+   license, allowed use, release/version, fetch method, refresh cadence, reviewer
+   state, and prohibited-use notes.
+2. Ingestion: adapters fetch or import source material into immutable raw
+   artifacts, then create normalized documents with hashes and source locators.
+3. Chunking: source-specific chunking profiles preserve section headings,
+   resource names, field names, table rows, API record IDs, page/line refs, and
+   source URLs so answer citations are inspectable.
+4. Indexing: lexical, metadata, vector, and graph indexes are built with explicit
+   generation IDs. Provider/model/dimension changes must mark indexes stale
+   rather than silently mixing embeddings.
+5. Query planning: the router classifies intent, clinical domain, safety risk,
+   data format, requested standard, and source filters before choosing retrieval
+   strategy.
+6. Retrieval and reranking: hybrid search collects candidates, applies metadata
+   filters, reranks with cross-encoder or deterministic fallback, diversifies by
+   source, and records all ranking decisions.
+7. Graph-NER: entities and relations are extracted from query/data/evidence,
+   normalized to terminology candidates when possible, persisted as graph
+   context, and used for GraphRAG-lite expansion.
+8. Synthesis: answers are generated only from the support matrix. Unsupported
+   claims become gaps, warnings, or review tasks instead of confident text.
+9. Evaluation: every change to chunking, embeddings, reranking, routing, or
+   graph expansion must run against retrieval and Graph-NER benchmark fixtures.
+
+Healthcare source priority should be explicit:
+
+- Tier 1: official standards and terminology sources such as HL7 FHIR, UCUM,
+  RxNorm/RxNav, LOINC metadata where license allows, ClinicalTrials.gov,
+  PubMed/NCBI metadata, openFDA, and local approved enterprise policy documents.
+- Tier 2: organization-approved implementation guides, mapping specs, SOPs,
+  data dictionaries, and customer-specific validation rules.
+- Tier 3: exploratory literature or external search results. These may inform
+  review but should not override Tier 1/2 sources without human approval.
+
+The Month 4 architecture should expose these primary contracts:
+
+- `SourceCatalogEntry`: source identity, owner, trust tier, license, lifecycle,
+  refresh cadence, connector, reviewer state, intended use, prohibited use.
+- `IngestionRun`: source version, fetch timestamp, raw artifact refs, content
+  hashes, adapter version, errors, warnings, approval state, request ID.
+- `KnowledgeDocument`: normalized document metadata, source locators, standard
+  system, clinical domain, release/version, document hash, retention policy.
+- `KnowledgeChunk`: chunk text hash, source span/table/page locator, heading
+  path, metadata facets, embedding generation ID, graph extraction refs.
+- `RetrievalTrace`: query variants, route selected, filters, candidate counts,
+  reranker decisions, fallback path, warnings, latency, request ID.
+- `SupportMatrix`: answer claim, evidence chunk refs, graph path refs, scores,
+  support status, freshness state, reviewer requirement, limitation text.
+- `GraphContextRecord`: extracted node/edge/triple refs, normalized code
+  candidates, source evidence refs, workflow refs, export IDs, owner scope.
+
+The advanced RAG backlog should stay data-driven and configurable. Techniques
+from practical RAG research should be adapted only when they improve traceable
+healthcare evidence:
+
+- Query rewriting and multi-query expansion for messy operator questions.
+- Step-back querying for standards explanations where the user asks a narrow
+  implementation question but needs broader context first.
+- HyDE-style hypothetical evidence only when clearly labeled as synthetic query
+  expansion and never stored as evidence.
+- Corrective RAG when retrieved evidence is weak, stale, blocked, or too narrow.
+- RAG-Fusion / reciprocal-rank fusion for hybrid lexical-vector candidates.
+- Cross-encoder reranking in local GPU mode, with deterministic fallback.
+- GraphRAG-lite for entity-neighborhood expansion after initial evidence is
+  found, not before source trust and metadata filters are applied.
+- Self-checking synthesis that refuses unsupported claims and emits explicit
+  gaps, not hidden model confidence.
+
+Month 4 is done only when these acceptance gates hold:
+
+- Retrieval can answer "why is this validation issue true?" with cited evidence.
+- Retrieval can answer "which standard/source supports this mapping?" with a
+  support matrix and source locator.
+- Retrieval can explain stale, deprecated, blocked, or review-gated sources.
+- Graph-NER records are persisted, owner-scoped, exportable, and searchable.
+- Embedding provider/model changes cannot silently reuse incompatible vectors.
+- Weak retrieval produces corrective actions, not a fabricated answer.
+- Admins can inspect source freshness, eval quality, and graph coverage.
+- CI or scheduled jobs track retrieval quality and Graph-NER quality over time.
 
 - [x] F061 Add a corpus ingestion framework with source adapters, license metadata, release version, fetch time, hash, and reviewer state.
 - [x] F062 Add official source adapters for FHIR specification pages relevant to Patient, Observation, DiagnosticReport, DocumentReference, Provenance, and AuditEvent.
@@ -324,6 +413,45 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F093 Add GraphRAG-lite answer path: retrieve chunks, extract entities, expand neighborhood, rerank with graph support, synthesize with citations.
 - [x] F094 Add hallucination guard that compares answer claims to evidence triples and flags unsupported clinical assertions.
 - [x] F095 Add source freshness warnings when retrieved medical standards are old, deprecated, or version-mismatched.
+- [ ] F176 Add a source-ingestion run ledger that links every indexed chunk to an approved ingestion run, raw artifact hash, adapter version, and reviewer decision.
+- [ ] F177 Add a retrieval index manifest endpoint that reports lexical/vector/graph index generation IDs, provider/model dimensions, stale status, and chunk counts.
+- [ ] F178 Add embedding reindex safety workflow: dry-run impact report, admin approval, background job execution, rollback marker, and post-run quality comparison.
+- [ ] F179 Add medical source quality scoring that combines trust tier, lifecycle state, freshness, license restrictions, reviewer state, and source coverage.
+- [ ] F180 Add route-specific retrieval budgets for max candidates, reranker limit, source diversity, external-network permission, and latency target.
+- [ ] F181 Add citation locator normalization for FHIR pages, PubMed records, ClinicalTrials.gov studies, openFDA records, UCUM entries, RxNorm concepts, PDF pages, and internal policy sections.
+- [ ] F182 Add Graph-NER extraction provenance per node and edge, including extractor version, source chunk, confidence, normalized-code candidates, and review state.
+- [ ] F183 Add graph conflict detection for contradictory source claims, deprecated terminology mappings, conflicting units, and version-mismatched standard guidance.
+- [ ] F184 Add retrieval judgement workflow so reviewers can label evidence hits as relevant, irrelevant, unsafe, stale, or source-policy-blocked.
+- [ ] F185 Add active-learning queue that converts low-confidence retrieval, unsupported claims, and reviewer corrections into benchmark candidates.
+- [ ] F186 Add tenant-scoped corpus partitions and source policies so enterprise customers can separate global standards, tenant policies, and private documents.
+- [ ] F187 Add PHI-safe private corpus ingestion with redaction preview, retention policy stamping, and external-provider blocking by default.
+- [ ] F188 Add PubMed/ClinicalTrials/openFDA query transparency records showing exact external query, filters, result IDs, cache hit state, and rate-limit metadata.
+- [ ] F189 Add retrieval observability spans for ingestion, chunking, embedding, lexical search, vector search, reranking, graph expansion, synthesis, and support-matrix validation.
+- [ ] F190 Add answer-grounding regression tests that compare final assistant text against support matrices and fail on uncited medical claims.
+- [ ] F191 Add source-drift monitoring that alerts when official source releases change, indexes are stale, or nightly benchmarks regress.
+- [ ] F192 Add graph coverage dashboard for node/edge counts by domain, normalized terminology coverage, unsupported-claim rates, and reviewer backlog.
+- [ ] F193 Add configurable local model registry for embedding, reranking, NER, and relation extraction models with hardware requirements and fallback policy.
+- [ ] F194 Add LlamaIndex adapter parity tests that prove the framework path preserves OJTFlow filters, source governance, support matrix output, and audit traces.
+- [ ] F195 Add retrieval disaster-recovery export/import for source catalog, ingestion manifests, chunk manifests, vector generation metadata, graph records, and relevance judgements.
+
+Recommended Month 4 continuation order:
+
+1. Build the source-ingestion ledger and retrieval index manifest first
+   (F176-F178). Without this, large-corpus retrieval cannot prove exactly which
+   source version, embedding generation, and reviewer state produced an answer.
+2. Add evidence quality scoring, route budgets, locator normalization, and
+   Graph-NER extraction provenance next (F179-F182). These make the retrieval
+   output understandable and reviewable by enterprise users.
+3. Add graph conflict detection, relevance judgement workflow, and active
+   learning queue (F183-F185). These close the loop between poor answers,
+   reviewer feedback, and benchmark growth.
+4. Add tenant/private corpus controls and external-query transparency
+   (F186-F188). This is required before customer policy documents or sensitive
+   data dictionaries become searchable.
+5. Add retrieval observability, answer-grounding regression, source-drift
+   monitoring, graph coverage dashboards, model registry, LlamaIndex parity, and
+   disaster-recovery export/import (F189-F195). These make Month 4 operational
+   enough for pilot and enterprise evaluation.
 
 ### Month 5: Assistant, Streaming, MCP, And Operator Workflows
 

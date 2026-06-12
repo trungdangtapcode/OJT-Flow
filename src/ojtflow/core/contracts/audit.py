@@ -75,10 +75,67 @@ class AuditExportSummary(ContractModel):
 
     record_count: int = 0
     workflow_event_count: int = 0
+    audit_event_like_count: int = 0
     covered_scope_count: int = 0
     partial_scope_count: int = 0
     unavailable_scope_count: int = 0
     includes_raw_payloads: bool = False
+
+
+AuditEventLikeCategory = Literal[
+    "workflow_event",
+    "review_event",
+    "auth_event",
+    "tool_execution",
+    "setting_change",
+    "source_ingestion",
+    "generic_audit_record",
+]
+
+
+class AuditEventLikeAgent(ContractModel):
+    """FHIR AuditEvent-like actor entry."""
+
+    who: str
+    type: str
+    requestor: bool = False
+    role: str | None = None
+
+
+class AuditEventLikeSource(ContractModel):
+    """FHIR AuditEvent-like event source."""
+
+    observer: str = "ojtflow"
+    type: str = "application"
+
+
+class AuditEventLikeEntity(ContractModel):
+    """FHIR AuditEvent-like entity reference without raw payload data."""
+
+    what: str
+    type: str
+    role: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditEventLikeRecord(ContractModel):
+    """FHIR AuditEvent-like projection for workflow and generic audit records."""
+
+    audit_event_id: str = Field(default_factory=lambda: new_id("audevt"))
+    resourceType: Literal["AuditEvent"] = "AuditEvent"
+    category: AuditEventLikeCategory
+    action: Literal["C", "R", "U", "D", "E"] = "E"
+    recorded: str
+    outcome: Literal["success", "minor_failure", "serious_failure"] = "success"
+    outcome_desc: str | None = None
+    workflow_id: str | None = None
+    request_id: str | None = None
+    source_event_ref: str | None = None
+    source_record_ref: str | None = None
+    agent: list[AuditEventLikeAgent] = Field(default_factory=list)
+    source: AuditEventLikeSource = Field(default_factory=AuditEventLikeSource)
+    entity: list[AuditEventLikeEntity] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AuditExportPackage(ContractModel):
@@ -93,3 +150,4 @@ class AuditExportPackage(ContractModel):
     coverage: list[AuditExportCoverageItem]
     records: list[AuditRecord] = Field(default_factory=list)
     workflow_events: list[WorkflowEvent] = Field(default_factory=list)
+    audit_events_like: list[AuditEventLikeRecord] = Field(default_factory=list)

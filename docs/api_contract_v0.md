@@ -1374,6 +1374,10 @@ when available. It also includes explicit coverage metadata for workflows,
 reviews, Assistant/MCP tool calls, auth events, runtime setting changes, and
 source ingestion. Scopes without current audit producers are reported as
 `not_available` instead of being silently omitted.
+The package also includes `audit_events_like[]`, a sanitized FHIR
+AuditEvent-like projection for workflow events, review events, auth audit
+records, and Assistant/MCP tool execution records. See
+`docs/audit_event_export_v0.md`.
 
 Example response data:
 
@@ -1393,6 +1397,7 @@ Example response data:
   "summary": {
     "record_count": 1,
     "workflow_event_count": 2,
+    "audit_event_like_count": 3,
     "covered_scope_count": 1,
     "partial_scope_count": 2,
     "unavailable_scope_count": 3,
@@ -1409,7 +1414,26 @@ Example response data:
     }
   ],
   "records": [],
-  "workflow_events": []
+  "workflow_events": [],
+  "audit_events_like": [
+    {
+      "resourceType": "AuditEvent",
+      "audit_event_id": "audevt_abc123",
+      "category": "tool_execution",
+      "action": "E",
+      "recorded": "2026-06-11T00:00:00+00:00",
+      "outcome": "success",
+      "workflow_id": "wf_456",
+      "source_record_ref": "aud_789",
+      "agent": [{"who": "usr_123", "type": "assistant", "requestor": true}],
+      "source": {"observer": "ojtflow.audit_records", "type": "application"},
+      "entity": [
+        {"what": "wf_456", "type": "workflow", "role": "subject"},
+        {"what": "sha256...", "type": "hash", "role": "input_hash"}
+      ],
+      "metadata": {"action": "assistant.tool.validate_with_evidence"}
+    }
+  ]
 }
 ```
 
