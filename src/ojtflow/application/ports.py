@@ -44,6 +44,7 @@ from ojtflow.core.contracts.governance import (
 from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
     RetrievalPackage,
@@ -316,6 +317,8 @@ class RetrievalRepository(Protocol):
     def list_sources(self) -> list[RetrievalSource]: ...
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict: ...
+
+    def index_manifest(self) -> RetrievalIndexManifest: ...
 
     def integrity_report(
         self,

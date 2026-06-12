@@ -1675,6 +1675,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         )
         retrieval_sources = await client.get("/api/v1/retrieval/sources")
         retrieval_integrity = await client.get("/api/v1/retrieval/integrity")
+        retrieval_index_manifest = await client.get("/api/v1/retrieval/index-manifest")
         jobs = await client.get("/api/v1/jobs")
         job_detail = await client.get("/api/v1/jobs/job_missing")
         job_cancel = await client.post("/api/v1/jobs/job_missing/cancel")
@@ -1770,6 +1771,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_sources, expected_code="unauthorized")
     assert retrieval_integrity.status_code == 401
     _assert_error_envelope(retrieval_integrity, expected_code="unauthorized")
+    assert retrieval_index_manifest.status_code == 401
+    _assert_error_envelope(retrieval_index_manifest, expected_code="unauthorized")
     assert jobs.status_code == 401
     _assert_error_envelope(jobs, expected_code="unauthorized")
     assert job_detail.status_code == 401
@@ -4493,6 +4496,19 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             and "source diversity" in strategy["risk_controls"]
             for strategy in strategy_data["strategies"]
         )
+
+        index_manifest = await client.get("/api/v1/retrieval/index-manifest")
+        assert index_manifest.status_code == 200
+        index_manifest_data = index_manifest.json()["data"]
+        index_components = {
+            component["component_id"]: component
+            for component in index_manifest_data["components"]
+        }
+        assert index_manifest_data["version"] == "retrieval_index_manifest.v1"
+        assert index_manifest_data["summary"]["chunk_count"] >= 1
+        assert index_components["lexical"]["generation_id"].startswith("lexidx:")
+        assert index_components["vector"]["expected_generation_id"].startswith("embgen:")
+        assert index_components["graph"]["status"] in {"empty", "ready"}
 
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})
         assert invalid.status_code == 422

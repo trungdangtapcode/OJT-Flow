@@ -3633,6 +3633,49 @@ def test_corpus_ingestion_ledger_links_chunks_to_source_run() -> None:
     assert record.chunk_start_char <= record.chunk_end_char
 
 
+def test_static_retrieval_index_manifest_reports_active_generations() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    repository.reindex(include_seeded=False, include_corpus=True)
+
+    manifest = repository.index_manifest()
+    components = {item.component_id: item for item in manifest.components}
+
+    assert manifest.version == "retrieval_index_manifest.v1"
+    assert manifest.repository == "static"
+    assert manifest.lexical_generation_id is not None
+    assert manifest.lexical_generation_id.startswith("lexidx:")
+    assert manifest.embedding_generation_id is not None
+    assert manifest.embedding_generation_id.startswith("embgen:")
+    assert manifest.corpus_ingestion_run_ids
+    assert manifest.summary.chunk_count == len(repository._chunks)
+    assert components["lexical"].status == "ready"
+    assert components["vector"].status == "ready"
+    assert components["vector"].expected_generation_id == manifest.embedding_generation_id
+    assert components["graph"].status == "not_available"
+
+
+def test_retrieval_index_manifest_flags_stale_vector_generation() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    repository._chunks = [
+        KnowledgeChunk(
+            chunk_id="chunk_stale_vector",
+            source_id="schema:stale",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Stale Vector",
+            content="A stale vector metadata example.",
+            metadata={"embedding_generation_id": "embgen:old"},
+        )
+    ]
+
+    manifest = repository.index_manifest()
+    vector = next(item for item in manifest.components if item.component_id == "vector")
+
+    assert vector.status == "stale"
+    assert vector.stale_chunk_count == 1
+    assert manifest.summary.stale_component_count == 1
+    assert manifest.summary.stale_chunk_count == 1
+
+
 def test_static_retrieval_source_inventory_includes_corpus_governance_metadata() -> None:
     repository = StaticRetrievalRepository(ROOT / "knowledge")
     result = repository.reindex(include_seeded=False, include_corpus=True)

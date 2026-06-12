@@ -24,6 +24,7 @@ from ojtflow.core.contracts.retrieval import (
     CorpusChunkingProfileCatalog,
     CorpusIngestionLedger,
     CorpusIngestionManifest,
+    RetrievalIndexManifest,
     RetrievalFreshnessReport,
     RetrievalJudgmentEvaluationResult,
     RetrievalIntegrityReport,
@@ -145,6 +146,11 @@ class RetrievalReindexEnvelope(ContractModel):
 
 class RetrievalIntegrityEnvelope(ContractModel):
     data: RetrievalIntegrityReport
+    error: None = None
+
+
+class RetrievalIndexManifestEnvelope(ContractModel):
+    data: RetrievalIndexManifest
     error: None = None
 
 
@@ -567,6 +573,20 @@ async def retrieval_integrity(
         service.retrieval_integrity_report(
             include_seeded=include_seeded,
             include_corpus=include_corpus,
+        )
+    )
+
+
+@router.get("/retrieval/index-manifest", response_model=RetrievalIndexManifestEnvelope)
+async def retrieval_index_manifest(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(
+        service.retrieval_index_manifest(
+            owner_user_id=authenticated.user.user_id,
         )
     )
 

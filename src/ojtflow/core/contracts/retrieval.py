@@ -621,6 +621,70 @@ class CorpusIngestionLedger(ContractModel):
     records: list[CorpusIngestionLedgerRecord] = Field(default_factory=list)
 
 
+RetrievalIndexComponentId = Literal["lexical", "vector", "graph"]
+RetrievalIndexComponentStatus = Literal[
+    "ready",
+    "stale",
+    "empty",
+    "not_available",
+]
+
+
+class RetrievalIndexComponent(ContractModel):
+    """One index component in the active retrieval runtime."""
+
+    component_id: RetrievalIndexComponentId
+    status: RetrievalIndexComponentStatus
+    generation_id: NonBlankStr | None = None
+    expected_generation_id: NonBlankStr | None = None
+    provider: NonBlankStr | None = None
+    model: NonBlankStr | None = None
+    dimensions: int | None = Field(default=None, ge=0)
+    chunk_count: int = Field(default=0, ge=0)
+    source_count: int = Field(default=0, ge=0)
+    stale_chunk_count: int = Field(default=0, ge=0)
+    graph_count: int = Field(default=0, ge=0)
+    node_count: int = Field(default=0, ge=0)
+    edge_count: int = Field(default=0, ge=0)
+    triple_count: int = Field(default=0, ge=0)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalIndexManifestSummary(ContractModel):
+    """Aggregate index manifest counters."""
+
+    component_count: int = Field(ge=0)
+    ready_component_count: int = Field(ge=0)
+    stale_component_count: int = Field(ge=0)
+    unavailable_component_count: int = Field(ge=0)
+    chunk_count: int = Field(ge=0)
+    source_count: int = Field(ge=0)
+    stale_chunk_count: int = Field(ge=0)
+    graph_count: int = Field(ge=0)
+    node_count: int = Field(ge=0)
+    edge_count: int = Field(ge=0)
+    triple_count: int = Field(ge=0)
+
+
+class RetrievalIndexManifest(ContractModel):
+    """Operational manifest for active lexical, vector, and graph indexes."""
+
+    version: NonBlankStr
+    generated_at: NonBlankStr
+    repository: NonBlankStr
+    retrieval_framework: NonBlankStr
+    knowledge_root: NonBlankStr
+    corpus_ingestion_run_ids: list[NonBlankStr] = Field(default_factory=list)
+    embedding_generation_id: NonBlankStr | None = None
+    lexical_generation_id: NonBlankStr | None = None
+    graph_generation_id: NonBlankStr | None = None
+    summary: RetrievalIndexManifestSummary
+    components: list[RetrievalIndexComponent] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalSearchTask(ContractModel):
     """Executable retrieval task derived from query analysis before ranking."""
 

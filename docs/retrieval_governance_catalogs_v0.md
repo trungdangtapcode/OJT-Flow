@@ -118,12 +118,33 @@ the record makes that visible through `index_decision`,
 `approved_for_indexing`, and reviewer/lifecycle fields. Enforcement belongs in
 source approval and production-mode policy gates.
 
+## Retrieval Index Manifest
+
+`GET /api/v1/retrieval/index-manifest`
+
+The index manifest is the runtime counterpart to the corpus manifest and ledger.
+It reports the currently active retrieval indexes:
+
+- lexical index generation ID derived from chunk IDs, source versions, and
+  content hashes
+- vector embedding generation ID derived from provider, model, and dimensions
+- stale vector chunk counts when stored chunk metadata does not match the active
+  embedding generation
+- corpus ingestion run IDs present in indexed chunks
+- owner-scoped persisted Graph-NER graph counts and graph generation ID when
+  graph persistence is configured
+
+Use this endpoint before and after reindex jobs, embedding provider changes, or
+corpus approval updates. It is intentionally admin-readable because it describes
+runtime index state and source lineage, even though it does not expose raw
+corpus text.
+
 ## Verification
 
 Run:
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_retrieval.py::test_corpus_ingestion_ledger_links_chunks_to_source_run tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error -q
+PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_retrieval.py::test_corpus_ingestion_ledger_links_chunks_to_source_run tests/test_retrieval.py::test_static_retrieval_index_manifest_reports_active_generations tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error -q
 ```
 
 The tests verify OpenAPI response models, authentication boundaries, and that

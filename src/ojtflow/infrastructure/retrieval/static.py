@@ -9,6 +9,7 @@ from typing import Any
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
     RetrievalPackage,
@@ -24,6 +25,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     rank_chunks,
     sources_from_chunks,
 )
+from ojtflow.infrastructure.retrieval.index_manifest import build_retrieval_index_manifest
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
 from ojtflow.infrastructure.retrieval.query_analysis import build_retrieval_plan
 
@@ -160,6 +162,20 @@ class StaticRetrievalRepository:
             "chunks_indexed": len(chunks),
             "corpus": result.to_dict() if result else None,
         }
+
+    def index_manifest(self) -> RetrievalIndexManifest:
+        return build_retrieval_index_manifest(
+            repository="static",
+            retrieval_framework="custom",
+            knowledge_root=self.root,
+            chunks=self._chunks,
+            embedding_metadata=self.embedding_provider.metadata(),
+            metadata={
+                "chunk_max_chars": self.chunk_max_chars,
+                "chunk_overlap_chars": self.chunk_overlap_chars,
+                "vector_persistence": "computed_at_query_time",
+            },
+        )
 
     def integrity_report(
         self,

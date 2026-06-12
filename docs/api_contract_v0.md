@@ -3253,6 +3253,12 @@ evidence-lineage review. It does not expose raw corpus text.
 profiles for standards pages, terminology pages, structured records, PDFs, and
 internal policies.
 
+`GET /api/v1/retrieval/index-manifest` returns operational metadata for the
+active retrieval indexes. The response reports lexical, vector, and graph
+components with generation IDs, provider/model/dimension metadata, stale chunk
+counts, chunk/source counts, graph node/edge/triple counts, and corpus ingestion
+run IDs. This endpoint is admin-readable and does not expose corpus text.
+
 `GET /api/v1/retrieval/judgments` returns durable relevance judgments for the
 authenticated user. Optional query parameters:
 

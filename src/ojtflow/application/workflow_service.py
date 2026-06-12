@@ -21,6 +21,7 @@ from ojtflow.application.ports import (
 )
 from ojtflow.application.graph_service import GraphService
 from ojtflow.application.retrieval_service import RetrievalService
+from ojtflow.application.retrieval_index_manifest import attach_graph_index_metadata
 from ojtflow.application.tool_registry import tool_specs_json
 from ojtflow.clinical.package_io import (
     export_clinical_package as build_clinical_package_export,
@@ -57,6 +58,7 @@ from ojtflow.core.contracts.graph import (
     GraphNeighborhoodQuery,
 )
 from ojtflow.core.contracts.retrieval import (
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
     RetrievalPackage,
@@ -1154,6 +1156,24 @@ class WorkflowService:
         return self.retrieval_service.reindex(
             include_seeded=include_seeded,
             include_corpus=include_corpus,
+        )
+
+    def retrieval_index_manifest(
+        self,
+        *,
+        owner_user_id: str | None = None,
+    ) -> RetrievalIndexManifest:
+        """Return active retrieval index metadata with owner-scoped graph counts."""
+
+        manifest = self.retrieval_service.index_manifest()
+        if self.graph_service is None:
+            return manifest
+        return attach_graph_index_metadata(
+            manifest,
+            self.graph_service.list_contexts(
+                owner_user_id=owner_user_id,
+                limit=1000,
+            ),
         )
 
     def retrieval_integrity_report(

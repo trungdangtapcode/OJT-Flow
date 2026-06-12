@@ -17,6 +17,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalCoverage,
     RetrievalFacets,
     RetrievalHit,
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
     RetrievalPackage,
@@ -57,6 +58,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     tokenize,
 )
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
+from ojtflow.infrastructure.retrieval.index_manifest import build_retrieval_index_manifest
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query, build_retrieval_plan
 
 
@@ -321,6 +323,25 @@ class LlamaIndexRetrievalRepository:
             },
             "corpus": result.to_dict() if result else None,
         }
+
+    def index_manifest(self) -> RetrievalIndexManifest:
+        return build_retrieval_index_manifest(
+            repository="llamaindex",
+            retrieval_framework="llamaindex",
+            knowledge_root=self.knowledge_root,
+            chunks=self._chunks,
+            embedding_metadata=self.embedding_provider.metadata(),
+            metadata={
+                "chunk_max_chars": self.chunk_max_chars,
+                "chunk_overlap_chars": self.chunk_overlap_chars,
+                "index_generation": self._chunk_generation,
+                "candidate_multiplier": self.candidate_multiplier,
+                "min_candidates": self.min_candidates,
+                "vector_weight": self.vector_weight,
+                "bm25_weight": self.bm25_weight,
+                "vector_persistence": "llamaindex_in_memory_index",
+            },
+        )
 
     def integrity_report(
         self,

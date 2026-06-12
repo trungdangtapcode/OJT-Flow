@@ -9,6 +9,7 @@ from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.retrieval import (
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
     RetrievalPackage,
@@ -25,6 +26,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     diversity_settings_from_query,
     rank_chunks,
 )
+from ojtflow.infrastructure.retrieval.index_manifest import build_retrieval_index_manifest
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
 from ojtflow.infrastructure.retrieval.query_analysis import build_retrieval_plan
 from ojtflow.infrastructure.storage.postgres import PostgresBackboneStore
@@ -111,6 +113,21 @@ class PostgresRetrievalRepository:
             ),
             "corpus": corpus_result.to_dict() if corpus_result else None,
         }
+
+    def index_manifest(self) -> RetrievalIndexManifest:
+        return build_retrieval_index_manifest(
+            repository="postgres",
+            retrieval_framework="custom",
+            knowledge_root=self.knowledge_root,
+            chunks=self._load_all_chunks(),
+            embedding_metadata=self.embedding_provider.metadata(),
+            metadata={
+                "chunk_max_chars": self.chunk_max_chars,
+                "chunk_overlap_chars": self.chunk_overlap_chars,
+                "hnsw_ef_search": self.hnsw_ef_search,
+                "vector_persistence": "postgres_pgvector_or_json_fallback",
+            },
+        )
 
     def _upsert_chunks(self, chunks: list[KnowledgeChunk]) -> None:
         if not chunks:

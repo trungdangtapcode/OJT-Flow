@@ -16,6 +16,7 @@ from ojtflow.core.contracts.external_provider import (
     ExternalProviderPolicy,
 )
 from ojtflow.core.contracts.retrieval import (
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
     RetrievalPlanCoverageSummary,
@@ -80,6 +81,11 @@ class RetrievalService:
             include_seeded=include_seeded,
             include_corpus=include_corpus,
         )
+
+    def index_manifest(self) -> RetrievalIndexManifest:
+        """Return operational metadata for the active retrieval index."""
+
+        return self.repository.index_manifest()
 
     def integrity_report(
         self,

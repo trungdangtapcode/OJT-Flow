@@ -217,6 +217,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F061, F069-F070, F095 | Implemented | Added a retrieval source freshness gate with typed report contracts, `/api/v1/retrieval/freshness`, data-driven source readiness scoring from corpus adapters, trust policies, corpus manifest, and indexed inventory, plus a Retrieval page admin panel for stale, unindexed, unreviewed, or policy-missing sources. |
 | 2026-06-11 | Month 4 hardening | Implemented | Added package-time source governance for ranked retrieval evidence: selected hits now carry source policy/adapter decisions in locators and handoff context, quality signals flag review-gated/blocked/unregistered sources, corrective actions route source-governance review, and seeded SNOMED CT, ICD-10-CM, OMOP, and MeSH source policies close governance gaps. |
 | 2026-06-12 | F176 | Implemented | Added chunk-level corpus ingestion ledger contracts, `GET /api/v1/retrieval/corpus/ledger`, ledger metadata on indexed corpus chunks, corpus reindex ledger summary output, docs, and focused tests linking chunks to ingestion run IDs, raw artifact hashes, adapter catalog version, reviewer decision, and source locators. |
+| 2026-06-12 | F177 | Implemented | Added active retrieval index manifest contracts and `GET /api/v1/retrieval/index-manifest`, with lexical/vector/graph components, generation IDs, embedding provider/model/dimensions, stale vector chunk detection, corpus ingestion run IDs, owner-scoped Graph-NER counts, docs, and focused tests. |
 
 ## Feature Backlog
 
@@ -415,7 +416,7 @@ Month 4 is done only when these acceptance gates hold:
 - [x] F094 Add hallucination guard that compares answer claims to evidence triples and flags unsupported clinical assertions.
 - [x] F095 Add source freshness warnings when retrieved medical standards are old, deprecated, or version-mismatched.
 - [x] F176 Add a source-ingestion run ledger that links every indexed chunk to an approved ingestion run, raw artifact hash, adapter version, and reviewer decision.
-- [ ] F177 Add a retrieval index manifest endpoint that reports lexical/vector/graph index generation IDs, provider/model dimensions, stale status, and chunk counts.
+- [x] F177 Add a retrieval index manifest endpoint that reports lexical/vector/graph index generation IDs, provider/model dimensions, stale status, and chunk counts.
 - [ ] F178 Add embedding reindex safety workflow: dry-run impact report, admin approval, background job execution, rollback marker, and post-run quality comparison.
 - [ ] F179 Add medical source quality scoring that combines trust tier, lifecycle state, freshness, license restrictions, reviewer state, and source coverage.
 - [ ] F180 Add route-specific retrieval budgets for max candidates, reranker limit, source diversity, external-network permission, and latency target.
