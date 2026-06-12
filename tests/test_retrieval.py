@@ -21,6 +21,11 @@ from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
 from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
+from ojtflow.application.retrieval_reindex_safety import (
+    approval_token_matches_report,
+    build_embedding_reindex_safety_report,
+    compare_embedding_reindex_manifests,
+)
 from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
@@ -63,6 +68,9 @@ from ojtflow.infrastructure.retrieval.llamaindex_adapter import (
 from ojtflow.infrastructure.retrieval.postgres import PostgresRetrievalRepository
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query, build_retrieval_plan
 from ojtflow.infrastructure.retrieval.reranking import HuggingFaceCrossEncoderReranker
+from ojtflow.infrastructure.retrieval.reindex_markers import (
+    write_embedding_reindex_rollback_marker,
+)
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
 from ojtflow.infrastructure.storage.in_memory import InMemoryRetrievalJudgmentRepository
 
@@ -3674,6 +3682,46 @@ def test_retrieval_index_manifest_flags_stale_vector_generation() -> None:
     assert vector.stale_chunk_count == 1
     assert manifest.summary.stale_component_count == 1
     assert manifest.summary.stale_chunk_count == 1
+
+
+def test_embedding_reindex_safety_report_marker_and_comparison(tmp_path: Path) -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    repository.reindex(include_seeded=False, include_corpus=True)
+    before = repository.index_manifest()
+    report = build_embedding_reindex_safety_report(
+        current_manifest=before,
+        include_seeded=False,
+        include_corpus=True,
+    )
+
+    assert report.version == "embedding_reindex_safety_report.v1"
+    assert report.approval_token.startswith("approve_embedding_reindex_")
+    assert approval_token_matches_report(
+        report=report,
+        approval_token=report.approval_token,
+    )
+    assert not approval_token_matches_report(report=report, approval_token="wrong")
+    assert report.impact.chunk_count == before.summary.chunk_count
+    assert report.impact.expected_job_type == "embedding_reindex"
+
+    marker = write_embedding_reindex_rollback_marker(
+        data_dir=tmp_path,
+        before_manifest=before,
+        safety_report=report,
+        job_id="job_embedding_reindex",
+        request_id="req_embedding_reindex",
+    )
+    marker_path = tmp_path / "repair_markers" / "embedding_reindex" / f"{marker.marker_id}.json"
+    assert marker_path.exists()
+    assert marker.approval_token_hash == report.approval_token_hash
+    assert marker.before_embedding_generation_id == before.embedding_generation_id
+    assert marker.destructive is False
+    assert report.approval_token not in marker_path.read_text(encoding="utf-8")
+
+    comparison = compare_embedding_reindex_manifests(before=before, after=before)
+    assert comparison.status == "completed"
+    assert comparison.chunk_count_delta == 0
+    assert comparison.stale_chunk_count_delta == 0
 
 
 def test_static_retrieval_source_inventory_includes_corpus_governance_metadata() -> None:

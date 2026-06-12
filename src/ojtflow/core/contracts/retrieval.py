@@ -9,6 +9,8 @@ from pydantic import Field
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.ids import new_id
+from ojtflow.core.time import utc_now
 
 
 class RetrievalQuery(ContractModel):
@@ -683,6 +685,75 @@ class RetrievalIndexManifest(ContractModel):
     components: list[RetrievalIndexComponent] = Field(default_factory=list)
     warnings: list[NonBlankStr] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmbeddingReindexImpactSummary(ContractModel):
+    """Dry-run impact summary for an embedding reindex request."""
+
+    include_seeded: bool = True
+    include_corpus: bool = True
+    chunk_count: int = Field(ge=0)
+    source_count: int = Field(ge=0)
+    stale_chunk_count: int = Field(ge=0)
+    current_embedding_generation_id: NonBlankStr | None = None
+    target_embedding_generation_id: NonBlankStr | None = None
+    embedding_generation_changed: bool = False
+    approval_required: bool = True
+    expected_job_type: NonBlankStr = "embedding_reindex"
+
+
+class EmbeddingReindexSafetyReport(ContractModel):
+    """Approval-gated dry-run report for embedding reindex operations."""
+
+    version: NonBlankStr
+    generated_at: NonBlankStr
+    approval_token: NonBlankStr
+    approval_token_hash: NonBlankStr
+    approval_payload_hash: NonBlankStr
+    impact: EmbeddingReindexImpactSummary
+    current_manifest: RetrievalIndexManifest
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    required_operator_action: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmbeddingReindexRollbackMarker(ContractModel):
+    """Sanitized marker that captures pre-reindex state for manual rollback."""
+
+    marker_id: str = Field(default_factory=lambda: new_id("embmark"))
+    marked_at: str = Field(default_factory=lambda: utc_now().isoformat())
+    job_id: NonBlankStr | None = None
+    request_id: NonBlankStr | None = None
+    approval_token_hash: NonBlankStr
+    before_manifest_hash: NonBlankStr
+    before_lexical_generation_id: NonBlankStr | None = None
+    before_embedding_generation_id: NonBlankStr | None = None
+    before_graph_generation_id: NonBlankStr | None = None
+    corpus_ingestion_run_ids: list[NonBlankStr] = Field(default_factory=list)
+    destructive: bool = False
+    rollback_note: NonBlankStr
+    marker_ref_hash: NonBlankStr | None = None
+
+
+class EmbeddingReindexQualityComparison(ContractModel):
+    """Post-run comparison between preflight and completed index manifests."""
+
+    status: NonBlankStr
+    before_manifest_hash: NonBlankStr
+    after_manifest_hash: NonBlankStr
+    chunk_count_before: int = Field(ge=0)
+    chunk_count_after: int = Field(ge=0)
+    chunk_count_delta: int
+    source_count_before: int = Field(ge=0)
+    source_count_after: int = Field(ge=0)
+    source_count_delta: int
+    stale_chunk_count_before: int = Field(ge=0)
+    stale_chunk_count_after: int = Field(ge=0)
+    stale_chunk_count_delta: int
+    embedding_generation_changed: bool = False
+    corpus_ingestion_run_ids_added: list[NonBlankStr] = Field(default_factory=list)
+    corpus_ingestion_run_ids_removed: list[NonBlankStr] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
 
 
 class RetrievalSearchTask(ContractModel):

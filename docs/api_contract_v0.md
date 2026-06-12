@@ -3259,6 +3259,17 @@ components with generation IDs, provider/model/dimension metadata, stale chunk
 counts, chunk/source counts, graph node/edge/triple counts, and corpus ingestion
 run IDs. This endpoint is admin-readable and does not expose corpus text.
 
+`GET /api/v1/retrieval/embedding-reindex/dry-run` returns the approval-gated
+preflight report for an embedding reindex. Query parameters:
+
+- `include_seeded`: whether bundled seeded knowledge will be included.
+- `include_corpus`: whether configured local corpus chunks will be included.
+
+The response includes the current retrieval index manifest, impact summary,
+approval payload hash, approval token hash, and a one-time approval token bound
+to the current manifest and requested scope. Operators submit that token to
+`POST /api/v1/jobs/embedding-reindex`. The report does not expose corpus text.
+
 `GET /api/v1/retrieval/judgments` returns durable relevance judgments for the
 authenticated user. Optional query parameters:
 
@@ -3419,6 +3430,32 @@ diagnostics and backend logs.
 {
   "include_seeded": true,
   "include_corpus": true,
+  "execute_now": true
+}
+```
+
+`POST /api/v1/jobs/embedding-reindex`
+
+Creates an approval-gated embedding reindex job. The caller must first fetch
+`GET /api/v1/retrieval/embedding-reindex/dry-run` and submit the returned
+`approval_token`. Invalid or stale tokens are rejected with `policy_blocked`
+before a job is created.
+
+When `execute_now=true`, the sync runner:
+
+- writes a sanitized rollback marker under `var/repair_markers/embedding_reindex`
+- runs the existing retrieval reindex path
+- captures the post-run index manifest
+- stores a post-run quality comparison with chunk/source/stale-vector deltas
+
+The job stores only token hashes, manifest hashes, rollback marker metadata, and
+sanitized manifests. It does not store the approval token or raw corpus text.
+
+```json
+{
+  "include_seeded": true,
+  "include_corpus": true,
+  "approval_token": "approve_embedding_reindex_...",
   "execute_now": true
 }
 ```

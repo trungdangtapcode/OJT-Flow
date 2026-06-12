@@ -139,12 +139,46 @@ corpus approval updates. It is intentionally admin-readable because it describes
 runtime index state and source lineage, even though it does not expose raw
 corpus text.
 
+## Embedding Reindex Safety Workflow
+
+`GET /api/v1/retrieval/embedding-reindex/dry-run`
+
+`POST /api/v1/jobs/embedding-reindex`
+
+Embedding reindexing is approval-gated because provider/model/dimension changes
+can invalidate vector similarity behavior for every retrieval answer. The v0
+workflow is:
+
+1. Fetch the dry-run report with the intended `include_seeded` and
+   `include_corpus` scope.
+2. Inspect the current index manifest, stale-vector count, chunk/source counts,
+   corpus ingestion run IDs, and warnings.
+3. Submit the returned `approval_token` unchanged to
+   `POST /api/v1/jobs/embedding-reindex`.
+4. The backend validates that the token still matches the current dry-run
+   payload before creating the job.
+5. The sync runner writes a sanitized rollback marker under
+   `var/repair_markers/embedding_reindex`, runs retrieval reindex, captures the
+   after-manifest, and stores a post-run quality comparison on the job output.
+
+The job output contains:
+
+- dry-run report without the raw approval token
+- rollback marker metadata and marker ref hash
+- retrieval reindex output
+- after-manifest
+- quality comparison with chunk/source/stale-vector deltas
+
+This is not automatic rollback. The marker records the pre-reindex manifest and
+rollback instructions so operators can compare the active index against backups
+or rerun the prior corpus/embedding configuration.
+
 ## Verification
 
 Run:
 
 ```bash
-PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_retrieval.py::test_corpus_ingestion_ledger_links_chunks_to_source_run tests/test_retrieval.py::test_static_retrieval_index_manifest_reports_active_generations tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error -q
+PYTHONPATH=src python -m pytest tests/test_retrieval.py::test_retrieval_freshness_report_flags_governance_and_index_gaps tests/test_retrieval.py::test_corpus_ingestion_ledger_links_chunks_to_source_run tests/test_retrieval.py::test_static_retrieval_index_manifest_reports_active_generations tests/test_retrieval.py::test_embedding_reindex_safety_report_marker_and_comparison tests/test_api.py::test_openapi_exposes_core_request_examples tests/test_api.py::test_api_routes_require_session_envelope tests/test_api.py::test_api_direct_convert_validate_fhir_ocr_and_error tests/test_api.py::test_embedding_reindex_job_requires_dry_run_approval -q
 ```
 
 The tests verify OpenAPI response models, authentication boundaries, and that

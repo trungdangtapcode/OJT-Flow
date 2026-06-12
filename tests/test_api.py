@@ -1377,6 +1377,77 @@ async def test_retrieval_reindex_job_persists_and_runs_synchronously(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_embedding_reindex_job_requires_dry_run_approval(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_DATA_DIR", str(tmp_path))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        dry_run = await client.get(
+            "/api/v1/retrieval/embedding-reindex/dry-run",
+            params={"include_seeded": False, "include_corpus": True},
+        )
+        dry_run_data = _assert_success_envelope(dry_run)["data"]
+        invalid = await client.post(
+            "/api/v1/jobs/embedding-reindex",
+            json={
+                "include_seeded": False,
+                "include_corpus": True,
+                "approval_token": "wrong",
+                "execute_now": True,
+            },
+        )
+        created = await client.post(
+            "/api/v1/jobs/embedding-reindex",
+            json={
+                "include_seeded": False,
+                "include_corpus": True,
+                "approval_token": dry_run_data["approval_token"],
+                "execute_now": True,
+            },
+        )
+
+    assert dry_run.status_code == 200
+    assert dry_run_data["version"] == "embedding_reindex_safety_report.v1"
+    assert dry_run_data["approval_token"].startswith("approve_embedding_reindex_")
+    assert dry_run_data["impact"]["expected_job_type"] == "embedding_reindex"
+
+    assert invalid.status_code == 403
+    _assert_error_envelope(invalid, expected_code="policy_blocked")
+
+    job = _assert_success_envelope(created)["data"]
+    assert created.status_code == 200
+    assert job["job_type"] == "embedding_reindex"
+    assert job["status"] == "succeeded"
+    assert "approval_token" not in job["input"]
+    assert job["input"]["approval_token_hash"] == dry_run_data["approval_token_hash"]
+    assert (
+        job["output"]["safety_report"]["approval_token_hash"]
+        == dry_run_data["approval_token_hash"]
+    )
+    assert "approval_token" not in job["output"]["safety_report"]
+    assert job["output"]["rollback_marker"]["destructive"] is False
+    assert job["output"]["rollback_marker"]["job_id"] == job["job_id"]
+    assert job["output"]["quality_comparison"]["chunk_count_after"] >= 1
+    assert job["output"]["quality_comparison"]["status"] in {
+        "completed",
+        "improved",
+        "warning",
+    }
+
+    marker_id = job["output"]["rollback_marker"]["marker_id"]
+    marker_path = tmp_path / "repair_markers" / "embedding_reindex" / f"{marker_id}.json"
+    assert marker_path.exists()
+    marker_payload = marker_path.read_text(encoding="utf-8")
+    assert dry_run_data["approval_token"] not in marker_payload
+    assert dry_run_data["approval_token_hash"] in marker_payload
+
+
+@pytest.mark.asyncio
 async def test_background_job_cancel_route_marks_queued_job_cancelled(monkeypatch) -> None:
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     clear_settings_cache()
@@ -1676,12 +1747,24 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         retrieval_sources = await client.get("/api/v1/retrieval/sources")
         retrieval_integrity = await client.get("/api/v1/retrieval/integrity")
         retrieval_index_manifest = await client.get("/api/v1/retrieval/index-manifest")
+        retrieval_embedding_reindex_dry_run = await client.get(
+            "/api/v1/retrieval/embedding-reindex/dry-run"
+        )
         jobs = await client.get("/api/v1/jobs")
         job_detail = await client.get("/api/v1/jobs/job_missing")
         job_cancel = await client.post("/api/v1/jobs/job_missing/cancel")
         retrieval_reindex_job = await client.post(
             "/api/v1/jobs/retrieval-reindex",
             json={"include_seeded": True, "include_corpus": True, "execute_now": True},
+        )
+        embedding_reindex_job = await client.post(
+            "/api/v1/jobs/embedding-reindex",
+            json={
+                "include_seeded": True,
+                "include_corpus": True,
+                "approval_token": "missing",
+                "execute_now": True,
+            },
         )
         review = await client.post(
             "/api/v1/review/rev_missing",
@@ -1773,6 +1856,11 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_integrity, expected_code="unauthorized")
     assert retrieval_index_manifest.status_code == 401
     _assert_error_envelope(retrieval_index_manifest, expected_code="unauthorized")
+    assert retrieval_embedding_reindex_dry_run.status_code == 401
+    _assert_error_envelope(
+        retrieval_embedding_reindex_dry_run,
+        expected_code="unauthorized",
+    )
     assert jobs.status_code == 401
     _assert_error_envelope(jobs, expected_code="unauthorized")
     assert job_detail.status_code == 401
@@ -1781,6 +1869,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(job_cancel, expected_code="unauthorized")
     assert retrieval_reindex_job.status_code == 401
     _assert_error_envelope(retrieval_reindex_job, expected_code="unauthorized")
+    assert embedding_reindex_job.status_code == 401
+    _assert_error_envelope(embedding_reindex_job, expected_code="unauthorized")
     assert review.status_code == 401
     _assert_error_envelope(review, expected_code="unauthorized")
     assert logout.status_code == 401

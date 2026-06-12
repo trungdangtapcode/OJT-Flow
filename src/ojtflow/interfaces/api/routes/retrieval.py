@@ -7,6 +7,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request
 
 from ojtflow.application.governance_service import GovernanceService
+from ojtflow.application.retrieval_reindex_safety import (
+    build_embedding_reindex_safety_report,
+)
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
@@ -24,6 +27,7 @@ from ojtflow.core.contracts.retrieval import (
     CorpusChunkingProfileCatalog,
     CorpusIngestionLedger,
     CorpusIngestionManifest,
+    EmbeddingReindexSafetyReport,
     RetrievalIndexManifest,
     RetrievalFreshnessReport,
     RetrievalJudgmentEvaluationResult,
@@ -151,6 +155,11 @@ class RetrievalIntegrityEnvelope(ContractModel):
 
 class RetrievalIndexManifestEnvelope(ContractModel):
     data: RetrievalIndexManifest
+    error: None = None
+
+
+class EmbeddingReindexSafetyReportEnvelope(ContractModel):
+    data: EmbeddingReindexSafetyReport
     error: None = None
 
 
@@ -587,6 +596,29 @@ async def retrieval_index_manifest(
     return ok(
         service.retrieval_index_manifest(
             owner_user_id=authenticated.user.user_id,
+        )
+    )
+
+
+@router.get(
+    "/retrieval/embedding-reindex/dry-run",
+    response_model=EmbeddingReindexSafetyReportEnvelope,
+)
+async def embedding_reindex_dry_run(
+    include_seeded: bool = Query(default=True),
+    include_corpus: bool = Query(default=True),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(
+        build_embedding_reindex_safety_report(
+            current_manifest=service.retrieval_index_manifest(
+                owner_user_id=authenticated.user.user_id,
+            ),
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
         )
     )
 

@@ -617,6 +617,24 @@ class RetrievalReindexJobRequest(RetrievalReindexRequest):
     execute_now: bool = True
 
 
+class EmbeddingReindexJobRequest(RetrievalReindexRequest):
+    approval_token: NonBlankStr
+    execute_now: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "include_seeded": True,
+                    "include_corpus": True,
+                    "approval_token": "approve_embedding_reindex_abc123",
+                    "execute_now": True,
+                }
+            ]
+        }
+    }
+
+
 class RuntimeRetrievalSettingsRequest(ContractModel):
     change_reason: NonBlankStr | None = None
     embedding_provider: Literal["deterministic", "openai", "huggingface"] | None = None
