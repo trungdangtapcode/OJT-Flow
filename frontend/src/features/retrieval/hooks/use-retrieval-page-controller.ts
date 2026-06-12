@@ -1,6 +1,8 @@
 import * as React from "react";
 
 import {
+  useRetrievalActiveLearningCandidatesQuery,
+  useRetrievalActiveLearningSummaryQuery,
   useRetrievalGraphContextsQuery,
   useRetrievalGraphNeighborhoodQuery,
   useRetrievalFreshnessQuery,
@@ -12,6 +14,7 @@ import {
   useRetrievalSourcesQuery,
   useRuntimeConfigQuery,
   useSchemasQuery,
+  useUpdateRetrievalActiveLearningCandidateMutation,
 } from "../../../lib/server-state";
 import type { RetrievalGraphNeighborhoodQuery } from "../../../types";
 import type { RetrievalPageChrome } from "../components/retrieval-page-chrome";
@@ -49,8 +52,19 @@ export function useRetrievalPageController(): {
     { limit: 1000 },
     { enabled: true },
   );
+  const activeLearningCandidatesQuery = useRetrievalActiveLearningCandidatesQuery({
+    status: "open",
+    limit: 5,
+  });
+  const activeLearningSummaryQuery = useRetrievalActiveLearningSummaryQuery({
+    limit: 1000,
+  });
+  const updateActiveLearningCandidateMutation =
+    useUpdateRetrievalActiveLearningCandidateMutation();
 
   return retrievalPageProps({
+    activeLearningCandidatesQuery,
+    activeLearningSummaryQuery,
     graphContextsQuery,
     graphNeighborhoodQuery,
     graphNeighborhoodResultQuery,
@@ -65,6 +79,7 @@ export function useRetrievalPageController(): {
     searchOptionsQuery,
     setGraphNeighborhoodQuery,
     sourcesQuery,
+    updateActiveLearningCandidateMutation,
     workspace,
   });
 }

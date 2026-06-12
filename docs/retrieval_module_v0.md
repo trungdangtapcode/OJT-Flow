@@ -1539,6 +1539,18 @@ searches measurable and actionable without copying labels into fixture files.
 Postgres deployments use migration `020_retrieval_judgment_policy_labels.sql`
 to expand the durable value constraint. SQLite local stores rebuild the
 judgment table in place during startup when they detect the older constraint.
+Reviewer labels and weak evaluation results also feed an active-learning queue.
+`PUT /api/v1/retrieval/judgments` enqueues non-relevant and partial labels as
+benchmark candidates, while `POST /api/v1/retrieval/judgments/evaluate`
+enqueues low-confidence ranked results when coverage or positive-hit metrics are
+weak. Queue items are deduped by `(owner_user_id, candidate_key)` so repeated
+searches update the same candidate instead of inflating the backlog.
+`GET /api/v1/retrieval/active-learning/candidates` lists the queue,
+`GET /api/v1/retrieval/active-learning/summary` returns backlog counts, and
+`PATCH /api/v1/retrieval/active-learning/candidates/{candidate_id}` lets a
+reviewer accept, reject, promote, or archive a candidate. Postgres deployments
+use migration `021_retrieval_active_learning_candidates.sql`; SQLite creates the
+same table during local startup.
 `evaluation_readiness` states whether the current labels are unlabeled, low
 confidence, usable with gaps, or ready for tuning so sparse label sets do not
 look like reliable ranking quality measurements.

@@ -6,6 +6,9 @@ import math
 from collections.abc import Iterable
 
 from ojtflow.application.ports import RetrievalJudgmentRepository
+from ojtflow.application.retrieval_active_learning_service import (
+    RetrievalActiveLearningService,
+)
 from ojtflow.application.retrieval_evaluation_policy import (
     RetrievalEvaluationPolicyRule,
     recommendations_from_policy,
@@ -49,9 +52,11 @@ class RetrievalJudgmentService:
     def __init__(
         self,
         repository: RetrievalJudgmentRepository,
+        active_learning_service: RetrievalActiveLearningService | None = None,
         evaluation_policy_rules: Iterable[RetrievalEvaluationPolicyRule] = (),
     ) -> None:
         self.repository = repository
+        self.active_learning_service = active_learning_service
         self.evaluation_policy_rules = tuple(evaluation_policy_rules)
 
     def upsert(
@@ -81,11 +86,17 @@ class RetrievalJudgmentService:
             search_signature=search_signature,
             metadata=metadata or {},
         )
-        return self.repository.upsert(
+        judgment = self.repository.upsert(
             owner_user_id=owner_user_id,
             query_hash=query_hash(write.query),
             write=write,
         )
+        if self.active_learning_service is not None:
+            self.active_learning_service.enqueue_from_judgment(
+                owner_user_id=owner_user_id,
+                judgment=judgment,
+            )
+        return judgment
 
     def list(
         self,

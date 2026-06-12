@@ -14,6 +14,7 @@ import {
   deleteAssistantSession,
   deleteAssistantMemoryPreference,
   deleteRetrievalJudgment,
+  enqueueRetrievalActiveLearningCandidate,
   evaluateRetrievalJudgments,
   extractFileText,
   getAssistantSession,
@@ -25,6 +26,7 @@ import {
   getJob,
   getExtractorInventory,
   getRetrievalJudgmentSummary,
+  getRetrievalActiveLearningSummary,
   getRetrievalIntegrity,
   getRetrievalCorpusAdapters,
   getRetrievalCorpusChunkingProfiles,
@@ -50,6 +52,7 @@ import {
   listAssistantSessions,
   listJobs,
   listRetrievalGraphContexts,
+  listRetrievalActiveLearningCandidates,
   listRetrievalJudgments,
   listRetrievalPresets,
   listRetrievalSources,
@@ -66,6 +69,7 @@ import {
   submitReview,
   updateRuntimeAssistantSettings,
   updateRuntimeRetrievalSettings,
+  updateRetrievalActiveLearningCandidate,
   upsertAssistantMemoryPreference,
   upsertRetrievalJudgment,
   uploadFileWorkflow,
@@ -92,6 +96,11 @@ import type {
   OcrEvidenceResponse,
   UploadParseJobResponse,
   RetrievalGraphNeighborhoodQuery,
+  RetrievalActiveLearningCandidatePayload,
+  RetrievalActiveLearningCandidateUpdatePayload,
+  RetrievalActiveLearningPriority,
+  RetrievalActiveLearningSourceKind,
+  RetrievalActiveLearningStatus,
   RetrievalReindexJobPayload,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentPayload,
@@ -148,6 +157,10 @@ export const queryKeys = {
     ["retrieval-judgment-summary", params] as const,
   retrievalJudgmentEvaluation: (params: Record<string, unknown>) =>
     ["retrieval-judgment-evaluation", params] as const,
+  retrievalActiveLearningCandidates: (params: Record<string, unknown>) =>
+    ["retrieval-active-learning-candidates", params] as const,
+  retrievalActiveLearningSummary: (params: Record<string, unknown>) =>
+    ["retrieval-active-learning-summary", params] as const,
   retrievalSearchOptions: ["retrieval-search-options"] as const,
   retrievalCorpusAdapters: ["retrieval-corpus-adapters"] as const,
   retrievalCorpusChunkingProfiles: ["retrieval-corpus-chunking-profiles"] as const,
@@ -523,6 +536,12 @@ export function useRetrievalJudgmentMutation() {
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-evaluation"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["retrieval-active-learning-candidates"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["retrieval-active-learning-summary"],
+      });
     },
   });
 }
@@ -535,6 +554,64 @@ export function useDeleteRetrievalJudgmentMutation() {
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgments"] });
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-summary"] });
       await queryClient.invalidateQueries({ queryKey: ["retrieval-judgment-evaluation"] });
+    },
+  });
+}
+
+export function useRetrievalActiveLearningCandidatesQuery(params: {
+  status?: RetrievalActiveLearningStatus | null;
+  source_kind?: RetrievalActiveLearningSourceKind | null;
+  priority?: RetrievalActiveLearningPriority | null;
+  query?: string | null;
+  limit?: number;
+}, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: queryKeys.retrievalActiveLearningCandidates(params),
+    queryFn: () => listRetrievalActiveLearningCandidates(params),
+  });
+}
+
+export function useRetrievalActiveLearningSummaryQuery(params: { limit?: number } = {}) {
+  return useQuery({
+    queryKey: queryKeys.retrievalActiveLearningSummary(params),
+    queryFn: () => getRetrievalActiveLearningSummary(params),
+  });
+}
+
+export function useEnqueueRetrievalActiveLearningCandidateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RetrievalActiveLearningCandidatePayload) =>
+      enqueueRetrievalActiveLearningCandidate(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["retrieval-active-learning-candidates"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["retrieval-active-learning-summary"],
+      });
+    },
+  });
+}
+
+export function useUpdateRetrievalActiveLearningCandidateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      candidateId,
+      payload,
+    }: {
+      candidateId: string;
+      payload: RetrievalActiveLearningCandidateUpdatePayload;
+    }) => updateRetrievalActiveLearningCandidate(candidateId, payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["retrieval-active-learning-candidates"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["retrieval-active-learning-summary"],
+      });
     },
   });
 }

@@ -61,6 +61,13 @@ import type {
   RetrievalFreshnessReport,
   RetrievalGraphNeighborhood,
   RetrievalGraphNeighborhoodQuery,
+  RetrievalActiveLearningCandidate,
+  RetrievalActiveLearningCandidatePayload,
+  RetrievalActiveLearningCandidateUpdatePayload,
+  RetrievalActiveLearningPriority,
+  RetrievalActiveLearningSourceKind,
+  RetrievalActiveLearningStatus,
+  RetrievalActiveLearningSummary,
   SchemaEntry,
   StartWorkflowPayload,
   UploadParseJobResponse,
@@ -622,6 +629,51 @@ export function deleteRetrievalJudgment(judgmentId: string): Promise<{
   return request(`/retrieval/judgments/${pathSegment(judgmentId)}`, {
     method: "DELETE",
   });
+}
+
+export function listRetrievalActiveLearningCandidates(params: {
+  status?: RetrievalActiveLearningStatus | null;
+  source_kind?: RetrievalActiveLearningSourceKind | null;
+  priority?: RetrievalActiveLearningPriority | null;
+  query?: string | null;
+  limit?: number;
+}): Promise<RetrievalActiveLearningCandidate[]> {
+  return request<RetrievalActiveLearningCandidate[]>(
+    `/retrieval/active-learning/candidates${queryString(params)}`,
+  );
+}
+
+export function getRetrievalActiveLearningSummary(params: {
+  limit?: number;
+}): Promise<RetrievalActiveLearningSummary> {
+  return request<RetrievalActiveLearningSummary>(
+    `/retrieval/active-learning/summary${queryString(params)}`,
+  );
+}
+
+export function enqueueRetrievalActiveLearningCandidate(
+  payload: RetrievalActiveLearningCandidatePayload,
+): Promise<RetrievalActiveLearningCandidate> {
+  return request<RetrievalActiveLearningCandidate>(
+    "/retrieval/active-learning/candidates",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function updateRetrievalActiveLearningCandidate(
+  candidateId: string,
+  payload: RetrievalActiveLearningCandidateUpdatePayload,
+): Promise<RetrievalActiveLearningCandidate> {
+  return request<RetrievalActiveLearningCandidate>(
+    `/retrieval/active-learning/candidates/${pathSegment(candidateId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function chatWithAssistant(

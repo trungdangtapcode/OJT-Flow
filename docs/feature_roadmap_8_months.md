@@ -225,6 +225,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-12 | F182 | Implemented | Added Graph-NER extraction provenance on graph nodes, edges, and triples, including extractor version, source evidence/chunk metadata, confidence, normalized-code candidates, candidate-review state, summary provenance counts, docs, and focused graph contract tests. |
 | 2026-06-12 | F183 | Implemented | Added data-driven Graph-NER conflict detection for contradictory source claims, deprecated terminology mappings, conflicting units, and version-mismatched standard guidance; retrieval handoff now includes `graph_conflict_report`, answer synthesis review-gates conflicts, and focused tests cover direct and integrated paths. |
 | 2026-06-12 | F184 | Implemented | Expanded durable retrieval judgments from relevance-only labels to reviewer workflow labels: relevant, partial, irrelevant, unsafe, stale, and source-policy-blocked; updated API/contracts, Postgres migration 020, SQLite local migration, UI controls, metrics/report counts, docs, and focused API/service/frontend build checks. |
+| 2026-06-12 | F185 | Implemented | Added durable retrieval active-learning candidates with memory/SQLite/Postgres repositories, Postgres migration 021, API list/summary/enqueue/update routes, automatic queueing from reviewer judgments and low-confidence evaluations, Retrieval UI queue surfacing, docs, and focused service/API checks. |
 
 ## Feature Backlog
 
@@ -431,7 +432,7 @@ Month 4 is done only when these acceptance gates hold:
 - [x] F182 Add Graph-NER extraction provenance per node and edge, including extractor version, source chunk, confidence, normalized-code candidates, and review state.
 - [x] F183 Add graph conflict detection for contradictory source claims, deprecated terminology mappings, conflicting units, and version-mismatched standard guidance.
 - [x] F184 Add retrieval judgement workflow so reviewers can label evidence hits as relevant, irrelevant, unsafe, stale, or source-policy-blocked.
-- [ ] F185 Add active-learning queue that converts low-confidence retrieval, unsupported claims, and reviewer corrections into benchmark candidates.
+- [x] F185 Add active-learning queue that converts low-confidence retrieval, unsupported claims, and reviewer corrections into benchmark candidates.
 - [ ] F186 Add tenant-scoped corpus partitions and source policies so enterprise customers can separate global standards, tenant policies, and private documents.
 - [ ] F187 Add PHI-safe private corpus ingestion with redaction preview, retention policy stamping, and external-provider blocking by default.
 - [ ] F188 Add PubMed/ClinicalTrials/openFDA query transparency records showing exact external query, filters, result IDs, cache hit state, and rate-limit metadata.

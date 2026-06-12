@@ -1,10 +1,13 @@
-import { Activity, AlertTriangle, BarChart3, RefreshCw } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, Inbox, RefreshCw } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Notice } from "../../../components/ui/notice";
 import { cn } from "../../../lib/utils";
 import type {
+  RetrievalActiveLearningCandidate,
+  RetrievalActiveLearningStatus,
+  RetrievalActiveLearningSummary,
   RetrievalJudgmentEvaluationResult,
   RetrievalRelevanceJudgment,
   RetrievalRelevanceJudgmentSummary,
@@ -29,6 +32,8 @@ type QueryRegressionRow = {
 
 export function RetrievalRegressionDashboard({
   activeEvaluation,
+  activeLearningCandidates,
+  activeLearningSummary,
   activeRun,
   errorMessage,
   formatCount,
@@ -40,9 +45,12 @@ export function RetrievalRegressionDashboard({
   isLoading,
   isRefreshing,
   onRefresh,
+  onUpdateActiveLearningCandidate,
   searchRuns,
 }: {
   activeEvaluation: RetrievalJudgmentEvaluationResult | null;
+  activeLearningCandidates: RetrievalActiveLearningCandidate[];
+  activeLearningSummary: RetrievalActiveLearningSummary | null;
   activeRun: RetrievalSearchRun | null;
   errorMessage: string | null;
   formatCount: FormatCount;
@@ -54,6 +62,10 @@ export function RetrievalRegressionDashboard({
   isLoading: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
+  onUpdateActiveLearningCandidate: (
+    candidateId: string,
+    status: RetrievalActiveLearningStatus,
+  ) => void;
   searchRuns: RetrievalSearchRun[];
 }) {
   const queryRows = regressionRows(globalJudgments).slice(0, 5);
@@ -160,7 +172,115 @@ export function RetrievalRegressionDashboard({
           </div>
         )}
       </div>
+
+      <ActiveLearningQueue
+        candidates={activeLearningCandidates}
+        onUpdateCandidate={onUpdateActiveLearningCandidate}
+        summary={activeLearningSummary}
+      />
     </section>
+  );
+}
+
+function ActiveLearningQueue({
+  candidates,
+  onUpdateCandidate,
+  summary,
+}: {
+  candidates: RetrievalActiveLearningCandidate[];
+  onUpdateCandidate: (candidateId: string, status: RetrievalActiveLearningStatus) => void;
+  summary: RetrievalActiveLearningSummary | null;
+}) {
+  return (
+    <div className="grid gap-2 border-t border-border pt-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
+          <Inbox className="h-3.5 w-3.5" />
+          Active-learning queue
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="muted">{summary?.open_count ?? 0} open</Badge>
+          <Badge variant={summary?.critical_count ? "destructive" : "muted"}>
+            {summary?.critical_count ?? 0} critical
+          </Badge>
+          <Badge variant={summary?.high_count ? "warning" : "muted"}>
+            {summary?.high_count ?? 0} high
+          </Badge>
+        </div>
+      </div>
+
+      {candidates.length ? (
+        <div className="grid gap-2">
+          {candidates.map((candidate) => (
+            <ActiveLearningCandidateRow
+              candidate={candidate}
+              key={candidate.candidate_id}
+              onUpdateCandidate={onUpdateCandidate}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+          No open active-learning candidates.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActiveLearningCandidateRow({
+  candidate,
+  onUpdateCandidate,
+}: {
+  candidate: RetrievalActiveLearningCandidate;
+  onUpdateCandidate: (candidateId: string, status: RetrievalActiveLearningStatus) => void;
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-background p-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <Badge variant={priorityVariant(candidate.priority)}>{candidate.priority}</Badge>
+            <Badge variant="muted">{humanizeLabel(candidate.source_kind)}</Badge>
+            {candidate.support_status ? (
+              <Badge variant="muted">{candidate.support_status}</Badge>
+            ) : null}
+          </div>
+          <p className="mt-2 line-clamp-2 break-words text-sm font-semibold">
+            {candidate.query}
+          </p>
+          <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
+            {candidate.trigger_reason}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1.5">
+          <Button
+            onClick={() => onUpdateCandidate(candidate.candidate_id, "accepted")}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Accept
+          </Button>
+          <Button
+            onClick={() => onUpdateCandidate(candidate.candidate_id, "archived")}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Archive
+          </Button>
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-1.5 text-xs text-muted-foreground">
+        {candidate.evidence_id ? <span>evidence {candidate.evidence_id}</span> : null}
+        {candidate.source_id ? <span>source {candidate.source_id}</span> : null}
+        {candidate.updated_at ? (
+          <span>updated {new Date(candidate.updated_at).toLocaleString()}</span>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -290,6 +410,18 @@ function regressionRows(judgments: RetrievalRelevanceJudgment[]): QueryRegressio
       sourceCount: sourceCounts.get(row.query)?.size ?? 0,
     }))
     .sort((left, right) => (right.latestUpdatedAt ?? "").localeCompare(left.latestUpdatedAt ?? ""));
+}
+
+function humanizeLabel(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function priorityVariant(
+  priority: string,
+): "default" | "success" | "warning" | "destructive" | "muted" {
+  if (priority === "critical") return "destructive";
+  if (priority === "high") return "warning";
+  return "muted";
 }
 
 function regressionStatus(

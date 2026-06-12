@@ -26,6 +26,12 @@ from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
     RetrievalRelevanceJudgment,
     RetrievalRelevanceJudgmentWrite,
 )
@@ -452,6 +458,99 @@ class InMemoryRetrievalJudgmentRepository:
         if not judgment or judgment.owner_user_id != owner_user_id:
             raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
         del self._judgments[judgment_id]
+
+
+class InMemoryRetrievalActiveLearningRepository:
+    """User-scoped in-memory active-learning queue."""
+
+    def __init__(self) -> None:
+        self._candidates: dict[str, RetrievalActiveLearningCandidate] = {}
+
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        candidate_key: str,
+        write: RetrievalActiveLearningCandidateWrite,
+    ) -> RetrievalActiveLearningCandidate:
+        existing = next(
+            (
+                candidate
+                for candidate in self._candidates.values()
+                if candidate.owner_user_id == owner_user_id
+                and candidate.candidate_key == candidate_key
+            ),
+            None,
+        )
+        now = utc_now().isoformat()
+        candidate = RetrievalActiveLearningCandidate(
+            **write.model_dump(),
+            candidate_id=existing.candidate_id if existing else new_id("alc"),
+            owner_user_id=owner_user_id,
+            candidate_key=candidate_key,
+            query_hash=query_hash,
+            status=existing.status if existing else "open",
+            reviewer_user_id=existing.reviewer_user_id if existing else None,
+            reviewer_note=existing.reviewer_note if existing else None,
+            reviewed_at=existing.reviewed_at if existing else None,
+            created_at=existing.created_at if existing else now,
+            updated_at=now,
+        )
+        self._candidates[candidate.candidate_id] = deepcopy(candidate)
+        return deepcopy(candidate)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: RetrievalActiveLearningStatus | None = None,
+        source_kind: RetrievalActiveLearningSourceKind | None = None,
+        priority: RetrievalActiveLearningPriority | None = None,
+        query_hash: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalActiveLearningCandidate]:
+        candidates = [
+            candidate
+            for candidate in self._candidates.values()
+            if candidate.owner_user_id == owner_user_id
+            and (status is None or candidate.status == status)
+            and (source_kind is None or candidate.source_kind == source_kind)
+            and (priority is None or candidate.priority == priority)
+            and (query_hash is None or candidate.query_hash == query_hash)
+        ]
+        candidates.sort(key=lambda candidate: candidate.updated_at, reverse=True)
+        return [deepcopy(candidate) for candidate in candidates[: max(1, min(limit, 1000))]]
+
+    def update(
+        self,
+        *,
+        owner_user_id: str,
+        candidate_id: str,
+        reviewer_user_id: str | None,
+        update: RetrievalActiveLearningCandidateUpdate,
+    ) -> RetrievalActiveLearningCandidate:
+        existing = self._candidates.get(candidate_id)
+        if not existing or existing.owner_user_id != owner_user_id:
+            raise NotFoundError(f"Retrieval active-learning candidate not found: {candidate_id}")
+        now = utc_now().isoformat()
+        payload = existing.model_dump()
+        if update.status is not None:
+            payload["status"] = update.status
+            payload["reviewed_at"] = now
+            payload["reviewer_user_id"] = reviewer_user_id
+        if update.priority is not None:
+            payload["priority"] = update.priority
+        if update.reviewer_note is not None:
+            payload["reviewer_note"] = update.reviewer_note
+        if update.benchmark_metadata is not None:
+            payload["benchmark_metadata"] = update.benchmark_metadata
+        if update.metadata is not None:
+            payload["metadata"] = update.metadata
+        payload["updated_at"] = now
+        candidate = RetrievalActiveLearningCandidate.model_validate(payload)
+        self._candidates[candidate_id] = deepcopy(candidate)
+        return deepcopy(candidate)
 
 
 class InMemoryAssistantSessionRepository:

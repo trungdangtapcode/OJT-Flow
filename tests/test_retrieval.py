@@ -10,6 +10,7 @@ from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
+    RetrievalActiveLearningCandidateUpdate,
     RetrievalEvidenceSupportMatrix,
     RetrievalEvidenceSupportRow,
     RetrievalHit,
@@ -20,6 +21,9 @@ from ojtflow.core.contracts.retrieval import (
 from ojtflow.application.graph_conflict_service import GraphConflictService
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
+from ojtflow.application.retrieval_active_learning_service import (
+    RetrievalActiveLearningService,
+)
 from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.retrieval_reindex_safety import (
@@ -78,7 +82,10 @@ from ojtflow.infrastructure.retrieval.reindex_markers import (
     write_embedding_reindex_rollback_marker,
 )
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
-from ojtflow.infrastructure.storage.in_memory import InMemoryRetrievalJudgmentRepository
+from ojtflow.infrastructure.storage.in_memory import (
+    InMemoryRetrievalActiveLearningRepository,
+    InMemoryRetrievalJudgmentRepository,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -325,6 +332,66 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     assert policy_evaluation.source_policy_blocked_count == 1
     assert policy_evaluation.unsafe_count == 1
     assert policy_evaluation.hit_rate_at_k == 0.0
+
+
+def test_retrieval_active_learning_queue_dedupes_and_tracks_review_status() -> None:
+    active_learning = RetrievalActiveLearningService(
+        InMemoryRetrievalActiveLearningRepository()
+    )
+    judgments = RetrievalJudgmentService(
+        InMemoryRetrievalJudgmentRepository(),
+        active_learning_service=active_learning,
+    )
+
+    judgment = judgments.upsert(
+        owner_user_id="usr_reviewer",
+        query="FHIR Observation source policy",
+        evidence_id="ev_policy_blocked",
+        value="source_policy_blocked",
+        source_id="standard:fhir_observation_r4",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        run_id="run_policy",
+    )
+    duplicate = judgments.upsert(
+        owner_user_id="usr_reviewer",
+        query="FHIR Observation source policy",
+        evidence_id="ev_policy_blocked",
+        value="source_policy_blocked",
+        source_id="standard:fhir_observation_r4",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        run_id="run_policy",
+    )
+    summary = active_learning.summary(owner_user_id="usr_reviewer")
+    candidates = active_learning.list(owner_user_id="usr_reviewer")
+
+    assert duplicate.judgment_id == judgment.judgment_id
+    assert summary.total_count == 1
+    assert summary.open_count == 1
+    assert summary.critical_count == 1
+    assert summary.source_kind_counts["negative_judgment"] == 1
+    assert candidates[0].candidate_id.startswith("alc_")
+    assert candidates[0].source_kind == "negative_judgment"
+    assert candidates[0].priority == "critical"
+    assert candidates[0].evidence_id == "ev_policy_blocked"
+    assert candidates[0].judgment_id == judgment.judgment_id
+
+    reviewed = active_learning.update(
+        owner_user_id="usr_reviewer",
+        candidate_id=candidates[0].candidate_id,
+        reviewer_user_id="usr_reviewer",
+        update=RetrievalActiveLearningCandidateUpdate(
+            status="accepted",
+            priority="high",
+            reviewer_note="Promote this into the source-policy benchmark.",
+            benchmark_metadata={"case_family": "source_policy"},
+        ),
+    )
+
+    assert reviewed.status == "accepted"
+    assert reviewed.priority == "high"
+    assert reviewed.reviewer_user_id == "usr_reviewer"
+    assert reviewed.reviewer_note == "Promote this into the source-policy benchmark."
+    assert reviewed.benchmark_metadata == {"case_family": "source_policy"}
 
 
 def test_query_variants_include_fields_schema_and_format() -> None:

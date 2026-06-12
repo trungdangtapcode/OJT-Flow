@@ -1100,6 +1100,94 @@ export type RetrievalJudgmentPayload = {
   metadata?: Record<string, unknown>;
 };
 
+export type RetrievalActiveLearningSourceKind =
+  | "low_confidence_retrieval"
+  | "unsupported_claim"
+  | "reviewer_correction"
+  | "weak_support"
+  | "negative_judgment";
+
+export type RetrievalActiveLearningStatus =
+  | "open"
+  | "accepted"
+  | "rejected"
+  | "promoted"
+  | "archived";
+
+export type RetrievalActiveLearningPriority = "low" | "normal" | "high" | "critical";
+
+export type RetrievalActiveLearningCandidate = {
+  candidate_id: string;
+  owner_user_id: string;
+  candidate_key: string;
+  query_hash: string;
+  query: string;
+  source_kind: RetrievalActiveLearningSourceKind;
+  trigger_reason: string;
+  priority: RetrievalActiveLearningPriority;
+  status: RetrievalActiveLearningStatus;
+  evidence_id?: string | null;
+  source_id?: string | null;
+  source_type?: string | null;
+  source_version?: string | null;
+  run_id?: string | null;
+  workflow_id?: string | null;
+  judgment_id?: string | null;
+  claim_id?: string | null;
+  support_status?: RetrievalSupportStatus | null;
+  suggested_expected_evidence_ids: string[];
+  suggested_filters: Record<string, unknown>;
+  benchmark_metadata: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  reviewer_user_id?: string | null;
+  reviewer_note?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RetrievalActiveLearningSummary = {
+  total_count: number;
+  open_count: number;
+  accepted_count: number;
+  rejected_count: number;
+  promoted_count: number;
+  archived_count: number;
+  critical_count: number;
+  high_count: number;
+  source_kind_counts: Record<RetrievalActiveLearningSourceKind, number>;
+  latest_updated_at?: string | null;
+  sample_limit: number;
+};
+
+export type RetrievalActiveLearningCandidatePayload = {
+  source_kind: RetrievalActiveLearningSourceKind;
+  query: string;
+  trigger_reason: string;
+  priority?: RetrievalActiveLearningPriority;
+  evidence_id?: string | null;
+  source_id?: string | null;
+  source_type?: string | null;
+  source_version?: string | null;
+  run_id?: string | null;
+  workflow_id?: string | null;
+  judgment_id?: string | null;
+  claim_id?: string | null;
+  support_status?: RetrievalSupportStatus | null;
+  suggested_expected_evidence_ids?: string[];
+  suggested_filters?: Record<string, unknown>;
+  benchmark_metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type RetrievalActiveLearningCandidateUpdatePayload = {
+  status?: RetrievalActiveLearningStatus | null;
+  priority?: RetrievalActiveLearningPriority | null;
+  reviewer_note?: string | null;
+  benchmark_metadata?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 export type RetrievalSearchFilters = {
   trust_level?: string | null;
   clinical_domain?: string | null;

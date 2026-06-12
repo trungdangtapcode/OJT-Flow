@@ -31,6 +31,7 @@ from ojtflow.interfaces.api.deps import (
     get_assistant_service,
     get_governance_service,
     get_medical_evidence_service,
+    get_retrieval_active_learning_service,
     get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
@@ -291,6 +292,26 @@ def test_openapi_exposes_core_request_examples() -> None:
             "RetrievalJudgmentDeleteEnvelope",
         ),
         (
+            "/api/v1/retrieval/active-learning/candidates",
+            "get",
+            "RetrievalActiveLearningCandidatesEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/active-learning/summary",
+            "get",
+            "RetrievalActiveLearningSummaryEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/active-learning/candidates",
+            "post",
+            "RetrievalActiveLearningCandidateEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/active-learning/candidates/{candidate_id}",
+            "patch",
+            "RetrievalActiveLearningCandidateEnvelope",
+        ),
+        (
             "/api/v1/retrieval/graph/contexts",
             "get",
             "RetrievalGraphContextsEnvelope",
@@ -343,6 +364,15 @@ def test_openapi_exposes_core_request_examples() -> None:
         "#/components/schemas/RetrievalRelevanceJudgment"
     )
     assert "judgment_id" in schemas["RetrievalJudgmentDeleteResult"]["properties"]
+    assert schemas["RetrievalActiveLearningCandidatesEnvelope"]["properties"]["data"]["items"][
+        "$ref"
+    ] == "#/components/schemas/RetrievalActiveLearningCandidate"
+    assert schemas["RetrievalActiveLearningCandidateEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalActiveLearningCandidate"
+    )
+    assert schemas["RetrievalActiveLearningSummaryEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalActiveLearningSummary"
+    )
     assert schemas["RetrievalGraphContextsEnvelope"]["properties"]["data"]["items"]["$ref"] == (
         "#/components/schemas/GraphContextRecord"
     )
@@ -1078,13 +1108,29 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
             self.calls.append({"method": "delete", **kwargs})
 
     fake_service = FakeRetrievalJudgmentService()
+
+    class FakeActiveLearningService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def enqueue_from_evaluation(self, **kwargs):
+            self.calls.append({"method": "enqueue_from_evaluation", **kwargs})
+            return []
+
+    fake_active_learning = FakeActiveLearningService()
     app = create_app()
     app.dependency_overrides[require_authentication] = _authenticated_dependency
 
     async def fake_judgment_service() -> FakeRetrievalJudgmentService:
         return fake_service
 
+    async def fake_active_learning_service() -> FakeActiveLearningService:
+        return fake_active_learning
+
     app.dependency_overrides[get_retrieval_judgment_service] = fake_judgment_service
+    app.dependency_overrides[get_retrieval_active_learning_service] = (
+        fake_active_learning_service
+    )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -1155,6 +1201,9 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
         "ranked_evidence_ids": ["ev_schema", "ev_missing"],
         "cutoff": 2,
     }
+    assert fake_active_learning.calls[0]["method"] == "enqueue_from_evaluation"
+    assert fake_active_learning.calls[0]["owner_user_id"] == "usr_api_test"
+    assert fake_active_learning.calls[0]["evaluation"]["query"] == "FHIR Observation HbA1c"
     assert fake_service.calls[3]["method"] == "upsert"
     assert fake_service.calls[3]["owner_user_id"] == "usr_api_test"
     assert fake_service.calls[3]["value"] == "source_policy_blocked"
@@ -1165,6 +1214,199 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
         "owner_user_id": "usr_api_test",
         "judgment_id": "rj_saved",
     }
+
+
+@pytest.mark.asyncio
+async def test_retrieval_active_learning_routes_use_authenticated_owner(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeActiveLearningService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def list(self, **kwargs):
+            self.calls.append({"method": "list", **kwargs})
+            return [
+                {
+                    "candidate_id": "alc_existing",
+                    "owner_user_id": kwargs["owner_user_id"],
+                    "candidate_key": "2" * 64,
+                    "query_hash": "3" * 64,
+                    "query": kwargs["query"],
+                    "source_kind": kwargs["source_kind"],
+                    "trigger_reason": "Reviewer marked source policy conflict.",
+                    "priority": kwargs["priority"],
+                    "status": kwargs["status"],
+                    "evidence_id": "ev_policy",
+                    "source_id": "standard:fhir_observation_r4",
+                    "source_type": "healthcare_standard",
+                    "source_version": None,
+                    "run_id": "run_1",
+                    "workflow_id": None,
+                    "judgment_id": "rj_policy",
+                    "claim_id": None,
+                    "support_status": "unsupported",
+                    "suggested_expected_evidence_ids": [],
+                    "suggested_filters": {},
+                    "benchmark_metadata": {},
+                    "metadata": {},
+                    "reviewer_user_id": None,
+                    "reviewer_note": None,
+                    "reviewed_at": None,
+                    "created_at": "2026-06-04T00:00:00+00:00",
+                    "updated_at": "2026-06-04T00:00:00+00:00",
+                }
+            ]
+
+        def summary(self, **kwargs):
+            self.calls.append({"method": "summary", **kwargs})
+            return {
+                "total_count": 1,
+                "open_count": 1,
+                "accepted_count": 0,
+                "rejected_count": 0,
+                "promoted_count": 0,
+                "archived_count": 0,
+                "critical_count": 1,
+                "high_count": 0,
+                "source_kind_counts": {
+                    "low_confidence_retrieval": 0,
+                    "unsupported_claim": 0,
+                    "reviewer_correction": 0,
+                    "weak_support": 0,
+                    "negative_judgment": 1,
+                },
+                "latest_updated_at": "2026-06-04T00:00:00+00:00",
+                "sample_limit": kwargs["limit"],
+            }
+
+        def enqueue(self, **kwargs):
+            self.calls.append({"method": "enqueue", **kwargs})
+            write = kwargs["write"]
+            return {
+                **write.model_dump(mode="json"),
+                "candidate_id": "alc_created",
+                "owner_user_id": kwargs["owner_user_id"],
+                "candidate_key": "4" * 64,
+                "query_hash": "5" * 64,
+                "status": "open",
+                "reviewer_user_id": None,
+                "reviewer_note": None,
+                "reviewed_at": None,
+                "created_at": "2026-06-04T00:00:00+00:00",
+                "updated_at": "2026-06-04T00:00:00+00:00",
+            }
+
+        def update(self, **kwargs):
+            self.calls.append({"method": "update", **kwargs})
+            update = kwargs["update"]
+            return {
+                "candidate_id": kwargs["candidate_id"],
+                "owner_user_id": kwargs["owner_user_id"],
+                "candidate_key": "4" * 64,
+                "query_hash": "5" * 64,
+                "query": "FHIR Observation source policy",
+                "source_kind": "negative_judgment",
+                "trigger_reason": "Reviewer marked source policy conflict.",
+                "priority": update.priority,
+                "status": update.status,
+                "evidence_id": "ev_policy",
+                "source_id": "standard:fhir_observation_r4",
+                "source_type": "healthcare_standard",
+                "source_version": None,
+                "run_id": "run_1",
+                "workflow_id": None,
+                "judgment_id": "rj_policy",
+                "claim_id": None,
+                "support_status": "unsupported",
+                "suggested_expected_evidence_ids": [],
+                "suggested_filters": {},
+                "benchmark_metadata": update.benchmark_metadata or {},
+                "metadata": update.metadata or {},
+                "reviewer_user_id": kwargs["reviewer_user_id"],
+                "reviewer_note": update.reviewer_note,
+                "reviewed_at": "2026-06-04T00:00:00+00:00",
+                "created_at": "2026-06-04T00:00:00+00:00",
+                "updated_at": "2026-06-04T00:00:00+00:00",
+            }
+
+    fake_service = FakeActiveLearningService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_active_learning_service() -> FakeActiveLearningService:
+        return fake_service
+
+    app.dependency_overrides[get_retrieval_active_learning_service] = (
+        fake_active_learning_service
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        listed = await client.get(
+            "/api/v1/retrieval/active-learning/candidates",
+            params={
+                "status": "open",
+                "source_kind": "negative_judgment",
+                "priority": "critical",
+                "query": "FHIR Observation source policy",
+            },
+        )
+        summary = await client.get("/api/v1/retrieval/active-learning/summary")
+        created = await client.post(
+            "/api/v1/retrieval/active-learning/candidates",
+            json={
+                "source_kind": "unsupported_claim",
+                "query": "FHIR Observation source policy",
+                "trigger_reason": "Unsupported answer claim.",
+                "priority": "high",
+                "evidence_id": "ev_policy",
+                "source_id": "standard:fhir_observation_r4",
+                "source_type": "healthcare_standard",
+                "support_status": "unsupported",
+                "benchmark_metadata": {"case_family": "source_policy"},
+            },
+        )
+        updated = await client.patch(
+            "/api/v1/retrieval/active-learning/candidates/alc_created",
+            json={
+                "status": "accepted",
+                "priority": "high",
+                "reviewer_note": "Promote into benchmark.",
+                "benchmark_metadata": {"case_family": "source_policy"},
+            },
+        )
+
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["candidate_id"] == "alc_existing"
+    assert summary.status_code == 200
+    assert summary.json()["data"]["critical_count"] == 1
+    assert created.status_code == 200
+    assert created.json()["data"]["source_kind"] == "unsupported_claim"
+    assert updated.status_code == 200
+    assert updated.json()["data"]["status"] == "accepted"
+    assert fake_service.calls[0] == {
+        "method": "list",
+        "owner_user_id": "usr_api_test",
+        "status": "open",
+        "source_kind": "negative_judgment",
+        "priority": "critical",
+        "query": "FHIR Observation source policy",
+        "limit": 500,
+    }
+    assert fake_service.calls[1] == {
+        "method": "summary",
+        "owner_user_id": "usr_api_test",
+        "limit": 1000,
+    }
+    assert fake_service.calls[2]["method"] == "enqueue"
+    assert fake_service.calls[2]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[2]["write"].source_kind == "unsupported_claim"
+    assert fake_service.calls[3]["method"] == "update"
+    assert fake_service.calls[3]["reviewer_user_id"] == "usr_api_test"
+    assert fake_service.calls[3]["update"].status == "accepted"
 
 
 @pytest.mark.asyncio

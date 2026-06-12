@@ -33,6 +33,12 @@ from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
     RetrievalRelevanceJudgment,
     RetrievalRelevanceJudgmentWrite,
 )
@@ -1116,6 +1122,197 @@ class PostgresRetrievalJudgmentRepository:
             raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
 
 
+class PostgresRetrievalActiveLearningRepository:
+    """Postgres-backed active-learning queue for retrieval benchmark candidates."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        candidate_key: str,
+        write: RetrievalActiveLearningCandidateWrite,
+    ) -> RetrievalActiveLearningCandidate:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select candidate_id, status, reviewer_user_id, reviewer_note,
+                           reviewed_at, created_at
+                    from ojtflow.retrieval_active_learning_candidates
+                    where owner_user_id = %s and candidate_key = %s
+                    """,
+                    (owner_user_id, candidate_key),
+                )
+                existing = cursor.fetchone()
+                candidate_id = existing["candidate_id"] if existing else new_id("alc")
+                status = existing["status"] if existing else "open"
+                created_at = existing["created_at"].isoformat() if existing else now
+                cursor.execute(
+                    """
+                    insert into ojtflow.retrieval_active_learning_candidates (
+                        candidate_id, owner_user_id, candidate_key, query_hash, query_text,
+                        source_kind, trigger_reason, priority, status, evidence_id, source_id,
+                        source_type, source_version, run_id, workflow_id, judgment_id, claim_id,
+                        support_status, suggested_expected_evidence_ids, suggested_filters,
+                        benchmark_metadata, metadata, reviewer_user_id, reviewer_note,
+                        reviewed_at, created_at, updated_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
+                        %s::jsonb, %s, %s, %s::timestamptz, %s::timestamptz,
+                        %s::timestamptz
+                    )
+                    on conflict(owner_user_id, candidate_key) do update set
+                        query_text = excluded.query_text,
+                        source_kind = excluded.source_kind,
+                        trigger_reason = excluded.trigger_reason,
+                        priority = excluded.priority,
+                        evidence_id = excluded.evidence_id,
+                        source_id = excluded.source_id,
+                        source_type = excluded.source_type,
+                        source_version = excluded.source_version,
+                        run_id = excluded.run_id,
+                        workflow_id = excluded.workflow_id,
+                        judgment_id = excluded.judgment_id,
+                        claim_id = excluded.claim_id,
+                        support_status = excluded.support_status,
+                        suggested_expected_evidence_ids = excluded.suggested_expected_evidence_ids,
+                        suggested_filters = excluded.suggested_filters,
+                        benchmark_metadata = excluded.benchmark_metadata,
+                        metadata = excluded.metadata,
+                        updated_at = excluded.updated_at
+                    returning *
+                    """,
+                    (
+                        candidate_id,
+                        owner_user_id,
+                        candidate_key,
+                        query_hash,
+                        write.query,
+                        write.source_kind,
+                        write.trigger_reason,
+                        write.priority,
+                        status,
+                        write.evidence_id,
+                        write.source_id,
+                        write.source_type.value if write.source_type else None,
+                        write.source_version,
+                        write.run_id,
+                        write.workflow_id,
+                        write.judgment_id,
+                        write.claim_id,
+                        write.support_status,
+                        json.dumps(write.suggested_expected_evidence_ids),
+                        json.dumps(write.suggested_filters),
+                        json.dumps(write.benchmark_metadata),
+                        json.dumps(write.metadata),
+                        existing["reviewer_user_id"] if existing else None,
+                        existing["reviewer_note"] if existing else None,
+                        existing["reviewed_at"] if existing else None,
+                        created_at,
+                        now,
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        return _postgres_active_learning_candidate_from_row(row)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: RetrievalActiveLearningStatus | None = None,
+        source_kind: RetrievalActiveLearningSourceKind | None = None,
+        priority: RetrievalActiveLearningPriority | None = None,
+        query_hash: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalActiveLearningCandidate]:
+        clauses = ["owner_user_id = %s"]
+        params: list[object] = [owner_user_id]
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status)
+        if source_kind is not None:
+            clauses.append("source_kind = %s")
+            params.append(source_kind)
+        if priority is not None:
+            clauses.append("priority = %s")
+            params.append(priority)
+        if query_hash is not None:
+            clauses.append("query_hash = %s")
+            params.append(query_hash)
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select *
+                    from ojtflow.retrieval_active_learning_candidates
+                    where {' and '.join(clauses)}
+                    order by updated_at desc, candidate_id asc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_active_learning_candidate_from_row(row) for row in rows]
+
+    def update(
+        self,
+        *,
+        owner_user_id: str,
+        candidate_id: str,
+        reviewer_user_id: str | None,
+        update: RetrievalActiveLearningCandidateUpdate,
+    ) -> RetrievalActiveLearningCandidate:
+        now = utc_now().isoformat()
+        assignments = ["updated_at = %s::timestamptz"]
+        params: list[object] = [now]
+        if update.status is not None:
+            assignments.extend(
+                [
+                    "status = %s",
+                    "reviewed_at = %s::timestamptz",
+                    "reviewer_user_id = %s",
+                ]
+            )
+            params.extend([update.status, now, reviewer_user_id])
+        if update.priority is not None:
+            assignments.append("priority = %s")
+            params.append(update.priority)
+        if update.reviewer_note is not None:
+            assignments.append("reviewer_note = %s")
+            params.append(update.reviewer_note)
+        if update.benchmark_metadata is not None:
+            assignments.append("benchmark_metadata = %s::jsonb")
+            params.append(json.dumps(update.benchmark_metadata))
+        if update.metadata is not None:
+            assignments.append("metadata = %s::jsonb")
+            params.append(json.dumps(update.metadata))
+        params.extend([owner_user_id, candidate_id])
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    update ojtflow.retrieval_active_learning_candidates
+                    set {', '.join(assignments)}
+                    where owner_user_id = %s and candidate_id = %s
+                    returning *
+                    """,
+                    tuple(params),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if row is None:
+            raise NotFoundError(f"Retrieval active-learning candidate not found: {candidate_id}")
+        return _postgres_active_learning_candidate_from_row(row)
+
+
 class PostgresAssistantSessionRepository:
     """Postgres-backed user Assistant chat sessions."""
 
@@ -1846,6 +2043,40 @@ def _postgres_judgment_from_row(row) -> RetrievalRelevanceJudgment:
     )
 
 
+def _postgres_active_learning_candidate_from_row(row) -> RetrievalActiveLearningCandidate:
+    return RetrievalActiveLearningCandidate(
+        candidate_id=row["candidate_id"],
+        owner_user_id=row["owner_user_id"],
+        candidate_key=row["candidate_key"],
+        query_hash=row["query_hash"],
+        query=row["query_text"],
+        source_kind=row["source_kind"],
+        trigger_reason=row["trigger_reason"],
+        priority=row["priority"],
+        status=row["status"],
+        evidence_id=row["evidence_id"],
+        source_id=row["source_id"],
+        source_type=row["source_type"],
+        source_version=row["source_version"],
+        run_id=row["run_id"],
+        workflow_id=row["workflow_id"],
+        judgment_id=row["judgment_id"],
+        claim_id=row["claim_id"],
+        support_status=row["support_status"],
+        suggested_expected_evidence_ids=_postgres_json_list(
+            row["suggested_expected_evidence_ids"]
+        ),
+        suggested_filters=_postgres_json_dict(row["suggested_filters"]),
+        benchmark_metadata=_postgres_json_dict(row["benchmark_metadata"]),
+        metadata=_postgres_json_dict(row["metadata"]),
+        reviewer_user_id=row["reviewer_user_id"],
+        reviewer_note=row["reviewer_note"],
+        reviewed_at=row["reviewed_at"].isoformat() if row["reviewed_at"] else None,
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
 def _postgres_assistant_session_from_row(row) -> AssistantChatSessionSummary:
     return AssistantChatSessionSummary(
         session_id=row["session_id"],
@@ -1905,6 +2136,10 @@ def _postgres_json_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _postgres_json_dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
 def _postgres_like_pattern(value: str) -> str:

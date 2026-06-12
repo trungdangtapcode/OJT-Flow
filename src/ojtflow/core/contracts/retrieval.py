@@ -131,6 +131,88 @@ class RetrievalJudgmentEvaluationResult(ContractModel):
     recommendations: list[RetrievalEvaluationRecommendation] = Field(default_factory=list)
 
 
+RetrievalActiveLearningSourceKind = Literal[
+    "low_confidence_retrieval",
+    "unsupported_claim",
+    "reviewer_correction",
+    "weak_support",
+    "negative_judgment",
+]
+RetrievalActiveLearningStatus = Literal[
+    "open",
+    "accepted",
+    "rejected",
+    "promoted",
+    "archived",
+]
+RetrievalActiveLearningPriority = Literal["low", "normal", "high", "critical"]
+
+
+class RetrievalActiveLearningCandidateWrite(ContractModel):
+    """Candidate retrieval case proposed for future benchmark coverage."""
+
+    source_kind: RetrievalActiveLearningSourceKind
+    query: NonBlankStr
+    trigger_reason: NonBlankStr
+    priority: RetrievalActiveLearningPriority = "normal"
+    evidence_id: NonBlankStr | None = None
+    source_id: NonBlankStr | None = None
+    source_type: EvidenceSourceType | None = None
+    source_version: NonBlankStr | None = None
+    run_id: NonBlankStr | None = None
+    workflow_id: NonBlankStr | None = None
+    judgment_id: NonBlankStr | None = None
+    claim_id: NonBlankStr | None = None
+    support_status: Literal["strong", "partial", "weak", "unsupported"] | None = None
+    suggested_expected_evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    suggested_filters: dict[str, Any] = Field(default_factory=dict)
+    benchmark_metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalActiveLearningCandidate(RetrievalActiveLearningCandidateWrite):
+    """Durable active-learning queue item for benchmark curation."""
+
+    candidate_id: NonBlankStr
+    owner_user_id: NonBlankStr
+    candidate_key: NonBlankStr
+    query_hash: NonBlankStr
+    status: RetrievalActiveLearningStatus = "open"
+    created_at: NonBlankStr
+    updated_at: NonBlankStr
+    reviewed_at: NonBlankStr | None = None
+    reviewer_user_id: NonBlankStr | None = None
+    reviewer_note: NonBlankStr | None = None
+
+
+class RetrievalActiveLearningCandidateUpdate(ContractModel):
+    """Reviewer update for an active-learning candidate."""
+
+    status: RetrievalActiveLearningStatus | None = None
+    priority: RetrievalActiveLearningPriority | None = None
+    reviewer_note: NonBlankStr | None = None
+    benchmark_metadata: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class RetrievalActiveLearningSummary(ContractModel):
+    """Queue inventory summary for retrieval benchmark curation."""
+
+    total_count: int = Field(ge=0)
+    open_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    promoted_count: int = Field(ge=0)
+    archived_count: int = Field(ge=0)
+    critical_count: int = Field(ge=0)
+    high_count: int = Field(ge=0)
+    source_kind_counts: dict[RetrievalActiveLearningSourceKind, int] = Field(
+        default_factory=dict
+    )
+    latest_updated_at: NonBlankStr | None = None
+    sample_limit: int = Field(ge=1)
+
+
 class RetrievalSnippet(ContractModel):
     """Query-focused extractive snippet from a retrieved evidence chunk."""
 

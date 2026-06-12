@@ -10,6 +10,9 @@ from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.retrieval_reindex_safety import (
     build_embedding_reindex_safety_report,
 )
+from ojtflow.application.retrieval_active_learning_service import (
+    RetrievalActiveLearningService,
+)
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
@@ -28,6 +31,13 @@ from ojtflow.core.contracts.retrieval import (
     CorpusIngestionLedger,
     CorpusIngestionManifest,
     EmbeddingReindexSafetyReport,
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
+    RetrievalActiveLearningSummary,
     RetrievalIndexManifest,
     RetrievalFreshnessReport,
     RetrievalJudgmentEvaluationResult,
@@ -61,6 +71,7 @@ from ojtflow.infrastructure.retrieval.presets import (
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
     get_governance_service,
+    get_retrieval_active_learning_service,
     get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
@@ -68,6 +79,8 @@ from ojtflow.interfaces.api.deps import (
 from ojtflow.interfaces.api.limits import enforce_inline_json_limit
 from ojtflow.interfaces.api.responses import ok
 from ojtflow.interfaces.api.schemas import (
+    RetrievalActiveLearningCandidateRequest,
+    RetrievalActiveLearningCandidateUpdateRequest,
     RetrievalJudgmentEvaluationRequest,
     RetrievalJudgmentRequest,
     RetrievalReindexRequest,
@@ -210,6 +223,21 @@ class RetrievalJudgmentDeleteResult(ContractModel):
 
 class RetrievalJudgmentDeleteEnvelope(ContractModel):
     data: RetrievalJudgmentDeleteResult
+    error: None = None
+
+
+class RetrievalActiveLearningCandidatesEnvelope(ContractModel):
+    data: list[RetrievalActiveLearningCandidate]
+    error: None = None
+
+
+class RetrievalActiveLearningCandidateEnvelope(ContractModel):
+    data: RetrievalActiveLearningCandidate
+    error: None = None
+
+
+class RetrievalActiveLearningSummaryEnvelope(ContractModel):
+    data: RetrievalActiveLearningSummary
     error: None = None
 
 
@@ -489,17 +517,23 @@ async def evaluate_retrieval_judgments(
     request: RetrievalJudgmentEvaluationRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: RetrievalJudgmentService = Depends(get_retrieval_judgment_service),
+    active_learning: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     enforce_inline_json_limit(request, settings, field_name="retrieval_judgment_evaluation")
-    return ok(
-        service.evaluate_ranked_results(
-            owner_user_id=authenticated.user.user_id,
-            query=request.query,
-            ranked_evidence_ids=request.ranked_evidence_ids,
-            cutoff=request.cutoff,
-        )
+    evaluation = service.evaluate_ranked_results(
+        owner_user_id=authenticated.user.user_id,
+        query=request.query,
+        ranked_evidence_ids=request.ranked_evidence_ids,
+        cutoff=request.cutoff,
     )
+    active_learning.enqueue_from_evaluation(
+        owner_user_id=authenticated.user.user_id,
+        evaluation=evaluation,
+    )
+    return ok(evaluation)
 
 
 @router.put("/retrieval/judgments", response_model=RetrievalJudgmentEnvelope)
@@ -541,6 +575,121 @@ async def delete_retrieval_judgment(
         judgment_id=judgment_id,
     )
     return ok({"deleted": True, "judgment_id": judgment_id})
+
+
+@router.get(
+    "/retrieval/active-learning/candidates",
+    response_model=RetrievalActiveLearningCandidatesEnvelope,
+)
+async def list_retrieval_active_learning_candidates(
+    status: RetrievalActiveLearningStatus | None = None,
+    source_kind: RetrievalActiveLearningSourceKind | None = None,
+    priority: RetrievalActiveLearningPriority | None = None,
+    query_text: str | None = Query(default=None, alias="query"),
+    limit: int = Query(default=500, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+) -> dict:
+    return ok(
+        service.list(
+            owner_user_id=authenticated.user.user_id,
+            status=status,
+            source_kind=source_kind,
+            priority=priority,
+            query=_optional_query_value(query_text),
+            limit=limit,
+        )
+    )
+
+
+@router.get(
+    "/retrieval/active-learning/summary",
+    response_model=RetrievalActiveLearningSummaryEnvelope,
+)
+async def summarize_retrieval_active_learning_candidates(
+    limit: int = Query(default=1000, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+) -> dict:
+    return ok(
+        service.summary(
+            owner_user_id=authenticated.user.user_id,
+            limit=limit,
+        )
+    )
+
+
+@router.post(
+    "/retrieval/active-learning/candidates",
+    response_model=RetrievalActiveLearningCandidateEnvelope,
+)
+async def enqueue_retrieval_active_learning_candidate(
+    request: RetrievalActiveLearningCandidateRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    enforce_inline_json_limit(request, settings, field_name="retrieval_active_learning")
+    return ok(
+        service.enqueue(
+            owner_user_id=authenticated.user.user_id,
+            write=RetrievalActiveLearningCandidateWrite(
+                source_kind=request.source_kind,
+                query=request.query,
+                trigger_reason=request.trigger_reason,
+                priority=request.priority,
+                evidence_id=request.evidence_id,
+                source_id=request.source_id,
+                source_type=request.source_type,
+                source_version=request.source_version,
+                run_id=request.run_id,
+                workflow_id=request.workflow_id,
+                judgment_id=request.judgment_id,
+                claim_id=request.claim_id,
+                support_status=request.support_status,
+                suggested_expected_evidence_ids=request.suggested_expected_evidence_ids,
+                suggested_filters=request.suggested_filters,
+                benchmark_metadata=request.benchmark_metadata,
+                metadata=request.metadata,
+            ),
+        )
+    )
+
+
+@router.patch(
+    "/retrieval/active-learning/candidates/{candidate_id}",
+    response_model=RetrievalActiveLearningCandidateEnvelope,
+)
+async def update_retrieval_active_learning_candidate(
+    candidate_id: NonBlankStr,
+    request: RetrievalActiveLearningCandidateUpdateRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    enforce_inline_json_limit(request, settings, field_name="retrieval_active_learning_update")
+    return ok(
+        service.update(
+            owner_user_id=authenticated.user.user_id,
+            candidate_id=candidate_id,
+            reviewer_user_id=authenticated.user.user_id,
+            update=RetrievalActiveLearningCandidateUpdate(
+                status=request.status,
+                priority=request.priority,
+                reviewer_note=request.reviewer_note,
+                benchmark_metadata=request.benchmark_metadata,
+                metadata=request.metadata,
+            ),
+        )
+    )
 
 
 @router.get("/retrieval/sources", response_model=RetrievalSourcesEnvelope)

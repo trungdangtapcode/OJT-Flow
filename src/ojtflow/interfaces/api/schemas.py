@@ -605,6 +605,71 @@ class RetrievalJudgmentEvaluationRequest(ContractModel):
     }
 
 
+class RetrievalActiveLearningCandidateRequest(ContractModel):
+    source_kind: Literal[
+        "low_confidence_retrieval",
+        "unsupported_claim",
+        "reviewer_correction",
+        "weak_support",
+        "negative_judgment",
+    ]
+    query: NonBlankStr
+    trigger_reason: NonBlankStr
+    priority: Literal["low", "normal", "high", "critical"] = "normal"
+    evidence_id: NonBlankStr | None = None
+    source_id: NonBlankStr | None = None
+    source_type: EvidenceSourceType | None = None
+    source_version: NonBlankStr | None = None
+    run_id: NonBlankStr | None = None
+    workflow_id: NonBlankStr | None = None
+    judgment_id: NonBlankStr | None = None
+    claim_id: NonBlankStr | None = None
+    support_status: Literal["strong", "partial", "weak", "unsupported"] | None = None
+    suggested_expected_evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    suggested_filters: dict[str, Any] = Field(default_factory=dict)
+    benchmark_metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "source_kind": "unsupported_claim",
+                    "query": "HbA1c FHIR Observation unit mapping",
+                    "trigger_reason": "Answer contained an unsupported unit normalization claim.",
+                    "priority": "high",
+                    "evidence_id": "ev_terminology_ucum",
+                    "source_id": "terminology:ucum",
+                    "support_status": "unsupported",
+                    "suggested_filters": {"standard_system": "ucum"},
+                    "benchmark_metadata": {"expected_support_status": "strong"},
+                }
+            ]
+        }
+    }
+
+
+class RetrievalActiveLearningCandidateUpdateRequest(ContractModel):
+    status: Literal["open", "accepted", "rejected", "promoted", "archived"] | None = None
+    priority: Literal["low", "normal", "high", "critical"] | None = None
+    reviewer_note: NonBlankStr | None = None
+    benchmark_metadata: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "status": "accepted",
+                    "priority": "high",
+                    "reviewer_note": "Promote into the UCUM benchmark pack.",
+                    "benchmark_metadata": {"case_family": "ucum_unit_checks"},
+                }
+            ]
+        }
+    }
+
+
 class RetrievalReindexRequest(ContractModel):
     include_seeded: bool = True
     include_corpus: bool = True

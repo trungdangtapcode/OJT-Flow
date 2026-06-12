@@ -1,4 +1,6 @@
 import type {
+  useRetrievalActiveLearningCandidatesQuery,
+  useRetrievalActiveLearningSummaryQuery,
   useRetrievalGraphContextsQuery,
   useRetrievalGraphNeighborhoodQuery,
   useRetrievalFreshnessQuery,
@@ -10,12 +12,15 @@ import type {
   useRetrievalSourcesQuery,
   useRuntimeConfigQuery,
   useSchemasQuery,
+  useUpdateRetrievalActiveLearningCandidateMutation,
 } from "../../../lib/server-state";
 import type { RetrievalGraphNeighborhoodQuery } from "../../../types";
 import type { useRetrievalIntegritySession } from "../hooks/use-retrieval-integrity-session";
 import type { useRetrievalPageWorkspace } from "../hooks/use-retrieval-page-workspace";
 
 export type RetrievalPagePropsArgs = {
+  activeLearningCandidatesQuery: ReturnType<typeof useRetrievalActiveLearningCandidatesQuery>;
+  activeLearningSummaryQuery: ReturnType<typeof useRetrievalActiveLearningSummaryQuery>;
   graphContextsQuery: ReturnType<typeof useRetrievalGraphContextsQuery>;
   graphNeighborhoodQuery: RetrievalGraphNeighborhoodQuery | null;
   graphNeighborhoodResultQuery: ReturnType<typeof useRetrievalGraphNeighborhoodQuery>;
@@ -30,5 +35,8 @@ export type RetrievalPagePropsArgs = {
   searchOptionsQuery: ReturnType<typeof useRetrievalSearchOptionsQuery>;
   setGraphNeighborhoodQuery: (query: RetrievalGraphNeighborhoodQuery | null) => void;
   sourcesQuery: ReturnType<typeof useRetrievalSourcesQuery>;
+  updateActiveLearningCandidateMutation: ReturnType<
+    typeof useUpdateRetrievalActiveLearningCandidateMutation
+  >;
   workspace: ReturnType<typeof useRetrievalPageWorkspace>;
 };

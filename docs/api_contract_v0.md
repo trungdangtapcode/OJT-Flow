@@ -3339,8 +3339,9 @@ per-value counts including `unsafe_count`, `stale_count`, and
 the score, `evaluation_readiness` with label confidence thresholds, and policy-driven
 `recommendations[]` with severity, metric, message, suggested action, evidence
 IDs, and rule metadata. This endpoint is intended for operator-facing
-evaluation of the current ranked result list; it does not mutate judgments or
-workflow state.
+evaluation of the current ranked result list. It does not mutate judgments or
+workflow state, but it may enqueue active-learning candidates for low-confidence
+or no-positive-hit result sets.
 
 `PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
 judgment. Accepted `value` labels are `relevant`, `partial`, `irrelevant`,
@@ -3371,6 +3372,54 @@ backend derives it from `value`.
 
 `DELETE /api/v1/retrieval/judgments/{judgment_id}` removes one judgment owned by
 the authenticated user.
+
+`GET /api/v1/retrieval/active-learning/candidates` returns retrieval benchmark
+candidate queue items for the authenticated user. Optional query parameters:
+
+- `status`: `open`, `accepted`, `rejected`, `promoted`, or `archived`.
+- `source_kind`: `low_confidence_retrieval`, `unsupported_claim`,
+  `reviewer_correction`, `weak_support`, or `negative_judgment`.
+- `priority`: `low`, `normal`, `high`, or `critical`.
+- `query`: exact query text; the backend hashes it for lookup.
+- `limit`: default `500`, maximum `1000`.
+
+`GET /api/v1/retrieval/active-learning/summary` returns queue counts by status,
+priority, and source kind.
+
+`POST /api/v1/retrieval/active-learning/candidates` manually enqueues one
+candidate, normally from unsupported answer claims or weak support-matrix rows:
+
+```json
+{
+  "source_kind": "unsupported_claim",
+  "query": "FHIR Observation HbA1c unit",
+  "trigger_reason": "Answer contained an unsupported UCUM normalization claim.",
+  "priority": "high",
+  "evidence_id": "ev_terminology_ucum",
+  "source_id": "terminology:ucum",
+  "support_status": "unsupported",
+  "suggested_filters": {
+    "standard_system": "ucum"
+  },
+  "benchmark_metadata": {
+    "case_family": "ucum_unit_checks"
+  }
+}
+```
+
+`PATCH /api/v1/retrieval/active-learning/candidates/{candidate_id}` updates the
+review state and benchmark curation metadata:
+
+```json
+{
+  "status": "accepted",
+  "priority": "high",
+  "reviewer_note": "Promote into the UCUM benchmark pack.",
+  "benchmark_metadata": {
+    "case_family": "ucum_unit_checks"
+  }
+}
+```
 
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,

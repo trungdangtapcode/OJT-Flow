@@ -27,6 +27,12 @@ from ojtflow.core.contracts.enums import WorkflowStatus
 from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
     RetrievalRelevanceJudgment,
     RetrievalRelevanceJudgmentWrite,
 )
@@ -231,6 +237,58 @@ class SQLiteBackboneStore:
 
                 create index if not exists idx_retrieval_judgments_owner_query
                     on retrieval_relevance_judgments(owner_user_id, query_hash, updated_at desc);
+
+                create table if not exists retrieval_active_learning_candidates (
+                    candidate_id text primary key,
+                    owner_user_id text not null,
+                    candidate_key text not null,
+                    query_hash text not null,
+                    query_text text not null,
+                    source_kind text not null,
+                    trigger_reason text not null,
+                    priority text not null,
+                    status text not null,
+                    evidence_id text,
+                    source_id text,
+                    source_type text,
+                    source_version text,
+                    run_id text,
+                    workflow_id text,
+                    judgment_id text,
+                    claim_id text,
+                    support_status text,
+                    suggested_expected_evidence_ids_json text not null,
+                    suggested_filters_json text not null,
+                    benchmark_metadata_json text not null,
+                    metadata_json text not null,
+                    reviewer_user_id text,
+                    reviewer_note text,
+                    reviewed_at text,
+                    created_at text not null,
+                    updated_at text not null,
+                    unique(owner_user_id, candidate_key),
+                    check (source_kind in (
+                        'low_confidence_retrieval',
+                        'unsupported_claim',
+                        'reviewer_correction',
+                        'weak_support',
+                        'negative_judgment'
+                    )),
+                    check (priority in ('low', 'normal', 'high', 'critical')),
+                    check (status in ('open', 'accepted', 'rejected', 'promoted', 'archived')),
+                    check (support_status is null or support_status in (
+                        'strong',
+                        'partial',
+                        'weak',
+                        'unsupported'
+                    ))
+                );
+
+                create index if not exists idx_active_learning_owner_status_updated
+                    on retrieval_active_learning_candidates(owner_user_id, status, updated_at desc);
+
+                create index if not exists idx_active_learning_owner_kind_updated
+                    on retrieval_active_learning_candidates(owner_user_id, source_kind, updated_at desc);
 
                 create table if not exists graph_contexts (
                     graph_id text primary key,
@@ -1267,6 +1325,192 @@ class SQLiteRetrievalJudgmentRepository:
             raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
 
 
+class SQLiteRetrievalActiveLearningRepository:
+    """SQLite-backed active-learning queue for retrieval benchmark candidates."""
+
+    def __init__(self, backbone: SQLiteBackboneStore) -> None:
+        self.backbone = backbone
+
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        candidate_key: str,
+        write: RetrievalActiveLearningCandidateWrite,
+    ) -> RetrievalActiveLearningCandidate:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            existing = connection.execute(
+                """
+                select candidate_id, status, reviewer_user_id, reviewer_note, reviewed_at, created_at
+                from retrieval_active_learning_candidates
+                where owner_user_id = ? and candidate_key = ?
+                """,
+                (owner_user_id, candidate_key),
+            ).fetchone()
+            candidate_id = existing["candidate_id"] if existing else new_id("alc")
+            status = existing["status"] if existing else "open"
+            created_at = existing["created_at"] if existing else now
+            connection.execute(
+                """
+                insert into retrieval_active_learning_candidates (
+                    candidate_id, owner_user_id, candidate_key, query_hash, query_text,
+                    source_kind, trigger_reason, priority, status, evidence_id, source_id,
+                    source_type, source_version, run_id, workflow_id, judgment_id, claim_id,
+                    support_status, suggested_expected_evidence_ids_json,
+                    suggested_filters_json, benchmark_metadata_json, metadata_json,
+                    reviewer_user_id, reviewer_note, reviewed_at, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(owner_user_id, candidate_key) do update set
+                    query_text = excluded.query_text,
+                    source_kind = excluded.source_kind,
+                    trigger_reason = excluded.trigger_reason,
+                    priority = excluded.priority,
+                    evidence_id = excluded.evidence_id,
+                    source_id = excluded.source_id,
+                    source_type = excluded.source_type,
+                    source_version = excluded.source_version,
+                    run_id = excluded.run_id,
+                    workflow_id = excluded.workflow_id,
+                    judgment_id = excluded.judgment_id,
+                    claim_id = excluded.claim_id,
+                    support_status = excluded.support_status,
+                    suggested_expected_evidence_ids_json = excluded.suggested_expected_evidence_ids_json,
+                    suggested_filters_json = excluded.suggested_filters_json,
+                    benchmark_metadata_json = excluded.benchmark_metadata_json,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    candidate_id,
+                    owner_user_id,
+                    candidate_key,
+                    query_hash,
+                    write.query,
+                    write.source_kind,
+                    write.trigger_reason,
+                    write.priority,
+                    status,
+                    write.evidence_id,
+                    write.source_id,
+                    write.source_type.value if write.source_type else None,
+                    write.source_version,
+                    write.run_id,
+                    write.workflow_id,
+                    write.judgment_id,
+                    write.claim_id,
+                    write.support_status,
+                    _json_dump(write.suggested_expected_evidence_ids),
+                    _json_dump(write.suggested_filters),
+                    _json_dump(write.benchmark_metadata),
+                    _json_dump(write.metadata),
+                    existing["reviewer_user_id"] if existing else None,
+                    existing["reviewer_note"] if existing else None,
+                    existing["reviewed_at"] if existing else None,
+                    created_at,
+                    now,
+                ),
+            )
+            row = connection.execute(
+                """
+                select *
+                from retrieval_active_learning_candidates
+                where owner_user_id = ? and candidate_key = ?
+                """,
+                (owner_user_id, candidate_key),
+            ).fetchone()
+        return _sqlite_active_learning_candidate_from_row(row)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: RetrievalActiveLearningStatus | None = None,
+        source_kind: RetrievalActiveLearningSourceKind | None = None,
+        priority: RetrievalActiveLearningPriority | None = None,
+        query_hash: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalActiveLearningCandidate]:
+        clauses = ["owner_user_id = ?"]
+        params: list[object] = [owner_user_id]
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if source_kind is not None:
+            clauses.append("source_kind = ?")
+            params.append(source_kind)
+        if priority is not None:
+            clauses.append("priority = ?")
+            params.append(priority)
+        if query_hash is not None:
+            clauses.append("query_hash = ?")
+            params.append(query_hash)
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            rows = connection.execute(
+                f"""
+                select *
+                from retrieval_active_learning_candidates
+                where {' and '.join(clauses)}
+                order by updated_at desc, candidate_id asc
+                limit ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [_sqlite_active_learning_candidate_from_row(row) for row in rows]
+
+    def update(
+        self,
+        *,
+        owner_user_id: str,
+        candidate_id: str,
+        reviewer_user_id: str | None,
+        update: RetrievalActiveLearningCandidateUpdate,
+    ) -> RetrievalActiveLearningCandidate:
+        now = utc_now().isoformat()
+        assignments = ["updated_at = ?"]
+        params: list[object] = [now]
+        if update.status is not None:
+            assignments.extend(["status = ?", "reviewed_at = ?", "reviewer_user_id = ?"])
+            params.extend([update.status, now, reviewer_user_id])
+        if update.priority is not None:
+            assignments.append("priority = ?")
+            params.append(update.priority)
+        if update.reviewer_note is not None:
+            assignments.append("reviewer_note = ?")
+            params.append(update.reviewer_note)
+        if update.benchmark_metadata is not None:
+            assignments.append("benchmark_metadata_json = ?")
+            params.append(_json_dump(update.benchmark_metadata))
+        if update.metadata is not None:
+            assignments.append("metadata_json = ?")
+            params.append(_json_dump(update.metadata))
+        params.extend([owner_user_id, candidate_id])
+        with self.backbone.connect() as connection:
+            cursor = connection.execute(
+                f"""
+                update retrieval_active_learning_candidates
+                set {', '.join(assignments)}
+                where owner_user_id = ? and candidate_id = ?
+                """,
+                tuple(params),
+            )
+            if cursor.rowcount == 0:
+                raise NotFoundError(
+                    f"Retrieval active-learning candidate not found: {candidate_id}"
+                )
+            row = connection.execute(
+                """
+                select *
+                from retrieval_active_learning_candidates
+                where owner_user_id = ? and candidate_id = ?
+                """,
+                (owner_user_id, candidate_id),
+            ).fetchone()
+        return _sqlite_active_learning_candidate_from_row(row)
+
+
 class SQLiteAssistantSessionRepository:
     """SQLite-backed user Assistant chat sessions."""
 
@@ -1786,6 +2030,40 @@ def _sqlite_judgment_from_row(row) -> RetrievalRelevanceJudgment:
         value=row["value"],
         rating=int(row["rating"]),
         metadata=_json_load(row["metadata_json"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _sqlite_active_learning_candidate_from_row(row) -> RetrievalActiveLearningCandidate:
+    return RetrievalActiveLearningCandidate(
+        candidate_id=row["candidate_id"],
+        owner_user_id=row["owner_user_id"],
+        candidate_key=row["candidate_key"],
+        query_hash=row["query_hash"],
+        query=row["query_text"],
+        source_kind=row["source_kind"],
+        trigger_reason=row["trigger_reason"],
+        priority=row["priority"],
+        status=row["status"],
+        evidence_id=row["evidence_id"],
+        source_id=row["source_id"],
+        source_type=row["source_type"],
+        source_version=row["source_version"],
+        run_id=row["run_id"],
+        workflow_id=row["workflow_id"],
+        judgment_id=row["judgment_id"],
+        claim_id=row["claim_id"],
+        support_status=row["support_status"],
+        suggested_expected_evidence_ids=_json_load_list(
+            row["suggested_expected_evidence_ids_json"]
+        ),
+        suggested_filters=_json_load(row["suggested_filters_json"]),
+        benchmark_metadata=_json_load(row["benchmark_metadata_json"]),
+        metadata=_json_load(row["metadata_json"]),
+        reviewer_user_id=row["reviewer_user_id"],
+        reviewer_note=row["reviewer_note"],
+        reviewed_at=row["reviewed_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

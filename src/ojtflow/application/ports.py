@@ -44,6 +44,12 @@ from ojtflow.core.contracts.governance import (
 from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
     RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -348,6 +354,37 @@ class RetrievalJudgmentRepository(Protocol):
     ) -> list[RetrievalRelevanceJudgment]: ...
 
     def delete(self, *, owner_user_id: str, judgment_id: str) -> None: ...
+
+
+class RetrievalActiveLearningRepository(Protocol):
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        candidate_key: str,
+        write: RetrievalActiveLearningCandidateWrite,
+    ) -> RetrievalActiveLearningCandidate: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: RetrievalActiveLearningStatus | None = None,
+        source_kind: RetrievalActiveLearningSourceKind | None = None,
+        priority: RetrievalActiveLearningPriority | None = None,
+        query_hash: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalActiveLearningCandidate]: ...
+
+    def update(
+        self,
+        *,
+        owner_user_id: str,
+        candidate_id: str,
+        reviewer_user_id: str | None,
+        update: RetrievalActiveLearningCandidateUpdate,
+    ) -> RetrievalActiveLearningCandidate: ...
 
 
 class GraphRepository(Protocol):

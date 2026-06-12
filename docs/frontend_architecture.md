@@ -132,9 +132,12 @@ neighborhood lookup over `/retrieval/graph/contexts` and
 neighborhood query state and server-state hook wiring.
 `retrieval-regression-dashboard.tsx` owns the admin-facing retrieval regression
 dashboard: aggregate relevance-label health, active-run evaluation metrics,
-and recent labeled-query slices. It consumes judgment summary/list data through
-`retrieval-page-regression-dashboard-props.ts` and does not call the API
-directly.
+recent labeled-query slices, and the open active-learning candidate queue. It
+consumes judgment summary/list data and active-learning list/summary data
+through `retrieval-page-regression-dashboard-props.ts` and does not call the API
+directly. Candidate accept/archive actions are passed in from
+`use-retrieval-page-controller.ts` through the prop builder so the display
+component stays free of server-state imports.
 `integrity-panel.tsx` owns only the index-integrity card shell and report
 presence branch. `integrity-panel-header.tsx` owns title/status actions,
 `integrity-summary-metrics.tsx` owns report metric composition,
