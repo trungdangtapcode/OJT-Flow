@@ -154,6 +154,8 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F044 | Implemented | Added `lab_result_v1` to FHIR-like Observation mapping for patient reference, effective date, code text, value quantity, and unit, with review warnings instead of silent semantic normalization. |
 | 2026-06-11 | F047 | Implemented | Added OperationOutcome-like package issues derived from validation reports, preserving severity, code, diagnostics, source expression, issue ID, location, and review requirement. |
 | 2026-06-11 | F050 | Started | Added internal Provenance-like package records for parse, validate, map, retrieve evidence, review, and transform activities. Assistant/tool execution provenance remains follow-up. |
+| 2026-06-11 | F052 | Implemented | Added review-gated `TerminologyCandidate` contract and deterministic LOINC candidate generation for `lab_result_v1.lab_name` from `knowledge/terminologies/medical_concepts.json`, carried in `ClinicalPackage.terminology_candidates`. |
+| 2026-06-11 | F053 | Implemented | Added `UnitValidationResult`, `knowledge/terminologies/ucum_units.json`, and UCUM-like unit checks for `lab_result_v1.unit`, carried in `ClinicalPackage.unit_validations` with missing/unknown/not-preferred review flags. |
 
 ## Feature Backlog
 
@@ -216,8 +218,8 @@ Keep this section updated when roadmap items move from planning into code.
 - [ ] F049 Add FHIR search parameter generation for profile outputs and retrieval hints.
 - [ ] F050 Add Provenance-like internal records for parser, converter, assistant, reviewer, and retrieval-derived transformations. _(Started: ClinicalPackage records parser, validator, mapper, retrieval, reviewer, and transform activities.)_
 - [ ] F051 Add AuditEvent-like export for workflow events, review events, auth events, and tool execution.
-- [ ] F052 Add LOINC candidate generation contract for observation names without automatically replacing source text.
-- [ ] F053 Add UCUM validation contract for units with source unit, normalized candidate, validation result, and review requirement.
+- [x] F052 Add LOINC candidate generation contract for observation names without automatically replacing source text.
+- [x] F053 Add UCUM validation contract for units with source unit, normalized candidate, validation result, and review requirement.
 - [ ] F054 Add RxNorm candidate generation contract for medication fields.
 - [ ] F055 Add SNOMED CT placeholder contract for diagnoses/findings with license-aware implementation notes.
 - [ ] F056 Add terminology evidence UI that separates source text, candidate code, confidence, source terminology, and reviewer decision.

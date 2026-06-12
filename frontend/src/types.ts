@@ -1176,6 +1176,36 @@ export type ClinicalOperationOutcomeIssue = {
   requires_review: boolean;
 };
 
+export type TerminologyCandidate = {
+  candidate_id: string;
+  source_field: string;
+  source_value: string;
+  standard_system: string;
+  code: string;
+  display: string;
+  confidence: number;
+  matched_aliases: string[];
+  source_uri?: string | null;
+  location?: ValidationIssue["location"] | null;
+  status: "candidate" | "review_required" | "accepted" | "rejected";
+  requires_review: boolean;
+  metadata: Record<string, unknown>;
+};
+
+export type UnitValidationResult = {
+  validation_id: string;
+  source_field: string;
+  source_unit: string;
+  normalized_unit?: string | null;
+  standard_system: string;
+  status: "valid" | "missing" | "unknown" | "not_preferred";
+  confidence: number;
+  message: string;
+  location?: ValidationIssue["location"] | null;
+  requires_review: boolean;
+  metadata: Record<string, unknown>;
+};
+
 export type ClinicalPackage = {
   package_type: "ojtflow_clinical_package";
   schema_version: string;
@@ -1199,6 +1229,8 @@ export type ClinicalPackage = {
   };
   validation_report_id?: string | null;
   evidence: Evidence[];
+  terminology_candidates: TerminologyCandidate[];
+  unit_validations: UnitValidationResult[];
   provenance: Array<Record<string, unknown>>;
   review?: HumanReview | null;
   audit_event_refs: string[];

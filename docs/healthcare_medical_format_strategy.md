@@ -136,10 +136,19 @@ Current `lab_result_v1` maps into FHIR-like `Observation` resources in
 | --- | --- | --- |
 | `patient_id` | `Observation.subject.reference` plus optional `Patient.identifier` | Treat as sensitive. Use synthetic IDs in demos. |
 | `date` | `Observation.effectiveDateTime` | Validate ISO `YYYY-MM-DD`; normalize only after review. |
-| `lab_name` | `Observation.code.text`; later `Observation.code.coding` with LOINC | Keep text in v0, add LOINC candidates later. |
+| `lab_name` | `Observation.code.text`; review-gated LOINC candidate | Keep source text in the resource; candidate code stays separate until review. |
 | `value` | `Observation.valueQuantity.value` | Must be numeric when represented as a Quantity. |
-| `unit` | `Observation.valueQuantity.unit`; later `Observation.valueQuantity.system/code` with UCUM | Missing unit requires review. |
+| `unit` | `Observation.valueQuantity.unit`; UCUM-like validation result | Missing or unknown units require review. |
 | source row | `Evidence.locator.row` and future `Provenance` | Do not lose row-level traceability. |
+
+Current v0 also emits review-gated terminology scaffolding:
+
+- `ClinicalPackage.terminology_candidates` for LOINC candidates from the
+  configured medical concept registry.
+- `ClinicalPackage.unit_validations` for UCUM-like seed validation from the
+  configured unit registry.
+
+These outputs do not replace source text automatically.
 
 The retrieval layer now returns a standard-search playbook for the same mapping
 problem. For a lab CSV with FHIR, LOINC, and UCUM signals, the plan should

@@ -119,8 +119,18 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
     assert unit_provenance.location.field == "unit"
     assert package.operation_outcome.resourceType == "OperationOutcome"
     assert any(issue.code == "possible_phi" for issue in package.operation_outcome.issue)
+    assert len(package.terminology_candidates) == 1
+    loinc = package.terminology_candidates[0]
+    assert loinc.standard_system == "LOINC"
+    assert loinc.code == "4548-4"
+    assert loinc.requires_review is True
+    assert len(package.unit_validations) == 1
+    assert package.unit_validations[0].status == "valid"
+    assert package.unit_validations[0].normalized_unit == "%"
     assert package.output_refs == [workflow.output.transformation.output_ref]
     assert package.audit_event_refs == workflow.audit_event_refs
+    assert package.handoff_context["terminology_candidate_count"] == 1
+    assert package.handoff_context["unit_validation_count"] == 1
     assert package.handoff_context["fhir_compliance"] == "fhir_like_not_validated"
     assert "FHIR-like package has not been validated" in package.warnings[0]
 
@@ -145,6 +155,8 @@ def test_review_gated_lab_workflow_clinical_package_carries_review_and_issues() 
     assert package.review["status"] == "pending"
     assert package.output_refs == []
     assert any(issue.code == "missing_unit" for issue in package.operation_outcome.issue)
+    assert any(result.status == "missing" for result in package.unit_validations)
+    assert any(candidate.standard_system == "LOINC" for candidate in package.terminology_candidates)
     assert any(record.review_required for record in package.clinical_bundle.resources)
     assert any(
         "missing_unit_requires_review" in record.warnings

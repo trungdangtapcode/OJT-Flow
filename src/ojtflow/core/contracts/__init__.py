@@ -49,6 +49,7 @@ from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.issue import Issue, SourceLocation
 from ojtflow.core.contracts.review import HumanReview
 from ojtflow.core.contracts.storage import DatasetRecord
+from ojtflow.core.contracts.terminology import TerminologyCandidate, UnitValidationResult
 from ojtflow.core.contracts.tools import ToolResult, ToolSpec
 from ojtflow.core.contracts.workflow import (
     WorkflowInput,
@@ -93,6 +94,7 @@ __all__ = [
     "Severity",
     "StepStatus",
     "SourceLocation",
+    "TerminologyCandidate",
     "ToolPermission",
     "ToolResult",
     "ToolSpec",
@@ -100,6 +102,7 @@ __all__ = [
     "TransformationOutput",
     "TransformationPlan",
     "TrustLevel",
+    "UnitValidationResult",
     "ValidationReport",
     "WorkflowEvent",
     "WorkflowInput",

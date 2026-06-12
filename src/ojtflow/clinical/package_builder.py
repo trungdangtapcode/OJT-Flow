@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ojtflow.clinical.terminology import terminology_candidates_for_lab_records
 from ojtflow.core.contracts.clinical import (
     ClinicalBundle,
     ClinicalFieldProvenance,
@@ -33,8 +34,11 @@ def build_clinical_package(
         return None
     resources: list[ClinicalResourceRecord] = []
     warnings: list[str] = []
+    terminology_candidates = []
+    unit_validations = []
     if schema_id == "lab_result_v1":
         resources = _lab_result_observations(parsed)
+        terminology_candidates, unit_validations = terminology_candidates_for_lab_records(parsed)
         if not resources:
             warnings.append("No lab_result_v1 records were available for FHIR-like mapping.")
     elif _is_fhir_like_payload(parsed):
@@ -59,10 +63,16 @@ def build_clinical_package(
             workflow.validation_report.report_id if workflow.validation_report else None
         ),
         evidence=evidence,
+        terminology_candidates=terminology_candidates,
+        unit_validations=unit_validations,
         provenance=_package_provenance(
             workflow=workflow,
             resources=resources,
             evidence_ids=[item.evidence_id for item in evidence],
+            terminology_candidate_ids=[
+                item.candidate_id for item in terminology_candidates
+            ],
+            unit_validation_ids=[item.validation_id for item in unit_validations],
             output_refs=output_refs,
         ),
         review=workflow.review.model_dump(mode="json") if workflow.review else None,
@@ -77,6 +87,14 @@ def build_clinical_package(
             "operation_outcome_issue_count": (
                 len(workflow.validation_report.issues) if workflow.validation_report else 0
             ),
+            "terminology_candidate_count": len(terminology_candidates),
+            "unit_validation_count": len(unit_validations),
+            "terminology_candidates": [
+                item.model_dump(mode="json") for item in terminology_candidates
+            ],
+            "unit_validations": [
+                item.model_dump(mode="json") for item in unit_validations
+            ],
             "fhir_like": True,
             "fhir_compliance": "fhir_like_not_validated",
         },
@@ -265,6 +283,8 @@ def _package_provenance(
     workflow: WorkflowState,
     resources: list[ClinicalResourceRecord],
     evidence_ids: list[str],
+    terminology_candidate_ids: list[str],
+    unit_validation_ids: list[str],
     output_refs: list[str],
 ) -> list[ClinicalProvenanceRecord]:
     input_ref = workflow.input.dataset_ref if workflow.input else None
@@ -297,6 +317,10 @@ def _package_provenance(
             source_refs=[input_ref] if input_ref else [],
             evidence_ids=evidence_ids,
             summary="Mapped parsed healthcare data into FHIR-like package resources.",
+            metadata={
+                "terminology_candidate_ids": terminology_candidate_ids,
+                "unit_validation_ids": unit_validation_ids,
+            },
         ),
     ]
     if evidence_ids:

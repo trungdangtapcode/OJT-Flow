@@ -10,6 +10,10 @@ from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import DataFormat, Severity
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.issue import SourceLocation
+from ojtflow.core.contracts.terminology import (
+    TerminologyCandidate,
+    UnitValidationResult,
+)
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 
@@ -122,6 +126,8 @@ class ClinicalPackage(ContractModel):
     operation_outcome: ClinicalOperationOutcome
     validation_report_id: NonBlankStr | None = None
     evidence: list[Evidence] = Field(default_factory=list)
+    terminology_candidates: list[TerminologyCandidate] = Field(default_factory=list)
+    unit_validations: list[UnitValidationResult] = Field(default_factory=list)
     provenance: list[ClinicalProvenanceRecord] = Field(default_factory=list)
     review: dict[str, Any] | None = None
     audit_event_refs: list[NonBlankStr] = Field(default_factory=list)

@@ -26,6 +26,8 @@ The package includes:
 - `clinical_bundle`: FHIR-like `Bundle` with generated/preserved resources
 - `operation_outcome`: OperationOutcome-like issues from validation
 - `evidence`: retrieval/FHIR/profile evidence linked to the workflow
+- `terminology_candidates`: review-gated LOINC/RxNorm/etc. candidates
+- `unit_validations`: UCUM-like unit validation results
 - `provenance`: internal Provenance-like activity records
 - `review`: human review state when present
 - `audit_event_refs`: workflow audit event IDs
@@ -50,6 +52,20 @@ they set review warnings.
 
 FHIR-like JSON submitted directly is preserved as package resources with a
 warning that full HL7 validation has not run.
+
+## Terminology And Units
+
+For `lab_result_v1`, the package now emits review-gated LOINC candidates from:
+
+`knowledge/terminologies/medical_concepts.json`
+
+Unit validation uses the seed UCUM registry:
+
+`knowledge/terminologies/ucum_units.json`
+
+This is not a full terminology server. Candidates and unit results are scaffold
+contracts for review and downstream evidence retrieval. Semantic replacement is
+not automatic.
 
 ## OperationOutcome-Like Issues
 
