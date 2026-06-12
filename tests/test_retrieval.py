@@ -2251,6 +2251,28 @@ def test_static_retrieval_ranks_external_medical_search_evidence() -> None:
     assert package.coverage is not None
     assert any(item.value == "ClinicalTrials.gov" for item in package.coverage.standard_system)
     assert any(item.value == "openFDA" for item in package.coverage.standard_system)
+    transparency = {
+        item.target: item for item in package.external_query_transparency
+    }
+    assert "clinicaltrials_gov" in transparency
+    assert "openfda_drug_label" in transparency
+    assert "openfda_drug_event" in transparency
+    clinical_trials = transparency["clinicaltrials_gov"]
+    assert clinical_trials.connector_id == "clinicaltrials_gov"
+    assert clinical_trials.exact_query.startswith(
+        "https://clinicaltrials.gov/api/v2/studies?"
+    )
+    assert clinical_trials.request_parameters["pageSize"] == "10"
+    assert clinical_trials.cache_state == "not_executed"
+    assert clinical_trials.cache_key.startswith("extcache_")
+    assert clinical_trials.rate_limit_metadata["source"] == (
+        "external_connector_registry"
+    )
+    assert clinical_trials.result_ids == []
+    assert package.handoff_context["external_query_transparency"] == [
+        item.model_dump(mode="json")
+        for item in package.external_query_transparency
+    ]
 
 
 def test_static_retrieval_lists_medical_concept_registry_source() -> None:

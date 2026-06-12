@@ -48,6 +48,9 @@ from ojtflow.core.contracts.retrieval import (
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
 from ojtflow.data_tools.phi import classify_text
 from ojtflow.infrastructure.retrieval.citation_locators import normalize_citation_locator
+from ojtflow.infrastructure.retrieval.external_transparency import (
+    build_external_query_transparency_records,
+)
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 from ojtflow.infrastructure.retrieval.source_governance import (
     SourceGovernanceDecision,
@@ -649,6 +652,12 @@ def rank_chunks(
         safety_flags=safety_flags,
         strategy_recommendations=strategy_recommendations,
     )
+    external_query_transparency = build_external_query_transparency_records(
+        query=query,
+        query_analysis=query_analysis,
+        route_budget=route_budget,
+        knowledge_root=knowledge_root,
+    )
     return RetrievalPackage(
         hits=top_hits,
         evidence=[hit.evidence for hit in top_hits],
@@ -664,6 +673,7 @@ def rank_chunks(
         support_matrix=support_matrix,
         strategy_recommendations=strategy_recommendations,
         standard_search_plan=standard_search_plan,
+        external_query_transparency=external_query_transparency,
         diversity=diversity_summary,
         trace=trace,
         handoff_context={
@@ -704,6 +714,10 @@ def rank_chunks(
                 if standard_search_plan
                 else None
             ),
+            "external_query_transparency": [
+                record.model_dump(mode="json")
+                for record in external_query_transparency
+            ],
             "query_analysis": query_analysis.model_dump(),
         },
     )

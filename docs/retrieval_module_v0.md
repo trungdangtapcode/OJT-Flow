@@ -225,6 +225,19 @@ embedding provider is external, the indexed text is already redacted and the
 source metadata still tells downstream tools not to send private corpus content
 to external providers.
 
+External medical search transparency is exposed on each `RetrievalPackage` as
+`external_query_transparency`. These records are generated for PubMed,
+ClinicalTrials.gov, and openFDA search hints. They show the exact external query
+or URL that would be used, parsed request parameters, retrieval filters, result
+IDs when a future connector supplies them, cache key metadata, cache state,
+source release placeholder, rate-limit/auth policy, and execution status.
+
+The current backend does not execute those external searches automatically.
+Records use `cache_state=not_executed` and either `execution_status=not_executed`
+or `blocked_by_route_budget` depending on the selected route budget. This keeps
+operators from seeing a black-box "external RAG" claim: every possible external
+handoff is visible, reproducible, and policy-gated before source ingestion.
+
 Source freshness is now a first-class readiness gate. `GET
 /api/v1/retrieval/freshness` compares the governed corpus adapter catalog,
 source trust policy catalog, generated local corpus manifest, and active source

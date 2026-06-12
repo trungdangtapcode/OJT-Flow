@@ -466,6 +466,48 @@ class RetrievalStandardSearchPlan(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+ExternalQueryCacheState = Literal[
+    "not_executed",
+    "cache_hit",
+    "cache_miss",
+    "cache_stale",
+    "unknown",
+]
+
+ExternalQueryExecutionStatus = Literal[
+    "not_executed",
+    "blocked_by_route_budget",
+    "blocked_by_policy",
+    "cached_only",
+    "executed",
+]
+
+
+class RetrievalExternalQueryTransparency(ContractModel):
+    """Auditable external medical-search query preview and governance metadata."""
+
+    record_id: NonBlankStr
+    connector_id: NonBlankStr
+    target: NonBlankStr
+    display_name: NonBlankStr
+    exact_query: NonBlankStr
+    endpoint_url: NonBlankStr | None = None
+    endpoint_url_hash: NonBlankStr | None = None
+    query_hash: NonBlankStr
+    request_parameters: dict[str, Any] = Field(default_factory=dict)
+    filters_applied: dict[str, Any] = Field(default_factory=dict)
+    result_ids: list[NonBlankStr] = Field(default_factory=list)
+    cache_state: ExternalQueryCacheState = "not_executed"
+    cache_key: NonBlankStr | None = None
+    cache_policy_id: NonBlankStr | None = None
+    source_release_version: NonBlankStr
+    rate_limit_metadata: dict[str, Any] = Field(default_factory=dict)
+    external_network_allowed: bool = False
+    execution_status: ExternalQueryExecutionStatus = "not_executed"
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalFilterSuggestion(ContractModel):
     """Metadata filter suggested by deterministic self-query analysis."""
 
@@ -1415,6 +1457,9 @@ class RetrievalPackage(ContractModel):
     answer: RetrievalAnswer | None = None
     strategy_recommendations: list[RetrievalStrategyRecommendation] = Field(default_factory=list)
     standard_search_plan: RetrievalStandardSearchPlan | None = None
+    external_query_transparency: list[RetrievalExternalQueryTransparency] = Field(
+        default_factory=list
+    )
     diversity: RetrievalDiversitySummary | None = None
     trace: RetrievalTrace
     handoff_context: dict[str, Any] = Field(default_factory=dict)

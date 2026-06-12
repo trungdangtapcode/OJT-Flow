@@ -3296,6 +3296,23 @@ can narrow to it with `filters.corpus_partition=private_documents`. Public API
 calls cannot select another organization because route normalization overwrites
 the organization filter with the active workspace.
 
+Retrieval responses also include `external_query_transparency` when query
+analysis produces PubMed, ClinicalTrials.gov, or openFDA follow-up hints. Each
+record includes:
+
+- `connector_id`, `target`, and `display_name`;
+- `exact_query` and parsed `request_parameters`;
+- `filters_applied`;
+- `result_ids` when a connector result set is available;
+- `cache_state`, `cache_key`, `cache_policy_id`, and `source_release_version`;
+- `rate_limit_metadata`, `external_network_allowed`, `execution_status`, and
+  policy warnings.
+
+The v0 backend records these external-search handoffs without executing network
+requests automatically. This is intentional: external medical content must pass
+provider policy, cache, source-governance, and ingestion-approval controls before
+it becomes searchable evidence.
+
 `GET /api/v1/retrieval/corpus/manifest` returns the reviewed corpus source
 manifest used by ingestion and readiness checks.
 

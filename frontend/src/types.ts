@@ -711,6 +711,34 @@ export type RetrievalPlanTaskSummary = {
   summary: string;
 };
 
+export type RetrievalExternalQueryTransparency = {
+  record_id: string;
+  connector_id: string;
+  target: string;
+  display_name: string;
+  exact_query: string;
+  endpoint_url?: string | null;
+  endpoint_url_hash?: string | null;
+  query_hash: string;
+  request_parameters: Record<string, unknown>;
+  filters_applied: Record<string, unknown>;
+  result_ids: string[];
+  cache_state: "not_executed" | "cache_hit" | "cache_miss" | "cache_stale" | "unknown";
+  cache_key?: string | null;
+  cache_policy_id?: string | null;
+  source_release_version: string;
+  rate_limit_metadata: Record<string, unknown>;
+  external_network_allowed: boolean;
+  execution_status:
+    | "not_executed"
+    | "blocked_by_route_budget"
+    | "blocked_by_policy"
+    | "cached_only"
+    | "executed";
+  warnings: string[];
+  metadata: Record<string, unknown>;
+};
+
 export type RetrievalPackage = {
   hits: RetrievalHit[];
   evidence: Evidence[];
@@ -727,6 +755,7 @@ export type RetrievalPackage = {
   answer?: RetrievalAnswer | null;
   strategy_recommendations?: RetrievalStrategyRecommendation[];
   standard_search_plan?: RetrievalStandardSearchPlan | null;
+  external_query_transparency?: RetrievalExternalQueryTransparency[];
   diversity?: RetrievalDiversitySummary | null;
   trace: RetrievalTrace;
   handoff_context: {
