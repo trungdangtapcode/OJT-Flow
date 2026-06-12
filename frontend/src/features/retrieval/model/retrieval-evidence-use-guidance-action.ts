@@ -5,6 +5,7 @@ import type {
   RetrievalEvidenceJudgment,
 } from "./retrieval-evidence-types";
 import { evidenceUseGuidanceReasons } from "./retrieval-evidence-use-guidance-reasons";
+import { isNonPositiveJudgment } from "./retrieval-judgment-labels";
 
 export function evidenceUseGuidance({
   explanation,
@@ -23,7 +24,10 @@ export function evidenceUseGuidance({
     judgmentLabel,
     summary,
   });
-  if (explanation.supportStatus === "strong" && judgment?.value !== "not_relevant") {
+  if (
+    explanation.supportStatus === "strong" &&
+    (!judgment || !isNonPositiveJudgment(judgment.value))
+  ) {
     return {
       action:
         "Good candidate for evidence review. Confirm the claim and provenance before using it in a workflow explanation.",

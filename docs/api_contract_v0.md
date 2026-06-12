@@ -3317,7 +3317,8 @@ authenticated user. Optional query parameters:
 `GET /api/v1/retrieval/judgments/summary` returns aggregate label inventory for
 the authenticated user, optionally filtered by `query`. Response data includes
 `total_count`, `query_count`, `evidence_count`, `source_count`, per-value counts,
-`average_rating`, `latest_updated_at`, and `sample_limit`.
+`unsafe_count`, `stale_count`, `source_policy_blocked_count`, `average_rating`,
+`latest_updated_at`, and `sample_limit`.
 
 `POST /api/v1/retrieval/judgments/evaluate` evaluates one ranked retrieval
 result list against the authenticated user's stored judgments for the submitted
@@ -3333,7 +3334,8 @@ query:
 
 Response data includes `coverage_at_k`, `hit_rate_at_k`, `precision_at_k`,
 `judged_precision`, `average_precision_at_k`, `mrr_at_k`, `ndcg_at_k`,
-per-value counts, unjudged evidence IDs, the judgment IDs that contributed to
+per-value counts including `unsafe_count`, `stale_count`, and
+`source_policy_blocked_count`, unjudged evidence IDs, the judgment IDs that contributed to
 the score, `evaluation_readiness` with label confidence thresholds, and policy-driven
 `recommendations[]` with severity, metric, message, suggested action, evidence
 IDs, and rule metadata. This endpoint is intended for operator-facing
@@ -3341,7 +3343,8 @@ evaluation of the current ranked result list; it does not mutate judgments or
 workflow state.
 
 `PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
-judgment:
+judgment. Accepted `value` labels are `relevant`, `partial`, `irrelevant`,
+legacy `not_relevant`, `unsafe`, `stale`, and `source_policy_blocked`:
 
 ```json
 {
@@ -3349,8 +3352,8 @@ judgment:
   "evidence_id": "ev_schema_lab_result_v1",
   "source_id": "schema:lab_result_v1",
   "source_type": "schema",
-  "value": "relevant",
-  "rating": 3,
+  "value": "source_policy_blocked",
+  "rating": 0,
   "run_id": "browser-run-1",
   "search_signature": "{\"query\":\"FHIR Observation HbA1c unit\"}",
   "metadata": {

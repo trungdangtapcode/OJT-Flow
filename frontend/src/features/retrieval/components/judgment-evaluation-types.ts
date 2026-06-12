@@ -10,5 +10,8 @@ export type RelevanceJudgmentMetricsView = {
   partialCount: number;
   precisionAtK: number;
   relevantCount: number;
+  sourcePolicyBlockedCount: number;
+  staleCount: number;
   totalHits: number;
+  unsafeCount: number;
 };

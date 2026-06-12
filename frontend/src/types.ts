@@ -995,7 +995,14 @@ export type McpPromptCatalog = {
   prompts: McpPromptSpec[];
 };
 
-export type RetrievalJudgmentValue = "relevant" | "partial" | "not_relevant";
+export type RetrievalJudgmentValue =
+  | "relevant"
+  | "partial"
+  | "irrelevant"
+  | "not_relevant"
+  | "unsafe"
+  | "stale"
+  | "source_policy_blocked";
 
 export type RetrievalRelevanceJudgment = {
   judgment_id: string;
@@ -1023,6 +1030,9 @@ export type RetrievalRelevanceJudgmentSummary = {
   relevant_count: number;
   partial_count: number;
   not_relevant_count: number;
+  unsafe_count: number;
+  stale_count: number;
+  source_policy_blocked_count: number;
   average_rating?: number | null;
   latest_updated_at?: string | null;
   sample_limit: number;
@@ -1054,6 +1064,9 @@ export type RetrievalJudgmentEvaluationResult = {
   relevant_count: number;
   partial_count: number;
   not_relevant_count: number;
+  unsafe_count: number;
+  stale_count: number;
+  source_policy_blocked_count: number;
   coverage_at_k: number;
   hit_rate_at_k: number;
   precision_at_k: number;

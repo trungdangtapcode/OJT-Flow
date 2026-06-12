@@ -1,4 +1,5 @@
 import type { RetrievalHit } from "../../../types";
+import { isNonPositiveJudgment } from "./retrieval-judgment-labels";
 import type {
   RelevanceJudgment,
   RelevanceJudgmentMetrics,
@@ -26,7 +27,12 @@ export function relevanceJudgmentMetrics(
     (judgment) => judgment.value === "partial",
   ).length;
   const notRelevantCount = judgments.filter(
-    (judgment) => judgment.value === "not_relevant",
+    (judgment) => isNonPositiveJudgment(judgment.value),
+  ).length;
+  const unsafeCount = judgments.filter((judgment) => judgment.value === "unsafe").length;
+  const staleCount = judgments.filter((judgment) => judgment.value === "stale").length;
+  const sourcePolicyBlockedCount = judgments.filter(
+    (judgment) => judgment.value === "source_policy_blocked",
   ).length;
   const positiveJudgments = relevantCount + partialCount;
   const dcg = discountedCumulativeGain(rankedRatings);
@@ -46,7 +52,10 @@ export function relevanceJudgmentMetrics(
     partialCount,
     precisionAtK: totalHits ? positiveJudgments / totalHits : 0,
     relevantCount,
+    sourcePolicyBlockedCount,
+    staleCount,
     totalHits,
+    unsafeCount,
   };
 }
 

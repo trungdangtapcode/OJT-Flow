@@ -26,7 +26,7 @@ export function RelevanceJudgmentControl({
         <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-muted-foreground">
           Relevance judgment
           <HelpTooltip label="Relevance judgment help">
-            Mark whether this evidence actually answers the submitted search. These labels feed judgment metrics and comparison reports.
+            Mark whether this evidence answers the search, is stale, is unsafe, or is blocked by source policy. These labels feed judgment metrics and comparison reports.
           </HelpTooltip>
         </div>
         {judgment ? (
@@ -38,7 +38,7 @@ export function RelevanceJudgmentControl({
         )}
       </div>
       <SectionHelpText>
-        Use relevant for direct support, partial for useful but incomplete support, and not relevant when the hit does not answer the query.
+        Use relevant for direct support, partial for incomplete support, irrelevant when it misses the query, unsafe for risky content, stale for old guidance, and policy blocked when source governance forbids use.
       </SectionHelpText>
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {relevanceJudgmentOptions.map((option) => {

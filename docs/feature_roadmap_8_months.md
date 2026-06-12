@@ -224,6 +224,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-12 | F181 | Implemented | Added data-driven citation locator normalization with `knowledge/retrieval/citation_locator_rules.json`, typed locator rule and normalized locator contracts, normalized locators on evidence/hits/support rows/citations, coverage for FHIR, PubMed, ClinicalTrials.gov, openFDA, UCUM, RxNorm, PDF pages, and internal sections, docs, and focused tests. |
 | 2026-06-12 | F182 | Implemented | Added Graph-NER extraction provenance on graph nodes, edges, and triples, including extractor version, source evidence/chunk metadata, confidence, normalized-code candidates, candidate-review state, summary provenance counts, docs, and focused graph contract tests. |
 | 2026-06-12 | F183 | Implemented | Added data-driven Graph-NER conflict detection for contradictory source claims, deprecated terminology mappings, conflicting units, and version-mismatched standard guidance; retrieval handoff now includes `graph_conflict_report`, answer synthesis review-gates conflicts, and focused tests cover direct and integrated paths. |
+| 2026-06-12 | F184 | Implemented | Expanded durable retrieval judgments from relevance-only labels to reviewer workflow labels: relevant, partial, irrelevant, unsafe, stale, and source-policy-blocked; updated API/contracts, Postgres migration 020, SQLite local migration, UI controls, metrics/report counts, docs, and focused API/service/frontend build checks. |
 
 ## Feature Backlog
 
@@ -429,7 +430,7 @@ Month 4 is done only when these acceptance gates hold:
 - [x] F181 Add citation locator normalization for FHIR pages, PubMed records, ClinicalTrials.gov studies, openFDA records, UCUM entries, RxNorm concepts, PDF pages, and internal policy sections.
 - [x] F182 Add Graph-NER extraction provenance per node and edge, including extractor version, source chunk, confidence, normalized-code candidates, and review state.
 - [x] F183 Add graph conflict detection for contradictory source claims, deprecated terminology mappings, conflicting units, and version-mismatched standard guidance.
-- [ ] F184 Add retrieval judgement workflow so reviewers can label evidence hits as relevant, irrelevant, unsafe, stale, or source-policy-blocked.
+- [x] F184 Add retrieval judgement workflow so reviewers can label evidence hits as relevant, irrelevant, unsafe, stale, or source-policy-blocked.
 - [ ] F185 Add active-learning queue that converts low-confidence retrieval, unsupported claims, and reviewer corrections into benchmark candidates.
 - [ ] F186 Add tenant-scoped corpus partitions and source policies so enterprise customers can separate global standards, tenant policies, and private documents.
 - [ ] F187 Add PHI-safe private corpus ingestion with redaction preview, retention policy stamping, and external-provider blocking by default.

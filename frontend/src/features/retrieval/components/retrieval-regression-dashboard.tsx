@@ -9,6 +9,7 @@ import type {
   RetrievalRelevanceJudgment,
   RetrievalRelevanceJudgmentSummary,
 } from "../../../types";
+import { isNonPositiveJudgment } from "../model/retrieval-judgment-labels";
 import type { RetrievalSearchRun } from "../model/retrieval-run-summary";
 
 type FormatCount = (count: number, singular: string, plural?: string) => string;
@@ -267,7 +268,7 @@ function regressionRows(judgments: RetrievalRelevanceJudgment[]): QueryRegressio
     row.total += 1;
     if (judgment.value === "relevant") row.relevant += 1;
     if (judgment.value === "partial") row.partial += 1;
-    if (judgment.value === "not_relevant") row.notRelevant += 1;
+    if (isNonPositiveJudgment(judgment.value)) row.notRelevant += 1;
     if (!row.latestUpdatedAt || judgment.updated_at > row.latestUpdatedAt) {
       row.latestUpdatedAt = judgment.updated_at;
     }

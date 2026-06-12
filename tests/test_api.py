@@ -1003,13 +1003,20 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "relevant_count": 1,
                 "partial_count": 0,
                 "not_relevant_count": 0,
+                "unsafe_count": 0,
+                "stale_count": 0,
+                "source_policy_blocked_count": 0,
                 "average_rating": 3.0,
                 "latest_updated_at": "2026-06-04T00:00:00+00:00",
                 "sample_limit": kwargs["limit"],
                 "value_counts": {
                     "relevant": 1,
                     "partial": 0,
+                    "irrelevant": 0,
                     "not_relevant": 0,
+                    "unsafe": 0,
+                    "stale": 0,
+                    "source_policy_blocked": 0,
                 },
             }
 
@@ -1024,6 +1031,9 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "relevant_count": 1,
                 "partial_count": 0,
                 "not_relevant_count": 0,
+                "unsafe_count": 0,
+                "stale_count": 0,
+                "source_policy_blocked_count": 0,
                 "coverage_at_k": 0.5,
                 "hit_rate_at_k": 1.0,
                 "precision_at_k": 0.5,
@@ -1101,8 +1111,8 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "evidence_id": "ev_schema",
                 "source_id": "schema:lab_result_v1",
                 "source_type": "schema",
-                "value": "relevant",
-                "rating": 3,
+                "value": "source_policy_blocked",
+                "rating": 0,
                 "run_id": "run_1",
                 "search_signature": "signature",
                 "metadata": {"review_surface": "retrieval_console"},
@@ -1147,7 +1157,8 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
     }
     assert fake_service.calls[3]["method"] == "upsert"
     assert fake_service.calls[3]["owner_user_id"] == "usr_api_test"
-    assert fake_service.calls[3]["value"] == "relevant"
+    assert fake_service.calls[3]["value"] == "source_policy_blocked"
+    assert fake_service.calls[3]["rating"] == 0
     assert fake_service.calls[3]["metadata"] == {"review_surface": "retrieval_console"}
     assert fake_service.calls[4] == {
         "method": "delete",

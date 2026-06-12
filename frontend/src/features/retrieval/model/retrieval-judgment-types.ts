@@ -1,6 +1,6 @@
-import type { Evidence } from "../../../types";
+import type { Evidence, RetrievalJudgmentValue } from "../../../types";
 
-export type RelevanceJudgmentValue = "relevant" | "partial" | "not_relevant";
+export type RelevanceJudgmentValue = RetrievalJudgmentValue;
 
 export type RelevanceJudgment = {
   evidenceId: string;
@@ -34,5 +34,8 @@ export type RelevanceJudgmentMetrics = {
   partialCount: number;
   precisionAtK: number;
   relevantCount: number;
+  sourcePolicyBlockedCount: number;
+  staleCount: number;
   totalHits: number;
+  unsafeCount: number;
 };

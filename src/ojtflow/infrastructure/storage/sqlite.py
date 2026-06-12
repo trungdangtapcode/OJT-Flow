@@ -214,7 +214,15 @@ class SQLiteBackboneStore:
                     created_at text not null,
                     updated_at text not null,
                     unique(owner_user_id, query_hash, evidence_id),
-                    check (value in ('relevant', 'partial', 'not_relevant')),
+                    check (value in (
+                        'relevant',
+                        'partial',
+                        'irrelevant',
+                        'not_relevant',
+                        'unsafe',
+                        'stale',
+                        'source_policy_blocked'
+                    )),
                     check (rating >= 0 and rating <= 3)
                 );
 
@@ -351,6 +359,7 @@ class SQLiteBackboneStore:
                 """
             )
             self._ensure_audit_record_columns(connection)
+            self._ensure_retrieval_judgment_value_constraint(connection)
             columns = {
                 row["name"]
                 for row in connection.execute("pragma table_info(workflows)").fetchall()
@@ -382,6 +391,75 @@ class SQLiteBackboneStore:
                     on audit_records(chain_scope, chain_sequence desc)
                 """
             )
+
+    def _ensure_retrieval_judgment_value_constraint(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        row = connection.execute(
+            """
+            select sql
+            from sqlite_master
+            where type = 'table' and name = 'retrieval_relevance_judgments'
+            """
+        ).fetchone()
+        sql = str(row["sql"] if row else "")
+        if "source_policy_blocked" in sql:
+            return
+        connection.executescript(
+            """
+            alter table retrieval_relevance_judgments
+                rename to retrieval_relevance_judgments_old_value_labels;
+
+            create table retrieval_relevance_judgments (
+                judgment_id text primary key,
+                owner_user_id text not null,
+                query_hash text not null,
+                query_text text not null,
+                evidence_id text not null,
+                source_id text,
+                source_type text,
+                source_version text,
+                run_id text,
+                search_signature text,
+                value text not null,
+                rating integer not null,
+                metadata_json text not null,
+                created_at text not null,
+                updated_at text not null,
+                unique(owner_user_id, query_hash, evidence_id),
+                check (value in (
+                    'relevant',
+                    'partial',
+                    'irrelevant',
+                    'not_relevant',
+                    'unsafe',
+                    'stale',
+                    'source_policy_blocked'
+                )),
+                check (rating >= 0 and rating <= 3)
+            );
+
+            insert into retrieval_relevance_judgments (
+                judgment_id, owner_user_id, query_hash, query_text,
+                evidence_id, source_id, source_type, source_version, run_id,
+                search_signature, value, rating, metadata_json, created_at, updated_at
+            )
+            select
+                judgment_id, owner_user_id, query_hash, query_text,
+                evidence_id, source_id, source_type, source_version, run_id,
+                search_signature, value, rating, metadata_json, created_at, updated_at
+            from retrieval_relevance_judgments_old_value_labels;
+
+            drop table retrieval_relevance_judgments_old_value_labels;
+
+            create index if not exists idx_retrieval_judgments_owner_updated
+                on retrieval_relevance_judgments(owner_user_id, updated_at desc);
+
+            create index if not exists idx_retrieval_judgments_owner_query
+                on retrieval_relevance_judgments(owner_user_id, query_hash, updated_at desc);
+            """
+        )
 
     def _ensure_audit_record_columns(self, connection: sqlite3.Connection) -> None:
         existing = {

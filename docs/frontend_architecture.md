@@ -1671,10 +1671,14 @@ rank movement is not clinical evidence. Overlap, churn, shared-evidence, and
 mean-rank-delta metrics must include operator-facing interpretation so users can
 distinguish broad result replacement from rank-order instability.
 Result cards
-should collect explicit relevance judgments for the query-document pair and
+should collect explicit retrieval judgments for the query-document pair and
 persist those judgments through `/retrieval/judgments` so rerun queries can
 hydrate prior labels for matching evidence. Comparison reports should include
 the available judgments as imported-judgment scaffolding.
+The judgment control should expose relevance labels and reviewer workflow
+labels: relevant, partial, irrelevant, unsafe, stale, and policy blocked. Unsafe,
+stale, and policy-blocked judgments must count as non-positive evidence quality
+signals even when the document textually matches the query.
 The results panel should summarize judgment-aware metrics from current
 in-session judgments, including coverage, Precision@k, judged precision, and
 nDCG@k. It should also surface the persisted judgment summary from

@@ -6,6 +6,7 @@ import type {
   BadgeVariant,
   EvidenceSupportMatrixRowView,
 } from "./evidence-support-matrix-types";
+import type { RelevanceJudgmentValue } from "../model/retrieval-judgment-types";
 import { SectionHelpText } from "./section-help-text";
 
 export type { EvidenceSupportMatrixRowView } from "./evidence-support-matrix-types";
@@ -22,8 +23,8 @@ export function EvidenceSupportMatrix({
   formatCount: (count: number, singular: string) => string;
   formatScore: (score: number) => string;
   humanize: (value: string) => string;
-  judgmentBadgeVariant: (value: "relevant" | "partial" | "not_relevant") => BadgeVariant;
-  judgmentLabel: (value: "relevant" | "partial" | "not_relevant") => string;
+  judgmentBadgeVariant: (value: RelevanceJudgmentValue) => BadgeVariant;
+  judgmentLabel: (value: RelevanceJudgmentValue) => string;
   rows: EvidenceSupportMatrixRowView[];
   supportStatusBadgeVariant: (
     status: EvidenceSupportMatrixRowView["supportStatus"],

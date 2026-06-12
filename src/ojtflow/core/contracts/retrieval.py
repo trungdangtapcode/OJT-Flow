@@ -26,7 +26,15 @@ class RetrievalQuery(ContractModel):
     filters: dict[str, Any] = Field(default_factory=dict)
 
 
-RetrievalJudgmentValue = Literal["relevant", "partial", "not_relevant"]
+RetrievalJudgmentValue = Literal[
+    "relevant",
+    "partial",
+    "irrelevant",
+    "not_relevant",
+    "unsafe",
+    "stale",
+    "source_policy_blocked",
+]
 
 
 class RetrievalRelevanceJudgmentWrite(ContractModel):
@@ -64,6 +72,9 @@ class RetrievalRelevanceJudgmentSummary(ContractModel):
     relevant_count: int = Field(ge=0)
     partial_count: int = Field(ge=0)
     not_relevant_count: int = Field(ge=0)
+    unsafe_count: int = Field(default=0, ge=0)
+    stale_count: int = Field(default=0, ge=0)
+    source_policy_blocked_count: int = Field(default=0, ge=0)
     average_rating: float | None = None
     latest_updated_at: NonBlankStr | None = None
     sample_limit: int = Field(ge=1)
@@ -103,6 +114,9 @@ class RetrievalJudgmentEvaluationResult(ContractModel):
     relevant_count: int = Field(ge=0)
     partial_count: int = Field(ge=0)
     not_relevant_count: int = Field(ge=0)
+    unsafe_count: int = Field(default=0, ge=0)
+    stale_count: int = Field(default=0, ge=0)
+    source_policy_blocked_count: int = Field(default=0, ge=0)
     coverage_at_k: float = Field(ge=0.0, le=1.0)
     hit_rate_at_k: float = Field(ge=0.0, le=1.0)
     precision_at_k: float = Field(ge=0.0, le=1.0)

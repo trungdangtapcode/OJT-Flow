@@ -269,6 +269,9 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     assert summary.relevant_count == 1
     assert summary.partial_count == 0
     assert summary.not_relevant_count == 0
+    assert summary.unsafe_count == 0
+    assert summary.stale_count == 0
+    assert summary.source_policy_blocked_count == 0
     assert summary.average_rating == 3.0
     assert evaluation.judged_count == 1
     assert evaluation.unjudged_count == 1
@@ -286,6 +289,42 @@ def test_retrieval_judgment_service_upserts_by_user_query_and_evidence() -> None
     assert len(evaluation.recommendations) == 1
     assert evaluation.recommendations[0].rule_id == "label_unjudged_top_results"
     assert evaluation.recommendations[0].evidence_ids == ["ev_unjudged"]
+
+    service.upsert(
+        owner_user_id="usr_a",
+        query="FHIR Observation source policy",
+        evidence_id="ev_policy_blocked",
+        value="source_policy_blocked",
+        source_id="standard:fhir_observation_r4",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+    )
+    service.upsert(
+        owner_user_id="usr_a",
+        query="FHIR Observation source policy",
+        evidence_id="ev_unsafe",
+        value="unsafe",
+        source_id="standard:fhir_observation_r4",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+    )
+    policy_summary = service.summary(
+        owner_user_id="usr_a",
+        query="FHIR Observation source policy",
+    )
+    policy_evaluation = service.evaluate_ranked_results(
+        owner_user_id="usr_a",
+        query="FHIR Observation source policy",
+        ranked_evidence_ids=["ev_policy_blocked", "ev_unsafe"],
+    )
+
+    assert policy_summary.not_relevant_count == 2
+    assert policy_summary.source_policy_blocked_count == 1
+    assert policy_summary.unsafe_count == 1
+    assert policy_summary.value_counts["source_policy_blocked"] == 1
+    assert policy_summary.value_counts["unsafe"] == 1
+    assert policy_evaluation.not_relevant_count == 2
+    assert policy_evaluation.source_policy_blocked_count == 1
+    assert policy_evaluation.unsafe_count == 1
+    assert policy_evaluation.hit_rate_at_k == 0.0
 
 
 def test_query_variants_include_fields_schema_and_format() -> None:

@@ -22,6 +22,17 @@ export function JudgmentEvaluationOutcomeBadges({
       <Badge variant="destructive">
         {formatCount(metrics.notRelevantCount, "not relevant")}
       </Badge>
+      {metrics.unsafeCount ? (
+        <Badge variant="destructive">{formatCount(metrics.unsafeCount, "unsafe")}</Badge>
+      ) : null}
+      {metrics.staleCount ? (
+        <Badge variant="warning">{formatCount(metrics.staleCount, "stale")}</Badge>
+      ) : null}
+      {metrics.sourcePolicyBlockedCount ? (
+        <Badge variant="destructive">
+          {formatCount(metrics.sourcePolicyBlockedCount, "policy blocked")}
+        </Badge>
+      ) : null}
       <Badge variant="muted">
         average rating {formatNullableDecimal(metrics.averageRating)}
       </Badge>

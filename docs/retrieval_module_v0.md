@@ -1516,18 +1516,29 @@ persists those labels through `PUT /api/v1/retrieval/judgments`, lists them with
 authenticated `owner_user_id` and keyed by `(owner_user_id, query_hash,
 evidence_id)`, so rerunning the same query can hydrate prior labels for the
 same evidence even when browser-local run IDs change.
+Supported labels are `relevant`, `partial`, `irrelevant`, `unsafe`, `stale`,
+and `source_policy_blocked`; legacy `not_relevant` remains accepted for old
+records and API clients. `relevant` maps to rating `3`, `partial` maps to
+rating `1`, and all non-positive labels map to rating `0`. `unsafe`, `stale`,
+and `source_policy_blocked` are reviewer workflow labels: they are not positive
+relevance signals and should be used when evidence is risky, outdated, or
+blocked by source governance even if it textually matches the query.
 `GET /api/v1/retrieval/judgments/summary` returns the same stored label
 inventory as aggregate counts, average rating, latest update time, and sample
 limit for the active user/query.
 `POST /api/v1/retrieval/judgments/evaluate` accepts the active query, ranked
 evidence IDs, and optional cutoff, then scores that ranked list against stored
 judgments. It returns Coverage@k, HitRate@k, Precision@k, judged precision,
-MAP@k, MRR@k, nDCG@k, per-value counts, contributing judgment IDs, unjudged
-evidence IDs, `evaluation_readiness`, and policy-driven `recommendations[]`. The recommendation rules
+MAP@k, MRR@k, nDCG@k, per-value counts including unsafe/stale/policy-blocked
+labels, contributing judgment IDs, unjudged evidence IDs,
+`evaluation_readiness`, and policy-driven `recommendations[]`. The recommendation rules
 are loaded from `knowledge/retrieval/evaluation_policy.json` by default and can
 be overridden with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime
 counterpart to the offline evaluation harness: it makes current operator
 searches measurable and actionable without copying labels into fixture files.
+Postgres deployments use migration `020_retrieval_judgment_policy_labels.sql`
+to expand the durable value constraint. SQLite local stores rebuild the
+judgment table in place during startup when they detect the older constraint.
 `evaluation_readiness` states whether the current labels are unlabeled, low
 confidence, usable with gaps, or ready for tuning so sparse label sets do not
 look like reliable ranking quality measurements.

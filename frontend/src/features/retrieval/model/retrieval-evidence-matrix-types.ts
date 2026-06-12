@@ -1,7 +1,8 @@
 import type { EvidenceSupportStatus } from "./retrieval-evidence-support-types";
+import type { RelevanceJudgmentValue } from "./retrieval-judgment-types";
 
 export type RetrievalEvidenceJudgment = {
-  value: "relevant" | "partial" | "not_relevant";
+  value: RelevanceJudgmentValue;
 };
 
 export type EvidenceSupportMatrixRow = {

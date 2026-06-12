@@ -22,9 +22,27 @@ export const relevanceJudgmentOptions: RelevanceJudgmentOption[] = [
   },
   {
     activeVariant: "destructive",
-    description: "Mark this evidence as not relevant for the submitted query.",
-    label: "Not relevant",
-    value: "not_relevant",
+    description: "Mark this evidence as irrelevant for the submitted query.",
+    label: "Irrelevant",
+    value: "irrelevant",
+  },
+  {
+    activeVariant: "destructive",
+    description: "Mark this evidence as unsafe to use in the current workflow.",
+    label: "Unsafe",
+    value: "unsafe",
+  },
+  {
+    activeVariant: "secondary",
+    description: "Mark this evidence as stale or version-mismatched.",
+    label: "Stale",
+    value: "stale",
+  },
+  {
+    activeVariant: "destructive",
+    description: "Mark this evidence as blocked by source policy.",
+    label: "Policy blocked",
+    value: "source_policy_blocked",
   },
 ];
 
@@ -37,6 +55,10 @@ export function relevanceJudgmentRating(value: RelevanceJudgmentValue): number {
 export function judgmentLabel(value: RelevanceJudgmentValue): string {
   if (value === "relevant") return "Relevant";
   if (value === "partial") return "Partial";
+  if (value === "irrelevant") return "Irrelevant";
+  if (value === "unsafe") return "Unsafe";
+  if (value === "stale") return "Stale";
+  if (value === "source_policy_blocked") return "Policy blocked";
   return "Not relevant";
 }
 
@@ -45,5 +67,16 @@ export function judgmentBadgeVariant(
 ): "default" | "success" | "warning" | "destructive" | "muted" {
   if (value === "relevant") return "success";
   if (value === "partial") return "warning";
+  if (value === "stale") return "warning";
   return "destructive";
+}
+
+export function isNonPositiveJudgment(value: RelevanceJudgmentValue): boolean {
+  return (
+    value === "irrelevant" ||
+    value === "not_relevant" ||
+    value === "unsafe" ||
+    value === "stale" ||
+    value === "source_policy_blocked"
+  );
 }

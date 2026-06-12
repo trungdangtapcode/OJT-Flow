@@ -22,6 +22,24 @@ from ojtflow.core.contracts.retrieval import (
 from ojtflow.data_tools.hashing import sha256_text
 
 
+NON_RELEVANT_JUDGMENT_VALUES = {
+    "irrelevant",
+    "not_relevant",
+    "unsafe",
+    "stale",
+    "source_policy_blocked",
+}
+RETRIEVAL_JUDGMENT_VALUES = (
+    "relevant",
+    "partial",
+    "irrelevant",
+    "not_relevant",
+    "unsafe",
+    "stale",
+    "source_policy_blocked",
+)
+
+
 class RetrievalJudgmentService:
     """Coordinates user-scoped relevance judgments for retrieval evaluation."""
 
@@ -100,12 +118,14 @@ class RetrievalJudgmentService:
             limit=sample_limit,
         )
         value_counts = {
-            "relevant": sum(1 for judgment in judgments if judgment.value == "relevant"),
-            "partial": sum(1 for judgment in judgments if judgment.value == "partial"),
-            "not_relevant": sum(
-                1 for judgment in judgments if judgment.value == "not_relevant"
-            ),
+            value: sum(1 for judgment in judgments if judgment.value == value)
+            for value in RETRIEVAL_JUDGMENT_VALUES
         }
+        not_relevant_count = sum(
+            count
+            for value, count in value_counts.items()
+            if value in NON_RELEVANT_JUDGMENT_VALUES
+        )
         source_ids = {
             judgment.source_id
             for judgment in judgments
@@ -119,7 +139,10 @@ class RetrievalJudgmentService:
             source_count=len(source_ids),
             relevant_count=value_counts["relevant"],
             partial_count=value_counts["partial"],
-            not_relevant_count=value_counts["not_relevant"],
+            not_relevant_count=not_relevant_count,
+            unsafe_count=value_counts["unsafe"],
+            stale_count=value_counts["stale"],
+            source_policy_blocked_count=value_counts["source_policy_blocked"],
             average_rating=(
                 round(sum(judgment.rating for judgment in judgments) / len(judgments), 6)
                 if judgments
@@ -166,7 +189,16 @@ class RetrievalJudgmentService:
         relevant_count = sum(1 for judgment in ranked_judgments if judgment.value == "relevant")
         partial_count = sum(1 for judgment in ranked_judgments if judgment.value == "partial")
         not_relevant_count = sum(
-            1 for judgment in ranked_judgments if judgment.value == "not_relevant"
+            1
+            for judgment in ranked_judgments
+            if judgment.value in NON_RELEVANT_JUDGMENT_VALUES
+        )
+        unsafe_count = sum(1 for judgment in ranked_judgments if judgment.value == "unsafe")
+        stale_count = sum(1 for judgment in ranked_judgments if judgment.value == "stale")
+        source_policy_blocked_count = sum(
+            1
+            for judgment in ranked_judgments
+            if judgment.value == "source_policy_blocked"
         )
         positive_count = relevant_count + partial_count
         judged_count = len(ranked_judgments)
@@ -215,6 +247,9 @@ class RetrievalJudgmentService:
             "positive_count": positive_count,
             "precision_at_k": precision_at_k,
             "relevant_count": relevant_count,
+            "source_policy_blocked_count": source_policy_blocked_count,
+            "stale_count": stale_count,
+            "unsafe_count": unsafe_count,
             "unjudged_count": len(unjudged_ids),
         }
         return RetrievalJudgmentEvaluationResult(
@@ -226,6 +261,9 @@ class RetrievalJudgmentService:
             relevant_count=relevant_count,
             partial_count=partial_count,
             not_relevant_count=not_relevant_count,
+            unsafe_count=unsafe_count,
+            stale_count=stale_count,
+            source_policy_blocked_count=source_policy_blocked_count,
             coverage_at_k=coverage_at_k,
             hit_rate_at_k=hit_rate_at_k,
             precision_at_k=precision_at_k,
