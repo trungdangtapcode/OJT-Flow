@@ -11039,6 +11039,10 @@ def _normalize_frontend_api_path(raw_path: str) -> str | None:
     path = path.replace("${reviewId}", "{review_id}")
     path = path.replace("${pathSegment(reviewId)}", "{review_id}")
     path = path.replace("${pathSegment(judgmentId)}", "{judgment_id}")
+    path = path.replace("${pathSegment(candidateId)}", "{candidate_id}")
+    path = path.replace("${pathSegment(sessionId)}", "{session_id}")
+    path = path.replace("${pathSegment(jobId)}", "{job_id}")
+    path = path.replace("${pathSegment(key)}", "{key}")
     if path == "/api/v1/health":
         return "/health"
     return path

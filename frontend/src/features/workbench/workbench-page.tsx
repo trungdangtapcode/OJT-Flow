@@ -12,7 +12,6 @@ import {
   CardTitle,
 } from "../../components/ui/card";
 import { Input, Label, Select, Textarea } from "../../components/ui/form";
-import { GuideGrid, GuideItem, GuidePanel } from "../../components/ui/guide-panel";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
 import { Notice } from "../../components/ui/notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
@@ -29,14 +28,11 @@ import {
   InputExampleSelector,
   ReviewGateControl,
   SharedWorkflowOptions,
-  WorkbenchControlPlane,
-  WorkbenchExecutionPath,
-  WorkbenchPayloadStandards,
   WorkbenchSummaryStrip,
   WorkflowStartError,
 } from "./workbench-controls";
 import { inputExamples, type InputExample } from "./workbench-examples";
-import { OcrEvidencePanel } from "./ocr-evidence-panel";
+import { WorkbenchQuickGuide, WorkbenchSidePanel } from "./workbench-side-panel";
 import { formatBytes, sourceDataStats, validateUploadFile } from "./workbench-utils";
 
 export function WorkbenchPage() {
@@ -178,19 +174,7 @@ export function WorkbenchPage() {
         title="Workbench"
         description="Create governed workflows from pasted data or uploaded healthcare files."
       />
-      <GuidePanel title="How to create a workflow">
-        <GuideGrid>
-          <GuideItem title="1. Choose intake">
-            Paste structured data for quick validation, or upload a file when extraction is needed first.
-          </GuideItem>
-          <GuideItem title="2. Pick the contract">
-            Set input format, target format, schema, and review gate before starting the run.
-          </GuideItem>
-          <GuideItem title="3. Inspect the result">
-            After start, open Workflow detail to read validation issues, evidence, output, and audit events.
-          </GuideItem>
-        </GuideGrid>
-      </GuidePanel>
+      <WorkbenchQuickGuide />
       <WorkbenchSummaryStrip
         intakeMode={intakeMode}
         requireReview={requireReview}
@@ -430,19 +414,14 @@ export function WorkbenchPage() {
             </Tabs>
           </CardContent>
         </Card>
-        <div className="grid content-start gap-4">
-          <WorkbenchControlPlane
-            activeContractSchema={activeContractSchema}
-            fields={selectedExample.fields}
-            intakeMode={intakeMode}
-            requireReview={requireReview}
-            sourceFormat={activeSourceFormat}
-            targetFormat={targetFormat}
-          />
-          <WorkbenchExecutionPath />
-          <OcrEvidencePanel />
-          <WorkbenchPayloadStandards />
-        </div>
+        <WorkbenchSidePanel
+          activeContractSchema={activeContractSchema}
+          fields={selectedExample?.fields ?? []}
+          intakeMode={intakeMode}
+          requireReview={requireReview}
+          sourceFormat={activeSourceFormat}
+          targetFormat={targetFormat}
+        />
       </div>
     </div>
   );

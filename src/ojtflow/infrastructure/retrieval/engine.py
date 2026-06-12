@@ -5256,7 +5256,7 @@ def _effective_route_budget(
             budget.reranker_candidate_limit,
         ),
         "source_diversity_enabled": diversity_enabled and budget.source_diversity_enabled,
-        "diversity_lambda": round(budget.diversity_lambda, 4),
+        "diversity_lambda": round(max(0.0, min(1.0, diversity_lambda)), 4),
         "external_network_allowed": budget.external_network_allowed,
         "latency_target_ms": budget.latency_target_ms,
         "max_candidates": budget.max_candidates,

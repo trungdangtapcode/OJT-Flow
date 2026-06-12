@@ -68,7 +68,7 @@ def normalize_citation_locator(
             display=display,
             source_id=source_id,
             source_type=source_type,
-            source_version=source_version,
+            source_version=source_version or None,
             standard_system=_optional_text(context.get("standard_system")),
             canonical_url=canonical_url,
             identifier=identifier,

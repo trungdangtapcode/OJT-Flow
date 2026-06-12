@@ -269,7 +269,7 @@ def _extract_openai_vision(
 
     api_key = _openai_api_key()
     if not api_key:
-        warning = "OpenAI vision OCR is not configured; set OJT_OPENAI_API_KEY."
+        warning = "OpenAI vision OCR fallback is not configured; set OJT_OPENAI_API_KEY."
         warnings.append(warning)
         if require_configured:
             raise ToolExecutionError(warning)
@@ -591,7 +591,7 @@ def _extract_markitdown(
 def _build_markitdown_converter(
     *,
     MarkItDown,
-    byte_count: int,
+    byte_count: int = 0,
     source_format: str,
     deferred_warnings: list[str],
 ):
@@ -625,12 +625,10 @@ def _build_markitdown_converter(
         return MarkItDown(enable_plugins=False)
 
     try:
-        import markitdown_ocr  # noqa: F401  # type: ignore[import]
         from openai import OpenAI  # type: ignore[import]
     except ImportError:
         deferred_warnings.append(
-            "MarkItDown OCR plugin is not installed; install 'ojtflow[parsing]' "
-            "or markitdown-ocr."
+            "MarkItDown OCR plugin is enabled but the OpenAI client is not installed."
         )
         return MarkItDown(enable_plugins=False)
 

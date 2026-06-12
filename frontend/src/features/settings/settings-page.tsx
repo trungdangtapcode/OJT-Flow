@@ -1636,7 +1636,7 @@ function RetrievalSettingsForm({
                 Source diversity
               </label>
               <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground sm:col-span-2 xl:col-span-3">
-                Embedding changes require retrieval reindexing before vector search is fully aligned. Source diversity changes final evidence selection after hybrid retrieval and reranking.
+                Embedding changes require retrieval reindexing before vector search is fully aligned. Source diversity changes final evidence selection after hybrid retrieval and reranking. Disable it only when strict score order is required.
               </div>
             </div>
 

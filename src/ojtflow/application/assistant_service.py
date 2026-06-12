@@ -497,6 +497,8 @@ class AssistantService:
         return _deterministic_plan(message, context)
 
     def _validated_generated_plan(self, plan: AssistantPlan) -> AssistantPlan:
+        if not self.tool_specs:
+            return plan
         validation = validate_assistant_plan_output(
             plan,
             allowed_tool_names=(spec.name for spec in self.tool_specs),

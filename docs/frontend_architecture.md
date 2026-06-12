@@ -581,6 +581,9 @@ backend upsert payload construction.
 `retrieval-judgment-report.ts` owns evaluation report JSON assembly.
 `retrieval-judgment-mapping.ts` owns persisted-judgment normalization, run-hit
 lookup, comparison judgment selection, and judgment keys.
+The explicit relevance judgments are operator labels for retrieval evaluation and
+quality monitoring; they must not be treated as clinical truth or hidden model
+feedback.
 Relevance judgment controls should stay outside the page shell:
 `frontend/src/features/retrieval/components/relevance-judgment-control.tsx` owns
 the option buttons and operator help text. The judgment-session hook owns

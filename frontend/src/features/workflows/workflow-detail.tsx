@@ -32,7 +32,7 @@ import {
   Output,
   Overview,
 } from "./workflow-detail-sections";
-import { buildAssistantWorkflowContextHref } from "../assistant/assistant-attachments";
+import { buildAssistantWorkflowContextHref } from "../../lib/assistant-context-links";
 
 export function WorkflowDetail({
   focused = false,

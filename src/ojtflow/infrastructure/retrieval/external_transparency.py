@@ -43,11 +43,15 @@ def build_external_query_transparency_records(
         return []
 
     root = Path(knowledge_root) if knowledge_root is not None else _default_knowledge_root()
+    try:
+        connector_catalog = load_external_source_connectors(root)
+        cache_policy = load_external_api_cache_policy(root)
+    except FileNotFoundError:
+        return []
     connectors = {
         connector.connector_id: connector
-        for connector in load_external_source_connectors(root).connectors
+        for connector in connector_catalog.connectors
     }
-    cache_policy = load_external_api_cache_policy(root)
     hint_by_target = {hint.target: hint for hint in query_analysis.search_hints}
     external_network_allowed = (
         bool(route_budget.external_network_allowed) if route_budget is not None else False

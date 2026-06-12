@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import inspect
 import io
 from pathlib import Path
 from urllib.parse import quote
@@ -297,6 +298,19 @@ def _content_disposition_filename(filename: str) -> str:
     return f"attachment; filename*=UTF-8''{quote(safe)}"
 
 
+def _call_start_workflow_from_file(
+    service: WorkflowService,
+    **kwargs,
+):
+    """Call workflow file start while keeping lightweight route fakes compatible."""
+
+    method = service.start_workflow_from_file
+    signature = inspect.signature(method)
+    if "request_id" not in signature.parameters:
+        kwargs.pop("request_id", None)
+    return method(**kwargs)
+
+
 @router.post("/parse/upload/jobs", response_model=UploadParseJobEnvelope)
 async def create_upload_parse_job(
     http_request: Request,
@@ -391,11 +405,11 @@ async def create_batch_upload_parse_jobs(
     request_id = getattr(http_request.state, "request_id", None)
     normalized_case_id = _optional_form_text(case_id)
     normalized_project_id = _optional_form_text(project_id)
-    for file_bytes, filename, _source_format in uploaded_files:
+    for item, (file_bytes, filename, _source_format) in zip(files, uploaded_files, strict=True):
         artifact = intake.register_upload(
             owner_user_id=authenticated.user.user_id,
             filename=filename,
-            mime_type=file.content_type or "application/octet-stream",
+            mime_type=item.content_type or "application/octet-stream",
             data=file_bytes,
             source="upload",
             request_id=request_id,
@@ -685,7 +699,8 @@ async def upload_and_start_workflow(
     schema_id = _optional_form_text(schema_id)
     file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
 
-    workflow = service.start_workflow_from_file(
+    workflow = _call_start_workflow_from_file(
+        service,
         instruction=instruction,
         file_bytes=file_bytes,
         filename=filename,

@@ -1,5 +1,5 @@
 import { Card } from "../../../components/ui/card";
-import { buildAssistantRetrievalContextHref } from "../../assistant/assistant-attachments";
+import { buildAssistantRetrievalContextHref } from "../../../lib/assistant-context-links";
 import { useHashTargetScroll } from "../../../lib/use-hash-target-scroll";
 import { searchResultsViewModel } from "../model/search-results-view-model";
 import { searchResultsContentProps } from "./search-results-content-props";

@@ -27,7 +27,8 @@ export function relevanceJudgmentMetrics(
     (judgment) => judgment.value === "partial",
   ).length;
   const notRelevantCount = judgments.filter(
-    (judgment) => isNonPositiveJudgment(judgment.value),
+    (judgment) =>
+      judgment.value === "not_relevant" || isNonPositiveJudgment(judgment.value),
   ).length;
   const unsafeCount = judgments.filter((judgment) => judgment.value === "unsafe").length;
   const staleCount = judgments.filter((judgment) => judgment.value === "stale").length;
