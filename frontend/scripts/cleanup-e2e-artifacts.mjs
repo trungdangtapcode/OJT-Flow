@@ -28,6 +28,7 @@ deleted_events = 0
 deleted_reviews = 0
 deleted_evidence = 0
 deleted_workflows = 0
+deleted_organizations = 0
 
 
 def collect_file_refs(value):
@@ -156,6 +157,11 @@ with auth.connect() as connection:
                 (user_ids,),
             )
             deleted_sessions = cursor.rowcount
+            cursor.execute(
+                "delete from ojtflow.organizations where created_by_user_id = any(%s::text[])",
+                (user_ids,),
+            )
+            deleted_organizations = cursor.rowcount
         else:
             deleted_sessions = 0
         cursor.execute(
@@ -172,6 +178,7 @@ print(json.dumps({
     "deleted_reviews": deleted_reviews,
     "deleted_evidence": deleted_evidence,
     "deleted_dataset_files": deleted_files,
+    "deleted_organizations": deleted_organizations,
     "deleted_auth_sessions": deleted_sessions,
     "deleted_auth_users": deleted_users,
 }, sort_keys=True))
