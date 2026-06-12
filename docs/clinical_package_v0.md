@@ -37,6 +37,11 @@ The package includes:
 - `handoff_context`: Graph-NER/RAG/export hints
 - `warnings`: package limitations and review warnings
 
+Clinical package handoff context also includes `workflow_provenance_ids` and
+`workflow_provenance_record_count`, linking package exports back to the broader
+`WorkflowState.provenance[]` lineage for parser, retrieval, reviewer,
+assistant, converter, and explanation activity.
+
 ## V0 Mapping
 
 `lab_result_v1` records map to a small FHIR-like package:

@@ -71,6 +71,7 @@ from ojtflow.core.contracts.workflow import (
     WorkflowIntent,
     WorkflowOutput,
     WorkflowOutputArtifact,
+    WorkflowProvenanceRecord,
     WorkflowState,
     WorkflowStep,
 )
@@ -1424,6 +1425,16 @@ class WorkflowService:
                 workflow.input.dataset_ref,
             )
             parsed: ParsedData = parser_result.data["parsed"]
+            workflow.input.detected_format = parsed.format
+            workflow.profile = parser_result.data["profile"]
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                self.parser_agent.agent_id,
+                EventType.AGENT_COMPLETED,
+                "Re-parsed approved workflow input before transformation.",
+                metadata={"confidence": parser_result.confidence, "resume_after_review": True},
+            )
             target_format = workflow.intent.target_format or DataFormat.JSON
             self._complete_transformation(workflow, parsed, target_format, plan_for_execution)
         except ArtifactIntegrityError as exc:
@@ -1612,7 +1623,7 @@ class WorkflowService:
         input_refs: list[str] | None = None,
         output_refs: list[str] | None = None,
         metadata: dict | None = None,
-    ) -> None:
+    ) -> WorkflowEvent:
         event_metadata = dict(metadata or {})
         request_id = _workflow_request_id(workflow)
         if request_id:
@@ -1631,6 +1642,21 @@ class WorkflowService:
         )
         self.events.append(event)
         workflow.audit_event_refs.append(event.event_id)
+        self._append_provenance_for_event(workflow, event)
+        return event
+
+    def _append_provenance_for_event(
+        self,
+        workflow: WorkflowState,
+        event: WorkflowEvent,
+    ) -> None:
+        records = _workflow_provenance_records(workflow, event)
+        if not records:
+            return
+        workflow.provenance.extend(records)
+        workflow.handoff_context["provenance_summary"] = _workflow_provenance_summary(
+            workflow.provenance
+        )
 
     def _step(
         self,
@@ -1720,6 +1746,220 @@ def _failure_code(exc: Exception) -> str:
     if isinstance(exc, OJTFlowError):
         return "ojtflow_error"
     return "workflow_failed"
+
+
+def _workflow_provenance_records(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+) -> list[WorkflowProvenanceRecord]:
+    records: list[WorkflowProvenanceRecord] = []
+    for activity in _workflow_provenance_activities(workflow, event):
+        records.append(
+            WorkflowProvenanceRecord(
+                activity=activity,
+                agent=event.actor_id,
+                event_refs=[event.event_id],
+                source_refs=_workflow_provenance_source_refs(workflow, event, activity),
+                target_refs=_workflow_provenance_target_refs(workflow, event, activity),
+                evidence_ids=_workflow_provenance_evidence_ids(workflow, event, activity),
+                issue_ids=_workflow_provenance_issue_ids(workflow, event, activity),
+                review_ids=_workflow_provenance_review_ids(workflow, event, activity),
+                request_id=event.request_id,
+                occurred_at=event.timestamp,
+                summary=event.summary,
+                metadata={
+                    "event_type": event.event_type.value,
+                    "actor_type": event.actor_type.value,
+                    "severity": event.severity.value,
+                    "workflow_status": workflow.status.value,
+                    **_workflow_provenance_metadata(workflow, event, activity),
+                },
+            )
+        )
+    return records
+
+
+def _workflow_provenance_activities(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+) -> list[str]:
+    activities: list[str] = []
+    if event.event_type == EventType.WORKFLOW_CREATED:
+        activities.append("workflow")
+        if workflow.intent.options.get("source") == "assistant":
+            activities.append("assistant")
+        if workflow.input and workflow.input.dataset_ref in event.output_refs:
+            activities.append("upload")
+    elif event.event_type == EventType.TOOL_COMPLETED:
+        activities.append("extract" if event.actor_id == "document_extractor" else "workflow")
+    elif event.event_type == EventType.AGENT_COMPLETED:
+        activities.append(_agent_completed_provenance_activity(event.actor_id))
+    elif event.event_type == EventType.RETRIEVAL_COMPLETED:
+        activities.append("retrieve_evidence")
+    elif event.event_type == EventType.VALIDATION_COMPLETED:
+        activities.append("validate")
+    elif event.event_type == EventType.REVIEW_REQUESTED:
+        if event.actor_id == "assistant":
+            activities.append("assistant")
+        activities.append("review")
+    elif event.event_type == EventType.REVIEW_DECIDED:
+        activities.append("review")
+    elif event.event_type == EventType.TRANSFORMATION_COMPLETED:
+        activities.append("convert")
+        if workflow.retrieved_context:
+            activities.append("retrieval_derived_transform")
+    elif event.event_type == EventType.EXPLANATION_COMPLETED:
+        activities.append("explain")
+    elif event.event_type == EventType.WORKFLOW_COMPLETED:
+        activities.append("workflow")
+    elif event.event_type == EventType.WORKFLOW_FAILED:
+        activities.append("failure")
+    elif event.event_type in {EventType.TOOL_FAILED, EventType.AGENT_FAILED}:
+        activities.append("failure")
+    return list(dict.fromkeys(activities))
+
+
+def _agent_completed_provenance_activity(actor_id: str) -> str:
+    return {
+        "parser_agent": "parse",
+        "validation_agent": "validate",
+        "safety_agent": "policy_review",
+        "fhir_agent": "profile",
+        "explanation_agent": "explain",
+        "assistant": "assistant",
+    }.get(actor_id, "workflow")
+
+
+def _workflow_provenance_source_refs(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    refs = list(event.input_refs)
+    if activity in {
+        "parse",
+        "validate",
+        "retrieve_evidence",
+        "policy_review",
+        "review",
+        "convert",
+        "retrieval_derived_transform",
+        "explain",
+    } and workflow.input:
+        refs.append(workflow.input.dataset_ref)
+    if activity == "extract":
+        raw_upload = workflow.handoff_context.get("raw_upload")
+        if isinstance(raw_upload, dict) and isinstance(raw_upload.get("dataset_ref"), str):
+            refs.append(raw_upload["dataset_ref"])
+    return _unique_nonblank(refs)
+
+
+def _workflow_provenance_target_refs(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    refs = list(event.output_refs)
+    if activity in {"convert", "retrieval_derived_transform", "workflow"}:
+        output = workflow.output.transformation if workflow.output else None
+        if output and output.output_ref:
+            refs.append(output.output_ref)
+    if activity == "extract":
+        extracted_ref = workflow.handoff_context.get("extracted_dataset_ref")
+        if isinstance(extracted_ref, str):
+            refs.append(extracted_ref)
+    return _unique_nonblank(refs)
+
+
+def _workflow_provenance_evidence_ids(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    if activity in {"retrieve_evidence", "retrieval_derived_transform", "explain"}:
+        return _unique_nonblank([item.evidence_id for item in workflow.retrieved_context])
+    evidence_ids = event.metadata.get("evidence_ids")
+    if isinstance(evidence_ids, list):
+        return _unique_nonblank([item for item in evidence_ids if isinstance(item, str)])
+    return []
+
+
+def _workflow_provenance_issue_ids(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    if activity in {"validate", "policy_review", "review", "convert"}:
+        report = workflow.validation_report
+        if report:
+            return _unique_nonblank([issue.issue_id for issue in report.issues])
+    return []
+
+
+def _workflow_provenance_review_ids(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    review_ids = []
+    if activity == "review" and workflow.review:
+        review_ids.append(workflow.review.review_id)
+    metadata_review_id = event.metadata.get("review_id")
+    if isinstance(metadata_review_id, str):
+        review_ids.append(metadata_review_id)
+    return _unique_nonblank(review_ids)
+
+
+def _workflow_provenance_metadata(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "event_metadata": event.metadata,
+    }
+    if activity in {"parse", "validate"} and workflow.profile:
+        metadata["profile"] = {
+            "row_count": workflow.profile.row_count,
+            "column_count": workflow.profile.column_count,
+        }
+    if activity in {"convert", "retrieval_derived_transform"}:
+        plan = workflow.transformation_plan
+        output = workflow.output.transformation if workflow.output else None
+        metadata["plan_id"] = plan.plan_id if plan else None
+        metadata["action_ids"] = [action.action_id for action in plan.actions] if plan else []
+        metadata["target_format"] = (
+            output.output_format.value
+            if output
+            else (workflow.intent.target_format.value if workflow.intent.target_format else None)
+        )
+        metadata["review_status"] = workflow.review.status.value if workflow.review else None
+    if activity == "retrieval_derived_transform":
+        metadata["retrieval_trace"] = workflow.handoff_context.get("retrieval_trace", {})
+        metadata["evidence_count"] = len(workflow.retrieved_context)
+    if activity == "assistant":
+        metadata["assistant_source"] = workflow.intent.options.get("source")
+        metadata["task_type"] = workflow.intent.task_type
+    if activity == "failure" and workflow.failure:
+        metadata["failure"] = workflow.failure.model_dump(mode="json")
+    return metadata
+
+
+def _workflow_provenance_summary(
+    provenance: list[WorkflowProvenanceRecord],
+) -> dict[str, Any]:
+    activity_counts: dict[str, int] = {}
+    for record in provenance:
+        activity_counts[record.activity] = activity_counts.get(record.activity, 0) + 1
+    return {
+        "record_count": len(provenance),
+        "activity_counts": dict(sorted(activity_counts.items())),
+        "latest_provenance_id": provenance[-1].provenance_id if provenance else None,
+    }
+
+
+def _unique_nonblank(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))
 
 
 def _workflow_request_id(workflow: WorkflowState) -> str | None:

@@ -157,6 +157,7 @@ from ojtflow.core.contracts.workflow import (
     WorkflowInput,
     WorkflowIntent,
     WorkflowOutput,
+    WorkflowProvenanceRecord,
     WorkflowState,
     WorkflowStep,
 )
@@ -292,6 +293,7 @@ __all__ = [
     "WorkflowInput",
     "WorkflowIntent",
     "WorkflowOutput",
+    "WorkflowProvenanceRecord",
     "WorkflowState",
     "WorkflowStep",
     "WorkflowStatus",

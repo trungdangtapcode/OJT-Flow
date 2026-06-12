@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Copy,
   Download,
+  GitBranch,
   ListFilter,
   Network,
 } from "lucide-react";
@@ -34,6 +35,7 @@ import type {
   RetrievalGraphContext,
   ValidationIssue,
   WorkflowEvent,
+  WorkflowProvenanceRecord,
   WorkflowState,
 } from "../../types";
 import { PendingReviewGate } from "./workflow-detail-review";
@@ -467,34 +469,133 @@ export function Output({ workflow }: { workflow: WorkflowState }) {
   );
 }
 
-export function Audit({ events }: { events: WorkflowEvent[] }) {
+export function Audit({
+  events,
+  workflow,
+}: {
+  events: WorkflowEvent[];
+  workflow: WorkflowState;
+}) {
+  const provenance = workflow.provenance ?? [];
   return (
-    <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
-        <CardTitle>Audit timeline</CardTitle>
-        <CardDescription>{formatCount(events.length, "append-only event")}</CardDescription>
-      </CardHeader>
-      <CardContent className="pt-4">
-        <ol className="relative grid gap-0 before:absolute before:left-[5px] before:top-3 before:h-[calc(100%-1.5rem)] before:w-px before:bg-border">
-          {events.map((event) => (
-            <li
-              className="relative grid scroll-mt-24 grid-cols-[12px_minmax(0,1fr)] gap-3"
-              id={workflowEventAnchorId(event.event_id)}
-              key={event.event_id}
-            >
-              <span className="mt-4 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-card" />
-              <div className="min-w-0 border-b border-border py-3 last:border-b-0">
-                <div className="break-words font-bold">{event.event_type}</div>
-                <div className="text-xs text-muted-foreground">
-                  {formatDate(event.timestamp)} / {event.actor_type}:{event.actor_id}
+    <div className="grid gap-4">
+      <Card className="min-w-0 overflow-hidden">
+        <CardHeader className="border-b border-border bg-card/70 p-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <GitBranch className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <CardTitle>Workflow provenance</CardTitle>
+              <CardDescription>
+                {formatCount(provenance.length, "lineage record")} linked to workflow events, artifacts, evidence, and reviews.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0 md:p-4">
+          {provenance.length ? (
+            <Table wrapperClassName="max-h-[28rem] overflow-auto">
+              <THead>
+                <TR>
+                  <TH>Activity</TH>
+                  <TH>Agent</TH>
+                  <TH>References</TH>
+                  <TH>Summary</TH>
+                  <TH>Time</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {provenance.map((record) => (
+                  <WorkflowProvenanceRow key={record.provenance_id} record={record} />
+                ))}
+              </TBody>
+            </Table>
+          ) : (
+            <div className="p-4">
+              <Notice title="No workflow provenance">
+                Older workflow records may not include workflow-level provenance yet. Audit events are still listed below.
+              </Notice>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="min-w-0 overflow-hidden">
+        <CardHeader className="border-b border-border bg-card/70 p-4">
+          <CardTitle>Audit timeline</CardTitle>
+          <CardDescription>{formatCount(events.length, "append-only event")}</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <ol className="relative grid gap-0 before:absolute before:left-[5px] before:top-3 before:h-[calc(100%-1.5rem)] before:w-px before:bg-border">
+            {events.map((event) => (
+              <li
+                className="relative grid scroll-mt-24 grid-cols-[12px_minmax(0,1fr)] gap-3"
+                id={workflowEventAnchorId(event.event_id)}
+                key={event.event_id}
+              >
+                <span className="mt-4 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-card" />
+                <div className="min-w-0 border-b border-border py-3 last:border-b-0">
+                  <div className="break-words font-bold">{event.event_type}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {formatDate(event.timestamp)} / {event.actor_type}:{event.actor_id}
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{event.summary}</p>
                 </div>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{event.summary}</p>
-              </div>
-            </li>
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function WorkflowProvenanceRow({ record }: { record: WorkflowProvenanceRecord }) {
+  const referenceCounts = [
+    record.event_refs.length ? `${record.event_refs.length} events` : null,
+    record.source_refs.length ? `${record.source_refs.length} sources` : null,
+    record.target_refs.length ? `${record.target_refs.length} targets` : null,
+    record.evidence_ids.length ? `${record.evidence_ids.length} evidence` : null,
+    record.issue_ids.length ? `${record.issue_ids.length} issues` : null,
+    record.review_ids.length ? `${record.review_ids.length} reviews` : null,
+  ].filter((item): item is string => Boolean(item));
+  return (
+    <TR>
+      <TD className="min-w-48">
+        <div className="font-bold">{humanize(record.activity)}</div>
+        <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+          {record.provenance_id}
+        </div>
+      </TD>
+      <TD className="min-w-40">
+        <div className="break-words font-medium">{record.agent}</div>
+        {record.request_id ? (
+          <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+            {record.request_id}
+          </div>
+        ) : null}
+      </TD>
+      <TD className="min-w-56">
+        <div className="flex flex-wrap gap-1.5">
+          {referenceCounts.map((item) => (
+            <span className="rounded-full bg-muted px-2 py-1 text-xs font-bold text-muted-foreground" key={item}>
+              {item}
+            </span>
           ))}
-        </ol>
-      </CardContent>
-    </Card>
+          {!referenceCounts.length ? <span className="text-muted-foreground">none</span> : null}
+        </div>
+      </TD>
+      <TD className="min-w-80 text-muted-foreground">
+        <div className="break-words">{record.summary}</div>
+        {record.event_refs.length ? (
+          <div className="mt-1 break-all font-mono text-xs">
+            event {record.event_refs.join(", ")}
+          </div>
+        ) : null}
+      </TD>
+      <TD className="min-w-44 text-muted-foreground">{formatDate(record.occurred_at)}</TD>
+    </TR>
   );
 }
 

@@ -39,6 +39,10 @@ def _resource_by_type(package, resource_type: str):
     )
 
 
+def _provenance_activities(workflow):
+    return [record.activity for record in workflow.provenance]
+
+
 def test_workflow_pauses_for_review_then_completes_after_approval() -> None:
     service = make_service()
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
@@ -79,6 +83,34 @@ def test_workflow_pauses_for_review_then_completes_after_approval() -> None:
     assert completed.output.transformation is not None
     assert completed.explanation is not None
     assert completed.explanation.intended_use.startswith("Support data validation")
+    activities = set(_provenance_activities(completed))
+    assert {
+        "workflow",
+        "upload",
+        "parse",
+        "retrieve_evidence",
+        "validate",
+        "policy_review",
+        "review",
+        "convert",
+        "retrieval_derived_transform",
+        "explain",
+    }.issubset(activities)
+    assert all(record.event_refs for record in completed.provenance)
+    derived_transform = next(
+        record
+        for record in completed.provenance
+        if record.activity == "retrieval_derived_transform"
+    )
+    assert derived_transform.evidence_ids == [
+        item.evidence_id for item in completed.retrieved_context
+    ]
+    assert completed.input.dataset_ref in derived_transform.source_refs
+    assert completed.output.transformation.output_ref in derived_transform.target_refs
+    assert derived_transform.metadata["plan_id"] == completed.transformation_plan.plan_id
+    assert completed.handoff_context["provenance_summary"]["record_count"] == len(
+        completed.provenance
+    )
 
 
 def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> None:
@@ -204,6 +236,12 @@ def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> N
         package.semantic_normalization_gates
     )
     assert set(package.handoff_context["semantic_normalization_gate_types"]) == gate_types
+    assert package.handoff_context["workflow_provenance_record_count"] == len(
+        workflow.provenance
+    )
+    assert package.handoff_context["workflow_provenance_ids"] == [
+        item.provenance_id for item in workflow.provenance
+    ]
     assert package.handoff_context["fhir_compliance"] == "fhir_like_not_validated"
     assert package.handoff_context["fhir_profile_registry_version"] == (
         "fhir_like_resource_profiles.v0"
@@ -343,6 +381,28 @@ def test_clinical_package_adds_procedure_normalization_gate_without_candidate() 
     assert procedure_gate.candidate_id is None
     assert procedure_gate.metadata["candidate_status"] == "not_found"
     assert procedure_gate.requires_review is True
+
+
+def test_assistant_created_review_task_records_workflow_provenance() -> None:
+    service = make_service()
+
+    workflow = service.create_review_task(
+        question="Review whether this terminology mapping is safe.",
+        proposed_action={"field": "diagnosis", "candidate_system": "SNOMED CT"},
+        source_context={"assistant_session_id": "asst_test"},
+        owner_user_id="usr_test",
+        request_id="req_test",
+    )
+
+    assert workflow.status == WorkflowStatus.NEEDS_HUMAN_REVIEW
+    activities = _provenance_activities(workflow)
+    assert activities.count("assistant") >= 2
+    assert "review" in activities
+    assert workflow.provenance[0].request_id == "req_test"
+    review_record = next(record for record in workflow.provenance if record.activity == "review")
+    assert review_record.review_ids == [workflow.review.review_id]
+    assert review_record.metadata["event_type"] == "review.requested"
+    assert workflow.handoff_context["provenance_summary"]["activity_counts"]["assistant"] >= 2
 
 
 def test_review_gated_lab_workflow_clinical_package_carries_review_and_issues() -> None:

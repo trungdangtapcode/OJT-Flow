@@ -107,6 +107,10 @@ def build_clinical_package(
             "semantic_normalization_gate_types": sorted(
                 {item.gate_type for item in semantic_normalization_gates}
             ),
+            "workflow_provenance_record_count": len(workflow.provenance),
+            "workflow_provenance_ids": [
+                item.provenance_id for item in workflow.provenance
+            ],
             "terminology_candidates": [
                 item.model_dump(mode="json") for item in terminology_candidates
             ],
@@ -655,6 +659,9 @@ def _package_provenance(
                 "terminology_candidate_ids": terminology_candidate_ids,
                 "unit_validation_ids": unit_validation_ids,
                 "semantic_normalization_gate_ids": semantic_normalization_gate_ids,
+                "workflow_provenance_ids": [
+                    item.provenance_id for item in workflow.provenance
+                ],
             },
         ),
     ]

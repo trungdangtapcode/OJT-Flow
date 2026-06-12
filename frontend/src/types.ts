@@ -77,6 +77,36 @@ export type WorkflowFailure = {
   failed_at: string;
 };
 
+export type WorkflowProvenanceRecord = {
+  provenance_id: string;
+  activity:
+    | "workflow"
+    | "assistant"
+    | "upload"
+    | "extract"
+    | "parse"
+    | "profile"
+    | "retrieve_evidence"
+    | "validate"
+    | "policy_review"
+    | "review"
+    | "convert"
+    | "retrieval_derived_transform"
+    | "explain"
+    | "failure";
+  agent: string;
+  event_refs: string[];
+  source_refs: string[];
+  target_refs: string[];
+  evidence_ids: string[];
+  issue_ids: string[];
+  review_ids: string[];
+  request_id?: string | null;
+  occurred_at: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+};
+
 export type ValidationIssue = {
   issue_id: string;
   kind: string;
@@ -1659,6 +1689,7 @@ export type WorkflowState = {
   } | null;
   clinical_package?: ClinicalPackage | null;
   failure?: WorkflowFailure | null;
+  provenance: WorkflowProvenanceRecord[];
   handoff_context?: {
     retrieval_trace?: RetrievalTrace;
     retrieval_handoff?: Record<string, unknown>;

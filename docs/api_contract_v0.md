@@ -474,9 +474,16 @@ Response data is a `WorkflowState`. Important fields:
 - `output`
 - `explanation`
 - `clinical_package`
+- `provenance`
 - `handoff_context`
 - `failure`
 - `audit_event_refs`
+
+`provenance[]` contains workflow-level lineage records for parser, extraction,
+retrieval, validation, review, assistant-created workflow tasks, conversion,
+retrieval-derived transformations, explanation, completion, and failure. Each
+record links to `event_refs`, source/target artifact refs, evidence IDs, issue
+IDs, and review IDs where available. See `docs/workflow_provenance_v0.md`.
 
 When the workflow input has a supported healthcare mapping, `clinical_package`
 contains an `ojtflow_clinical_package` envelope with raw input identity,
@@ -490,6 +497,9 @@ profile registry metadata and FHIR search parameter hints from
 `knowledge/fhir/resource_profiles.json`. The package reports
 `fhir_like_not_validated`; clients must not call it HL7 FHIR compliant or
 automatically apply terminology candidates.
+Clinical packages also expose
+`handoff_context.workflow_provenance_ids` so package exports can be traced back
+to the broader workflow-level lineage.
 
 If startup reaches workflow creation but fails during parsing, extraction,
 retrieval, validation, policy, or transformation preparation, the backend still

@@ -190,7 +190,7 @@ export function WorkflowDetail({
           <Output workflow={workflow} />
         </TabsContent>
         <TabsContent value="audit">
-          <Audit events={events} />
+          <Audit events={events} workflow={workflow} />
         </TabsContent>
       </Tabs>
     </div>

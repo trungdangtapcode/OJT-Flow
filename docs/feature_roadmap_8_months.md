@@ -167,7 +167,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-11 | F044 | Implemented | Added `lab_result_v1` to FHIR-like Observation mapping for patient reference, effective date, code text, value quantity, and unit, with review warnings instead of silent semantic normalization. |
 | 2026-06-11 | F047 | Implemented | Added OperationOutcome-like package issues derived from validation reports, preserving severity, code, diagnostics, source expression, issue ID, location, and review requirement. |
 | 2026-06-11 | F046, F058-F059 | Implemented | Added workflow-scoped clinical package export for completed approved outputs, canonical package and FHIR-like Bundle hashes, FHIR-like Bundle projection with OperationOutcome and Provenance entries, and import validation that rehydrates exported packages without dropping evidence/review/provenance metadata. |
-| 2026-06-11 | F050 | Started | Added internal Provenance-like package records for parse, validate, map, retrieve evidence, review, and transform activities. Assistant/tool execution provenance remains follow-up. |
+| 2026-06-11 | F050 | Implemented | Added workflow-level Provenance-like records for upload/extraction, parser, FHIR profiling, retrieval, validation, safety/review gates, assistant-created review and mapping tasks, converter output, retrieval-derived transformations, explanation, completion, and failure. Workflow Detail now renders provenance beside audit events, and ClinicalPackage handoff context links back to workflow provenance IDs. |
 | 2026-06-11 | F052 | Implemented | Added review-gated `TerminologyCandidate` contract and deterministic LOINC candidate generation for `lab_result_v1.lab_name` from `knowledge/terminologies/medical_concepts.json`, carried in `ClinicalPackage.terminology_candidates`. |
 | 2026-06-11 | F053 | Implemented | Added `UnitValidationResult`, `knowledge/terminologies/ucum_units.json`, and UCUM-like unit checks for `lab_result_v1.unit`, carried in `ClinicalPackage.unit_validations` with missing/unknown/not-preferred review flags. |
 | 2026-06-11 | F056-F057, F060 | Implemented | Added a Workflow Detail Clinical Package tab that separates terminology source text, candidate codes, confidence, source terminology, reviewer state, unit checks, OperationOutcome-like issues, raw-to-resource field provenance, generated resource JSON, package warnings, and explicit FHIR-like/non-HL7-validation wording. |
@@ -275,7 +275,7 @@ Keep this section updated when roadmap items move from planning into code.
 - [x] F047 Add FHIR `OperationOutcome`-like validation output for profile errors and warnings.
 - [x] F048 Add lightweight FHIR profile registry files for supported resource families and required fields.
 - [x] F049 Add FHIR search parameter generation for profile outputs and retrieval hints.
-- [ ] F050 Add Provenance-like internal records for parser, converter, assistant, reviewer, and retrieval-derived transformations. _(Started: ClinicalPackage records parser, validator, mapper, retrieval, reviewer, and transform activities.)_
+- [x] F050 Add Provenance-like internal records for parser, converter, assistant, reviewer, and retrieval-derived transformations.
 - [ ] F051 Add AuditEvent-like export for workflow events, review events, auth events, and tool execution.
 - [x] F052 Add LOINC candidate generation contract for observation names without automatically replacing source text.
 - [x] F053 Add UCUM validation contract for units with source unit, normalized candidate, validation result, and review requirement.
