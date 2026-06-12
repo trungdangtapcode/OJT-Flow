@@ -260,10 +260,18 @@ The router selects a strategy recommendation from trusted rule data using:
 Current route outputs include `exact_source_lookup`, `metadata_filtered`,
 `hybrid_rrf`, and `high_recall_review` strategy IDs. The route object includes
 the selected rule ID, route ID, strategy ID, retrieval mode, rationale,
-confidence, matched criteria, suggested filters, and risk controls. In this
-backend version the router is an auditable selection contract; it does not
-silently switch storage adapters or bypass the existing evidence-quality,
-source-filter, review, and support-matrix checks.
+confidence, matched criteria, suggested filters, risk controls, and an optional
+`budget`. Built-in routes include budgets for max candidates, max returned
+hits, reranker candidate limit, source-diversity behavior, external-network
+permission, and latency target. `rank_chunks` enforces the candidate, returned
+hit, reranker, and diversity parts of that budget, then writes the selected
+budget and effective runtime budget to `handoff_context` and
+`trace.fusion_diagnostics`. External-network permission is advisory in v0
+because the local search path does not execute live external queries; if a route
+does not allow external network use, external search hints remain review-only.
+The router is an auditable selection contract; it does not silently switch
+storage adapters or bypass the existing evidence-quality, source-filter,
+review, and support-matrix checks.
 
 ## Search Presets
 

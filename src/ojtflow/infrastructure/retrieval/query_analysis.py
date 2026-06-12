@@ -25,6 +25,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQueryDiagnostic,
     RetrievalQueryProfile,
     RetrievalQueryRoute,
+    RetrievalRouteBudget,
     RetrievalQueryVariant,
     RetrievalSearchHint,
     RetrievalSearchTask,
@@ -242,6 +243,7 @@ class QueryRouteRule:
     confidence: float
     suggested_filters: dict[str, str]
     risk_controls: tuple[str, ...]
+    budget: RetrievalRouteBudget | None
     match: QueryRouteMatch
 
 
@@ -1585,6 +1587,7 @@ def _query_route(
         matched_criteria=criteria,
         suggested_filters=dict(selected.suggested_filters),
         risk_controls=list(selected.risk_controls),
+        budget=selected.budget,
         metadata={key: value for key, value in metadata.items() if value},
     )
 
@@ -1757,8 +1760,20 @@ def _query_route_rule(record: Any, *, path: Path) -> QueryRouteRule:
             path=path,
         ),
         risk_controls=_query_route_text_tuple(record.get("risk_controls"), path=path),
+        budget=_query_route_budget(record.get("budget"), path=path),
         match=route_match,
     )
+
+
+def _query_route_budget(value: Any, *, path: Path) -> RetrievalRouteBudget | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"Invalid query route registry at {path}: budget must be an object")
+    try:
+        return RetrievalRouteBudget.model_validate(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid query route registry at {path}: invalid budget") from exc
 
 
 def _required_query_route_text(value: Any, *, field: str, path: Path) -> str:

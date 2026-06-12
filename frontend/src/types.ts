@@ -565,6 +565,7 @@ export type RetrievalQueryAnalysis = {
   diagnostics: RetrievalQueryDiagnostic[];
   search_hints: RetrievalSearchHint[];
   query_profile?: RetrievalQueryProfile | null;
+  query_route?: RetrievalQueryRoute | null;
   query_aspects?: RetrievalQueryAspect[];
   retrieval_tasks?: RetrievalSearchTask[];
 };
@@ -616,6 +617,35 @@ export type RetrievalQueryProfile = {
   description: string;
   suggested_filters: Record<string, string>;
   rule_ids: string[];
+};
+
+export type RetrievalRouteBudget = {
+  max_candidates: number;
+  max_returned_hits: number;
+  reranker_candidate_limit: number;
+  source_diversity_enabled: boolean;
+  min_source_count: number;
+  diversity_lambda: number;
+  external_network_allowed: boolean;
+  latency_target_ms: number;
+  rationale: string;
+  metadata: Record<string, unknown>;
+};
+
+export type RetrievalQueryRoute = {
+  route_id: string;
+  strategy_id: string;
+  label: string;
+  retrieval_mode: string;
+  rationale: string;
+  rule_id: string;
+  priority: number;
+  confidence: number;
+  matched_criteria: string[];
+  suggested_filters: Record<string, string>;
+  risk_controls: string[];
+  budget?: RetrievalRouteBudget | null;
+  metadata: Record<string, unknown>;
 };
 
 export type RetrievalQueryAspect = {

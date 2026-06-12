@@ -413,6 +413,21 @@ class RetrievalQueryProfile(ContractModel):
     rule_ids: list[NonBlankStr] = Field(default_factory=list)
 
 
+class RetrievalRouteBudget(ContractModel):
+    """Execution budget selected by the retrieval route."""
+
+    max_candidates: int = Field(ge=1, le=5000)
+    max_returned_hits: int = Field(ge=1, le=100)
+    reranker_candidate_limit: int = Field(ge=0, le=500)
+    source_diversity_enabled: bool = True
+    min_source_count: int = Field(ge=1, le=100)
+    diversity_lambda: float = Field(ge=0.0, le=1.0)
+    external_network_allowed: bool = False
+    latency_target_ms: int = Field(ge=50, le=120000)
+    rationale: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalQueryRoute(ContractModel):
     """Selected retrieval strategy route for the normalized query context."""
 
@@ -427,6 +442,7 @@ class RetrievalQueryRoute(ContractModel):
     matched_criteria: list[NonBlankStr] = Field(default_factory=list)
     suggested_filters: dict[str, str] = Field(default_factory=dict)
     risk_controls: list[NonBlankStr] = Field(default_factory=list)
+    budget: RetrievalRouteBudget | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

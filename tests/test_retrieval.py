@@ -1124,6 +1124,10 @@ def test_query_analysis_selects_data_driven_query_route() -> None:
     assert lab_analysis.query_route.strategy_id == "hybrid_rrf"
     assert lab_analysis.query_route.route_id == "laboratory_hybrid_rrf"
     assert "profile_id:laboratory_standardization" in lab_analysis.query_route.matched_criteria
+    assert lab_analysis.query_route.budget is not None
+    assert lab_analysis.query_route.budget.max_candidates == 260
+    assert lab_analysis.query_route.budget.reranker_candidate_limit == 36
+    assert lab_analysis.query_route.budget.external_network_allowed is False
     assert lab_analysis.query_route.suggested_filters == {
         "clinical_domain": "laboratory",
         "trust_level": "approved",
@@ -1132,6 +1136,9 @@ def test_query_analysis_selects_data_driven_query_route() -> None:
     assert source_scoped.query_route is not None
     assert source_scoped.query_route.strategy_id == "exact_source_lookup"
     assert source_scoped.query_route.route_id == "exact_source_lookup"
+    assert source_scoped.query_route.budget is not None
+    assert source_scoped.query_route.budget.max_returned_hits == 8
+    assert source_scoped.query_route.budget.source_diversity_enabled is False
     assert "filter_key:source_id" in source_scoped.query_route.matched_criteria
 
 
@@ -1173,6 +1180,7 @@ def test_query_analysis_uses_data_driven_query_route_rules(
     assert analysis.query_route.retrieval_mode == "custom_filtered_mode"
     assert analysis.query_route.confidence == 0.91
     assert analysis.query_route.risk_controls == ["custom_review"]
+    assert analysis.query_route.budget is None
 
     registry_path.write_text(
         json.dumps(
@@ -1520,6 +1528,10 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.trace.fusion_diagnostics["query_route"]["rule_id"] == (
         "route_metadata_filtered_standard_scope"
     )
+    assert package.trace.fusion_diagnostics["route_budget"]["max_candidates"] == 160
+    assert package.trace.fusion_diagnostics["effective_route_budget"]["applied"] is True
+    assert package.handoff_context["route_budget"]["latency_target_ms"] == 1400
+    assert package.handoff_context["effective_route_budget"]["top_k"] == 5
     assert package.standard_search_plan is not None
     assert package.standard_search_plan.primary_route in {
         "terminology_lookup",
@@ -1561,6 +1573,39 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
         and match["standard_system"] == "LOINC"
         for match in concept_matches
     )
+
+
+def test_retrieval_route_budget_caps_returned_hits_and_trace() -> None:
+    chunks = [
+        KnowledgeChunk(
+            chunk_id=f"chunk-{index}",
+            source_id="standard:test_source",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title=f"Test source section {index}",
+            content=(
+                "FHIR Observation laboratory unit evidence for exact source inspection "
+                f"section {index}."
+            ),
+            clinical_domain="laboratory",
+            standard_system="FHIR",
+        )
+        for index in range(12)
+    ]
+
+    package = rank_chunks(
+        chunks,
+        RetrievalQuery(
+            query="Inspect exact FHIR Observation source",
+            filters={"source_id": "standard:test_source"},
+            top_k=20,
+        ),
+    )
+
+    assert package.handoff_context["query_route"]["route_id"] == "exact_source_lookup"
+    assert package.handoff_context["route_budget"]["max_returned_hits"] == 8
+    assert package.handoff_context["effective_route_budget"]["top_k"] == 8
+    assert package.trace.fusion_diagnostics["effective_route_budget"]["top_k"] == 8
+    assert len(package.hits) == 8
 
 
 def test_retrieval_standard_search_plan_uses_data_driven_registry(

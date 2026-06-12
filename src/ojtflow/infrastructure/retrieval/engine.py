@@ -36,6 +36,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQueryAspect,
     RetrievalRecommendedAction,
     RetrievalRecommendedActionSummary,
+    RetrievalRouteBudget,
     RetrievalScoreComponent,
     RetrievalStandardSearchPlan,
     RetrievalStandardSearchStep,
@@ -408,6 +409,14 @@ def rank_chunks(
     provider = embedding_provider or DeterministicEmbeddingProvider()
     reranker_metadata = _reranker_metadata(reranker)
     query_analysis = analyze_query(query)
+    route_budget = query_analysis.query_route.budget if query_analysis.query_route else None
+    effective_budget = _effective_route_budget(
+        route_budget,
+        query_top_k=query.top_k,
+        rerank_candidate_limit=rerank_candidate_limit,
+        diversity_enabled=diversity_enabled,
+        diversity_lambda=diversity_lambda,
+    )
     variants = query_analysis.query_variants
     safety_flags = retrieval_safety_flags(query)
     trace_warnings = list(warnings or [])
@@ -419,6 +428,10 @@ def rank_chunks(
     if safety_flags:
         trace_warnings.append(
             "Retrieval query contains safety-sensitive context; treat query text as untrusted data."
+        )
+    if route_budget is not None and not route_budget.external_network_allowed and query_analysis.search_hints:
+        trace_warnings.append(
+            "Selected route budget disallows external network calls; external search hints are review-only."
         )
     query_text = " ".join(variants)
     query_tokens = set(tokenize(query_text))
@@ -502,8 +515,18 @@ def rank_chunks(
         )
 
     ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
-    if _reranker_enabled(reranker) and ranked_hits:
-        candidates = ranked_hits[: max(1, rerank_candidate_limit)]
+    if route_budget is not None and len(ranked_hits) > route_budget.max_candidates:
+        trace_warnings.append(
+            "Selected route budget limited retrieval candidates from "
+            f"{len(ranked_hits)} to {route_budget.max_candidates}."
+        )
+        ranked_hits = ranked_hits[: route_budget.max_candidates]
+    if (
+        _reranker_enabled(reranker)
+        and ranked_hits
+        and effective_budget["reranker_candidate_limit"] > 0
+    ):
+        candidates = ranked_hits[: effective_budget["reranker_candidate_limit"]]
         external_scores = reranker.score(query_text, [chunk for chunk, _ in candidates])
         if external_scores:
             for chunk, hit in candidates:
@@ -524,21 +547,34 @@ def rank_chunks(
 
     selected_ranked_hits, diversity_metadata = _select_diverse_hits(
         ranked_hits,
-        top_k=query.top_k,
-        enabled=diversity_enabled,
-        lambda_mult=diversity_lambda,
+        top_k=effective_budget["top_k"],
+        enabled=effective_budget["source_diversity_enabled"],
+        lambda_mult=effective_budget["diversity_lambda"],
     )
     diversity_summary = diversity_summary_from_metadata(diversity_metadata)
+    if (
+        route_budget is not None
+        and diversity_metadata["candidate_source_count"] >= route_budget.min_source_count
+        and diversity_metadata["selected_source_count"] < route_budget.min_source_count
+    ):
+        trace_warnings.append(
+            "Selected evidence did not satisfy the route source-diversity target "
+            f"of {route_budget.min_source_count} source(s)."
+        )
     top_hits = [hit for _, hit in selected_ranked_hits]
     selected_chunks = [chunk for chunk, _ in selected_ranked_hits]
     fusion_diagnostics = fusion_diagnostics_from_rankings(
         lexical_positions=lexical_positions,
         vector_positions=vector_positions,
         top_hits=top_hits,
-        top_k=query.top_k,
+        top_k=effective_budget["top_k"],
     )
     if query_analysis.query_route is not None:
         fusion_diagnostics["query_route"] = query_analysis.query_route.model_dump(mode="json")
+    fusion_diagnostics["route_budget"] = (
+        route_budget.model_dump(mode="json") if route_budget is not None else None
+    )
+    fusion_diagnostics["effective_route_budget"] = effective_budget
     facets = facets_from_chunks(selected_chunks)
     coverage = coverage_from_chunks(selected_chunks, query_analysis)
     trace_warnings.extend(coverage.warnings)
@@ -639,6 +675,10 @@ def rank_chunks(
                 if query_analysis.query_route
                 else None
             ),
+            "route_budget": (
+                route_budget.model_dump(mode="json") if route_budget is not None else None
+            ),
+            "effective_route_budget": effective_budget,
             "safety_flags": safety_flags,
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,
@@ -5104,6 +5144,44 @@ def _filter_float(
     if parsed < minimum or parsed > maximum:
         return default
     return parsed
+
+
+def _effective_route_budget(
+    budget: RetrievalRouteBudget | None,
+    *,
+    query_top_k: int,
+    rerank_candidate_limit: int,
+    diversity_enabled: bool,
+    diversity_lambda: float,
+) -> dict[str, Any]:
+    if budget is None:
+        return {
+            "applied": False,
+            "top_k": query_top_k,
+            "reranker_candidate_limit": max(0, rerank_candidate_limit),
+            "source_diversity_enabled": diversity_enabled,
+            "diversity_lambda": round(max(0.0, min(1.0, diversity_lambda)), 4),
+            "external_network_allowed": False,
+            "latency_target_ms": None,
+            "max_candidates": None,
+            "max_returned_hits": query_top_k,
+            "min_source_count": None,
+        }
+    return {
+        "applied": True,
+        "top_k": min(query_top_k, budget.max_returned_hits),
+        "reranker_candidate_limit": min(
+            max(0, rerank_candidate_limit),
+            budget.reranker_candidate_limit,
+        ),
+        "source_diversity_enabled": diversity_enabled and budget.source_diversity_enabled,
+        "diversity_lambda": round(budget.diversity_lambda, 4),
+        "external_network_allowed": budget.external_network_allowed,
+        "latency_target_ms": budget.latency_target_ms,
+        "max_candidates": budget.max_candidates,
+        "max_returned_hits": budget.max_returned_hits,
+        "min_source_count": budget.min_source_count,
+    }
 
 
 def _select_diverse_hits(

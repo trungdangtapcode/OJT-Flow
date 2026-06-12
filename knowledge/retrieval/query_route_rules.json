@@ -12,6 +12,17 @@
       "confidence": 0.96,
       "suggested_filters": {},
       "risk_controls": ["scope_transparency", "manual_broaden_option"],
+      "budget": {
+        "max_candidates": 80,
+        "max_returned_hits": 8,
+        "reranker_candidate_limit": 12,
+        "source_diversity_enabled": false,
+        "min_source_count": 1,
+        "diversity_lambda": 0.9,
+        "external_network_allowed": false,
+        "latency_target_ms": 900,
+        "rationale": "Exact-source inspection should stay narrow, fast, and local."
+      },
       "match": {
         "any_filter_keys": ["source_id"]
       }
@@ -27,6 +38,17 @@
       "confidence": 0.9,
       "suggested_filters": {},
       "risk_controls": ["filter_transparency", "missing_bucket_warning"],
+      "budget": {
+        "max_candidates": 160,
+        "max_returned_hits": 12,
+        "reranker_candidate_limit": 24,
+        "source_diversity_enabled": true,
+        "min_source_count": 2,
+        "diversity_lambda": 0.78,
+        "external_network_allowed": false,
+        "latency_target_ms": 1400,
+        "rationale": "Metadata-filtered routes need enough recall to compare standards while preserving strict local scope."
+      },
       "match": {
         "any_filter_keys": ["standard_system", "clinical_domain", "source_type", "trust_level"]
       }
@@ -44,6 +66,17 @@
         "trust_level": "approved"
       },
       "risk_controls": ["human_review", "external_hint_suppression", "coverage_summary"],
+      "budget": {
+        "max_candidates": 220,
+        "max_returned_hits": 15,
+        "reranker_candidate_limit": 40,
+        "source_diversity_enabled": true,
+        "min_source_count": 3,
+        "diversity_lambda": 0.66,
+        "external_network_allowed": false,
+        "latency_target_ms": 2500,
+        "rationale": "Sensitive or underspecified queries favor coverage and review while blocking external network use."
+      },
       "match": {
         "any_diagnostic_codes": ["low_specificity_query", "no_healthcare_concept_detected"],
         "any_concepts": ["sensitive_identifier_review"],
@@ -64,6 +97,17 @@
         "trust_level": "approved"
       },
       "risk_controls": ["source_diversity", "evidence_support_matrix"],
+      "budget": {
+        "max_candidates": 260,
+        "max_returned_hits": 12,
+        "reranker_candidate_limit": 36,
+        "source_diversity_enabled": true,
+        "min_source_count": 3,
+        "diversity_lambda": 0.72,
+        "external_network_allowed": false,
+        "latency_target_ms": 1800,
+        "rationale": "Laboratory normalization needs balanced lexical/vector recall across FHIR, LOINC, UCUM, schema, and policy sources."
+      },
       "match": {
         "any_profile_ids": ["laboratory_standardization"],
         "any_profile_routes": ["clinical_data_normalization"],
@@ -86,6 +130,17 @@
         "trust_level": "approved"
       },
       "risk_controls": ["external_provider_policy", "manual_followup_tasks"],
+      "budget": {
+        "max_candidates": 300,
+        "max_returned_hits": 15,
+        "reranker_candidate_limit": 45,
+        "source_diversity_enabled": true,
+        "min_source_count": 4,
+        "diversity_lambda": 0.62,
+        "external_network_allowed": true,
+        "latency_target_ms": 4000,
+        "rationale": "External-medical follow-up can surface transparent external search tasks, but local governed evidence remains the execution baseline."
+      },
       "match": {
         "any_profile_routes": ["biomedical_literature_grounding", "drug_knowledge_grounding"],
         "any_retrieval_modes": ["hybrid_with_external_medical_hints", "hybrid_with_pubmed_hint"],
@@ -106,6 +161,17 @@
         "trust_level": "approved"
       },
       "risk_controls": ["schema_priority", "cohort_boundary_review"],
+      "budget": {
+        "max_candidates": 140,
+        "max_returned_hits": 10,
+        "reranker_candidate_limit": 20,
+        "source_diversity_enabled": true,
+        "min_source_count": 2,
+        "diversity_lambda": 0.8,
+        "external_network_allowed": false,
+        "latency_target_ms": 1300,
+        "rationale": "Analytics schema grounding should stay narrow and prioritize mapping evidence over broad clinical recall."
+      },
       "match": {
         "any_profile_ids": ["observational_analytics"],
         "any_profile_routes": ["analytics_schema_grounding"],

@@ -3027,6 +3027,12 @@ Response data is a `RetrievalPackage`:
 - `handoff_context.query_route` with selected route ID, strategy ID,
   retrieval mode, rationale, matched criteria, suggested filters, and risk
   controls from the data-driven query router
+- `handoff_context.route_budget` with the selected route's max candidate pool,
+  max returned hits, reranker candidate limit, source-diversity target,
+  external-network permission, and latency target
+- `handoff_context.effective_route_budget` with the budget actually applied to
+  this request after combining route policy with request `top_k` and runtime
+  reranker/diversity settings
 - `handoff_context.diversity` mirrors top-level `diversity` for assistant and
   agent handoff compatibility
 - `handoff_context.quality_policy`
@@ -3071,7 +3077,12 @@ Warning diagnostics are copied into `trace.warnings`.
 `knowledge/retrieval/query_route_rules.json` using query profile, input format,
 resource type, active filters, diagnostics, concepts, standards, and tokens.
 It is copied to `handoff_context.query_route` and mirrored to
-`trace.fusion_diagnostics.query_route` for observability. This is an auditable
+`trace.fusion_diagnostics.query_route` for observability. Route rules can also
+carry a `budget` object; when present, the backend enforces max candidates,
+max returned hits, reranker candidate limit, source-diversity behavior,
+external-network permission, and latency target metadata. Applied values are
+mirrored to `handoff_context.effective_route_budget` and
+`trace.fusion_diagnostics.effective_route_budget`. This is an auditable
 route-selection contract; v0 does not silently switch storage adapters or
 bypass evidence-quality/review checks based on the route alone.
 Diagnostics can flag low-specificity searches, missing healthcare concepts,

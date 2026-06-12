@@ -220,6 +220,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-12 | F177 | Implemented | Added active retrieval index manifest contracts and `GET /api/v1/retrieval/index-manifest`, with lexical/vector/graph components, generation IDs, embedding provider/model/dimensions, stale vector chunk detection, corpus ingestion run IDs, owner-scoped Graph-NER counts, docs, and focused tests. |
 | 2026-06-12 | F178 | Implemented | Added approval-gated embedding reindex safety workflow with `GET /api/v1/retrieval/embedding-reindex/dry-run`, `POST /api/v1/jobs/embedding-reindex`, deterministic approval tokens, sanitized rollback markers, post-run manifest/quality comparison, docs, and focused tests. |
 | 2026-06-12 | F179 | Implemented | Added data-driven medical source quality scoring with `knowledge/retrieval/source_quality_policy.json`, typed quality policy/score/signal contracts, per-source `quality` on `/api/v1/retrieval/freshness`, aggregate quality counts, Retrieval UI quality chips, docs, and focused tests. |
+| 2026-06-12 | F180 | Implemented | Added route-specific retrieval budgets to `knowledge/retrieval/query_route_rules.json`, typed `RetrievalRouteBudget` output, budget parsing and validation, enforcement for candidate pool, returned hits, reranker candidate limit, source diversity, external-network warnings, trace/handoff metadata, docs, and focused tests. |
 
 ## Feature Backlog
 
@@ -421,7 +422,7 @@ Month 4 is done only when these acceptance gates hold:
 - [x] F177 Add a retrieval index manifest endpoint that reports lexical/vector/graph index generation IDs, provider/model dimensions, stale status, and chunk counts.
 - [x] F178 Add embedding reindex safety workflow: dry-run impact report, admin approval, background job execution, rollback marker, and post-run quality comparison.
 - [x] F179 Add medical source quality scoring that combines trust tier, lifecycle state, freshness, license restrictions, reviewer state, and source coverage.
-- [ ] F180 Add route-specific retrieval budgets for max candidates, reranker limit, source diversity, external-network permission, and latency target.
+- [x] F180 Add route-specific retrieval budgets for max candidates, reranker limit, source diversity, external-network permission, and latency target.
 - [ ] F181 Add citation locator normalization for FHIR pages, PubMed records, ClinicalTrials.gov studies, openFDA records, UCUM entries, RxNorm concepts, PDF pages, and internal policy sections.
 - [ ] F182 Add Graph-NER extraction provenance per node and edge, including extractor version, source chunk, confidence, normalized-code candidates, and review state.
 - [ ] F183 Add graph conflict detection for contradictory source claims, deprecated terminology mappings, conflicting units, and version-mismatched standard guidance.
