@@ -273,6 +273,29 @@ The router is an auditable selection contract; it does not silently switch
 storage adapters or bypass the existing evidence-quality, source-filter,
 review, and support-matrix checks.
 
+## Citation Locator Normalization
+
+Retrieval preserves raw source locator dictionaries, but ranked hits, evidence,
+support-matrix rows, and answer citations can now include
+`normalized_citation_locator`. The normalizer is driven by
+`knowledge/retrieval/citation_locator_rules.json`, so new locator families can
+be added without changing ranking code.
+
+The normalized locator shape includes:
+
+- `locator_kind`: for example `fhir_page`, `pubmed_record`,
+  `clinicaltrials_study`, `openfda_endpoint`, `ucum_unit`, `rxnorm_concept`,
+  `pdf_page`, or `internal_section`
+- `display` and `canonical_url` when a canonical URL can be built safely
+- source ID/type/version, standard system, identifier, path, page, section,
+  raw locator keys, warnings, and rule metadata
+
+The current rule set covers FHIR R4 resource pages, PubMed PMID records and
+search context, ClinicalTrials.gov study/API context, openFDA endpoint context,
+UCUM units, RxNorm concepts/source context, PDF pages, and internal policy or
+knowledge sections. If required template fields are missing, the normalizer
+falls through to lower-priority rules instead of inventing a misleading URL.
+
 ## Search Presets
 
 Operator-facing retrieval examples live in

@@ -400,6 +400,62 @@ class RetrievalSearchHint(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class CitationLocatorRuleMatch(ContractModel):
+    """Matcher for a source locator normalization rule."""
+
+    source_ids: list[NonBlankStr] = Field(default_factory=list)
+    source_id_prefixes: list[NonBlankStr] = Field(default_factory=list)
+    source_types: list[NonBlankStr] = Field(default_factory=list)
+    standard_systems: list[NonBlankStr] = Field(default_factory=list)
+    locator_any_keys: list[NonBlankStr] = Field(default_factory=list)
+    locator_all_keys: list[NonBlankStr] = Field(default_factory=list)
+
+
+class CitationLocatorRule(ContractModel):
+    """Data-driven citation locator normalization rule."""
+
+    rule_id: NonBlankStr
+    label: NonBlankStr
+    locator_kind: NonBlankStr
+    priority: int = Field(ge=1)
+    match: CitationLocatorRuleMatch
+    display_template: NonBlankStr
+    canonical_url_template: str | None = None
+    required_context_keys: list[NonBlankStr] = Field(default_factory=list)
+    identifier_keys: list[NonBlankStr] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CitationLocatorRuleCatalog(ContractModel):
+    """Versioned locator normalization rules loaded from trusted data."""
+
+    version: NonBlankStr
+    rules: list[CitationLocatorRule] = Field(default_factory=list)
+
+
+class NormalizedCitationLocator(ContractModel):
+    """Portable citation locator for medical retrieval evidence."""
+
+    version: NonBlankStr = "normalized_citation_locator.v1"
+    rule_id: NonBlankStr
+    locator_kind: NonBlankStr
+    label: NonBlankStr
+    display: NonBlankStr
+    source_id: NonBlankStr
+    source_type: EvidenceSourceType
+    source_version: NonBlankStr | None = None
+    standard_system: NonBlankStr | None = None
+    canonical_url: str | None = None
+    identifier: NonBlankStr | None = None
+    path: NonBlankStr | None = None
+    page: int | None = Field(default=None, ge=1)
+    section: NonBlankStr | None = None
+    raw_locator_keys: list[NonBlankStr] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalQueryProfile(ContractModel):
     """Data-driven query route hint for adaptive retrieval and operator review."""
 

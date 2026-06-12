@@ -47,6 +47,7 @@ from ojtflow.core.contracts.retrieval import (
 )
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
 from ojtflow.data_tools.phi import classify_text
+from ojtflow.infrastructure.retrieval.citation_locators import normalize_citation_locator
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
 from ojtflow.infrastructure.retrieval.source_governance import (
     SourceGovernanceDecision,
@@ -3614,6 +3615,7 @@ def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence
         "metadata": chunk.metadata,
         "phi_classification": phi_classification.model_dump(mode="json"),
     }
+    _attach_normalized_citation_locator(chunk, locator)
     return Evidence(
         source_type=chunk.source_type,
         source_id=chunk.source_id,
@@ -4922,7 +4924,23 @@ def hit_source_locator_from_chunk(
     )
     if concept_matches:
         locator["concept_matches"] = concept_matches
+    _attach_normalized_citation_locator(chunk, locator)
     return locator
+
+
+def _attach_normalized_citation_locator(
+    chunk: KnowledgeChunk,
+    locator: dict[str, Any],
+) -> None:
+    normalized = normalize_citation_locator(
+        source_id=chunk.source_id,
+        source_type=chunk.source_type,
+        source_version=chunk.source_version,
+        title=chunk.title,
+        locator=locator,
+    )
+    if normalized is not None:
+        locator["normalized_citation_locator"] = normalized.model_dump(mode="json")
 
 
 def _concept_matches_for_chunk(

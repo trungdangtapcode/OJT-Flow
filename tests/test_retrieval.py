@@ -38,6 +38,10 @@ from ojtflow.infrastructure.retrieval.corpus import (
     build_corpus_ingestion_manifest,
     load_local_corpus_chunks,
 )
+from ojtflow.infrastructure.retrieval.citation_locators import (
+    active_citation_locator_rules,
+    normalize_citation_locator,
+)
 from ojtflow.infrastructure.retrieval.freshness import build_retrieval_freshness_report
 from ojtflow.infrastructure.retrieval.embeddings import (
     HuggingFaceEmbeddingProvider,
@@ -1142,6 +1146,50 @@ def test_query_analysis_selects_data_driven_query_route() -> None:
     assert "filter_key:source_id" in source_scoped.query_route.matched_criteria
 
 
+def test_citation_locator_rules_normalize_healthcare_sources() -> None:
+    catalog = active_citation_locator_rules()
+    fhir = normalize_citation_locator(
+        source_id="standard:fhir_observation_r4",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        source_version="R4",
+        title="FHIR Observation R4",
+        locator={"standard": "HL7 FHIR R4 Observation"},
+    )
+    pubmed = normalize_citation_locator(
+        source_id="pubmed:example",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        source_version=None,
+        title="PMID: 12345678",
+        locator={"pmid": "12345678"},
+    )
+    clinical_trial = normalize_citation_locator(
+        source_id="clinicaltrials:example",
+        source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+        source_version=None,
+        title="NCT01234567",
+        locator={"nct_id": "NCT01234567"},
+    )
+    pdf_page = normalize_citation_locator(
+        source_id="policy:example",
+        source_type=EvidenceSourceType.DATA_DICTIONARY,
+        source_version="2026-06-12",
+        title="Policy PDF",
+        locator={"path": "policies/source.pdf", "page": 3},
+    )
+
+    assert catalog.version == "citation_locator_rules.v1"
+    assert fhir is not None
+    assert fhir.locator_kind == "fhir_page"
+    assert fhir.canonical_url == "https://hl7.org/fhir/R4/observation.html"
+    assert pubmed is not None
+    assert pubmed.canonical_url == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
+    assert clinical_trial is not None
+    assert clinical_trial.canonical_url == "https://clinicaltrials.gov/study/NCT01234567"
+    assert pdf_page is not None
+    assert pdf_page.locator_kind == "pdf_page"
+    assert pdf_page.page == 3
+
+
 def test_query_analysis_uses_data_driven_query_route_rules(
     tmp_path,
     monkeypatch,
@@ -1532,6 +1580,17 @@ def test_static_retrieval_ranks_healthcare_evidence_with_trace() -> None:
     assert package.trace.fusion_diagnostics["effective_route_budget"]["applied"] is True
     assert package.handoff_context["route_budget"]["latency_target_ms"] == 1400
     assert package.handoff_context["effective_route_budget"]["top_k"] == 5
+    normalized_locators = [
+        hit.source_locator.get("normalized_citation_locator")
+        for hit in package.hits
+        if isinstance(hit.source_locator.get("normalized_citation_locator"), dict)
+    ]
+    assert normalized_locators
+    assert any(locator["locator_kind"] == "ucum_unit" for locator in normalized_locators)
+    assert any(
+        isinstance(row.source_locator.get("normalized_citation_locator"), dict)
+        for row in package.support_matrix.rows
+    )
     assert package.standard_search_plan is not None
     assert package.standard_search_plan.primary_route in {
         "terminology_lookup",

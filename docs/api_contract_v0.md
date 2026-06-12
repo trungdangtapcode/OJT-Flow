@@ -3042,6 +3042,16 @@ Response data is a `RetrievalPackage`:
 - `handoff_context.search_signature`
 - `handoff_context.graph_record` when graph persistence is enabled
 
+Ranked evidence locators preserve their raw source fields and may include
+`normalized_citation_locator`. That normalized object is generated from
+`knowledge/retrieval/citation_locator_rules.json` and gives downstream clients a
+stable citation shape: locator kind, display label, canonical URL when known,
+source ID/type/version, standard system, identifier, path/page/section, raw
+locator keys, warnings, and metadata. Current normalization covers FHIR R4
+resource pages, PubMed PMID records/search context, ClinicalTrials.gov study/API
+context, openFDA endpoint context, UCUM units, RxNorm concepts/source context,
+PDF pages, and internal policy or knowledge sections.
+
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
 `prompt_injection_pattern_in_query` and `sensitive_field_context`.
