@@ -3632,6 +3632,7 @@ async def test_auth_url_and_session_responses_are_not_cacheable() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_cookie_samesite_none_forces_secure_cookie(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("OJT_AUTH_COOKIE_SECURE", "false")
     monkeypatch.setenv("OJT_AUTH_COOKIE_SAMESITE", "none")
     clear_settings_cache()
