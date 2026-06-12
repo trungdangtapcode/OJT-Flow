@@ -520,6 +520,36 @@ class RetrievalSearchFilters(ContractModel):
     }
 
 
+class PrivateCorpusIngestRequest(ContractModel):
+    data: NonBlankText | None = None
+    artifact_id: NonBlankStr | None = None
+    title: NonBlankStr | None = None
+    source_ref: NonBlankStr | None = None
+    input_format: DataFormat | None = None
+    redaction_action: RedactionActionType | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "title": "Private tenant lab policy",
+                    "data": (
+                        "patient_id,ssn,lab_name,value\n"
+                        "P001,123-45-6789,HbA1c,7.4\n"
+                    ),
+                    "input_format": "csv",
+                    "redaction_action": "mask",
+                    "source_ref": "tenant://policies/lab/private-policy.csv",
+                },
+                {
+                    "artifact_id": "art_uploaded_lab_policy",
+                    "title": "Uploaded private data dictionary",
+                },
+            ]
+        }
+    }
+
+
 class RetrievalSearchRequest(ContractModel):
     query: NonBlankStr
     top_k: int = Field(default=5, ge=1, le=20)

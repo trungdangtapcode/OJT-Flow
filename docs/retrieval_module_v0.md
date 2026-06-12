@@ -205,6 +205,26 @@ source inventory surfaces these fields as badges and filter chips so users can
 see whether a result came from global standards, tenant policy, or private
 documents before using it.
 
+Private corpus ingestion is available through `POST
+/api/v1/retrieval/private-corpus/ingest`. It accepts inline text or the latest
+extracted trace for an uploaded artifact. The ingestion path is deliberately
+PHI-safe:
+
+- redaction preview runs before indexing;
+- only redacted text is written into retrieval chunks;
+- chunks are stamped into `private_documents` with the active workspace
+  organization ID;
+- `external_provider_allowed=false` is stored on every source/chunk;
+- uploaded artifact retention policy is preserved, while inline text receives a
+  private-corpus retention policy requiring review;
+- source inventory and search filters hide private chunks outside the matching
+  organization scope.
+
+This is private retrieval grounding, not external semantic enrichment. If an
+embedding provider is external, the indexed text is already redacted and the
+source metadata still tells downstream tools not to send private corpus content
+to external providers.
+
 Source freshness is now a first-class readiness gate. `GET
 /api/v1/retrieval/freshness` compares the governed corpus adapter catalog,
 source trust policy catalog, generated local corpus manifest, and active source

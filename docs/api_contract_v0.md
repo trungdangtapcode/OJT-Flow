@@ -3277,6 +3277,25 @@ review requirement, and retention policy. Retrieval search filters support
 `filters.organization_id` with the caller's active workspace organization before
 executing search.
 
+`POST /api/v1/retrieval/private-corpus/ingest` ingests tenant-private text into
+retrieval after deterministic redaction. The request accepts either inline
+`data` or an existing parsed `artifact_id`, plus optional `title`, `source_ref`,
+`input_format`, and `redaction_action`. The backend:
+
+- derives organization scope from the authenticated workspace;
+- builds a redaction preview before indexing;
+- indexes only `redaction_preview.redacted_text`;
+- stamps `corpus_partition_id=private_documents`,
+  `corpus_visibility=private`, `external_provider_allowed=false`,
+  `phi_allowed=true`, and a retention policy;
+- returns `PrivateCorpusIngestionResult` with source metadata, chunk count,
+  redaction preview, text hashes, retention policy, and warnings.
+
+Private corpus search still uses normal `POST /api/v1/retrieval/search`; callers
+can narrow to it with `filters.corpus_partition=private_documents`. Public API
+calls cannot select another organization because route normalization overwrites
+the organization filter with the active workspace.
+
 `GET /api/v1/retrieval/corpus/manifest` returns the reviewed corpus source
 manifest used by ingestion and readiness checks.
 

@@ -58,6 +58,7 @@ from ojtflow.core.contracts.graph import (
     GraphNeighborhoodQuery,
 )
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
     RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -1081,6 +1082,11 @@ class WorkflowService:
         """List available retrieval source inventory."""
 
         return self.retrieval_service.list_sources(organization_id=organization_id)
+
+    def ingest_private_corpus_document(self, **kwargs) -> PrivateCorpusIngestionResult:
+        """Ingest redacted private corpus text into the retrieval index."""
+
+        return self.retrieval_service.ingest_private_document(**kwargs)
 
     def list_graph_contexts(
         self,

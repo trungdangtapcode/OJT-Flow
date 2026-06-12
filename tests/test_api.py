@@ -122,6 +122,28 @@ def test_retrieval_api_request_overrides_caller_organization_filter() -> None:
     assert query.filters["organization_id"] == "org_a"
     assert query.filters["corpus_partition"] == "tenant_policies"
 
+    private_request = RetrievalSearchRequest(
+        query="private HbA1c policy",
+        filters={"corpus_partition": "private_documents"},
+    )
+    private_query = _retrieval_query_from_request(private_request, workspace=workspace)
+
+    assert private_query.filters["organization_id"] == "org_a"
+    assert private_query.filters["corpus_partition"] == "private_documents"
+    assert "trust_level" not in private_query.filters
+
+    explicitly_approved_private_request = RetrievalSearchRequest(
+        query="private HbA1c policy",
+        trust_level="approved",
+        filters={"corpus_partition": "private_documents"},
+    )
+    explicitly_approved_private_query = _retrieval_query_from_request(
+        explicitly_approved_private_request,
+        workspace=workspace,
+    )
+
+    assert explicitly_approved_private_query.filters["trust_level"] == "approved"
+
 
 class FakeAuthService:
     def __init__(self) -> None:
@@ -306,6 +328,11 @@ def test_openapi_exposes_core_request_examples() -> None:
     retrieval_support_response_models = [
         ("/api/v1/retrieval/presets", "get", "RetrievalPresetsEnvelope"),
         ("/api/v1/retrieval/search-options", "get", "RetrievalSearchOptionsEnvelope"),
+        (
+            "/api/v1/retrieval/private-corpus/ingest",
+            "post",
+            "PrivateCorpusIngestionEnvelope",
+        ),
         ("/api/v1/retrieval/source-policies", "get", "RetrievalSourcePoliciesEnvelope"),
         ("/api/v1/retrieval/corpus/adapters", "get", "RetrievalCorpusAdaptersEnvelope"),
         ("/api/v1/retrieval/corpus/partitions", "get", "RetrievalCorpusPartitionsEnvelope"),
@@ -2028,6 +2055,10 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
             "/api/v1/retrieval/search",
             json={"query": "lab result schema", "top_k": 1},
         )
+        retrieval_private_corpus = await client.post(
+            "/api/v1/retrieval/private-corpus/ingest",
+            json={"data": "patient_id,ssn\nP001,123-45-6789\n", "title": "Private"},
+        )
         retrieval_presets = await client.get("/api/v1/retrieval/presets")
         retrieval_search_options = await client.get("/api/v1/retrieval/search-options")
         retrieval_source_policies = await client.get("/api/v1/retrieval/source-policies")
@@ -2128,6 +2159,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(assistant_stream, expected_code="unauthorized")
     assert retrieval.status_code == 401
     _assert_error_envelope(retrieval, expected_code="unauthorized")
+    assert retrieval_private_corpus.status_code == 401
+    _assert_error_envelope(retrieval_private_corpus, expected_code="unauthorized")
     assert retrieval_presets.status_code == 401
     _assert_error_envelope(retrieval_presets, expected_code="unauthorized")
     assert retrieval_search_options.status_code == 401
@@ -4773,12 +4806,51 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             "graph_ner_handoff.v0"
         )
 
+        private_ingest = await client.post(
+            "/api/v1/retrieval/private-corpus/ingest",
+            json={
+                "title": "Private tenant lab policy",
+                "data": "patient_id,ssn,lab_name,value\nP001,123-45-6789,HbA1c,7.4\n",
+                "input_format": "csv",
+                "redaction_action": "mask",
+                "source_ref": "tenant://policies/private-lab.csv",
+            },
+        )
+        assert private_ingest.status_code == 200
+        private_data = private_ingest.json()["data"]
+        assert private_data["source"]["corpus_partition_id"] == "private_documents"
+        assert private_data["source"]["corpus_visibility"] == "private"
+        assert private_data["source"]["external_provider_allowed"] is False
+        assert private_data["redaction_preview"]["matches"]
+        assert "123-45-6789" not in private_data["redaction_preview"]["redacted_text"]
+
+        private_search = await client.post(
+            "/api/v1/retrieval/search",
+            json={
+                "query": "private tenant HbA1c policy",
+                "top_k": 5,
+                "filters": {"corpus_partition": "private_documents"},
+            },
+        )
+        assert private_search.status_code == 200
+        private_sources = {
+            item["source_id"] for item in private_search.json()["data"]["evidence"]
+        }
+        assert private_data["source_id"] in private_sources
+
         sources = await client.get("/api/v1/retrieval/sources")
         assert sources.status_code == 200
         assert any(
             source["source_id"] == "standard:fhir_observation_r4"
             for source in sources.json()["data"]
         )
+        private_source = next(
+            source
+            for source in sources.json()["data"]
+            if source["source_id"] == private_data["source_id"]
+        )
+        assert private_source["corpus_partition_id"] == "private_documents"
+        assert private_source["phi_allowed"] is True
 
         presets = await client.get("/api/v1/retrieval/presets")
         assert presets.status_code == 200

@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request
 
 from ojtflow.application.governance_service import GovernanceService
+from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.application.retrieval_reindex_safety import (
     build_embedding_reindex_safety_report,
 )
@@ -18,6 +19,7 @@ from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
+from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.graph import (
     GraphContextRecord,
     GraphExport,
@@ -33,6 +35,7 @@ from ojtflow.core.contracts.retrieval import (
     CorpusIngestionManifest,
     CorpusPartitionCatalog,
     EmbeddingReindexSafetyReport,
+    PrivateCorpusIngestionResult,
     RetrievalActiveLearningCandidate,
     RetrievalActiveLearningCandidateUpdate,
     RetrievalActiveLearningCandidateWrite,
@@ -55,6 +58,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalSourceTrustPolicyCatalog,
     RetrievalStrategyCatalog,
 )
+from ojtflow.core.errors import ToolExecutionError
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
     load_corpus_chunking_profile_catalog,
@@ -73,15 +77,17 @@ from ojtflow.infrastructure.retrieval.presets import (
 )
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
+    get_document_intake_service,
     get_governance_service,
     get_retrieval_active_learning_service,
     get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
 )
-from ojtflow.interfaces.api.limits import enforce_inline_json_limit
+from ojtflow.interfaces.api.limits import enforce_inline_json_limit, enforce_inline_text_limit
 from ojtflow.interfaces.api.responses import ok
 from ojtflow.interfaces.api.schemas import (
+    PrivateCorpusIngestRequest,
     RetrievalActiveLearningCandidateRequest,
     RetrievalActiveLearningCandidateUpdateRequest,
     RetrievalJudgmentEvaluationRequest,
@@ -100,6 +106,11 @@ class RetrievalPlanEnvelope(ContractModel):
 
 class RetrievalPackageEnvelope(ContractModel):
     data: RetrievalPackage
+    error: None = None
+
+
+class PrivateCorpusIngestionEnvelope(ContractModel):
+    data: PrivateCorpusIngestionResult
     error: None = None
 
 
@@ -291,6 +302,52 @@ async def search_retrieval(
     return ok(package)
 
 
+@router.post(
+    "/retrieval/private-corpus/ingest",
+    response_model=PrivateCorpusIngestionEnvelope,
+)
+async def ingest_private_corpus(
+    request: PrivateCorpusIngestRequest,
+    http_request: Request,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="data:profile",
+    )
+    payload = _private_corpus_payload(
+        request,
+        intake=intake,
+        owner_user_id=authenticated.user.user_id,
+    )
+    if request.data is not None:
+        enforce_inline_text_limit(
+            payload["text"],
+            settings,
+            field_name="private_corpus_data",
+        )
+    return ok(
+        service.ingest_private_corpus_document(
+            owner_user_id=authenticated.user.user_id,
+            organization_id=(
+                _workspace_organization_id(workspace) or authenticated.user.user_id
+            ),
+            title=str(payload["title"]),
+            text=str(payload["text"]),
+            input_format=payload["input_format"],
+            redaction_action=request.redaction_action,
+            retention_policy=payload["retention_policy"],
+            source_ref=payload["source_ref"],
+            artifact_id=payload["artifact_id"],
+            request_id=getattr(http_request.state, "request_id", None),
+        )
+    )
+
+
 @router.get("/retrieval/graph/contexts", response_model=RetrievalGraphContextsEnvelope)
 async def list_retrieval_graph_contexts(
     workflow_id: str | None = None,
@@ -372,19 +429,19 @@ def _retrieval_query_from_request(
     *,
     workspace: WorkspaceDetail | None = None,
 ) -> RetrievalQuery:
-    filters = {
-        **request.filters.model_dump(exclude_none=True, mode="json"),
-        **{
-            key: value
-            for key, value in {
-                "clinical_domain": request.clinical_domain,
-                "standard_system": request.standard_system,
-                "trust_level": request.trust_level,
-                "source_type": request.source_type,
-            }.items()
-            if value
-        },
+    filters = request.filters.model_dump(exclude_none=True, mode="json")
+    shortcut_filters = {
+        key: value
+        for key, value in {
+            "clinical_domain": request.clinical_domain,
+            "standard_system": request.standard_system,
+            "source_type": request.source_type,
+        }.items()
+        if value
     }
+    if request.trust_level and _should_apply_default_trust_level(request, filters):
+        shortcut_filters.setdefault("trust_level", request.trust_level)
+    filters = {**shortcut_filters, **filters}
     filters = {key: _filter_value(value) for key, value in filters.items()}
     if workspace is not None:
         filters["organization_id"] = workspace.organization.organization_id
@@ -398,6 +455,90 @@ def _retrieval_query_from_request(
         top_k=request.top_k,
         filters=filters,
     )
+
+
+def _should_apply_default_trust_level(
+    request: RetrievalSearchRequest,
+    filters: dict[str, Any],
+) -> bool:
+    """Keep approved-only default except for explicit private corpus searches."""
+
+    explicit_fields = getattr(request, "model_fields_set", set())
+    if "trust_level" in explicit_fields or "trust_level" in filters:
+        return True
+    return filters.get("corpus_partition") != "private_documents"
+
+
+def _private_corpus_payload(
+    request: PrivateCorpusIngestRequest,
+    *,
+    intake: DocumentIntakeService,
+    owner_user_id: str,
+) -> dict[str, Any]:
+    if request.data is not None and request.artifact_id is not None:
+        raise ToolExecutionError("Provide either data or artifact_id, not both.")
+    if request.data is not None:
+        text = request.data.strip()
+        if not text:
+            raise ToolExecutionError("Private corpus data cannot be blank.")
+        return {
+            "text": text,
+            "title": request.title or "Private corpus document",
+            "source_ref": request.source_ref,
+            "artifact_id": None,
+            "retention_policy": None,
+            "input_format": request.input_format,
+        }
+    if request.artifact_id is None:
+        raise ToolExecutionError("Private corpus ingestion requires data or artifact_id.")
+
+    artifact = intake.get_artifact(
+        owner_user_id=owner_user_id,
+        artifact_id=request.artifact_id,
+    )
+    traces = intake.list_traces(
+        owner_user_id=owner_user_id,
+        artifact_id=artifact.artifact_id,
+    )
+    trace = next(
+        (
+            item
+            for item in sorted(
+                traces,
+                key=lambda value: value.completed_at or value.started_at,
+                reverse=True,
+            )
+            if item.text_storage_ref
+        ),
+        None,
+    )
+    if trace is None:
+        raise ToolExecutionError(
+            "Uploaded artifact has no extracted text trace to ingest.",
+            details={"artifact_id": artifact.artifact_id},
+        )
+    extracted = intake.extracted_document_from_trace(artifact=artifact, trace=trace)
+    text = str((extracted or {}).get("text") or "").strip()
+    if not text:
+        raise ToolExecutionError(
+            "Uploaded artifact extraction produced no indexable text.",
+            details={"artifact_id": artifact.artifact_id, "trace_id": trace.trace_id},
+        )
+    return {
+        "text": text,
+        "title": request.title or artifact.filename,
+        "source_ref": request.source_ref or artifact.storage_ref,
+        "artifact_id": artifact.artifact_id,
+        "retention_policy": artifact.retention_policy,
+        "input_format": request.input_format or _data_format_from_source(trace.source_format),
+    }
+
+
+def _data_format_from_source(value: str) -> DataFormat | None:
+    try:
+        return DataFormat(value)
+    except ValueError:
+        return None
 
 
 @router.get("/retrieval/presets", response_model=RetrievalPresetsEnvelope)

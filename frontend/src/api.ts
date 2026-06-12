@@ -34,6 +34,8 @@ import type {
   OcrEvidenceFieldInput,
   OcrEvidenceResponse,
   OwaspLlmThreatModel,
+  PrivateCorpusIngestPayload,
+  PrivateCorpusIngestionResult,
   RetrievalJudgmentEvaluationPayload,
   RetrievalJudgmentEvaluationResult,
   RetrievalIntegrityReport,
@@ -516,6 +518,15 @@ export function listSchemas(): Promise<SchemaEntry[]> {
 
 export function searchRetrieval(payload: RetrievalSearchPayload): Promise<RetrievalPackage> {
   return request<RetrievalPackage>("/retrieval/search", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function ingestPrivateCorpus(
+  payload: PrivateCorpusIngestPayload,
+): Promise<PrivateCorpusIngestionResult> {
+  return request<PrivateCorpusIngestionResult>("/retrieval/private-corpus/ingest", {
     method: "POST",
     body: JSON.stringify(payload),
   });

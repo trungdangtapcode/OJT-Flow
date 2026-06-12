@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from ojtflow.core.errors import DependencyUnavailableError
-from ojtflow.core.contracts.enums import EvidenceSourceType
+from ojtflow.core.contracts.enums import DataFormat, EvidenceSourceType
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
     RetrievalActiveLearningCandidateUpdate,
@@ -4243,6 +4243,51 @@ def test_static_retrieval_filters_corpus_partitions_by_organization_scope() -> N
         )
     )
     assert wrong_org_package.evidence == []
+
+
+def test_private_corpus_ingestion_indexes_redacted_text_with_tenant_scope() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    service = RetrievalService(repository)
+
+    result = service.ingest_private_document(
+        owner_user_id="usr_private",
+        organization_id="org_private",
+        title="Private tenant lab policy",
+        text="patient_id,ssn,lab_name,value\nP001,123-45-6789,HbA1c,7.4\n",
+        input_format=DataFormat.CSV,
+        source_ref="tenant://policies/private-lab.csv",
+    )
+
+    assert result.source.corpus_partition_id == "private_documents"
+    assert result.source.corpus_visibility == "private"
+    assert result.source.external_provider_allowed is False
+    assert result.source.phi_allowed is True
+    assert result.retention_policy.policy_id == "private_corpus_inline_retention_v0"
+    assert result.redaction_preview.matches
+    assert "123-45-6789" not in result.redaction_preview.redacted_text
+    assert "indexed_redacted_text_only" in result.warnings
+
+    public_package = repository.search(
+        RetrievalQuery(
+            query="private tenant HbA1c policy",
+            top_k=10,
+            filters={"corpus_partition": "private_documents"},
+        )
+    )
+    assert public_package.evidence == []
+
+    private_package = repository.search(
+        RetrievalQuery(
+            query="private tenant HbA1c policy",
+            top_k=10,
+            filters={
+                "organization_id": "org_private",
+                "corpus_partition": "private_documents",
+            },
+        )
+    )
+    assert {item.source_id for item in private_package.evidence} == {result.source_id}
+    assert all("123-45-6789" not in item.claim for item in private_package.evidence)
 
 
 def test_retrieval_eval_fixture_passes_static_repository() -> None:

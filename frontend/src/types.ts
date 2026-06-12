@@ -1201,6 +1201,15 @@ export type RetrievalSearchFilters = {
   diversity_lambda?: number | null;
 };
 
+export type PrivateCorpusIngestPayload = {
+  data?: string | null;
+  artifact_id?: string | null;
+  title?: string | null;
+  source_ref?: string | null;
+  input_format?: string | null;
+  redaction_action?: string | null;
+};
+
 export type RetrievalSource = {
   source_id: string;
   source_type: string;
@@ -1261,6 +1270,26 @@ export type CorpusPartitionCatalog = {
   version: string;
   default_partition_id: string;
   partitions: CorpusPartitionPolicy[];
+};
+
+export type PrivateCorpusIngestionResult = {
+  ingestion_id: string;
+  source_id: string;
+  source: RetrievalSource;
+  chunk_count: number;
+  organization_id: string;
+  owner_user_id: string;
+  title: string;
+  source_ref?: string | null;
+  artifact_id?: string | null;
+  original_text_sha256: string;
+  indexed_text_sha256: string;
+  redaction_preview: Record<string, unknown>;
+  retention_policy: Record<string, unknown>;
+  external_provider_allowed: boolean;
+  requires_review: boolean;
+  warnings: string[];
+  metadata: Record<string, unknown>;
 };
 
 export type RetrievalIntegrityItem = {

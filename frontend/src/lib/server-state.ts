@@ -47,6 +47,7 @@ import {
   getWorkflow,
   getWorkflowOutput,
   getWorkflowStats,
+  ingestPrivateCorpus,
   listAssistantTools,
   listAssistantAnswerTemplates,
   listAssistantExamples,
@@ -97,6 +98,7 @@ import type {
   OcrEvidenceResponse,
   UploadParseJobResponse,
   RetrievalGraphNeighborhoodQuery,
+  PrivateCorpusIngestPayload,
   RetrievalActiveLearningCandidatePayload,
   RetrievalActiveLearningCandidateUpdatePayload,
   RetrievalActiveLearningPriority,
@@ -141,6 +143,10 @@ type ClipboardImageParseJobInput = {
   mimeType: string;
   extractor: string;
   executeNow: boolean;
+};
+
+type PrivateCorpusIngestInput = {
+  payload: PrivateCorpusIngestPayload;
 };
 
 export const queryKeys = {
@@ -490,6 +496,25 @@ export function useRetrievalFreshnessQuery() {
 export function useRetrievalSearchMutation() {
   return useMutation({
     mutationFn: (payload: RetrievalSearchPayload) => searchRetrieval(payload),
+  });
+}
+
+export function usePrivateCorpusIngestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ payload }: PrivateCorpusIngestInput) => ingestPrivateCorpus(payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalSources }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.retrievalFreshness }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.retrievalIntegrity({
+            include_seeded: true,
+            include_corpus: true,
+          }),
+        }),
+      ]);
+    },
   });
 }
 

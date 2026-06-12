@@ -43,7 +43,9 @@ from ojtflow.core.contracts.governance import (
 )
 from ojtflow.core.contracts.graph import GraphContextRecord
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
+from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
     RetrievalActiveLearningCandidate,
     RetrievalActiveLearningCandidateUpdate,
     RetrievalActiveLearningCandidateWrite,
@@ -321,6 +323,20 @@ class RetrievalRepository(Protocol):
     def search(self, query: RetrievalQuery) -> RetrievalPackage: ...
 
     def list_sources(self, organization_id: str | None = None) -> list[RetrievalSource]: ...
+
+    def ingest_private_document(
+        self,
+        *,
+        owner_user_id: str,
+        organization_id: str,
+        title: str,
+        text: str,
+        redaction_preview: RedactionPreview,
+        retention_policy: ArtifactRetentionPolicy,
+        source_ref: str | None = None,
+        artifact_id: str | None = None,
+        request_id: str | None = None,
+    ) -> PrivateCorpusIngestionResult: ...
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict: ...
 

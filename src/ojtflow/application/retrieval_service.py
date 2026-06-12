@@ -11,12 +11,16 @@ from ojtflow.application.graph_conflict_service import GraphConflictService
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.ports import RetrievalRepository
 from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
+from ojtflow.core.contracts.artifacts import ArtifactRetentionPolicy
 from ojtflow.core.contracts.data import DataProfile
+from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.external_provider import (
     ExternalProviderDecision,
     ExternalProviderPolicy,
 )
+from ojtflow.core.contracts.redaction import RedactionActionType
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
     RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -28,7 +32,9 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQueryDiagnostic,
     RetrievalSource,
 )
+from ojtflow.core.errors import ToolExecutionError
 from ojtflow.core.policy.external_provider_policy import decide_external_provider_handoff
+from ojtflow.data_tools.redaction import build_redaction_preview
 
 
 class RetrievalService:
@@ -77,6 +83,48 @@ class RetrievalService:
         """List configured retrieval sources."""
 
         return self.repository.list_sources(organization_id=organization_id)
+
+    def ingest_private_document(
+        self,
+        *,
+        owner_user_id: str,
+        organization_id: str,
+        title: str,
+        text: str,
+        input_format: DataFormat | None = None,
+        redaction_action: RedactionActionType | None = None,
+        retention_policy: ArtifactRetentionPolicy | None = None,
+        source_ref: str | None = None,
+        artifact_id: str | None = None,
+        request_id: str | None = None,
+    ) -> PrivateCorpusIngestionResult:
+        """Redact and index a tenant-private document into retrieval."""
+
+        redaction_preview = build_redaction_preview(
+            text,
+            data_format=input_format,
+            action_override=redaction_action,
+        )
+        if not redaction_preview.redacted_text.strip():
+            raise ToolExecutionError(
+                "Private corpus ingestion produced no indexable redacted text.",
+                details={
+                    "artifact_id": artifact_id,
+                    "source_ref": source_ref,
+                    "redaction_match_count": len(redaction_preview.matches),
+                },
+            )
+        return self.repository.ingest_private_document(
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy or _default_private_retention_policy(),
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+            request_id=request_id,
+        )
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
         """Refresh retrieval index from configured trusted sources."""
@@ -391,4 +439,17 @@ def _suppressed_external_search_task_summary(
             f"{len(local_tasks)} local runnable task(s), 0 external/manual "
             f"follow-up(s), and {blocked_count} blocked task(s)."
         ),
+    )
+
+
+def _default_private_retention_policy() -> ArtifactRetentionPolicy:
+    return ArtifactRetentionPolicy(
+        policy_id="private_corpus_inline_retention_v0",
+        sensitivity_class="potential_phi",
+        action="review",
+        reason=(
+            "Inline private corpus text is treated as potential PHI and requires "
+            "workspace retention review."
+        ),
+        source="api",
     )

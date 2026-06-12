@@ -8,7 +8,10 @@ from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.contracts.artifacts import ArtifactRetentionPolicy
+from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
     RetrievalIndexManifest,
     RetrievalIntegrityReport,
     RetrievalPlan,
@@ -32,6 +35,10 @@ from ojtflow.infrastructure.retrieval.engine import (
 )
 from ojtflow.infrastructure.retrieval.index_manifest import build_retrieval_index_manifest
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
+from ojtflow.infrastructure.retrieval.private_corpus import (
+    build_private_corpus_chunks,
+    private_corpus_ingestion_result,
+)
 from ojtflow.infrastructure.retrieval.query_analysis import build_retrieval_plan
 
 
@@ -153,6 +160,49 @@ class StaticRetrievalRepository:
             )
         ]
         return sources_from_chunks(visible_chunks)
+
+    def ingest_private_document(
+        self,
+        *,
+        owner_user_id: str,
+        organization_id: str,
+        title: str,
+        text: str,
+        redaction_preview: RedactionPreview,
+        retention_policy: ArtifactRetentionPolicy,
+        source_ref: str | None = None,
+        artifact_id: str | None = None,
+        request_id: str | None = None,
+    ) -> PrivateCorpusIngestionResult:
+        build = build_private_corpus_chunks(
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy,
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+            request_id=request_id,
+            max_chars=self.chunk_max_chars,
+            overlap_chars=self.chunk_overlap_chars,
+        )
+        self._chunks = [
+            chunk
+            for chunk in self._chunks
+            if chunk.source_id != build.source.source_id
+        ] + build.chunks
+        return private_corpus_ingestion_result(
+            build=build,
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            original_text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy,
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+        )
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
         chunks: list[KnowledgeChunk] = []

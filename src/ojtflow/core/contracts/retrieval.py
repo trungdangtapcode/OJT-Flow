@@ -6,9 +6,11 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from ojtflow.core.contracts.artifacts import ArtifactRetentionPolicy
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 
@@ -1448,6 +1450,28 @@ class RetrievalSource(ContractModel):
     external_provider_allowed: bool | None = None
     phi_allowed: bool | None = None
     retention_policy_id: str | None = None
+
+
+class PrivateCorpusIngestionResult(ContractModel):
+    """Result of indexing PHI-safe private corpus text into retrieval."""
+
+    ingestion_id: NonBlankStr = Field(default_factory=lambda: new_id("pcorp"))
+    source_id: NonBlankStr
+    source: RetrievalSource
+    chunk_count: int = Field(ge=0)
+    organization_id: NonBlankStr
+    owner_user_id: NonBlankStr
+    title: NonBlankStr
+    source_ref: NonBlankStr | None = None
+    artifact_id: NonBlankStr | None = None
+    original_text_sha256: NonBlankStr
+    indexed_text_sha256: NonBlankStr
+    redaction_preview: RedactionPreview
+    retention_policy: ArtifactRetentionPolicy
+    external_provider_allowed: bool = False
+    requires_review: bool = True
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RetrievalIntegrityItem(ContractModel):
