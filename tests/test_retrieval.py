@@ -3289,8 +3289,23 @@ def test_retrieval_service_adds_graph_context() -> None:
 
     graph = package.handoff_context["graph_context"]
     assert graph["graph_contract"] == "graph_ner_handoff.v0"
+    assert graph["summary"]["extractor_version"] == "deterministic_graph_ner.v1"
+    assert graph["summary"]["node_provenance_count"] == graph["summary"]["node_count"]
+    assert graph["summary"]["edge_provenance_count"] == graph["summary"]["edge_count"]
     assert any(node["type"] == "evidence" for node in graph["nodes"])
     assert any(edge["relation"] == "supports" for edge in graph["edges"])
+    assert all(isinstance(node.get("provenance"), dict) for node in graph["nodes"])
+    assert all(isinstance(edge.get("provenance"), dict) for edge in graph["edges"])
+    evidence_provenance = [
+        node["provenance"]
+        for node in graph["nodes"]
+        if node["type"] == "evidence"
+    ]
+    assert any(item.get("source_chunk_id") for item in evidence_provenance)
+    assert all(
+        item["extractor_version"] == "deterministic_graph_ner.v1"
+        for item in evidence_provenance
+    )
     assert package.handoff_context["search_signature"].startswith("sha256:")
     assert package.handoff_context["search_request"] == {
         "query": "FHIR Observation HbA1c unit",
@@ -3515,7 +3530,12 @@ def test_graph_ner_normalizes_clinical_concepts_to_standard_codes() -> None:
             source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
             source_id="laboratory_semantic_retrieval",
             claim="A row mentions HbA1c and blood glucose without a unit.",
-            locator={"standard_system": "LOINC", "clinical_domain": "laboratory"},
+            source_version="2026-06",
+            locator={
+                "chunk_id": "lab-semantic-chunk-1",
+                "standard_system": "LOINC",
+                "clinical_domain": "laboratory",
+            },
         )
     ]
 
@@ -3526,6 +3546,19 @@ def test_graph_ner_normalizes_clinical_concepts_to_standard_codes() -> None:
     assert hba1c["normalized_code"] == "LOINC:4548-4"
     assert hba1c["normalized_system"] == "LOINC"
     assert hba1c["normalized_display"] == "Hemoglobin A1c"
+    assert hba1c["provenance"]["extractor_version"] == "deterministic_graph_ner.v1"
+    assert hba1c["provenance"]["normalized_code_candidates"] == [
+        {
+            "code": "LOINC:4548-4",
+            "system": "LOINC",
+            "display": "Hemoglobin A1c",
+            "confidence": 0.92,
+        }
+    ]
+    assert any(
+        provenance["source_chunk_id"] == "lab-semantic-chunk-1"
+        for provenance in hba1c.get("additional_provenance", [])
+    )
 
     glucose = nodes_by_id["clinical_concept:glucose_serum_plasma"]
     assert glucose["label"] == "blood glucose"
@@ -3539,12 +3572,18 @@ def test_graph_ner_normalizes_clinical_concepts_to_standard_codes() -> None:
     normalizes_edge = next(edge for edge in graph["edges"] if edge["relation"] == "normalizes_to")
     assert normalizes_edge["source"] == hba1c["id"]
     assert normalizes_edge["target"] == code_node["id"]
+    assert normalizes_edge["provenance"]["review_state"] == "candidate_requires_review"
+    assert normalizes_edge["provenance"]["normalized_code_candidates"][0]["code"] == (
+        "LOINC:4548-4"
+    )
     assert any(
         triple["subject"] == "HbA1c"
         and triple["predicate"] == "normalizes_to"
         and triple["object"] == "LOINC:4548-4"
+        and triple["provenance"]["source_chunk_id"] == "lab-semantic-chunk-1"
         for triple in graph["triples"]
     )
+    assert graph["summary"]["candidate_review_count"] >= 1
     assert graph["summary"]["concept_registry_count"] >= 1
     assert graph["summary"]["rule_source_count"] >= 1
 
@@ -3566,6 +3605,9 @@ def test_graph_ner_extracts_query_entities_and_fhir_search_parameters() -> None:
     assert nodes_by_id["clinical_concept:hba1c_lab_test"]["normalized_code"] == "LOINC:4548-4"
     assert nodes_by_id["fhir_search_parameter:observation:code"]["target_field"] == "Observation.code"
     assert nodes_by_id["fhir_search_parameter:observation:value-quantity"]["search_type"] == "quantity"
+    assert nodes_by_id["fhir_search_parameter:observation:code"]["provenance"]["source"] == (
+        "fhir_search_parameters"
+    )
     assert any(
         edge["source"] == "query:current"
         and edge["relation"] == "mentions_entity"

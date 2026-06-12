@@ -1219,7 +1219,11 @@ Workflow output includes:
   Standards, data fields, and fallback clinical concepts are recognized from
   `knowledge/terminologies/graph_ner_rules.json`, overridable with
   `OJT_GRAPH_NER_RULES_PATH`. Nodes include deterministic `confidence` and
-  `rule_source` metadata when available.
+  `rule_source` metadata when available. Every node also carries `provenance`
+  with the extractor name/version, extraction source, confidence when known,
+  review state, and source evidence/chunk metadata when the node came from a
+  retrieved claim. Reused nodes can carry `additional_provenance` entries when
+  the same concept appears in both query text and retrieved evidence.
 - `clinical_concept` nodes whose label matches an alias in
   `knowledge/terminologies/medical_concepts.json` (the same seed registry
   deterministic query analysis uses, overridable with
@@ -1234,14 +1238,18 @@ Workflow output includes:
 - `edges`: auditable relationships such as `supports`, `mentions_field`,
   `mentions_entity`, `requests_resource`, `has_search_parameter`,
   `uses_standard`, and `normalizes_to` (clinical concept to its canonical
-  standard code).
+  standard code). Edges carry the same `provenance` envelope; `normalizes_to`
+  edges use `review_state="candidate_requires_review"` because deterministic
+  code candidates are reviewable evidence, not an automatic clinical coding
+  decision.
 - `triples`: source/evidence triples, including `normalizes_to` triples that
   pair a recognized concept label with its canonical code (for example
   `HbA1c / normalizes_to / LOINC:4548-4`), for downstream Graph-NER/RAG
-  handoff.
-- `summary`: node, edge, triple, Graph-NER rule, and concept-registry counts
-  so UIs and operators can tell whether a graph package is thin or well
-  grounded.
+  handoff. Triples include provenance with the source evidence ID and chunk
+  locator when available.
+- `summary`: extractor version, node, edge, triple, provenance, candidate
+  review, Graph-NER rule, and concept-registry counts so UIs and operators can
+  tell whether a graph package is thin, review-heavy, or well grounded.
 
 Concept normalization is deterministic dictionary lookup against seed
 registries, not a clinical coding decision; unmapped terms keep their plain

@@ -222,6 +222,7 @@ Keep this section updated when roadmap items move from planning into code.
 | 2026-06-12 | F179 | Implemented | Added data-driven medical source quality scoring with `knowledge/retrieval/source_quality_policy.json`, typed quality policy/score/signal contracts, per-source `quality` on `/api/v1/retrieval/freshness`, aggregate quality counts, Retrieval UI quality chips, docs, and focused tests. |
 | 2026-06-12 | F180 | Implemented | Added route-specific retrieval budgets to `knowledge/retrieval/query_route_rules.json`, typed `RetrievalRouteBudget` output, budget parsing and validation, enforcement for candidate pool, returned hits, reranker candidate limit, source diversity, external-network warnings, trace/handoff metadata, docs, and focused tests. |
 | 2026-06-12 | F181 | Implemented | Added data-driven citation locator normalization with `knowledge/retrieval/citation_locator_rules.json`, typed locator rule and normalized locator contracts, normalized locators on evidence/hits/support rows/citations, coverage for FHIR, PubMed, ClinicalTrials.gov, openFDA, UCUM, RxNorm, PDF pages, and internal sections, docs, and focused tests. |
+| 2026-06-12 | F182 | Implemented | Added Graph-NER extraction provenance on graph nodes, edges, and triples, including extractor version, source evidence/chunk metadata, confidence, normalized-code candidates, candidate-review state, summary provenance counts, docs, and focused graph contract tests. |
 
 ## Feature Backlog
 
@@ -425,7 +426,7 @@ Month 4 is done only when these acceptance gates hold:
 - [x] F179 Add medical source quality scoring that combines trust tier, lifecycle state, freshness, license restrictions, reviewer state, and source coverage.
 - [x] F180 Add route-specific retrieval budgets for max candidates, reranker limit, source diversity, external-network permission, and latency target.
 - [x] F181 Add citation locator normalization for FHIR pages, PubMed records, ClinicalTrials.gov studies, openFDA records, UCUM entries, RxNorm concepts, PDF pages, and internal policy sections.
-- [ ] F182 Add Graph-NER extraction provenance per node and edge, including extractor version, source chunk, confidence, normalized-code candidates, and review state.
+- [x] F182 Add Graph-NER extraction provenance per node and edge, including extractor version, source chunk, confidence, normalized-code candidates, and review state.
 - [ ] F183 Add graph conflict detection for contradictory source claims, deprecated terminology mappings, conflicting units, and version-mismatched standard guidance.
 - [ ] F184 Add retrieval judgement workflow so reviewers can label evidence hits as relevant, irrelevant, unsafe, stale, or source-policy-blocked.
 - [ ] F185 Add active-learning queue that converts low-confidence retrieval, unsupported claims, and reviewer corrections into benchmark candidates.

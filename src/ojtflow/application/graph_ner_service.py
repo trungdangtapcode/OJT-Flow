@@ -47,6 +47,8 @@ CONCEPT_REGISTRY_ENV_VAR = "OJT_MEDICAL_CONCEPT_REGISTRY_PATH"
 GRAPH_NER_RULES_ENV_VAR = "OJT_GRAPH_NER_RULES_PATH"
 GRAPH_RAG_POLICY_ENV_VAR = "OJT_GRAPH_RAG_POLICY_PATH"
 FHIR_SEARCH_PARAMETERS_ENV_VAR = "OJT_FHIR_SEARCH_PARAMETERS_PATH"
+GRAPH_NER_EXTRACTOR_NAME = "deterministic_graph_ner"
+GRAPH_NER_EXTRACTOR_VERSION = "deterministic_graph_ner.v1"
 
 
 class AliasRule(NamedTuple):
@@ -351,21 +353,64 @@ class GraphNERService:
         edges: list[dict[str, Any]] = []
         triples: list[dict[str, Any]] = []
 
-        query_node = _node("query:current", "Retrieval Query", "query")
+        query_node = _node(
+            "query:current",
+            "Retrieval Query",
+            "query",
+            provenance=_graph_provenance(source="query", confidence=1.0, review_state="not_required"),
+        )
         nodes[query_node["id"]] = query_node
 
         for field in query.fields:
-            entity = _node(f"field:{field.lower()}", field, "data_field", confidence=0.9)
+            entity = _node(
+                f"field:{field.lower()}",
+                field,
+                "data_field",
+                confidence=0.9,
+                provenance=_graph_provenance(source="query_field", confidence=0.9),
+            )
             _upsert_node(nodes, entity)
-            edges.append(_edge(query_node["id"], "mentions_field", entity["id"]))
+            edges.append(
+                _edge(
+                    query_node["id"],
+                    "mentions_field",
+                    entity["id"],
+                    provenance=_graph_provenance(source="query_field", confidence=0.9),
+                )
+            )
 
         for entity in _entities_from_text(query.query):
+            _attach_node_provenance(entity, source="query_text")
             _upsert_node(nodes, entity)
-            edges.append(_edge(query_node["id"], "mentions_entity", entity["id"]))
+            edges.append(
+                _edge(
+                    query_node["id"],
+                    "mentions_entity",
+                    entity["id"],
+                    provenance=_graph_provenance(
+                        source="query_text",
+                        confidence=_node_confidence(entity),
+                        normalized_code_candidates=_normalized_code_candidates(entity),
+                    ),
+                )
+            )
             code_node = _standard_code_node(entity)
             if code_node is not None:
+                _attach_node_provenance(code_node, source="query_text")
                 _upsert_node(nodes, code_node)
-                edges.append(_edge(entity["id"], "normalizes_to", code_node["id"]))
+                edges.append(
+                    _edge(
+                        entity["id"],
+                        "normalizes_to",
+                        code_node["id"],
+                        provenance=_graph_provenance(
+                            source="query_text",
+                            confidence=_node_confidence(entity),
+                            normalized_code_candidates=_normalized_code_candidates(entity),
+                            review_state="candidate_requires_review",
+                        ),
+                    )
+                )
 
         if query.resource_type:
             entity = _node(
@@ -373,9 +418,17 @@ class GraphNERService:
                 query.resource_type,
                 "fhir_resource",
                 confidence=0.95,
+                provenance=_graph_provenance(source="query_resource_type", confidence=0.95),
             )
             _upsert_node(nodes, entity)
-            edges.append(_edge(query_node["id"], "requests_resource", entity["id"]))
+            edges.append(
+                _edge(
+                    query_node["id"],
+                    "requests_resource",
+                    entity["id"],
+                    provenance=_graph_provenance(source="query_resource_type", confidence=0.95),
+                )
+            )
             self._attach_fhir_search_parameter_nodes(
                 resource_type=query.resource_type,
                 nodes=nodes,
@@ -384,7 +437,18 @@ class GraphNERService:
             )
 
         for ev in evidence:
-            evidence_node = _node(f"evidence:{ev.evidence_id}", ev.source_id, "evidence")
+            evidence_node = _node(
+                f"evidence:{ev.evidence_id}",
+                ev.source_id,
+                "evidence",
+                confidence=ev.confidence,
+                provenance=_graph_provenance(
+                    source="evidence_record",
+                    evidence=ev,
+                    confidence=ev.confidence,
+                    review_state="source_evidence",
+                ),
+            )
             _upsert_node(nodes, evidence_node)
             claim_entities = _entities_from_text(ev.claim)
             locator = ev.locator or {}
@@ -401,26 +465,68 @@ class GraphNERService:
                         }
                     )
             for entity in claim_entities:
+                _attach_node_provenance(entity, source="evidence_claim", evidence=ev)
                 _upsert_node(nodes, entity)
-                edges.append(_edge(evidence_node["id"], "supports", entity["id"], ev.evidence_id))
+                edges.append(
+                    _edge(
+                        evidence_node["id"],
+                        "supports",
+                        entity["id"],
+                        ev.evidence_id,
+                        provenance=_graph_provenance(
+                            source="evidence_claim",
+                            evidence=ev,
+                            confidence=_node_confidence(entity),
+                            normalized_code_candidates=_normalized_code_candidates(entity),
+                        ),
+                    )
+                )
                 triples.append(
                     {
                         "subject": ev.source_id,
                         "predicate": "supports",
                         "object": entity["label"],
                         "evidence_id": ev.evidence_id,
+                        "provenance": _graph_provenance(
+                            source="evidence_claim",
+                            evidence=ev,
+                            confidence=_node_confidence(entity),
+                            normalized_code_candidates=_normalized_code_candidates(entity),
+                        ),
                     }
                 )
                 code_node = _standard_code_node(entity)
                 if code_node is not None:
+                    _attach_node_provenance(code_node, source="evidence_claim", evidence=ev)
                     _upsert_node(nodes, code_node)
-                    edges.append(_edge(entity["id"], "normalizes_to", code_node["id"], ev.evidence_id))
+                    edges.append(
+                        _edge(
+                            entity["id"],
+                            "normalizes_to",
+                            code_node["id"],
+                            ev.evidence_id,
+                            provenance=_graph_provenance(
+                                source="evidence_claim",
+                                evidence=ev,
+                                confidence=_node_confidence(entity),
+                                normalized_code_candidates=_normalized_code_candidates(entity),
+                                review_state="candidate_requires_review",
+                            ),
+                        )
+                    )
                     triples.append(
                         {
                             "subject": entity["label"],
                             "predicate": "normalizes_to",
                             "object": code_node["label"],
                             "evidence_id": ev.evidence_id,
+                            "provenance": _graph_provenance(
+                                source="evidence_claim",
+                                evidence=ev,
+                                confidence=_node_confidence(entity),
+                                normalized_code_candidates=_normalized_code_candidates(entity),
+                                review_state="candidate_requires_review",
+                            ),
                         }
                     )
 
@@ -428,15 +534,24 @@ class GraphNERService:
         limited_nodes = list(nodes.values())[: self.max_entities]
         limited_edges = deduped_edges[: self.max_triples]
         limited_triples = triples[: self.max_triples]
+        node_provenance_count = _provenance_count(limited_nodes)
+        edge_provenance_count = _provenance_count(limited_edges)
         return {
             "graph_contract": "graph_ner_handoff.v0",
             "nodes": limited_nodes,
             "edges": limited_edges,
             "triples": limited_triples,
             "summary": {
+                "extractor": GRAPH_NER_EXTRACTOR_NAME,
+                "extractor_version": GRAPH_NER_EXTRACTOR_VERSION,
                 "node_count": len(limited_nodes),
                 "edge_count": len(limited_edges),
                 "triple_count": len(limited_triples),
+                "node_provenance_count": node_provenance_count,
+                "edge_provenance_count": edge_provenance_count,
+                "candidate_review_count": _candidate_review_count(
+                    [*limited_nodes, *limited_edges, *limited_triples]
+                ),
                 "rule_source_count": len(_load_graph_ner_rules(_graph_ner_rules_path())),
                 "concept_registry_count": len(_concept_registry()),
             },
@@ -467,23 +582,51 @@ class GraphNERService:
                     parameter_name,
                     "fhir_search_parameter",
                     confidence=0.9,
+                    provenance=_graph_provenance(
+                        source="fhir_search_parameters",
+                        confidence=0.9,
+                    ),
                 )
                 parameter_node["target_field"] = parameter.get("target_field")
                 parameter_node["search_type"] = parameter.get("type")
                 parameter_node["example"] = parameter.get("example")
                 parameter_node["rule_source"] = "fhir_search_parameters"
                 _upsert_node(nodes, parameter_node)
-                edges.append(_edge(parent_node_id, "has_search_parameter", parameter_node["id"]))
+                edges.append(
+                    _edge(
+                        parent_node_id,
+                        "has_search_parameter",
+                        parameter_node["id"],
+                        provenance=_graph_provenance(
+                            source="fhir_search_parameters",
+                            confidence=0.9,
+                        ),
+                    )
+                )
                 for standard in parameter.get("standard_systems", []):
                     standard_node = _node(
                         f"standard:{str(standard).lower()}",
                         str(standard),
                         "standard",
                         confidence=0.9,
+                        provenance=_graph_provenance(
+                            source="fhir_search_parameters",
+                            confidence=0.9,
+                        ),
                     )
                     standard_node["rule_source"] = "fhir_search_parameters"
                     _upsert_node(nodes, standard_node)
-                    edges.append(_edge(parameter_node["id"], "uses_standard", standard_node["id"]))
+                    edges.append(
+                        _edge(
+                            parameter_node["id"],
+                            "uses_standard",
+                            standard_node["id"],
+                            provenance=_graph_provenance(
+                                source="fhir_search_parameters",
+                                confidence=0.9,
+                            ),
+                        )
+                    )
             return
 
 
@@ -960,11 +1103,104 @@ def _node(
     node_type: str,
     *,
     confidence: float | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     node = {"id": node_id, "label": label, "type": node_type}
     if confidence is not None:
         node["confidence"] = confidence
+    node["provenance"] = provenance or _graph_provenance(
+        source="graph_node",
+        confidence=confidence,
+    )
     return node
+
+
+def _attach_node_provenance(
+    node: dict[str, Any],
+    *,
+    source: str,
+    evidence: Evidence | None = None,
+    review_state: str | None = None,
+) -> None:
+    node["provenance"] = _graph_provenance(
+        source=source,
+        evidence=evidence,
+        confidence=_node_confidence(node),
+        normalized_code_candidates=_normalized_code_candidates(node),
+        review_state=review_state,
+    )
+
+
+def _graph_provenance(
+    *,
+    source: str,
+    evidence: Evidence | None = None,
+    confidence: float | None = None,
+    normalized_code_candidates: list[dict[str, Any]] | None = None,
+    review_state: str | None = None,
+    source_evidence_id: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "extractor": GRAPH_NER_EXTRACTOR_NAME,
+        "extractor_version": GRAPH_NER_EXTRACTOR_VERSION,
+        "source": source,
+        "review_state": review_state or "auto_extracted",
+    }
+    if evidence is not None:
+        payload["source_evidence_id"] = evidence.evidence_id
+        payload["source_id"] = evidence.source_id
+        payload["source_type"] = evidence.source_type.value
+        if evidence.source_version:
+            payload["source_version"] = evidence.source_version
+        source_chunk_id = _source_chunk_id(evidence)
+        if source_chunk_id:
+            payload["source_chunk_id"] = source_chunk_id
+        normalized_locator = evidence.locator.get("normalized_citation_locator")
+        if isinstance(normalized_locator, dict):
+            payload["normalized_citation_locator"] = normalized_locator
+    elif source_evidence_id:
+        payload["source_evidence_id"] = source_evidence_id
+    if confidence is not None:
+        payload["confidence"] = round(max(0.0, min(1.0, float(confidence))), 4)
+    if normalized_code_candidates:
+        payload["normalized_code_candidates"] = normalized_code_candidates[:5]
+    return payload
+
+
+def _source_chunk_id(evidence: Evidence) -> str | None:
+    value = evidence.locator.get("chunk_id")
+    if value:
+        return str(value)
+    normalized_locator = evidence.locator.get("normalized_citation_locator")
+    if isinstance(normalized_locator, dict) and normalized_locator.get("identifier"):
+        return str(normalized_locator["identifier"])
+    return None
+
+
+def _node_confidence(node: dict[str, Any]) -> float | None:
+    value = node.get("confidence")
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _normalized_code_candidates(node: dict[str, Any]) -> list[dict[str, Any]]:
+    code = _optional_text(node.get("normalized_code"))
+    system = _optional_text(node.get("normalized_system") or node.get("standard_system"))
+    if not code and node.get("type") == "standard_code":
+        code = _optional_text(node.get("label"))
+    if not code:
+        return []
+    candidate: dict[str, Any] = {"code": code}
+    if system:
+        candidate["system"] = system
+    display = _optional_text(node.get("normalized_display") or node.get("display_name"))
+    if display:
+        candidate["display"] = display
+    confidence = _node_confidence(node)
+    if confidence is not None:
+        candidate["confidence"] = round(max(0.0, min(1.0, confidence)), 4)
+    return [candidate]
 
 
 def _upsert_node(nodes: dict[str, dict[str, Any]], node: dict[str, Any]) -> None:
@@ -972,6 +1208,7 @@ def _upsert_node(nodes: dict[str, dict[str, Any]], node: dict[str, Any]) -> None
     if existing is None:
         nodes[node["id"]] = node
         return
+    _merge_node_provenance(existing, node)
     if _is_better_label(existing, node):
         existing["label"] = node["label"]
         if "matched_text" in node:
@@ -984,6 +1221,42 @@ def _upsert_node(nodes: dict[str, dict[str, Any]], node: dict[str, Any]) -> None
                 if key not in {"id", "type"} and value is not None
             }
         )
+
+
+def _merge_node_provenance(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+    incoming_provenance = incoming.get("provenance")
+    if not isinstance(incoming_provenance, dict):
+        return
+    existing_provenance = existing.get("provenance")
+    if not isinstance(existing_provenance, dict):
+        existing["provenance"] = incoming_provenance
+        return
+    if _same_provenance(existing_provenance, incoming_provenance):
+        return
+    additional = existing.setdefault("additional_provenance", [])
+    if not isinstance(additional, list):
+        additional = []
+        existing["additional_provenance"] = additional
+    if not any(
+        isinstance(item, dict) and _same_provenance(item, incoming_provenance)
+        for item in additional
+    ):
+        additional.append(incoming_provenance)
+    del additional[5:]
+
+
+def _same_provenance(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    return (
+        left.get("extractor_version"),
+        left.get("source"),
+        left.get("source_evidence_id"),
+        left.get("source_chunk_id"),
+    ) == (
+        right.get("extractor_version"),
+        right.get("source"),
+        right.get("source_evidence_id"),
+        right.get("source_chunk_id"),
+    )
 
 
 def _is_better_label(existing: dict[str, Any], node: dict[str, Any]) -> bool:
@@ -1069,10 +1342,17 @@ def _edge(
     relation: str,
     target: str,
     evidence_id: str | None = None,
+    *,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     edge = {"source": source, "relation": relation, "target": target}
     if evidence_id:
         edge["evidence_id"] = evidence_id
+    edge["provenance"] = provenance or _graph_provenance(
+        source="graph_edge",
+        source_evidence_id=evidence_id,
+        review_state="auto_extracted",
+    )
     return edge
 
 
@@ -1094,3 +1374,29 @@ def _dedupe_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         deduped.setdefault(key, edge)
     return list(deduped.values())
+
+
+def _provenance_count(items: list[dict[str, Any]]) -> int:
+    return sum(1 for item in items if isinstance(item.get("provenance"), dict))
+
+
+def _candidate_review_count(items: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for item in items
+        if any(
+            provenance.get("review_state") == "candidate_requires_review"
+            for provenance in _item_provenance_entries(item)
+        )
+    )
+
+
+def _item_provenance_entries(item: dict[str, Any]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    provenance = item.get("provenance")
+    if isinstance(provenance, dict):
+        entries.append(provenance)
+    additional = item.get("additional_provenance")
+    if isinstance(additional, list):
+        entries.extend(entry for entry in additional if isinstance(entry, dict))
+    return entries

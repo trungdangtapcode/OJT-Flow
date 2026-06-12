@@ -3059,7 +3059,13 @@ for downstream agents. Current values include
 deterministic GraphRAG-lite handoff with query/evidence/standard/field/concept
 nodes, `supports`, `mentions_entity`, `requests_resource`,
 `has_search_parameter`, `uses_standard`, and `normalizes_to` edges, plus
-summary counts. Entity rules come from
+summary counts. Nodes, edges, and triples include `provenance` with
+`extractor`, `extractor_version`, extraction `source`, `review_state`,
+`confidence`, source evidence/chunk refs when available, and
+`normalized_code_candidates` for deterministic terminology candidates.
+`normalizes_to` provenance is marked `candidate_requires_review` because these
+are reviewable coding hints rather than automatic clinical coding decisions.
+Entity rules come from
 `knowledge/terminologies/graph_ner_rules.json`; medical concept-code
 normalization comes from `knowledge/terminologies/medical_concepts.json`; FHIR
 search-parameter expansion comes from
