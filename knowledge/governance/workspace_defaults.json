@@ -1,0 +1,32 @@
+{
+  "version": "workspace_defaults.v1",
+  "default_role_key": "owner",
+  "default_group": {
+    "slug": "owners",
+    "display_name": "Workspace Owners",
+    "description": "Initial workspace owners responsible for governance setup.",
+    "role_keys": ["owner"]
+  },
+  "settings": {
+    "review_policy": {
+      "human_review_required_for_sensitive_data": true,
+      "human_review_required_for_meaning_changes": true,
+      "low_confidence_threshold": 0.8
+    },
+    "data_policy": {
+      "allow_external_llm_for_phi": false,
+      "default_artifact_retention_days": 30,
+      "no_raw_phi_logs": true
+    },
+    "retrieval": {
+      "default_trust_level": "approved",
+      "default_top_k": 5,
+      "require_source_provenance": true
+    },
+    "assistant": {
+      "write_actions_require_confirmation": true,
+      "memory_enabled": true,
+      "raw_uploads_are_untrusted": true
+    }
+  }
+}

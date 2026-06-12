@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
     GoogleIdentityProfile,
+    ServiceAccountRecord,
     SessionRecord,
     UserRecord,
 )
@@ -79,6 +80,98 @@ class PostgresAuthRepository:
             connection.commit()
         return _user_from_row(row)
 
+    def create_service_account(
+        self,
+        *,
+        account_id: str,
+        organization_id: str,
+        slug: str,
+        display_name: str,
+        role_key: str,
+        created_by_user_id: str,
+    ) -> ServiceAccountRecord:
+        """Create a service-account user and organization identity record."""
+
+        user_id = new_id("usr")
+        email = f"{slug}.{account_id}@service-account.ojtflow.local"
+        with self.connect() as connection:
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        insert into ojtflow.users (
+                            user_id, google_sub, email, email_verified,
+                            display_name, avatar_url, last_login_at
+                        ) values (%s, %s, %s, true, %s, null, null)
+                        returning
+                            user_id, google_sub, email, email_verified,
+                            display_name, avatar_url, created_at, updated_at, last_login_at
+                        """,
+                        (
+                            user_id,
+                            f"service-account:{account_id}",
+                            email,
+                            display_name,
+                        ),
+                    )
+                    user_row = cursor.fetchone()
+                    cursor.execute(
+                        """
+                        insert into ojtflow.service_accounts (
+                            account_id, user_id, organization_id, slug, display_name,
+                            role_key, status, created_by_user_id
+                        ) values (%s, %s, %s, %s, %s, %s, 'active', %s)
+                        returning
+                            account_id, user_id, organization_id, slug, display_name,
+                            role_key, status, created_by_user_id, created_at, updated_at,
+                            last_used_at
+                        """,
+                        (
+                            account_id,
+                            user_row["user_id"],
+                            organization_id,
+                            slug,
+                            display_name,
+                            role_key,
+                            created_by_user_id,
+                        ),
+                    )
+                    row = cursor.fetchone()
+                connection.commit()
+            except Exception as exc:
+                connection.rollback()
+                if "unique" in str(exc).lower():
+                    raise OJTFlowError(
+                        "Service account slug already exists in organization.",
+                        details={"organization_id": organization_id, "slug": slug},
+                    ) from exc
+                raise
+        return _service_account_from_row(row)
+
+    def list_service_accounts(
+        self,
+        *,
+        organization_id: str,
+    ) -> list[ServiceAccountRecord]:
+        """List service accounts for an organization."""
+
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        account_id, user_id, organization_id, slug, display_name,
+                        role_key, status, created_by_user_id, created_at, updated_at,
+                        last_used_at
+                    from ojtflow.service_accounts
+                    where organization_id = %s
+                    order by created_at asc, account_id asc
+                    """,
+                    (organization_id,),
+                )
+                rows = cursor.fetchall()
+        return [_service_account_from_row(row) for row in rows]
+
     def create_session(
         self,
         user_id: str,
@@ -120,9 +213,17 @@ class PostgresAuthRepository:
                         u.display_name, u.avatar_url, u.created_at as user_created_at,
                         u.updated_at as user_updated_at, u.last_login_at,
                         s.session_id, s.token_hash, s.created_at as session_created_at,
-                        s.expires_at, s.revoked_at, s.last_seen_at
+                        s.expires_at, s.revoked_at, s.last_seen_at,
+                        sa.account_id, sa.organization_id, sa.slug,
+                        sa.display_name as service_account_display_name,
+                        sa.role_key, sa.status as service_account_status,
+                        sa.created_by_user_id,
+                        sa.created_at as service_account_created_at,
+                        sa.updated_at as service_account_updated_at,
+                        sa.last_used_at
                     from ojtflow.sessions s
                     join ojtflow.users u on u.user_id = s.user_id
+                    left join ojtflow.service_accounts sa on sa.user_id = u.user_id
                     where s.token_hash = %s
                       and s.revoked_at is null
                       and s.expires_at > %s::timestamptz
@@ -132,9 +233,25 @@ class PostgresAuthRepository:
                 row = cursor.fetchone()
         if not row:
             return None
+        session = _joined_session_from_row(row)
+        service_account = _joined_service_account_from_row(row)
+        if row["google_sub"].startswith("service-account:"):
+            if service_account is None or service_account.status != "active":
+                return None
+            service_account = self._touch_and_get_service_account(
+                service_account.account_id
+            )
+            if service_account is None:
+                return None
+            return AuthenticatedSession(
+                user=_joined_user_from_row(row),
+                session=session,
+                identity_type="service_account",
+                service_account=service_account,
+            )
         return AuthenticatedSession(
             user=_joined_user_from_row(row),
-            session=_joined_session_from_row(row),
+            session=session,
         )
 
     def touch_session(self, token_hash: str) -> None:
@@ -152,6 +269,25 @@ class PostgresAuthRepository:
                     (token_hash,),
                 )
             connection.commit()
+
+    def _touch_and_get_service_account(self, account_id: str) -> ServiceAccountRecord | None:
+        with self.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.service_accounts
+                    set last_used_at = now()
+                    where account_id = %s
+                    returning
+                        account_id, user_id, organization_id, slug, display_name,
+                        role_key, status, created_by_user_id, created_at, updated_at,
+                        last_used_at
+                    """,
+                    (account_id,),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        return _service_account_from_row(row) if row else None
 
     def revoke_session(self, token_hash: str) -> None:
         """Revoke a session token."""
@@ -219,4 +355,38 @@ def _joined_session_from_row(row) -> SessionRecord:
         expires_at=row["expires_at"],
         revoked_at=row["revoked_at"],
         last_seen_at=row["last_seen_at"],
+    )
+
+
+def _service_account_from_row(row) -> ServiceAccountRecord:
+    return ServiceAccountRecord(
+        account_id=row["account_id"],
+        user_id=row["user_id"],
+        organization_id=row["organization_id"],
+        slug=row["slug"],
+        display_name=row["display_name"],
+        role_key=row["role_key"],
+        status=row["status"],
+        created_by_user_id=row["created_by_user_id"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        last_used_at=row["last_used_at"],
+    )
+
+
+def _joined_service_account_from_row(row) -> ServiceAccountRecord | None:
+    if row["account_id"] is None:
+        return None
+    return ServiceAccountRecord(
+        account_id=row["account_id"],
+        user_id=row["user_id"],
+        organization_id=row["organization_id"],
+        slug=row["slug"],
+        display_name=row["service_account_display_name"],
+        role_key=row["role_key"],
+        status=row["service_account_status"],
+        created_by_user_id=row["created_by_user_id"],
+        created_at=row["service_account_created_at"],
+        updated_at=row["service_account_updated_at"],
+        last_used_at=row["last_used_at"],
     )

@@ -9,20 +9,30 @@ All `/api/v1` endpoints return the same envelope:
 }
 ```
 
+Clients should send `X-Request-ID` on every API request. If omitted, the
+backend generates one. Responses echo the ID in the `X-Request-ID` header.
+Error envelopes also include `error.request_id` and
+`error.details.request_id` so browser diagnostics can be matched to backend
+logs and assistant stream replay events.
+
 The operational liveness probe `GET /health` is intentionally outside
 `/api/v1` and returns raw JSON (`{"status":"ok"}`) for Docker, load balancers,
 and simple uptime checks.
 
-All `/api/v1` workflow/data endpoints require an authenticated backend session.
-Browser clients use the HTTP-only session cookie set by the Google callback.
-API clients may use:
+Most `/api/v1` workflow, retrieval, artifact, assistant, governance, audit, and
+runtime endpoints require an authenticated backend session. Browser clients use
+the HTTP-only session cookie set by the Google callback. API clients may use:
 
 ```text
 Authorization: Bearer <access_token>
 ```
 
-The exceptions are `GET /api/v1/auth/google/url` and
+The auth bootstrap exceptions are `GET /api/v1/auth/google/url` and
 `GET /api/v1/auth/google/callback`, which are used to obtain the token.
+Direct deterministic tool endpoints such as `POST /api/v1/convert`,
+`POST /api/v1/validate`, `POST /api/v1/fhir/profile`, and
+`POST /api/v1/ocr/evidence` are authenticated by router-level dependency in
+v0 but do not yet have fine-grained RBAC scopes.
 
 Cookie-authenticated write requests (`POST`, `PUT`, `PATCH`, and `DELETE`) must
 include a trusted `Origin` or `Referer` header. Trusted origins come from the
@@ -36,10 +46,46 @@ from the backend session; clients cannot set or override ownership. A workflow
 owned by another user returns the standard `not_found` envelope rather than
 revealing that the ID exists.
 
+Workspace RBAC is enforced through
+`GovernanceService.require_permission(...)`. Scope mapping is documented in
+`docs/ownership_authorization_v0.md`. In short:
+
+- workflow reads and schema inventory require `data:read`;
+- workflow creation and document-to-workflow creation require `data:transform`;
+- upload/extract/redaction preview actions require `data:profile`;
+- raw artifact download, artifact metadata export, and workflow output export
+  require `data:export`;
+- review queues require `review:read`; review decisions require
+  `review:write`;
+- retrieval search and source inventory require `retrieval:read`;
+- runtime setting writes require `settings:write`;
+- operational diagnostics require `admin:read`; reindex/repair marker writes
+  require `admin:write`.
+
+PHI and sensitive-data classification is exposed as shared metadata, not as a
+separate endpoint. The `phi_classification` object appears on `DataProfile`,
+`ValidationReport`, `TransformationOutput`, `RedactionPreview`, persisted
+`AssistantChatMessage` objects, and retrieved chunk evidence under
+`Evidence.locator.phi_classification`. See `docs/phi_classification_v0.md` for
+the contract, policy model, and verification commands.
+
+`POST /api/v1/parse/redaction-preview` accepts optional `redaction_action`
+values `mask`, `suppress`, `tokenize_placeholder`, or `review_gated_reveal`.
+The response includes `policy_id`, `policy_version`, per-match action metadata,
+`action_summary`, `requires_review`, and `reveal_required`. Public callers cannot
+approve raw reveal through this endpoint; review-approved reveal is reserved for
+future governed review workflows. See `docs/phi_redaction_policy_v0.md`.
+
+Application logs are protected by a no-raw-PHI logging filter installed in the
+FastAPI app factory. CI also runs `scripts/scan-no-raw-phi.py` against log
+directories when present. See `docs/no_raw_phi_logging_v0.md`.
+
 Default persistence uses Postgres plus local file-backed artifacts:
 
 ```text
 OJT_STORAGE_BACKEND=postgres
+OJT_PRODUCT_MODE=local_dev
+OJT_NO_MOCK_DATA=false
 OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
 OJT_REDIS_URL=redis://localhost:6379/0
 OJT_DATA_DIR=var
@@ -47,6 +93,8 @@ OJT_KNOWLEDGE_DIR=knowledge
 OJT_MIGRATIONS_DIR=sql/postgres/migrations
 OJT_AUTH_COOKIE_NAME=ojtflow_session
 OJT_AUTH_COOKIE_SAMESITE=lax
+OJT_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS=7776000
+OJT_SERVICE_ACCOUNT_DEFAULT_ROLE_KEY=operator
 OJT_MAX_UPLOAD_BYTES=26214400
 OJT_MAX_INLINE_DATA_BYTES=1048576
 OJT_UPLOAD_READ_CHUNK_BYTES=1048576
@@ -81,6 +129,11 @@ OJT_RETRIEVAL_FRAMEWORK=custom
 OJT_RETRIEVAL_EVALUATION_POLICY_PATH=
 ```
 
+`OJT_PRODUCT_MODE` must be `local_dev`, `demo`, `pilot`, or `production`.
+`pilot` and `production` require persistent storage and reject
+`OJT_LLM_PROVIDER=disabled` during settings load. `OJT_NO_MOCK_DATA=true` blocks
+demo/mock data paths explicitly; it is also effectively enabled in `pilot` and
+`production`.
 `OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
 are rejected during settings load before API services are constructed.
 `OJT_DATABASE_URL` must use `postgres://` or `postgresql://` syntax with a host,
@@ -126,7 +179,9 @@ Inline JSON/text payloads are capped by `OJT_MAX_INLINE_DATA_BYTES` for
 `POST /api/v1/workflows`, `POST /api/v1/convert`,
 `POST /api/v1/validate`, `POST /api/v1/fhir/profile`,
 `POST /api/v1/ocr/evidence`, `POST /api/v1/retrieval/search`, and
-`POST /api/v1/assistant/chat`.
+`POST /api/v1/assistant/chat`. Job creation routes accept bounded structured
+arguments and store large work inputs by reference rather than accepting raw
+bulk content.
 Multipart uploads are capped by
 `OJT_MAX_UPLOAD_BYTES`, read in `OJT_UPLOAD_READ_CHUNK_BYTES` chunks, and
 filtered by `OJT_ALLOWED_UPLOAD_EXTENSIONS`. Larger inline inputs should use the
@@ -150,20 +205,39 @@ during settings load.
 
 `OJT_LLM_PROVIDER` supports `disabled` and `openai`. Disabled mode keeps the
 assistant deterministic and token-free. OpenAI mode uses the Responses API to
-produce a structured tool plan, but the backend still executes only known
-allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest`; set it to a pinned
-snapshot when release reproducibility is more important than tracking the
-current model alias. `OJT_LLM_BASE_URL` must be an HTTP(S) OpenAI-compatible API
-base URL. `OJT_LLM_MAX_TOOL_CALLS` bounds assistant tool execution per request.
-`OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS` controls how often the streaming
-assistant emits planning heartbeat events while an LLM planner call is still
-pending.
+produce a strict structured tool plan, but the backend still executes only known
+allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest` and remains the
+compatibility fallback. `OJT_LLM_PLANNING_MODEL`, `OJT_LLM_SYNTHESIS_MODEL`, and
+`OJT_LLM_VISION_MODEL` can pin planner, answer synthesis, and OCR/vision models
+separately. `OJT_LLM_BASE_URL` must be an HTTP(S) OpenAI-compatible API base URL
+and can point to a local compatible endpoint. `OJT_LLM_MAX_TOOL_CALLS` bounds
+assistant tool execution per request. `OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS`
+controls how often the streaming assistant emits planning heartbeat events while
+an LLM planner call is still pending.
+
+External provider policy settings control which data may leave the local
+runtime boundary:
+
+- `OJT_EXTERNAL_OPENAI_LLM_ENABLED`
+- `OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI`
+- `OJT_EXTERNAL_OPENAI_OCR_ENABLED`
+- `OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI`
+- `OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN`
+- `OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED`
+- `OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI`
+- `OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED`
+- `OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI`
+
+Provider adapters enforce these checks before outbound calls. PHI is blocked
+from OpenAI-compatible LLM, OCR, embedding, and external medical-search handoffs
+by default unless policy explicitly allows it. See
+`docs/external_provider_policy_v0.md`.
 
 `OJT_MARKITDOWN_OCR_ENABLED` controls whether MarkItDown runs with OCR plugins
 for OCR-sensitive uploads such as scanned PDFs, images, and image-heavy Office
 files when an OpenAI-compatible API key is configured. `OJT_OPENAI_VISION_MODEL`
-can override the image/OCR model; otherwise the extractor uses `OJT_LLM_MODEL`
-and maps `chat-latest` to a vision-capable OpenAI model.
+is still accepted as a legacy alias, but new deployments should use
+`OJT_LLM_VISION_MODEL`.
 
 `OJT_PYTHON_EXTRAS` is a Docker build-time setting, not a runtime secret. Keep
 the default `parsing` for the standard API image, or build with
@@ -184,9 +258,11 @@ uses an MMR-style relevance/novelty balance so repeated chunks from the same
 source do not crowd out other relevant evidence. `OJT_RETRIEVAL_DIVERSITY_LAMBDA`
 must be between `0` and `1`; higher values favor relevance and lower values
 favor diversity. Retrieval packages expose the policy and source coverage under
-`handoff_context.diversity`. Diversity metadata includes aggregate source
-counts plus `selected_hits[]` rows with evidence ID, source ID, selected rank,
-original rank, relevance score, redundancy score, selection score, and reason.
+the first-class `diversity` field and also copy the same metadata into
+`handoff_context.diversity` for assistant/agent handoff compatibility.
+Diversity metadata includes aggregate source counts plus `selected_hits[]` rows
+with evidence ID, source ID, selected rank, original rank, relevance score,
+redundancy score, selection score, and reason.
 
 Retrieval hits expose `score_components` as the score explanation contract.
 Custom/static/Postgres retrieval emits lexical RRF, vector RRF, policy boost,
@@ -397,9 +473,33 @@ Response data is a `WorkflowState`. Important fields:
 - `review`
 - `output`
 - `explanation`
+- `clinical_package`
+- `provenance`
 - `handoff_context`
 - `failure`
 - `audit_event_refs`
+
+`provenance[]` contains workflow-level lineage records for parser, extraction,
+retrieval, validation, review, assistant-created workflow tasks, conversion,
+retrieval-derived transformations, explanation, completion, and failure. Each
+record links to `event_refs`, source/target artifact refs, evidence IDs, issue
+IDs, and review IDs where available. See `docs/workflow_provenance_v0.md`.
+
+When the workflow input has a supported healthcare mapping, `clinical_package`
+contains an `ojtflow_clinical_package` envelope with raw input identity,
+FHIR-like `Bundle`, OperationOutcome-like validation issues, linked evidence,
+review-gated terminology candidates, UCUM-like unit validation results,
+internal Provenance-like records, review state, audit event refs, output refs,
+and handoff context. For v0, `lab_result_v1` maps to FHIR-like `Patient`,
+`Observation`, `DiagnosticReport`, and `DocumentReference` resources with
+field-level source/derived/defaulted provenance. The package also includes
+profile registry metadata and FHIR search parameter hints from
+`knowledge/fhir/resource_profiles.json`. The package reports
+`fhir_like_not_validated`; clients must not call it HL7 FHIR compliant or
+automatically apply terminology candidates.
+Clinical packages also expose
+`handoff_context.workflow_provenance_ids` so package exports can be traced back
+to the broader workflow-level lineage.
 
 If startup reaches workflow creation but fails during parsing, extraction,
 retrieval, validation, policy, or transformation preparation, the backend still
@@ -480,6 +580,77 @@ standard `not_found` error envelope. If the stored artifact content no longer
 matches the workflow's recorded output hash, the endpoint returns HTTP `409`
 with `error.code = "artifact_integrity_error"`.
 
+`GET /api/v1/workflows/{workflow_id}/clinical-package/export`
+
+Exports the completed workflow's canonical clinical package plus a FHIR-like
+Bundle projection. The endpoint requires `data:export`, owner access to the
+workflow, a completed workflow output, and an export-approved package unless
+`require_approval=false` is passed for inspection.
+
+Response data:
+
+```json
+{
+  "export_type": "ojtflow_clinical_package_export",
+  "schema_version": "clinical_package_export.v0",
+  "workflow_id": "wf_example",
+  "package_id": "cpkg_example",
+  "package_hash": "sha256...",
+  "fhir_like_bundle_hash": "sha256...",
+  "approved_for_export": true,
+  "review_status": "approved",
+  "resource_count": 4,
+  "evidence_count": 5,
+  "provenance_count": 6,
+  "operation_outcome_issue_count": 2,
+  "clinical_package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0"
+  },
+  "fhir_like_bundle": {
+    "resourceType": "Bundle",
+    "type": "collection",
+    "entry": []
+  },
+  "warnings": [
+    "FHIR-like Bundle export has not been validated by a full HL7 FHIR validator."
+  ]
+}
+```
+
+`POST /api/v1/interoperability/clinical-package/validate-import`
+
+Validates that an OJTFlow clinical package export can be reloaded without
+dropping evidence, review metadata, or provenance. This is a validation-only
+endpoint; it does not write workflows or artifacts.
+
+Request:
+
+```json
+{
+  "payload": {
+    "export_type": "ojtflow_clinical_package_export",
+    "schema_version": "clinical_package_export.v0",
+    "package_hash": "sha256...",
+    "fhir_like_bundle_hash": "sha256...",
+    "clinical_package": {
+      "package_type": "ojtflow_clinical_package",
+      "schema_version": "clinical_package.v0"
+    },
+    "fhir_like_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": []
+    }
+  },
+  "require_hash_match": true
+}
+```
+
+Response data includes `valid`, the computed and expected hashes, package ID,
+workflow ID, resource/evidence/provenance counts, `issues[]`, `warnings[]`, the
+rehydrated `clinical_package`, and the supplied or rebuilt `fhir_like_bundle`.
+
 Review approval uses the same integrity rule for stored input. An input hash
 mismatch during `POST /api/v1/review/{review_id}` returns HTTP `409`, records a
 `workflow.failed` audit event, and leaves `output` unset. If the input still
@@ -497,6 +668,18 @@ FHIR-like workflow behavior:
 - `handoff_context.fhir_handoff` records Graph-NER/RAG handoff terms.
 - `handoff_context.retrieval_handoff.graph_context` records extracted evidence
   graph nodes, edges, and triples for retrieval-grounded explanation.
+- `handoff_context.retrieval_handoff.graph_rag_lite` records graph-aware
+  reranking metadata: policy version, whether graph support changed hit order,
+  supported evidence count, score weights, original order, final order, and
+  top graph-supported evidence refs.
+- Retrieval hits may include a `graph_support` score component and
+  `source_locator.graph_rag_lite` / `evidence.locator.graph_rag_lite` payloads
+  with shared query targets, normalized-code targets, graph edge counts, triple
+  counts, and score boost.
+- Retrieval answers include `claims[].graph_guard` and
+  `metadata.claim_triple_guard`; strong clinical claims without graph-triple
+  support are marked `review_required` instead of silently presented as fully
+  supported.
 - The retrieval query receives `resource_type`, so standard evidence such as
   FHIR Observation guidance can be ranked with the workflow context.
 
@@ -658,9 +841,9 @@ Response data is a list of schema entries. Each entry includes:
 - `fields`
 - `source_ref`
 
-The endpoint is authenticated and read-only. It does not expose local filesystem
-paths beyond the repository-relative `source_ref` used to identify the approved
-knowledge asset.
+The endpoint is authenticated, read-only, and requires `data:read`. It does not
+expose local filesystem paths beyond the repository-relative `source_ref` used
+to identify the approved knowledge asset.
 
 ## Direct Conversion
 
@@ -770,6 +953,182 @@ Example response data:
 ]
 ```
 
+`GET /api/v1/assistant/answer-templates`
+
+Returns governed answer templates from
+`knowledge/assistant/answer_templates.json`. Use this endpoint when a UI,
+MCP client, or evaluator needs the expected sections, evidence requirement, and
+review conditions for a task class.
+
+`GET /api/v1/assistant/prompt-injection-policy`
+
+Returns the data-driven prompt-injection policy from
+`knowledge/assistant/prompt_injection_policy.json`. The Assistant uses this
+policy to wrap user messages, uploaded data, uploaded document metadata, manual
+text snippets, selected workflow/retrieval context, retrieved chunks, tool
+arguments, generated outputs, and model-visible tool metadata as untrusted
+LLM-bound surfaces. Tool metadata is scanned before Assistant service
+construction and cannot grant permissions or override backend policy.
+
+Assistant LLM-generated plans and answer summaries are validated before
+execution/display. Failed generated plans fall back to deterministic planning;
+failed generated summaries keep the deterministic answer fallback. Streaming
+answers validate cumulative output before emitting each delta. See
+`docs/generated_output_validation_v0.md`.
+
+`GET /api/v1/assistant/mcp/resources`
+
+Returns the MCP resource catalog from `knowledge/assistant/mcp_resources.json`.
+Resources are read-only operational catalogs such as assistant tools, assistant
+tool progress policies, retrieval strategies, source trust policies, workflows,
+reviews, schemas, and knowledge source inventory.
+
+`GET /api/v1/assistant/mcp/prompts`
+
+Returns the MCP prompt catalog from `knowledge/assistant/mcp_prompts.json`.
+Prompts define standard operator tasks, arguments, recommended tools, evidence
+requirements, and write-action policy. They do not grant execution authority.
+
+`GET /api/v1/assistant/mcp/remote-policy`
+
+Returns the remote MCP deployment readiness policy from
+`knowledge/assistant/remote_mcp_deployment_policy.json`. The policy is
+data-driven and currently sets `remote_exposure_allowed=false` until OAuth
+protected-resource metadata, resource indicators, per-user scoping, rate
+limits, audit correlation, and tool manifest review controls are implemented
+and verified.
+
+`GET /api/v1/assistant/memory-policy`
+
+Returns the data-driven allowlist from `knowledge/assistant/memory_policy.json`.
+Only keys in this policy can be persisted as Assistant memory.
+
+`GET /api/v1/assistant/memory`
+
+Returns the authenticated user's safe operational preference snapshot:
+
+```json
+{
+  "policy_version": "assistant_memory.v1",
+  "preferences": [
+    {
+      "key": "evidence_detail_level",
+      "value": "detailed",
+      "category": "evidence",
+      "source": "user"
+    }
+  ],
+  "context": {
+    "evidence_detail_level": "detailed"
+  }
+}
+```
+
+`PUT /api/v1/assistant/memory/{key}`
+
+Sets one policy-allowlisted operational preference:
+
+```json
+{
+  "value": "detailed",
+  "source": "user"
+}
+```
+
+The backend rejects unknown keys, denied key terms such as patient identifiers,
+and value patterns that look like PHI, uploaded content, clinical facts, or raw
+data. The route is for preferences such as explanation style, evidence detail,
+and default retrieval strategy only.
+
+`DELETE /api/v1/assistant/memory/{key}`
+
+Deletes one stored preference for the authenticated user.
+
+`GET /api/v1/assistant/sessions`
+
+Lists persisted Assistant chat sessions for the authenticated user. Query
+parameters:
+
+- `include_archived`: include archived sessions when `true`; default `false`.
+- `limit`: maximum sessions to return; default `100`.
+- `q`: optional search text. Searches session titles and persisted message
+  content for the authenticated user.
+
+`POST /api/v1/assistant/sessions`
+
+Creates a persisted Assistant chat session:
+
+```json
+{
+  "title": "New chat"
+}
+```
+
+When the title is omitted or set to `New chat`, the backend generates the
+session title from the first appended user message. Generated titles are
+intent-level summaries and avoid copying raw uploaded content or obvious
+patient identifiers into the chat list. `PATCH` remains available for explicit
+user renaming.
+
+`GET /api/v1/assistant/sessions/{session_id}`
+
+Returns the user-owned session summary and ordered messages.
+
+`GET /api/v1/assistant/sessions/{session_id}/stream-replays`
+
+Returns persisted SSE replay artifacts for a user-owned session. Replay
+artifacts are stored separately from chat messages so support staff can inspect
+stream order, tool progress, planner deltas, errors, and final response without
+polluting the normal chat transcript or inflating message counts. Replay
+`status` is one of `completed`, `failed`, or `cancelled`; `cancelled` means the
+client disconnected or explicitly stopped the active stream before a final
+assistant response was produced.
+
+`PATCH /api/v1/assistant/sessions/{session_id}`
+
+Renames a user-owned session:
+
+```json
+{
+  "title": "Reviewed lab CSV"
+}
+```
+
+`POST /api/v1/assistant/sessions/{session_id}/archive`
+
+Archives a user-owned session. Archived sessions are hidden from the default
+session list but can be returned with `include_archived=true`.
+
+`DELETE /api/v1/assistant/sessions/{session_id}`
+
+Deletes a user-owned session and its persisted messages.
+
+`POST /api/v1/assistant/sessions/{session_id}/messages`
+
+Appends a persisted message or tool artifact:
+
+```json
+{
+  "role": "user",
+  "content": "Validate this lab CSV and explain the issues with trusted evidence.",
+  "workflow_refs": [],
+  "payload": {
+    "context": {
+      "schema_id": "lab_result_v1",
+      "input_format": "csv"
+    }
+  }
+}
+```
+
+Session and message records are stored through the configured backend: memory
+for tests, SQLite for local development, and Postgres for production-like
+deployments. Session access is owner-scoped by authenticated user ID. Messages
+include `workflow_refs` so the UI can deep-link chat turns to workflow runs.
+If `workflow_refs` is omitted, the backend extracts common workflow reference
+fields such as `workflow_id`, `workflow_ids`, `workflow_ref`, and
+`workflow_refs` from the structured payload.
+
 `POST /api/v1/assistant/chat`
 
 `POST /api/v1/assistant/chat/stream`
@@ -777,20 +1136,32 @@ Example response data:
 Streams the same assistant operation over server-sent events for the browser
 chat UI. The stream emits `planning_started`, `planning_step`, optional
 `planning_delta`, optional fallback `planning_progress`, `plan_ready`,
-`tool_started`, `tool_completed`, optional `warning`, `synthesis_started`,
-zero or more `answer_delta`, optional `error`, and `final` events. When OpenAI
-is configured, planning and answer synthesis use the OpenAI Responses streaming
-API. Planner text/tool-plan deltas are forwarded as `planning_delta` before any
-backend tool executes, so users can see the model is building a plan instead of
-watching a black-box spinner. If a configured planner cannot stream, the backend
-still emits `planning_progress` heartbeat events between `planning_started` and
+`tool_started`, zero or more `tool_progress`, `tool_completed`, optional
+`warning`, `synthesis_started`, zero or more `answer_delta`, optional
+`cancelled`, optional `error`, and `final` events. Tool progress stages are loaded from
+`knowledge/assistant/tool_progress_policies.json`, so labels and progress copy
+are data-driven instead of hardcoded in the browser. When OpenAI is configured,
+planning and answer synthesis use the OpenAI Responses streaming API. Planner
+text/tool-plan deltas are forwarded as `planning_delta` before any backend tool
+executes, so users can see the model is building a plan instead of watching a
+black-box spinner. If a configured planner cannot stream, the backend still
+emits `planning_progress` heartbeat events between `planning_started` and
 `plan_ready`, including `elapsed_seconds`. If execution fails after response
 headers have been sent, the backend emits a structured `error` event because
-the HTTP status can no longer be changed.
+the HTTP status can no longer be changed. If the browser aborts the stream, the
+backend records a `cancelled` replay status and appends a cancellation event to
+the replay when possible.
+
+Before planning, the API injects the authenticated user's safe Assistant memory
+under `context.assistant_memory`. Caller-provided `assistant_memory` context is
+removed first so clients cannot spoof stored preferences. Memory contains only
+backend-validated operational preferences, never raw uploaded content, patient
+identifiers, or clinical facts.
 
 ```json
 {
   "message": "Validate this lab CSV and explain the issues with trusted evidence.",
+  "session_id": "chat_abc123",
   "context": {
     "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
     "input_format": "csv",
@@ -801,6 +1172,54 @@ the HTTP status can no longer be changed.
   "execute_write_actions": false
 }
 ```
+
+Failed tool recovery is explicit, not prompt-only. To retry a failed tool call,
+send the original tool name and arguments in `context.assistant_recovery`; the
+backend bypasses the LLM planner and executes that exact allowlisted tool plan:
+
+```json
+{
+  "message": "Retry failed tool call retrieval_search.",
+  "context": {
+    "assistant_recovery": {
+      "action": "retry_tool",
+      "tool_name": "retrieval_search",
+      "arguments": {
+        "query": "HbA1c missing unit",
+        "top_k": 3
+      },
+      "failed_status": "failed",
+      "failed_summary": "Prior retrieval failed."
+    }
+  }
+}
+```
+
+To continue without re-running failed tools, use `continue_after_failure`. This
+produces a deterministic continuation response with no backend tool execution
+and keeps the failed step unresolved for review:
+
+```json
+{
+  "message": "Continue without retrying the failed tool call.",
+  "context": {
+    "assistant_recovery": {
+      "action": "continue_after_failure",
+      "failed_tool_calls": [
+        {
+          "tool_name": "retrieval_search",
+          "status": "failed",
+          "summary": "Prior retrieval failed."
+        }
+      ]
+    }
+  }
+}
+```
+
+When `session_id` is supplied, each SSE event is stamped with `stream_id`,
+`session_id`, `sequence`, and `created_at`. After the stream finishes or emits a
+structured error, the backend persists one replay artifact for that stream.
 
 The assistant is an operator convenience layer over existing backend tools. It
 does not replace workflow state, retrieval trace, validation reports, or human
@@ -848,6 +1267,8 @@ The assistant can call:
 - `get_workflow`
 - `workflow_summary`
 - `start_workflow`
+- `generate_mapping_draft`
+- `create_review_task`
 
 `validate_with_evidence` is the preferred assistant path for healthcare data
 quality questions because it validates the payload and retrieves standards
@@ -856,10 +1277,165 @@ support governed source scope through `clinical_domain`, `standard_system`,
 `source_type`, exact `source_id`, and `trust_level`. `workflow_summary` is the
 preferred assistant path for chat-based workflow inspection.
 
-`start_workflow` is a write action. It returns `status="requires_approval"`
-unless the request explicitly sets `execute_write_actions=true`. The assistant
-does not expose review approval, rejection, cancellation, or destructive
-artifact actions in v0.
+`start_workflow`, `generate_mapping_draft`, and `create_review_task` are write
+actions. They return `status="requires_approval"` unless the request explicitly
+sets `execute_write_actions=true`. `generate_mapping_draft` parses, validates,
+retrieves evidence, and creates a transformation plan in `needs_human_review`
+status without writing transformed output; approval or approve-with-edits can
+execute later through the review workflow. `create_review_task` creates a
+durable workflow in `needs_human_review` status with a pending human review and
+audit event, so unresolved data quality, terminology, or evidence decisions can
+leave the chat surface and enter the governed review queue. The assistant does
+not expose review approval, rejection, cancellation, or destructive artifact
+actions in v0.
+
+The browser UI adds an additional operator confirmation before sending
+`execute_write_actions=true`: it lists tools from the backend catalog where
+`requires_approval=true`, shows risk and approval reason metadata, and blocks
+the send action until the operator confirms the next write-enabled command.
+The API remains the final enforcement boundary; unconfirmed or malicious clients
+cannot bypass backend tool permission checks without explicitly setting
+`execute_write_actions=true`.
+
+`GET /api/v1/audit/records`
+
+Lists generic append-only audit records visible to the authenticated user.
+Query parameters:
+
+- `action`: optional exact action filter such as
+  `assistant.tool.validate_with_evidence` or `mcp.tool.start_workflow`.
+- `workflow_id`: optional workflow correlation filter.
+- `assistant_session_id`: optional Assistant chat session correlation filter.
+- `limit`: maximum records to return; default `100`, maximum `500`.
+
+Assistant tool execution and local MCP tool execution both write audit records
+through the configured storage backend. Records include owner, action, actor,
+status, request ID, Assistant session ID, workflow ID, workflow event refs,
+input hash, output hash, and sanitized metadata. Raw tool arguments and raw
+tool output are not stored in the generic audit record. Payload-like strings
+such as `data`, `message`, `query`, and nested context strings are hashed before
+hashing the audit input fingerprint.
+
+Every generic audit record also includes v0 hash-chain fields written by the
+repository append path: `chain_scope`, `chain_sequence`,
+`previous_record_hash`, `record_hash`, `hash_algorithm`, and `chain_status`.
+The chain is scoped per owner user. Existing pre-F130 records may not have these
+fields; new records are linked going forward.
+
+Example response data:
+
+```json
+[
+  {
+    "audit_id": "aud_abc123",
+    "owner_user_id": "usr_123",
+    "workflow_id": "wf_456",
+    "workflow_event_refs": ["evt_parser", "evt_validation"],
+    "assistant_session_id": "chat_789",
+    "request_id": "req_20260611",
+    "timestamp": "2026-06-11T00:00:00+00:00",
+    "action": "assistant.tool.validate_with_evidence",
+    "actor_id": "usr_123",
+    "actor_type": "assistant",
+    "status": "completed",
+    "input_hash": "9f86d081884c7d659a2feaa0c55ad015...",
+    "output_hash": "e3b0c44298fc1c149afbf4c8996fb924...",
+    "chain_scope": "owner_user:usr_123",
+    "chain_sequence": 12,
+    "previous_record_hash": "bbf6f78c21058d6b...",
+    "record_hash": "2165bf0330f7f3a2...",
+    "hash_algorithm": "sha256",
+    "chain_status": "linked",
+    "metadata": {
+      "tool_name": "validate_with_evidence",
+      "argument_keys": ["data", "execute_write_actions", "schema_id"],
+      "workflow_ids": ["wf_456"],
+      "requires_approval": false,
+      "data_char_count": 72
+    }
+  }
+]
+```
+
+`GET /api/v1/audit/export`
+
+Builds an owner-scoped JSON audit export package for compliance review.
+Query parameters:
+
+- `action`: optional exact action filter.
+- `workflow_id`: optional workflow correlation filter.
+- `assistant_session_id`: optional Assistant chat session correlation filter.
+- `include_workflow_events`: includes append-only workflow events when
+  `workflow_id` is supplied; default `true`.
+- `limit`: maximum generic audit records to return; default `100`, maximum `500`.
+
+The export package combines sanitized generic audit records with workflow events
+when available. It also includes explicit coverage metadata for workflows,
+reviews, Assistant/MCP tool calls, auth events, runtime setting changes, and
+source ingestion. Scopes without current audit producers are reported as
+`not_available` instead of being silently omitted.
+The package also includes `audit_events_like[]`, a sanitized FHIR
+AuditEvent-like projection for workflow events, review events, auth audit
+records, and Assistant/MCP tool execution records. See
+`docs/audit_event_export_v0.md`.
+
+Example response data:
+
+```json
+{
+  "export_id": "audexp_abc123",
+  "generated_at": "2026-06-11T00:00:00+00:00",
+  "owner_user_id": "usr_123",
+  "export_format": "json",
+  "filters": {
+    "workflow_id": "wf_456",
+    "action": null,
+    "assistant_session_id": null,
+    "limit": 100,
+    "include_workflow_events": true
+  },
+  "summary": {
+    "record_count": 1,
+    "workflow_event_count": 2,
+    "audit_event_like_count": 3,
+    "covered_scope_count": 1,
+    "partial_scope_count": 2,
+    "unavailable_scope_count": 3,
+    "includes_raw_payloads": false
+  },
+  "coverage": [
+    {
+      "scope": "assistant_tool_calls",
+      "status": "covered",
+      "record_count": 1,
+      "event_count": 0,
+      "description": "Assistant and local MCP tool calls write sanitized generic audit records with input/output hashes and correlation metadata.",
+      "limitations": ["Raw tool arguments and raw tool output are intentionally excluded."]
+    }
+  ],
+  "records": [],
+  "workflow_events": [],
+  "audit_events_like": [
+    {
+      "resourceType": "AuditEvent",
+      "audit_event_id": "audevt_abc123",
+      "category": "tool_execution",
+      "action": "E",
+      "recorded": "2026-06-11T00:00:00+00:00",
+      "outcome": "success",
+      "workflow_id": "wf_456",
+      "source_record_ref": "aud_789",
+      "agent": [{"who": "usr_123", "type": "assistant", "requestor": true}],
+      "source": {"observer": "ojtflow.audit_records", "type": "application"},
+      "entity": [
+        {"what": "wf_456", "type": "workflow", "role": "subject"},
+        {"what": "sha256...", "type": "hash", "role": "input_hash"}
+      ],
+      "metadata": {"action": "assistant.tool.validate_with_evidence"}
+    }
+  ]
+}
+```
 
 ## FHIR-Like Profile
 
@@ -881,8 +1457,277 @@ Response data includes:
 - `profile.is_fhir_like`
 - `profile.resource_type`
 - `profile.resource_counts`
+- `profile.profile_registry_version`
+- `profile.profiled_resource_types`
+- `profile.profile_issues`
+- `profile.search_parameters`
+- `profile.profile_evidence`
 - `profile.handoff_context`
 - `evidence`
+
+## Interoperability
+
+`GET /api/v1/interoperability/analytics/omop/mapping-profile`
+
+Returns the data-driven OMOP preview mapping profile. Response data includes
+`profile_id`, `target_cdm`, supported target tables, row rules, field mappings,
+review policy, standard refs, and warnings.
+
+`POST /api/v1/interoperability/analytics/omop/preview`
+
+Previews how a `ClinicalPackage` maps into OMOP target tables. Request:
+
+```json
+{
+  "package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0",
+    "workflow_id": "wf_demo",
+    "raw_input": {
+      "dataset_ref": "storage://datasets/demo",
+      "input_hash": "sha256:demo",
+      "declared_format": "csv",
+      "detected_format": "csv"
+    },
+    "clinical_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": [],
+      "resources": []
+    },
+    "operation_outcome": {"resourceType": "OperationOutcome", "issue": []}
+  }
+}
+```
+
+Response data includes `table_previews[]`, `total_rows`,
+`vocabulary_candidates[]`, concept coverage, unmapped fields, data-quality
+warnings, and `review_required`.
+
+`GET /api/v1/interoperability/analytics/omop/dqd-compatibility`
+
+Returns OHDSI Data Quality Dashboard compatibility notes and future integration
+path. OJTFlow preview data is not a replacement for running DQD against a real
+OMOP database.
+
+`GET /api/v1/interoperability/analytics/cohort-research-workflow`
+
+Returns the cohort/research workflow concept, intended use, prohibited uses,
+required approvals, output artifacts, and controls that keep analytics separate
+from clinical decision support.
+
+`GET /api/v1/interoperability/external/connectors`
+
+Returns the governed external source connector registry for PubMed,
+ClinicalTrials.gov, openFDA, LOINC, UCUM, RxNav, and FHIR docs. Each connector
+declares auth requirements, rate-limit policy, license notes, update cadence,
+allowed use, prohibited use, cache policy, and ingestion approval requirements.
+
+`GET /api/v1/interoperability/external/cache-policy`
+
+Returns external API cache key fields, required metadata fields, default TTL,
+stale-while-revalidate window, invalidation triggers, privacy controls, and
+warnings.
+
+`POST /api/v1/interoperability/external/cache/metadata`
+
+Builds deterministic cache metadata for an external API response without
+persisting the response. Request:
+
+```json
+{
+  "connector_id": "pubmed",
+  "endpoint_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+  "query": "HbA1c LOINC Observation",
+  "source_release_version": "fetched:2026-06-11",
+  "response_text": "{\"count\":\"2\"}",
+  "metadata": {"workspace_id": "default"}
+}
+```
+
+Response data includes a cache key, hashed endpoint/query metadata,
+source release version, fetch/expiry timestamps, response hash, and explicit
+`searchable_after_approval=false`.
+
+`GET /api/v1/interoperability/external/ingestion-approval-policy`
+
+Returns the source ingestion approval policy. Newly fetched external documents
+are candidates and are not searchable until the approval decision reaches
+`approved_searchable`.
+
+`POST /api/v1/interoperability/external/ingestion/approval-preview`
+
+Previews whether an external source candidate may become searchable. Request:
+
+```json
+{
+  "connector_id": "pubmed",
+  "document_id": "pubmed-123",
+  "source_url": "https://pubmed.ncbi.nlm.nih.gov/123/",
+  "source_release_version": "fetched:2026-06-11",
+  "license_accepted": true,
+  "reviewer_approved": false,
+  "contains_phi": false
+}
+```
+
+Response data includes `state`, `searchable`, `required_actions[]`, and
+warnings.
+
+`GET /api/v1/interoperability/external/link-launchers`
+
+Returns transparent external link launchers for official healthcare sources.
+Launchers build visible URLs only; they do not fetch, cache, ingest, or index
+external content.
+
+`POST /api/v1/interoperability/external/link-launch`
+
+Builds one transparent external URL. Request:
+
+```json
+{
+  "launcher_id": "pubmed",
+  "query": "HbA1c unit standard"
+}
+```
+
+Response data includes the URL, the encoded query, connector/source metadata,
+and warnings that PHI should not be sent to external sites.
+
+`POST /api/v1/interoperability/export/etl-package`
+
+Builds a provenance-preserving ETL manifest for analytics teams. Request:
+
+```json
+{
+  "package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0",
+    "workflow_id": "wf_demo",
+    "raw_input": {
+      "dataset_ref": "storage://datasets/demo",
+      "input_hash": "sha256:demo",
+      "declared_format": "csv",
+      "detected_format": "csv"
+    },
+    "clinical_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": [],
+      "resources": []
+    },
+    "operation_outcome": {"resourceType": "OperationOutcome", "issue": []}
+  },
+  "include_resources": false
+}
+```
+
+Response data includes `clinical_package_hash`, OMOP preview, resource manifest,
+provenance record count, audit refs, output refs, and warnings.
+
+`POST /api/v1/interoperability/fhir/bulk/import`
+
+Parses FHIR Bulk Data-style NDJSON resources with lightweight validation.
+Request:
+
+```json
+{
+  "data": "{\"resourceType\":\"Patient\",\"id\":\"P001\"}\n{\"resourceType\":\"Observation\",\"id\":\"O001\",\"status\":\"final\"}\n",
+  "source_ref": "bulk-fhir://demo/patient-observation.ndjson",
+  "allowed_resource_types": ["Patient", "Observation"]
+}
+```
+
+Response data includes `resource_count`, `resource_counts`, `resources[]`,
+`rejected_line_count`, and `warnings[]`. Each resource includes line number,
+resource type, optional ID, raw resource JSON, and warnings.
+
+`POST /api/v1/interoperability/fhir/bulk/export-package`
+
+Exports a `ClinicalPackage` as grouped FHIR-like NDJSON files. Request:
+
+```json
+{
+  "package": {
+    "package_type": "ojtflow_clinical_package",
+    "schema_version": "clinical_package.v0",
+    "workflow_id": "wf_demo",
+    "raw_input": {
+      "dataset_ref": "storage://datasets/demo",
+      "input_hash": "sha256:demo",
+      "declared_format": "csv",
+      "detected_format": "csv"
+    },
+    "clinical_bundle": {
+      "resourceType": "Bundle",
+      "type": "collection",
+      "entry": [],
+      "resources": []
+    },
+    "operation_outcome": {"resourceType": "OperationOutcome", "issue": []}
+  },
+  "require_approval": true
+}
+```
+
+Response data includes `package_id`, `workflow_id`, `approved_for_export`,
+`files[]`, `resource_count`, and `warnings[]`. Each file includes resource type,
+filename, NDJSON text, resource count, and output hash.
+
+`POST /api/v1/interoperability/hl7v2/observations`
+
+Parses a starter HL7 v2 ORU-style lab message and maps OBX segments into
+FHIR-like Observation records with segment provenance. Request:
+
+```json
+{
+  "data": "MSH|^~\\&|LAB|HOSP|OJT|OJT|202606111200||ORU^R01|MSG1|P|2.5\rPID|1||P001^^^MRN||DOE^JANE\rOBX|1|NM|4548-4^HbA1c^LN||7.4|%^percent|||||F|||20260611\r",
+  "source_ref": "hl7v2://demo/oru-r01"
+}
+```
+
+Response data includes parsed message segments, segment counts, patient ID,
+Observation resources, field provenance, and warnings.
+
+`POST /api/v1/interoperability/dicom/metadata`
+
+Profiles DICOM metadata without reading pixel data and returns an
+ImagingStudy-like mapping. Request:
+
+```json
+{
+  "metadata": {
+    "StudyInstanceUID": "1.2.3",
+    "SeriesInstanceUID": "1.2.3.4",
+    "SOPInstanceUID": "1.2.3.4.5",
+    "Modality": "MR",
+    "AccessionNumber": "ACC-001",
+    "PatientIdentityRemoved": "YES"
+  },
+  "source_ref": "dicom://study/1.2.3"
+}
+```
+
+Response data includes `profile` and `imaging_study`. PixelData is intentionally
+excluded from the metadata profile.
+
+`POST /api/v1/interoperability/document-reference`
+
+Builds a DocumentReference-like resource for uploaded PDFs, images, notes, and
+extracted reports. Request:
+
+```json
+{
+  "document_id": "artifact_123",
+  "filename": "lab-report.pdf",
+  "content_type": "application/pdf",
+  "source_ref": "storage://uploads/lab-report.pdf",
+  "description": "Uploaded lab report"
+}
+```
+
+Response data includes a `ClinicalResourceRecord` for the DocumentReference-like
+resource plus warnings.
 
 ## OCR Evidence Stub
 
@@ -928,10 +1773,31 @@ local filesystem paths.
 Response data includes:
 
 - `status`
+- `product_mode`
 - `storage_backend`
 - `persistent_storage`
 - `postgres_configured`
 - `redis_configured`
+- `audit.hash_chain_written`
+- `audit.hash_chain_required`
+- `audit.hash_chain_required_configured`
+- `review_policy.default_human_review_required`
+- `review_policy.ocr_low_confidence_threshold`
+- `retention.artifact_rule_count`
+- `retention.artifact_policy_configured`
+- `tools.registered_count`
+- `tools.approval_required_count`
+- `tools.write_gates_enabled`
+- `rate_limit.enabled`
+- `rate_limit.backend`
+- `rate_limit.policy_configured`
+- `rate_limit.redis_prefix_configured`
+- `cost_controls.policy_configured`
+- `cost_controls.llm_max_request_chars`
+- `cost_controls.ocr_max_openai_vision_bytes`
+- `cost_controls.embedding_max_request_inputs`
+- `cost_controls.embedding_max_request_chars`
+- `cost_controls.batch_max_total_bytes`
 - `auth.google_oauth_configured`
 - `auth.cookie_secure`
 - `auth.cookie_effective_secure`
@@ -951,6 +1817,11 @@ Response data includes:
 - `llm.max_tool_calls`
 - `llm.runtime_settings_configured`
 - `llm.runtime_settings`
+- `llm.runtime_settings.external_*` provider-policy switches
+- `policy.no_mock_data`
+- `policy.effective_no_mock_data`
+- `policy.requires_real_llm`
+- `policy.requires_persistent_storage`
 - `retrieval.framework`
 - `retrieval.corpus_dir_count`
 - `retrieval.chunk_max_chars`
@@ -975,8 +1846,9 @@ such as `OJT_QUERY_EXPANSION_RULES_PATH`, `OJT_FILTER_SUGGESTION_RULES_PATH`,
 `OJT_QUERY_DIAGNOSTIC_RULES_PATH`, `OJT_QUERY_PROFILE_RULES_PATH`,
 `OJT_RANKING_BOOST_RULES_PATH`,
 `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`, `OJT_CORRECTIVE_ACTION_RULES_PATH`,
-`OJT_STRATEGY_RECOMMENDATION_RULES_PATH`, `OJT_EVIDENCE_BUCKET_RULES_PATH`,
-and `OJT_SEARCH_HINT_TARGETS_PATH`.
+`OJT_STRATEGY_RECOMMENDATION_RULES_PATH`,
+`OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH`, `OJT_EVIDENCE_BUCKET_RULES_PATH`,
+`OJT_SEARCH_HINT_TARGETS_PATH`, and `OJT_FHIR_SEARCH_PARAMETERS_PATH`.
 The response exposes the env var name, loaded status, rule-pack version, and
 SHA-256 content hash, but not local paths.
 
@@ -1012,16 +1884,35 @@ Example:
     "llm": {
       "provider": "openai",
       "model": "chat-latest",
+      "planning_model": "chat-latest",
+      "synthesis_model": "chat-latest",
+      "vision_model": "gpt-4.1-mini",
       "openai_configured": true,
+      "base_url": "https://api.openai.com/v1",
       "base_url_configured": true,
       "timeout_seconds": 30.0,
       "max_tool_calls": 4,
+      "planning_progress_interval_seconds": 2.0,
       "runtime_settings_configured": true,
       "runtime_settings": {
         "llm_provider": "openai",
         "llm_model": "chat-latest",
+        "llm_planning_model": "chat-latest",
+        "llm_synthesis_model": "chat-latest",
+        "llm_vision_model": "gpt-4.1-mini",
+        "llm_base_url": "https://api.openai.com/v1",
         "llm_timeout_seconds": 30.0,
-        "llm_max_tool_calls": 4
+        "llm_max_tool_calls": 4,
+        "llm_planning_progress_interval_seconds": 2.0,
+        "external_openai_llm_enabled": true,
+        "external_openai_llm_allow_phi": false,
+        "external_openai_ocr_enabled": true,
+        "external_openai_ocr_allow_phi": false,
+        "external_openai_ocr_allow_unknown": true,
+        "external_openai_embeddings_enabled": true,
+        "external_openai_embeddings_allow_phi": false,
+        "external_medical_search_enabled": true,
+        "external_medical_search_allow_phi": false
       }
     },
     "retrieval": {
@@ -1038,6 +1929,9 @@ Example:
       "hnsw_ef_search": 100,
       "runtime_settings_configured": true,
       "runtime_settings": {
+        "embedding_provider": "openai",
+        "embedding_model": "text-embedding-3-small",
+        "embedding_dimensions": 384,
         "retrieval_framework": "llamaindex",
         "retrieval_candidate_multiplier": 4,
         "retrieval_min_candidates": 12,
@@ -1069,7 +1963,7 @@ approximate-nearest-neighbor candidates.
 Persists editable Assistant/LLM runtime settings and reloads cached backend
 service instances after validation. It accepts only planner/runtime control
 fields; API keys, OAuth secrets, database URLs, file paths, and approval
-decisions are not editable through this endpoint.
+decisions are not editable through this endpoint. Requires `settings:write`.
 
 Request:
 
@@ -1077,8 +1971,22 @@ Request:
 {
   "llm_provider": "openai",
   "llm_model": "gpt-4.1-mini",
+  "llm_planning_model": "gpt-4.1-mini",
+  "llm_synthesis_model": "gpt-4.1",
+  "llm_vision_model": "gpt-4.1-mini",
+  "llm_base_url": "https://api.openai.com/v1",
   "llm_timeout_seconds": 30.0,
-  "llm_max_tool_calls": 4
+  "llm_max_tool_calls": 4,
+  "llm_planning_progress_interval_seconds": 2.0,
+  "external_openai_llm_enabled": true,
+  "external_openai_llm_allow_phi": false,
+  "external_openai_ocr_enabled": true,
+  "external_openai_ocr_allow_phi": false,
+  "external_openai_ocr_allow_unknown": true,
+  "external_openai_embeddings_enabled": true,
+  "external_openai_embeddings_allow_phi": false,
+  "external_medical_search_enabled": true,
+  "external_medical_search_allow_phi": false
 }
 ```
 
@@ -1090,8 +1998,22 @@ Response:
     "settings": {
       "llm_provider": "openai",
       "llm_model": "gpt-4.1-mini",
+      "llm_planning_model": "gpt-4.1-mini",
+      "llm_synthesis_model": "gpt-4.1",
+      "llm_vision_model": "gpt-4.1-mini",
+      "llm_base_url": "https://api.openai.com/v1",
       "llm_timeout_seconds": 30.0,
-      "llm_max_tool_calls": 4
+      "llm_max_tool_calls": 4,
+      "llm_planning_progress_interval_seconds": 2.0,
+      "external_openai_llm_enabled": true,
+      "external_openai_llm_allow_phi": false,
+      "external_openai_ocr_enabled": true,
+      "external_openai_ocr_allow_phi": false,
+      "external_openai_ocr_allow_unknown": true,
+      "external_openai_embeddings_enabled": true,
+      "external_openai_embeddings_allow_phi": false,
+      "external_medical_search_enabled": true,
+      "external_medical_search_allow_phi": false
     },
     "reloaded": true
   },
@@ -1102,14 +2024,19 @@ Response:
 `PUT /api/v1/runtime/retrieval-settings`
 
 Persists editable retrieval runtime settings and reloads cached backend service
-instances after validation. It accepts only retrieval-scoped keys; secrets,
+instances after validation. It accepts retrieval-scoped ranking controls and
+embedding provider/model/dimension controls. Changing embeddings requires
+running retrieval reindex before vector search is fully aligned. Secrets,
 database URLs, OAuth settings, file paths, and model API keys are not editable
-through this endpoint.
+through this endpoint. Requires `settings:write`.
 
 Request:
 
 ```json
 {
+  "embedding_provider": "openai",
+  "embedding_model": "text-embedding-3-small",
+  "embedding_dimensions": 384,
   "retrieval_framework": "llamaindex",
   "retrieval_candidate_multiplier": 4,
   "retrieval_min_candidates": 12,
@@ -1127,6 +2054,9 @@ Response:
 {
   "data": {
     "settings": {
+      "embedding_provider": "openai",
+      "embedding_model": "text-embedding-3-small",
+      "embedding_dimensions": 384,
       "retrieval_framework": "llamaindex",
       "retrieval_candidate_multiplier": 4,
       "retrieval_min_candidates": 12,
@@ -1142,12 +2072,265 @@ Response:
 }
 ```
 
+`GET /api/v1/runtime/settings-history`
+
+Returns append-only runtime settings history entries. Query parameters:
+
+- `limit`: maximum entries to return; default `100`, maximum `500`.
+
+Each entry includes `change_id`, `changed_at`, `surface`, `actor_id`,
+`actor_email`, `reason`, `rollback_of`, and `changes[]` with old/new value
+presence and value fields.
+
+`POST /api/v1/runtime/settings-history/rollback`
+
+Rolls back one runtime settings history entry and appends a rollback history
+entry. Request:
+
+```json
+{
+  "change_id": "rsh_abc123",
+  "reason": "Rollback after pilot validation."
+}
+```
+
+Response data includes:
+
+- `settings.assistant`
+- `settings.retrieval`
+- `reloaded`
+- `history_entry`
+
+`GET /api/v1/runtime/secrets/health`
+
+Returns sanitized secret/config readiness for admins. The response never
+includes secret values, DSNs, token prefixes, or hashes.
+
+Response data includes:
+
+- `status`
+- `product_mode`
+- `storage_backend`
+- `secret_values_exposed`
+- `checks[].name`
+- `checks[].status`
+- `checks[].configured`
+- `checks[].required`
+- `checks[].env_vars`
+- `checks[].remediation`
+
+`GET /api/v1/runtime/ai-risk-register`
+
+Returns the data-driven AI risk register for admins. Requires `admin:read`.
+The register is aligned to NIST AI RMF-style governance and is used as an
+operator-visible control map, not as a legal compliance certification.
+
+Response data includes:
+
+- `version`
+- `standard_refs[]`
+- `intended_system_use`
+- `prohibited_uses[]`
+- `risks[].risk_id`
+- `risks[].title`
+- `risks[].intended_use`
+- `risks[].limitation`
+- `risks[].nist_ai_rmf_functions[]`
+- `risks[].genai_profile_risk_areas[]`
+- `risks[].severity`
+- `risks[].likelihood`
+- `risks[].residual_risk`
+- `risks[].owner_role`
+- `risks[].monitoring_signals[]`
+- `risks[].human_oversight`
+- `risks[].controls[]`
+- `risks[].evidence_refs[]`
+
+Example:
+
+```json
+{
+  "data": {
+    "version": "ai_risk_register.v1",
+    "standard_refs": [
+      "NIST AI RMF 1.0: GOVERN, MAP, MEASURE, MANAGE"
+    ],
+    "intended_system_use": "Governed healthcare data operations assistant for parsing, validating, retrieving trusted evidence, explaining data quality issues, and preparing human-reviewed workflow outputs.",
+    "prohibited_uses": [
+      "Diagnosis, treatment, triage, or patient-specific medical advice."
+    ],
+    "risks": [
+      {
+        "risk_id": "AIR-001",
+        "title": "Clinical misuse or diagnostic overreach",
+        "intended_use": "Data operations support only.",
+        "limitation": "The assistant may retrieve medical standards but must not provide diagnosis, treatment, or triage.",
+        "nist_ai_rmf_functions": ["GOVERN", "MAP", "MANAGE"],
+        "genai_profile_risk_areas": ["human-AI configuration", "information integrity"],
+        "severity": "critical",
+        "likelihood": "medium",
+        "residual_risk": "medium",
+        "owner_role": "clinical safety owner",
+        "monitoring_signals": [
+          "clinical_advice_prompt",
+          "blocked_output_validation",
+          "human_review_override_request"
+        ],
+        "human_oversight": "Clinical or data-steward review is required before workflow output is used operationally.",
+        "controls": [
+          {
+            "control_id": "AIR-001-C1",
+            "title": "Assistant policy blocks diagnosis/treatment claims",
+            "implementation_ref": "src/ojtflow/infrastructure/llm/openai.py",
+            "status": "implemented"
+          }
+        ],
+        "evidence_refs": ["docs/generated_output_validation_v0.md"]
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+`GET /api/v1/runtime/disclaimers`
+
+Returns user-facing product boundary disclaimers for authenticated users. This
+route is intentionally available to normal users because the non-diagnostic,
+non-treatment, human-reviewed intended-use boundary must be visible during
+ordinary operation.
+
+Response data includes:
+
+- `version`
+- `intended_use`
+- `non_diagnostic_statement`
+- `human_review_requirement`
+- `prohibited_uses[]`
+- `surfaces[].surface_id`
+- `surfaces[].title`
+- `surfaces[].message`
+- `surfaces[].severity`
+- `surfaces[].review_required`
+- `surfaces[].prohibited_uses[]`
+- `surfaces[].human_review_text`
+- `surfaces[].evidence_text`
+
+Example:
+
+```json
+{
+  "data": {
+    "version": "disclaimer_policy.v1",
+    "intended_use": "OJTFlow supports healthcare data operations: parsing, validation, evidence retrieval, workflow review, and governed export preparation.",
+    "non_diagnostic_statement": "OJTFlow is not a diagnostic, treatment, triage, or patient-specific medical advice system.",
+    "human_review_requirement": "Meaning-changing transformations, sensitive-field decisions, weak evidence, terminology choices, and workflow outputs require qualified human review before operational use.",
+    "prohibited_uses": [
+      "Do not use OJTFlow to diagnose, treat, triage, or recommend patient care."
+    ],
+    "surfaces": [
+      {
+        "surface_id": "assistant",
+        "title": "Assistant Boundary",
+        "message": "The Assistant can explain data quality issues, find trusted evidence, and run governed tools. It must not diagnose, recommend treatment, or approve clinical actions.",
+        "severity": "caution",
+        "review_required": true,
+        "prohibited_uses": ["Clinical advice"],
+        "human_review_text": "Write actions and meaning-changing outputs stay review-gated.",
+        "evidence_text": "Assistant answers should cite evidence or clearly state missing evidence."
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+`GET /api/v1/runtime/owasp-llm-threat-model`
+
+Returns the data-driven OWASP LLM Top 10 threat model for admins. Requires
+`admin:read`. The model maps OWASP LLM risk categories to OJTFlow surfaces,
+monitoring signals, concrete mitigation code, and focused tests.
+
+Response data includes:
+
+- `version`
+- `standard_ref`
+- `source_url`
+- `categories[].category_id`
+- `categories[].category_name`
+- `categories[].owasp_ref`
+- `categories[].risk_statement`
+- `categories[].applicable_surfaces[]`
+- `categories[].mitigations[]`
+- `categories[].monitoring_signals[]`
+- `categories[].residual_risk`
+- `categories[].residual_risk_note`
+- `categories[].roadmap_refs[]`
+- `categories[].evidence_refs[]`
+
+Each mitigation includes:
+
+- `mitigation_id`
+- `title`
+- `status`
+- `owner_role`
+- `implementation_refs[]`
+- `test_refs[]`
+- `notes`
+
+Example:
+
+```json
+{
+  "data": {
+    "version": "owasp_llm_threat_model.v1",
+    "standard_ref": "OWASP Top 10 for LLM Applications 2025",
+    "source_url": "https://genai.owasp.org/llm-top-10/",
+    "categories": [
+      {
+        "category_id": "LLM01",
+        "category_name": "Prompt Injection",
+        "owasp_ref": "https://genai.owasp.org/llmrisk/llm01-prompt-injection/",
+        "risk_statement": "Uploaded data, retrieved chunks, user messages, or tool metadata can try to override system instructions or trigger unauthorized tool use.",
+        "applicable_surfaces": [
+          "assistant_planner",
+          "assistant_synthesis",
+          "retrieval_chunks"
+        ],
+        "mitigations": [
+          {
+            "mitigation_id": "LLM01-M1",
+            "title": "Wrap untrusted content and scan prompt-injection patterns before LLM-bound use",
+            "status": "implemented",
+            "owner_role": "security owner",
+            "implementation_refs": [
+              "src/ojtflow/core/policy/prompt_injection_policy.py"
+            ],
+            "test_refs": ["tests/test_assistant_safety.py"],
+            "notes": "User data and retrieved evidence are marked as untrusted content."
+          }
+        ],
+        "monitoring_signals": ["prompt_injection_assessment"],
+        "residual_risk": "medium",
+        "residual_risk_note": "Instruction separation reduces but cannot eliminate adversarial text risk.",
+        "roadmap_refs": ["F118", "F127"],
+        "evidence_refs": ["docs/assistant_safety_cases_v0.md"]
+      }
+    ]
+  },
+  "error": null
+}
+```
+
 `GET /api/v1/runtime/readiness`
 
-Returns sanitized readiness diagnostics for authenticated operators. This is
+Returns sanitized readiness diagnostics for authenticated operators with
+`admin:read`. This is
 separate from the public raw `GET /health` liveness probe: `/health` should stay
 cheap enough for Docker/load balancer checks, while readiness verifies that the
-backend can reach the workflow repository and load governance/retrieval assets.
+backend can reach the runtime spine: storage, migrations, auth/session cache,
+model provider configuration, MCP tool metadata, workflow repository, schemas,
+retrieval assets, background jobs, and sampled artifact references.
 The response must not expose DSNs, OAuth secrets, Redis URLs, ADC material,
 session tokens, or local filesystem paths.
 
@@ -1159,17 +2342,41 @@ Response data includes:
 Current checks:
 
 - `settings`
+- `postgres_migrations`
 - `artifact_directory`
+- `auth_configuration`
 - `session_cache`
+- `embedding_configuration`
+- `llm_configuration`
+- `mcp_tool_registry`
 - `retrieval_rule_packs`: data-driven retrieval policy/rule-pack availability.
 - `workflow_repository`
+- `background_job_repository`: owner-scoped job repository probe, runner mode,
+  queue-backed support flag, and supported job type inventory.
 - `schema_inventory`
 - `retrieval_inventory`: source inventory plus a bounded retrieval search probe.
+- `storage_consistency`: sampled workflow input/output artifact refs and hashes.
 
+`postgres_migrations` validates the source migration manifest for all backends.
+In Postgres mode it also compares the manifest with `ojtflow.schema_migrations`
+and reports pending versions, unknown applied versions, and checksum mismatches
+without exposing the DSN.
+The same data is available in the Settings page and through
+`GET /api/v1/runtime/migrations` for admin drill-down.
 In Postgres mode, `session_cache` verifies that Redis can be reached with a
 short ping. If Redis is missing or unavailable, readiness returns
 `status = "not_ready"` because process-local OAuth/session fallback is not
 multi-instance safe for Postgres deployments.
+`auth_configuration` reports whether Google OAuth is fully configured and
+whether hosted-domain restrictions and cookie settings are active. Partial OAuth
+configuration is an error because the login path cannot work with only one of
+client ID or client secret.
+`embedding_configuration` and `llm_configuration` verify that selected providers
+are internally consistent. Selecting OpenAI mode without an API key is an error;
+deterministic embeddings or disabled LLM mode are valid for local/dev mode and
+are reported explicitly.
+`mcp_tool_registry` checks that tool metadata has unique names and scoped
+allowed-agent metadata before those tools are exposed to MCP clients.
 For file artifacts, `artifact_directory` performs safe create/delete probes in
 the data, dataset, and output directories and returns only booleans and error
 types, never local filesystem paths.
@@ -1191,9 +2398,161 @@ If no trusted retrieval sources are loaded, readiness returns
 exist but the bounded probe returns no evidence, readiness returns
 `status = "degraded"` so operators can investigate retrieval quality without
 blocking all startup.
+For persistent storage, `storage_consistency` samples the authenticated user's
+visible workflows and checks local artifact references from workflow input,
+extracted dataset handoff context, step output refs, and transformation output
+refs. It also samples persisted dataset metadata rows and checks that dataset
+rows point to existing files, that workflow artifact refs have backing dataset
+rows, and that dataset/file hashes agree. When hashes are present it streams
+files and compares SHA-256 digests. The check returns counts and sanitized
+examples with workflow ID, dataset ID, label, and error type, never file paths
+or storage refs. Memory storage skips this check.
 If a readiness check fails, the check is marked `error` and exposes only a
 sanitized `error_type`; exception messages, DSNs, Redis URLs, and local paths are
 not returned.
+
+`GET /api/v1/runtime/performance-budgets`
+
+Returns the data-driven performance budget catalog for authenticated operators
+with `admin:read`. Response data includes catalog ID, version, environment,
+metrics, p95/ratio/count budgets, blocking flags, measurement commands, notes,
+and warnings. These are CI/local smoke budgets, not production SLOs.
+
+`GET /api/v1/runtime/load-smoke-plan`
+
+Returns bounded load-smoke scenarios for workflow creation, retrieval search,
+assistant stream, upload parsing, reindexing, and runtime readiness. Response
+data includes method, path, repetitions, warmup requests, expected status, p95
+budget, error-ratio budget, description, notes, and warnings.
+
+`GET /api/v1/runtime/observability-dashboard`
+
+Returns the observability dashboard signal contract for authenticated operators
+with `admin:read`. Response data includes dashboard panels for API health,
+workflow throughput, assistant streaming, retrieval quality, background jobs,
+governance/security, and LLM/OCR cost. The endpoint exposes the dashboard spec,
+not a hosted metrics backend.
+
+`GET /api/v1/runtime/release-gates`
+
+Returns CI, release, and manual deployment gate definitions. Response data
+includes gate ID, category, required/recommended/manual status, command,
+evidence, owner, blocking flag, notes, and warnings.
+
+`GET /api/v1/runtime/deployment-smoke-plan`
+
+Returns deployment smoke targets and expected checks. Response data includes
+frontend/API targets, URL env vars, default URLs, required and optional paths,
+expected statuses, required env variables, and warnings. The runnable smoke
+command is `PYTHONPATH=src python scripts/deployment-smoke.py`.
+
+`GET /api/v1/runtime/migrations`
+
+Returns sanitized migration diagnostics for authenticated operators. For
+non-Postgres storage backends this validates the source manifest and returns
+`status = "not_required"`. For Postgres it compares the manifest with
+`ojtflow.schema_migrations`.
+
+Response data includes:
+
+- `status`: `ok`, `warning`, `error`, or `not_required`.
+- `required`: whether Postgres migration state is required for the active
+  storage backend.
+- `bootstrap_code`: one of the operator-facing classifications such as `ok`,
+  `not_required`, `pending_migrations`, `migration_history_conflict`,
+  `dependency_unavailable`, `missing_dsn`, `bad_dsn`, `auth_failed`,
+  `dns_failed`, `network_refused`, `network_timeout`, `missing_extension`, or
+  `duplicate_migration`.
+- `bootstrap_summary`: sanitized operator summary without DSNs or raw database
+  error text.
+- `manifest_count`, `applied_count`, `pending_count`,
+  `unknown_applied_count`, and `checksum_mismatch_count`.
+- `latest_available_version` and `latest_applied_version`.
+- `migrations[]`: version, name, checksum, status, `applied_at`,
+  nullable `duration_ms`, and nullable `failure_reason`.
+
+`duration_ms` is populated for migrations applied by the updated runner. Older
+rows may show `null` and should render as "not recorded". Failed migration
+attempts are reported as bootstrap diagnostics rather than inserted into the
+applied migration ledger.
+
+`GET /api/v1/runtime/storage-consistency`
+
+Returns a direct sanitized storage consistency report for authenticated
+operators. This is the drill-down view behind the `storage_consistency`
+readiness check.
+
+Query parameters:
+
+- `limit`: number of visible workflows to sample for the authenticated user,
+  from `1` to `500`; default is `100`.
+
+Response data includes:
+
+- `status`: `consistent` or `inconsistent`.
+- `report.required`: whether persistent file-backed storage is active.
+- `report.sampled_workflow_count`: number of workflow states inspected.
+- `report.artifact_ref_count`: number of workflow artifact refs extracted.
+- `report.dataset_record_count`: number of dataset metadata rows inspected.
+- `report.checked_hash_count`: number of refs with SHA-256 hashes checked.
+- `report.checked_dataset_file_count`: number of dataset row files hashed.
+- `report.missing_count`: missing, unsupported, or out-of-root artifact refs.
+- `report.missing_dataset_file_count`: dataset rows whose file ref is missing,
+  unsupported, or outside the configured artifact roots.
+- `report.missing_dataset_record_count`: workflow artifact refs without a
+  sampled dataset metadata row.
+- `report.hash_mismatch_count`: artifacts whose content hash differs from
+  workflow state.
+- `report.dataset_hash_mismatch_count`: dataset row files whose content hash
+  differs from the dataset metadata row.
+- `report.unreferenced_dataset_record_count`: dataset metadata rows not
+  referenced by the sampled workflows. This is an orphan candidate count, not an
+  automatic delete instruction.
+- `report.examples[]`: sanitized workflow ID, dataset ID, label, and error type
+  only.
+
+The endpoint does not return file paths, storage refs, DSNs, secrets, or raw
+artifact content. Memory storage returns `required = false`.
+
+`GET /api/v1/runtime/storage-repair-plan`
+
+Returns a sanitized, non-destructive repair plan derived from the same workflow
+and dataset sample as the storage consistency report.
+
+Query parameters:
+
+- `limit`: number of visible workflows to sample, from `1` to `500`; default
+  is `100`.
+- `max_candidates`: number of repair candidates to return, from `1` to `500`;
+  default is `100`.
+
+Response data includes:
+
+- `status`: `not_required`, `no_action_needed`, or `review_required`.
+- `plan.required`: whether file-backed persistent storage is active.
+- `plan.dry_run`: always `true`; the plan endpoint does not mutate anything.
+- `plan.mutation_applied`: always `false`.
+- `plan.scanned_file_count`: number of files scanned in configured dataset and
+  output artifact directories.
+- `plan.total_candidate_count` and `plan.returned_candidate_count`.
+- `plan.candidates[]`: sanitized candidate ID, kind, severity, recommended
+  action, workflow ID, dataset ID, artifact-ref hash, and bounded evidence.
+
+Candidate kinds include `missing_artifact_ref`, `missing_dataset_record`,
+`missing_dataset_file`, `hash_mismatch`, `dataset_hash_mismatch`,
+`orphaned_dataset_record`, and `orphaned_file_artifact`.
+
+`POST /api/v1/runtime/storage-repair-markers`
+
+Builds the current repair plan and writes a sanitized marker artifact under the
+runtime data directory when candidates exist. This is the first repair command:
+it marks orphaned rows/files for operator review without deleting files or
+mutating workflow/dataset rows. Requires `admin:write`.
+
+Response `status` is `not_required`, `no_action_needed`, or `marked`. When
+marked, response data includes a `marker` with `marker_id`, `marked_at`,
+`candidate_count`, `candidate_ids`, `marker_ref_hash`, and `destructive=false`.
+The response still does not expose local paths or raw storage refs.
 
 Example:
 
@@ -1277,7 +2636,48 @@ Requires either the session cookie or:
 Authorization: Bearer <access_token>
 ```
 
-Returns the active user and session metadata.
+Returns the active identity, user, session metadata, and `service_account`
+metadata when the bearer token belongs to an automation identity.
+
+`GET /api/v1/auth/service-accounts`
+
+Requires `users:read`. Returns service accounts in the current organization by
+default. `organization_id` can be supplied only when the caller is also a
+member of that organization.
+
+`POST /api/v1/auth/service-accounts`
+
+Requires `users:write`. Creates a service-account user, attaches it to the
+organization with an assignable RBAC `role_key`, and returns the first bearer
+token once. The raw token is not persisted; only the SHA-256 hash is stored in
+the existing session table.
+
+Request:
+
+```json
+{
+  "slug": "nightly-ingestion",
+  "display_name": "Nightly Ingestion",
+  "role_key": "operator",
+  "token_ttl_seconds": 3600
+}
+```
+
+Response data includes:
+
+- `service_account`
+- `token_type`
+- `access_token`
+- `expires_at`
+
+Service-account bearer tokens use the same API header:
+
+```text
+Authorization: Bearer ojt_sa_...
+```
+
+After authentication, service accounts are governed by the same ownership and
+RBAC checks as human users.
 
 `POST /api/v1/auth/logout`
 
@@ -1299,6 +2699,248 @@ Structured unauthorized response:
     "details": {},
     "workflow_id": null
   }
+}
+```
+
+## Organization Workspaces
+
+`GET /api/v1/organizations/current`
+
+Returns the authenticated user's current organization workspace. If the user has
+no active organization membership yet, the backend creates a default workspace
+from `knowledge/governance/workspace_defaults.json`.
+
+Response data includes:
+
+- `organization.organization_id`
+- `organization.slug`
+- `membership.user_id`
+- `membership.role_key`
+- `groups`
+- `group_memberships`
+- `settings.settings`
+- `settings.version`
+
+`GET /api/v1/organizations`
+
+Lists organization workspaces visible to the authenticated user. The v0 backend
+bootstraps a default workspace when none exists.
+
+`GET /api/v1/governance/rbac-policy`
+
+Returns the active data-driven role and permission catalog from
+`knowledge/governance/rbac_roles.json`.
+
+Response data includes:
+
+- `version`
+- `permissions[].permission_scope`
+- `permissions[].risk_level`
+- `roles[].role_key`
+- `roles[].permission_scopes`
+- `roles[].assignable`
+- `roles[].system_role`
+
+`PATCH /api/v1/organizations/{organization_id}/settings`
+
+Deep-merges workspace-level settings and increments the settings version.
+
+Example request:
+
+```json
+{
+  "settings": {
+    "review_policy": {
+      "low_confidence_threshold": 0.75
+    },
+    "assistant": {
+      "write_actions_require_confirmation": true
+    }
+  }
+}
+```
+
+`POST /api/v1/organizations/{organization_id}/groups`
+
+Creates a group in the organization workspace for future RBAC and assignment
+workflows.
+
+Example request:
+
+```json
+{
+  "slug": "data-stewards",
+  "display_name": "Data Stewards",
+  "description": "Users responsible for data quality review.",
+  "role_keys": ["data-steward"]
+}
+```
+
+F119 stores role keys and groups but does not enforce full RBAC. F120 defines
+role-to-permission policy, and F121 applies ownership checks across workflows,
+reviews, chat sessions, artifacts, source inventory, runtime settings, and
+exports.
+
+## Retrieval Plan
+
+`POST /api/v1/retrieval/plan`
+
+Uses the same request shape as retrieval search, but returns a plan-only retrieval response:
+query planning only. It does not rank evidence, touch the vector index, or generate graph
+handoff context. Use it to preview route/profile, query aspects, rewrites,
+executable retrieval tasks, filter suggestions, and external medical search
+hints before running a full search.
+
+```json
+{
+  "query": "HbA1c lab CSV missing units FHIR Observation",
+  "top_k": 5,
+  "schema_id": "lab_result_v1",
+  "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+  "clinical_domain": "laboratory",
+  "trust_level": "approved"
+}
+```
+
+Response data is a `RetrievalPlan`:
+
+- `query`: normalized `RetrievalQuery`
+- `query_analysis`: the same deterministic analysis later used by retrieval,
+  including `query_profile`, `query_aspects`, `query_variant_details`,
+  `retrieval_tasks`, `filter_suggestions`, `diagnostics`, and `search_hints`
+- `coverage_summary`: backend-owned pre-search readiness summary for local
+  task coverage, external follow-ups, inferred standards, filters, warnings, and
+  a human-readable summary sentence plus `next_action`
+- `task_summary`: backend-owned execution summary with task counts for runnable
+  local searches, required local searches, external open/copy follow-ups,
+  blocked tasks, a `primary_action`, and a human-readable summary
+- `risk_signals[]`: prioritized backend pre-search risks, each with `code`,
+  `severity`, `message`, `suggested_action`, `source`, and `metadata`
+- `search_signature`: stable signature for the normalized request
+- `summary`: short human-readable plan summary
+
+`query_analysis.retrieval_tasks[]` is the ordered execution plan. Each task
+includes `task_id`, `target` (`local_corpus` or `external_medical_index`),
+`action_type` (`run_local_search`, `open_external_url`, or `copy_query`),
+`query`, `rationale`, `priority`, `required`, optional `aspect_id` or
+`search_hint_target`, `query_variants`, `standards`, `suggested_filters`, and
+`warnings`. This is the user-facing bridge between query planning and the
+backend tools that will run or launch the search.
+
+When external-provider policy blocks `external_medical_search`, retrieval keeps
+local corpus tasks but suppresses external search hints and external
+`retrieval_tasks` before returning plan/search handoff metadata. The response
+adds an `external_medical_search_policy_blocked` diagnostic or trace safety flag
+with the policy reason, rather than exposing PHI-bearing external query strings.
+
+Example response envelope:
+
+```json
+{
+  "data": {
+    "query": {
+      "query": "HbA1c lab CSV missing units FHIR Observation",
+      "workflow_id": null,
+      "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+      "schema_id": "lab_result_v1",
+      "detected_format": null,
+      "resource_type": null,
+      "top_k": 5,
+      "filters": {
+        "clinical_domain": "laboratory",
+        "trust_level": "approved"
+      }
+    },
+    "query_analysis": {
+      "strategy": "postgres_fts_vector_rrf",
+      "query_profile": {
+        "intent": "schema_validation",
+        "clinical_domain": "laboratory",
+        "risk_level": "moderate"
+      },
+      "query_aspects": [
+        {
+          "aspect_id": "schema_fields",
+          "label": "Required lab-result fields",
+          "query": "lab result required fields date patient_id value unit",
+          "priority": 1,
+          "required": true
+        }
+      ],
+      "query_variant_details": [],
+      "retrieval_tasks": [
+        {
+          "task_id": "local_schema_fields",
+          "label": "Search trusted local corpus for required lab fields",
+          "target": "local_corpus",
+          "action_type": "run_local_search",
+          "query": "lab result required fields date patient_id value unit",
+          "rationale": "Ground validation against approved local schemas before showing evidence.",
+          "priority": 1,
+          "required": true,
+          "aspect_id": "schema_fields",
+          "search_hint_target": null,
+          "query_variants": ["lab result required fields date patient_id value unit"],
+          "standards": ["FHIR", "UCUM"],
+          "suggested_filters": {
+            "schema_id": "lab_result_v1",
+            "source_type": "schema"
+          },
+          "warnings": [],
+          "metadata": {}
+        },
+        {
+          "task_id": "external_fhir_observation",
+          "label": "Review FHIR Observation reference externally",
+          "target": "external_medical_index",
+          "action_type": "open_external_url",
+          "query": "FHIR Observation laboratory result units",
+          "rationale": "Use external standards pages as manual follow-up; do not treat them as executed local evidence.",
+          "priority": 4,
+          "required": false,
+          "aspect_id": null,
+          "search_hint_target": "FHIR Observation",
+          "query_variants": ["FHIR Observation laboratory result units"],
+          "standards": ["FHIR"],
+          "suggested_filters": {},
+          "warnings": ["External follow-up is not automatically ingested."],
+          "metadata": {
+            "url": "https://hl7.org/fhir/observation.html"
+          }
+        }
+      ],
+      "filter_suggestions": [],
+      "diagnostics": [],
+      "search_hints": []
+    },
+    "coverage_summary": {
+      "ready": true,
+      "local_task_count": 1,
+      "required_local_task_count": 1,
+      "external_task_count": 1,
+      "standard_count": 2,
+      "filter_count": 2,
+      "standards": ["FHIR", "UCUM"],
+      "warnings": [],
+      "next_action": "Run required local search tasks first, then review external follow-ups.",
+      "summary": "Plan is ready for local evidence search with 1 required local task and 1 external follow-up."
+    },
+    "task_summary": {
+      "total_task_count": 2,
+      "runnable_local_count": 1,
+      "required_runnable_local_count": 1,
+      "external_open_count": 1,
+      "external_copy_count": 0,
+      "manual_followup_count": 1,
+      "blocked_task_count": 0,
+      "primary_action": "Run required local search tasks first, then review external follow-ups.",
+      "summary": "1 local runnable task(s), 1 external/manual follow-up(s), and 0 blocked task(s)."
+    },
+    "risk_signals": [],
+    "search_signature": "sha256:example",
+    "summary": "Prepared 2 retrieval task(s) for review-grade healthcare evidence search."
+  },
+  "error": null
 }
 ```
 
@@ -1347,10 +2989,25 @@ Response data is a `RetrievalPackage`:
   concept/aspect labels, required bucket coverage, warnings, and next action
 - `strategy_recommendations[]` with backend-owned retrieval technique and route
   explanations
+- `standard_search_plan` with backend-owned healthcare-standard follow-up search
+  steps, including route type, standard system, suggested query, governance
+  notes, supported filters, and data-driven match metadata
+- `diversity` with source-aware final-selection state, selected/candidate source
+  counts, duplicate selected-source count, optional lambda value, and
+  `selected_hits[]` rationale rows
 - `trace.strategy`
 - `trace.query_variants`
 - `trace.query_variant_details[]` with `variant`, `source`, `reason`, and
   `metadata`
+- `handoff_context.query_analysis.search_hints[]` with `target`, `query`,
+  optional launch `url`, `rationale`, `warnings`, and optional metadata. FHIR
+  hints can include `metadata.parameter_examples`,
+  `metadata.lineage_followup`, `metadata.registry_version`, and
+  `metadata.capability_warning`. LOINC and UCUM terminology hints can include
+  authenticated endpoint scope, parameter examples, selected terminology
+  terms, selected unit candidates, validation-operation metadata, and
+  `metadata.launchable`. UCUM hints expose `url` only when the selected unit
+  candidate is concrete.
 - `trace.fusion_diagnostics` with hybrid/fusion observability such as method,
   diagnostic scope, lexical/vector overlap when available, selected-hit rank
   delta when available, dominant signal balance, and interpretation
@@ -1359,17 +3016,74 @@ Response data is a `RetrievalPackage`:
 - `trace.final_hit_ids`
 - `trace.safety_flags`
 - `trace.warnings`
+- `answer`: evidence-only retrieval answer with status, citations, claims,
+  unsupported claims, missing-evidence gaps, source freshness warnings, and
+  graph-path summary
 - `handoff_context`
+- `handoff_context.answer` mirrors the top-level answer for Assistant and MCP
+  clients
 - `handoff_context.graph_context`
 - `handoff_context.query_analysis`
+- `handoff_context.query_route` with selected route ID, strategy ID,
+  retrieval mode, rationale, matched criteria, suggested filters, and risk
+  controls from the data-driven query router
+- `handoff_context.route_budget` with the selected route's max candidate pool,
+  max returned hits, reranker candidate limit, source-diversity target,
+  external-network permission, and latency target
+- `handoff_context.effective_route_budget` with the budget actually applied to
+  this request after combining route policy with request `top_k` and runtime
+  reranker/diversity settings
+- `handoff_context.diversity` mirrors top-level `diversity` for assistant and
+  agent handoff compatibility
 - `handoff_context.quality_policy`
 - `handoff_context.retrieval_rule_packs`
+- `handoff_context.standard_search_plan`
 - `handoff_context.search_request`
 - `handoff_context.search_signature`
+- `handoff_context.graph_record` when graph persistence is enabled
+
+Ranked evidence locators preserve their raw source fields and may include
+`normalized_citation_locator`. That normalized object is generated from
+`knowledge/retrieval/citation_locator_rules.json` and gives downstream clients a
+stable citation shape: locator kind, display label, canonical URL when known,
+source ID/type/version, standard system, identifier, path/page/section, raw
+locator keys, warnings, and metadata. Current normalization covers FHIR R4
+resource pages, PubMed PMID records/search context, ClinicalTrials.gov study/API
+context, openFDA endpoint context, UCUM units, RxNorm concepts/source context,
+PDF pages, and internal policy or knowledge sections.
 
 `trace.safety_flags` marks retrieval query context that should remain data-only
 for downstream agents. Current values include
 `prompt_injection_pattern_in_query` and `sensitive_field_context`.
+`handoff_context.graph_context` uses contract `graph_ner_handoff.v0`. It is a
+deterministic GraphRAG-lite handoff with query/evidence/standard/field/concept
+nodes, `supports`, `mentions_entity`, `requests_resource`,
+`has_search_parameter`, `uses_standard`, and `normalizes_to` edges, plus
+summary counts. Nodes, edges, and triples include `provenance` with
+`extractor`, `extractor_version`, extraction `source`, `review_state`,
+`confidence`, source evidence/chunk refs when available, and
+`normalized_code_candidates` for deterministic terminology candidates.
+`normalizes_to` provenance is marked `candidate_requires_review` because these
+are reviewable coding hints rather than automatic clinical coding decisions.
+Entity rules come from
+`knowledge/terminologies/graph_ner_rules.json`; medical concept-code
+normalization comes from `knowledge/terminologies/medical_concepts.json`; FHIR
+search-parameter expansion comes from
+`knowledge/terminologies/fhir_search_parameters.json`. This is retrieval
+grounding and audit metadata, not an autonomous clinical coding decision.
+`handoff_context.graph_conflict_report` uses contract
+`graph_conflict_report.v1` and is produced from the graph/evidence handoff
+before answer synthesis. It reports deterministic conflict records for
+contradictory source claims, deprecated terminology mappings, conflicting UCUM
+unit candidates, and version-mismatched standard guidance. Each record includes
+`conflict_id`, `kind`, `severity`, `rule_id`, `message`, `suggested_action`,
+evidence refs, graph node/edge refs when available, normalized-code candidates
+when relevant, and conflict metadata. Non-empty review-required conflicts are
+mirrored to `trace.warnings` and cause guarded answers to require human review.
+When graph persistence is enabled, the backend stores this graph context after
+the search and returns `handoff_context.graph_record` with `graph_id`, workflow
+and search metadata, node/edge/triple counts, and creation time. Graph records
+are owner-scoped for direct API access.
 `handoff_context.query_analysis` is auditable query-understanding metadata.
 It can include standard cues such as `FHIR`, `LOINC`, and `UCUM`; concept IDs
 such as `hba1c_laboratory_test` and `unit_normalization`; and the rule IDs that
@@ -1384,6 +3098,18 @@ of deterministic query-quality checks with `code`, `severity`, `message`, and
 query token count, active metadata filters, applied standard, suggested
 standards, detected concepts, and schema/format/resource context when relevant.
 Warning diagnostics are copied into `trace.warnings`.
+`query_analysis.query_route` is selected from
+`knowledge/retrieval/query_route_rules.json` using query profile, input format,
+resource type, active filters, diagnostics, concepts, standards, and tokens.
+It is copied to `handoff_context.query_route` and mirrored to
+`trace.fusion_diagnostics.query_route` for observability. Route rules can also
+carry a `budget` object; when present, the backend enforces max candidates,
+max returned hits, reranker candidate limit, source-diversity behavior,
+external-network permission, and latency target metadata. Applied values are
+mirrored to `handoff_context.effective_route_budget` and
+`trace.fusion_diagnostics.effective_route_budget`. This is an auditable
+route-selection contract; v0 does not silently switch storage adapters or
+bypass evidence-quality/review checks based on the route alone.
 Diagnostics can flag low-specificity searches, missing healthcare concepts,
 conflicting standard filters, and over-constrained metadata filters when the
 query scope is narrow but clinical/schema context is weak. It
@@ -1408,6 +3134,9 @@ for workflows such as PubMed/MeSH literature search, FHIR resource search
 templates, ClinicalTrials.gov API v2 study search, and openFDA drug
 label/adverse-event search. Current targets include `pubmed`, `fhir`,
 `clinicaltrials_gov`, `openfda_drug_label`, and `openfda_drug_event`.
+If active external-provider policy blocks `external_medical_search`, these hints
+are omitted from `handoff_context.query_analysis.search_hints` and corresponding
+external tasks are omitted from `handoff_context.query_analysis.retrieval_tasks`.
 `handoff_context.retrieval_rule_packs` records sanitized active retrieval
 rule-pack fingerprints with pack name, status, source, env var, rule count,
 version, and content hash. This lets copied evaluation reports and downstream
@@ -1419,6 +3148,13 @@ retrieval readiness policy version and severity scoring rules used to produce
 server-side retrieval request, and `handoff_context.search_signature` is a
 stable `sha256:<digest>` fingerprint of that request for judgment, report, and
 audit correlation.
+The standard-search playbook rule pack is included in the same fingerprinted
+inventory and drives `standard_search_plan`, including FHIR, terminology,
+privacy, and external medical-search route guidance. A playbook rule can match
+query profiles, detected standards, concepts, decomposed query aspects, dataset
+field names, query tokens, resource type, quality signals, safety flags, and
+required filters. This keeps route selection in backend rule data rather than
+React copy or LLM-only reasoning.
 `hits[].snippet` is an extractive preview with `text`, `start_char`, `end_char`,
 `matched_terms`, and `extraction_strategy`. The full source claim remains in
 `hits[].evidence.claim`.
@@ -1477,6 +3213,145 @@ includes `version`, `detected_formats[]` with `value`, `label`, and optional
 format and top-K controls so Markdown, FHIR-like, and future intake/search
 profiles can be added through trusted data.
 
+`GET /api/v1/retrieval/source-policies` returns source trust policy catalog
+data from `knowledge/source_catalog/source_trust_policies.json`, including
+domain, standard system, intended use, prohibited use, refresh cadence, license
+constraints, evidence tier, and reviewer policy.
+
+`GET /api/v1/retrieval/strategies` returns data-driven retrieval strategy
+presets from `knowledge/retrieval/strategy_catalog.json`, including lexical,
+vector, hybrid, metadata-filtered, high-recall, and exact-source modes.
+
+`GET /api/v1/retrieval/graph/contexts` returns persisted Graph-NER context
+records owned by the authenticated user. Query parameters:
+
+- `workflow_id`: optional workflow scope.
+- `limit`: `1..1000`, default `100`.
+
+`GET /api/v1/retrieval/graph/export` returns a `GraphExport` envelope for the
+same owner/workflow scope. Query parameters:
+
+- `workflow_id`: optional workflow scope.
+- `limit`: `1..1000`, default `100`.
+- `format`: `jsonl` for nodes/edges/triples or `rdf_jsonl` for
+  subject/predicate/object triples only.
+
+The export payload includes `content_type = application/x-ndjson`, aggregate
+graph/node/edge/triple counts, `generated_at`, and `content` containing newline
+delimited JSON. This is an operational export for downstream graph/RAG tools,
+not a clinical decision-support artifact.
+
+`GET /api/v1/retrieval/graph/neighborhood` returns a bounded
+`GraphNeighborhood` from persisted Graph-NER records owned by the authenticated
+user. Query parameters:
+
+- `workflow_id`: optional workflow scope.
+- `q`: optional text search over node labels, node metadata, triples, and
+  source retrieval query text.
+- `node_id`: optional exact Graph-NER node ID.
+- `evidence_id`: optional evidence node/triple scope.
+- `source_id`: optional evidence source ID.
+- `normalized_code`: optional canonical code such as `LOINC:4548-4`.
+- `resource_type`: optional FHIR-like resource type.
+- `field`: optional data-field node label.
+- `relation`: optional edge relation or triple predicate.
+- `limit`: graph records scanned, `1..1000`, default `100`.
+- `max_depth`: graph expansion depth, `0..2`, default `1`.
+
+The response includes matching source graph IDs, aggregate node/edge/triple
+counts, matched node/evidence IDs, bounded `nodes`, `edges`, `triples`, and
+warnings when no persisted graph or criteria match exists. This endpoint is for
+GraphRAG/evidence exploration and audit, not clinical decision support.
+
+`GET /api/v1/retrieval/corpus/adapters` returns available corpus source adapter
+definitions, including adapter ID, source family, ingestion mode, license notes,
+and operational requirements.
+
+`GET /api/v1/retrieval/corpus/partitions` returns the tenant-aware searchable
+corpus partition policy. The catalog defines partition IDs, labels, purpose,
+visibility (`global`, `organization`, or `private`), source ID/path matching
+rules, required permission scopes, PHI allowance, external-provider allowance,
+review requirement, and retention policy. Retrieval search filters support
+`filters.corpus_partition`, `filters.corpus_visibility`, and
+`filters.organization_id`; authenticated API routes overwrite
+`filters.organization_id` with the caller's active workspace organization before
+executing search.
+
+`POST /api/v1/retrieval/private-corpus/ingest` ingests tenant-private text into
+retrieval after deterministic redaction. The request accepts either inline
+`data` or an existing parsed `artifact_id`, plus optional `title`, `source_ref`,
+`input_format`, and `redaction_action`. The backend:
+
+- derives organization scope from the authenticated workspace;
+- builds a redaction preview before indexing;
+- indexes only `redaction_preview.redacted_text`;
+- stamps `corpus_partition_id=private_documents`,
+  `corpus_visibility=private`, `external_provider_allowed=false`,
+  `phi_allowed=true`, and a retention policy;
+- returns `PrivateCorpusIngestionResult` with source metadata, chunk count,
+  redaction preview, text hashes, retention policy, and warnings.
+
+Private corpus search still uses normal `POST /api/v1/retrieval/search`; callers
+can narrow to it with `filters.corpus_partition=private_documents`. Public API
+calls cannot select another organization because route normalization overwrites
+the organization filter with the active workspace.
+
+Retrieval responses also include `external_query_transparency` when query
+analysis produces PubMed, ClinicalTrials.gov, or openFDA follow-up hints. Each
+record includes:
+
+- `connector_id`, `target`, and `display_name`;
+- `exact_query` and parsed `request_parameters`;
+- `filters_applied`;
+- `result_ids` when a connector result set is available;
+- `cache_state`, `cache_key`, `cache_policy_id`, and `source_release_version`;
+- `rate_limit_metadata`, `external_network_allowed`, `execution_status`, and
+  policy warnings.
+
+The v0 backend records these external-search handoffs without executing network
+requests automatically. This is intentional: external medical content must pass
+provider policy, cache, source-governance, and ingestion-approval controls before
+it becomes searchable evidence.
+
+`GET /api/v1/retrieval/corpus/manifest` returns the reviewed corpus source
+manifest used by ingestion and readiness checks.
+
+`GET /api/v1/retrieval/corpus/ledger` returns a chunk-level ingestion ledger for
+the configured retrieval corpus. Each record links an indexed chunk to:
+
+- `ingestion_run_id`
+- source `item_id`
+- `chunk_id`
+- raw artifact hash
+- chunk content hash
+- adapter ID and adapter catalog version
+- reviewer decision and lifecycle state
+- chunk source locator
+
+This endpoint is intended for enterprise retrieval audit, index debugging, and
+evidence-lineage review. It does not expose raw corpus text.
+
+`GET /api/v1/retrieval/corpus/chunking-profiles` returns data-driven chunking
+profiles for standards pages, terminology pages, structured records, PDFs, and
+internal policies.
+
+`GET /api/v1/retrieval/index-manifest` returns operational metadata for the
+active retrieval indexes. The response reports lexical, vector, and graph
+components with generation IDs, provider/model/dimension metadata, stale chunk
+counts, chunk/source counts, graph node/edge/triple counts, and corpus ingestion
+run IDs. This endpoint is admin-readable and does not expose corpus text.
+
+`GET /api/v1/retrieval/embedding-reindex/dry-run` returns the approval-gated
+preflight report for an embedding reindex. Query parameters:
+
+- `include_seeded`: whether bundled seeded knowledge will be included.
+- `include_corpus`: whether configured local corpus chunks will be included.
+
+The response includes the current retrieval index manifest, impact summary,
+approval payload hash, approval token hash, and a one-time approval token bound
+to the current manifest and requested scope. Operators submit that token to
+`POST /api/v1/jobs/embedding-reindex`. The report does not expose corpus text.
+
 `GET /api/v1/retrieval/judgments` returns durable relevance judgments for the
 authenticated user. Optional query parameters:
 
@@ -1488,7 +3363,8 @@ authenticated user. Optional query parameters:
 `GET /api/v1/retrieval/judgments/summary` returns aggregate label inventory for
 the authenticated user, optionally filtered by `query`. Response data includes
 `total_count`, `query_count`, `evidence_count`, `source_count`, per-value counts,
-`average_rating`, `latest_updated_at`, and `sample_limit`.
+`unsafe_count`, `stale_count`, `source_policy_blocked_count`, `average_rating`,
+`latest_updated_at`, and `sample_limit`.
 
 `POST /api/v1/retrieval/judgments/evaluate` evaluates one ranked retrieval
 result list against the authenticated user's stored judgments for the submitted
@@ -1504,15 +3380,18 @@ query:
 
 Response data includes `coverage_at_k`, `hit_rate_at_k`, `precision_at_k`,
 `judged_precision`, `average_precision_at_k`, `mrr_at_k`, `ndcg_at_k`,
-per-value counts, unjudged evidence IDs, the judgment IDs that contributed to
+per-value counts including `unsafe_count`, `stale_count`, and
+`source_policy_blocked_count`, unjudged evidence IDs, the judgment IDs that contributed to
 the score, `evaluation_readiness` with label confidence thresholds, and policy-driven
 `recommendations[]` with severity, metric, message, suggested action, evidence
 IDs, and rule metadata. This endpoint is intended for operator-facing
-evaluation of the current ranked result list; it does not mutate judgments or
-workflow state.
+evaluation of the current ranked result list. It does not mutate judgments or
+workflow state, but it may enqueue active-learning candidates for low-confidence
+or no-positive-hit result sets.
 
 `PUT /api/v1/retrieval/judgments` upserts one user-scoped query/evidence
-judgment:
+judgment. Accepted `value` labels are `relevant`, `partial`, `irrelevant`,
+legacy `not_relevant`, `unsafe`, `stale`, and `source_policy_blocked`:
 
 ```json
 {
@@ -1520,8 +3399,8 @@ judgment:
   "evidence_id": "ev_schema_lab_result_v1",
   "source_id": "schema:lab_result_v1",
   "source_type": "schema",
-  "value": "relevant",
-  "rating": 3,
+  "value": "source_policy_blocked",
+  "rating": 0,
   "run_id": "browser-run-1",
   "search_signature": "{\"query\":\"FHIR Observation HbA1c unit\"}",
   "metadata": {
@@ -1540,13 +3419,61 @@ backend derives it from `value`.
 `DELETE /api/v1/retrieval/judgments/{judgment_id}` removes one judgment owned by
 the authenticated user.
 
+`GET /api/v1/retrieval/active-learning/candidates` returns retrieval benchmark
+candidate queue items for the authenticated user. Optional query parameters:
+
+- `status`: `open`, `accepted`, `rejected`, `promoted`, or `archived`.
+- `source_kind`: `low_confidence_retrieval`, `unsupported_claim`,
+  `reviewer_correction`, `weak_support`, or `negative_judgment`.
+- `priority`: `low`, `normal`, `high`, or `critical`.
+- `query`: exact query text; the backend hashes it for lookup.
+- `limit`: default `500`, maximum `1000`.
+
+`GET /api/v1/retrieval/active-learning/summary` returns queue counts by status,
+priority, and source kind.
+
+`POST /api/v1/retrieval/active-learning/candidates` manually enqueues one
+candidate, normally from unsupported answer claims or weak support-matrix rows:
+
+```json
+{
+  "source_kind": "unsupported_claim",
+  "query": "FHIR Observation HbA1c unit",
+  "trigger_reason": "Answer contained an unsupported UCUM normalization claim.",
+  "priority": "high",
+  "evidence_id": "ev_terminology_ucum",
+  "source_id": "terminology:ucum",
+  "support_status": "unsupported",
+  "suggested_filters": {
+    "standard_system": "ucum"
+  },
+  "benchmark_metadata": {
+    "case_family": "ucum_unit_checks"
+  }
+}
+```
+
+`PATCH /api/v1/retrieval/active-learning/candidates/{candidate_id}` updates the
+review state and benchmark curation metadata:
+
+```json
+{
+  "status": "accepted",
+  "priority": "high",
+  "reviewer_note": "Promote into the UCUM benchmark pack.",
+  "benchmark_metadata": {
+    "case_family": "ucum_unit_checks"
+  }
+}
+```
+
 `GET /api/v1/retrieval/sources` returns available trusted retrieval sources,
 including source type, version, trust level, clinical domain, standard system,
 and chunk count. The seeded source inventory includes local schema/governance
 knowledge plus curated healthcare-standard assets under `knowledge/`, including
 the official source catalog, medical concept seed registry, FHIR R4 search
 parameter seed, clinical data standards map, medical search playbook, and public
-dataset ingestion plan.
+dataset ingestion plan. Requires `retrieval:read`.
 
 `GET /api/v1/retrieval/integrity` returns a `RetrievalIntegrityReport` for the
 current retrieval index. Query parameters:
@@ -1560,6 +3487,26 @@ Response data includes `repository`, `status`, `checked_scope`,
 contains `source_id`, `status`, expected/indexed chunk counts, expected/indexed
 hashes, and a message. This endpoint is intended for operational consistency
 checks after deployment, reindexing, or source file changes.
+Requires `admin:read`.
+
+`GET /api/v1/retrieval/freshness` returns a `RetrievalFreshnessReport` for the
+governed retrieval source catalog. It combines corpus adapters, source trust
+policies, the medical source-quality policy, the local corpus manifest, and
+currently indexed source inventory.
+
+Response data includes `status`, `score`, source counts by readiness state,
+`stale_count`, `unindexed_count`, `missing_policy_count`,
+`average_quality_score`, `low_quality_count`, `quality_review_count`, catalog
+versions, and `sources[]`. Each source includes lifecycle/reviewer state,
+refresh cadence, indexed chunk count, last observed snapshot time, freshness
+window, issues, recommended actions, and `quality`. The `quality` object is an
+explainable medical source-quality score driven by
+`knowledge/retrieval/source_quality_policy.json`; it combines trust policy
+coverage, evidence tier, lifecycle state, reviewer state, freshness status,
+source/index coverage, and license or use restrictions. This endpoint is
+intended for RAG operations and medical source governance; it does not perform
+live external fetching.
+Requires `admin:read`.
 
 `POST /api/v1/retrieval/reindex` refreshes the trusted retrieval index from
 seeded knowledge and configured local corpus directories:
@@ -1573,7 +3520,7 @@ seeded knowledge and configured local corpus directories:
 
 Response data includes repository type, indexed chunk count, embedding provider
 metadata, and local corpus indexing stats. The endpoint requires an
-authenticated session and does not accept arbitrary document text; corpus
+authenticated session, `admin:write`, and does not accept arbitrary document text; corpus
 files must be placed in configured trusted knowledge directories first.
 Large official datasets such as MeSH RDF/XML, RxNorm/RxNav cache exports,
 LOINC downloads, MedlinePlus XML, openFDA downloads, and ClinicalTrials.gov API
@@ -1581,6 +3528,106 @@ snapshots should be ingested into ignored runtime/object storage and then
 distilled into reviewed knowledge chunks. They should not be committed directly
 to source control. Corpus content comes from trusted runtime directories
 configured by operators.
+
+## Job Operations
+
+Background jobs are durable, owner-scoped operational records for work that may
+be moved to a queue-backed worker later. v0 includes a sync local runner so the
+same job contract is available before worker execution is introduced.
+
+`GET /api/v1/jobs`
+
+Optional query parameters:
+
+- `status`: `queued`, `running`, `succeeded`, `failed`, or `cancelled`.
+- `job_type`: `retrieval_reindex`, `file_parse`, `ocr_extract`,
+  `embedding_reindex`, `external_ingest`, or `export_package`.
+- `limit`: `1` to `500`, default `100`.
+
+Response data is an owner-scoped list of `BackgroundJob` objects with
+`job_id`, `job_type`, `status`, `input`, `output`, structured `error`,
+`progress`, attempts, and timestamps.
+
+`GET /api/v1/jobs/{job_id}`
+
+Returns one owner-scoped `BackgroundJob` or a structured not-found error.
+
+`POST /api/v1/jobs/{job_id}/cancel`
+
+Cancels a queued or running owner-scoped background job. Terminal jobs
+(`succeeded`, `failed`, or `cancelled`) are returned unchanged. Cancelled jobs
+store `status="cancelled"`, a structured `error.code="job_cancelled"`, a
+progress message, and `completed_at`.
+
+`POST /api/v1/jobs/retrieval-reindex`
+
+Creates a durable retrieval reindex job. The default `execute_now=true` runs the
+job through the sync local runner and records the output or structured failure
+on the job row. The job `input` includes the originating `request_id` from the
+API middleware so operations staff can connect the job record to frontend
+diagnostics and backend logs.
+
+```json
+{
+  "include_seeded": true,
+  "include_corpus": true,
+  "execute_now": true
+}
+```
+
+`POST /api/v1/jobs/embedding-reindex`
+
+Creates an approval-gated embedding reindex job. The caller must first fetch
+`GET /api/v1/retrieval/embedding-reindex/dry-run` and submit the returned
+`approval_token`. Invalid or stale tokens are rejected with `policy_blocked`
+before a job is created.
+
+When `execute_now=true`, the sync runner:
+
+- writes a sanitized rollback marker under `var/repair_markers/embedding_reindex`
+- runs the existing retrieval reindex path
+- captures the post-run index manifest
+- stores a post-run quality comparison with chunk/source/stale-vector deltas
+
+The job stores only token hashes, manifest hashes, rollback marker metadata, and
+sanitized manifests. It does not store the approval token or raw corpus text.
+
+```json
+{
+  "include_seeded": true,
+  "include_corpus": true,
+  "approval_token": "approve_embedding_reindex_...",
+  "execute_now": true
+}
+```
+
+Example response:
+
+```json
+{
+  "data": {
+    "job_id": "job_abc123",
+    "owner_user_id": "user_123",
+    "job_type": "retrieval_reindex",
+    "status": "succeeded",
+    "input": {
+      "include_seeded": true,
+      "include_corpus": true,
+      "request_id": "web_123"
+    },
+    "output": {"repository": "postgres_fts_vector_rrf", "chunks_indexed": 42},
+    "error": null,
+    "progress": {"current": 1, "total": 1, "message": "Completed"},
+    "attempts": 1,
+    "max_attempts": 1,
+    "created_at": "2026-06-11T00:00:00+00:00",
+    "updated_at": "2026-06-11T00:00:01+00:00",
+    "started_at": "2026-06-11T00:00:00+00:00",
+    "completed_at": "2026-06-11T00:00:01+00:00"
+  },
+  "error": null
+}
+```
 
 ## Upload Workflow
 
@@ -1641,3 +3688,59 @@ return `unsupported_upload`.
 server-recognized upload extensions. `openai_vision` appears when an
 OpenAI-compatible OCR key is available; MarkItDown OCR plugin support is part
 of the `markitdown` extractor path.
+
+`POST /api/v1/parse/upload/jobs`
+
+Accepts a multipart file upload and creates a durable `file_parse` background
+job. In local sync mode the job may complete before the response returns; in
+queue-backed mode it remains queued for a worker. The uploaded bytes are stored
+as an owner-scoped `UploadedArtifact` with hash, MIME type, byte size, source,
+retention policy, and extraction trace metadata.
+
+`POST /api/v1/parse/upload/batch/jobs`
+
+Accepts multiple multipart files and creates one parse job per file with shared
+batch metadata such as `batch_id`, `case_id`, and `project_id`. Each file still
+gets its own artifact, dedupe check, job, and trace path.
+
+`POST /api/v1/parse/clipboard/images/jobs`
+
+Accepts pasted image bytes and creates the same artifact/job/trace path as a
+file upload. The Assistant paste UX uses this route before injecting extracted
+document context into chat.
+
+`POST /api/v1/parse/redaction-preview`
+
+Returns a deterministic PHI-like redaction preview for submitted text,
+including structured CSV sensitive-column masking and span-level findings for
+patterns such as SSNs, emails, and phone numbers. This route is intended to run
+before external OCR/LLM handoff.
+
+`GET /api/v1/parse/artifacts`
+
+Lists uploaded artifacts owned by the authenticated user. Response data includes
+artifact ID, filename, MIME type, extension, byte size, hash, source,
+duplicate-of link, retention policy, metadata, and timestamps.
+
+`GET /api/v1/parse/artifacts/{artifact_id}`
+
+Returns one owner-scoped artifact metadata record.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/download`
+
+Downloads the owner-scoped artifact bytes and records an artifact access event.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/export`
+
+Exports owner-scoped artifact metadata as JSON and records an artifact access
+event.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/traces`
+
+Lists extraction traces for an owner-scoped artifact, including extractor
+choice, fallback path, warnings, confidence, quality score, and output refs.
+
+`GET /api/v1/parse/artifacts/{artifact_id}/access-events`
+
+Lists owner-scoped artifact access events such as download, metadata export,
+and metadata view.

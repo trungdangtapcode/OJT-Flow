@@ -9,16 +9,33 @@ from fastapi import Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ojtflow.application.auth_service import AuthService
+from ojtflow.application.assistant_memory_service import AssistantMemoryService
 from ojtflow.application.assistant_service import AssistantService
+from ojtflow.application.assistant_session_service import AssistantSessionService
+from ojtflow.application.ports import AuditRepository
+from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
+from ojtflow.application.document_intake_service import DocumentIntakeService
+from ojtflow.application.governance_service import GovernanceService
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
+from ojtflow.application.retrieval_active_learning_service import (
+    RetrievalActiveLearningService,
+)
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings, get_settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.errors import AuthenticationError
+from ojtflow.core.policy.abuse_cost_policy import load_abuse_cost_policy
+from ojtflow.core.policy.external_provider_policy import external_provider_policy_from_settings
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
+from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
+from ojtflow.infrastructure.assistant.policies import load_assistant_tool_permission_policies
+from ojtflow.infrastructure.assistant.prompt_injection import (
+    load_prompt_injection_policy,
+)
+from ojtflow.infrastructure.assistant.progress import load_assistant_tool_progress_policies
 from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
 from ojtflow.infrastructure.retrieval.evaluation_policy import (
@@ -30,31 +47,56 @@ from ojtflow.infrastructure.retrieval.reranking import build_reranker
 from ojtflow.infrastructure.retrieval.rule_packs import retrieval_rule_packs
 from ojtflow.infrastructure.retrieval.static import StaticKnowledgeRepository
 from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository
+from ojtflow.infrastructure.extraction.document import LocalDocumentExtractor
+from ojtflow.infrastructure.governance_defaults import load_workspace_defaults
+from ojtflow.infrastructure.governance_rbac import load_rbac_policy
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
 from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
+from ojtflow.infrastructure.storage.governance_memory import InMemoryGovernanceRepository
+from ojtflow.infrastructure.storage.governance_postgres import PostgresGovernanceRepository
+from ojtflow.infrastructure.storage.governance_sqlite import SQLiteGovernanceRepository
 from ojtflow.infrastructure.storage.in_memory import (
+    InMemoryAuditRepository,
+    InMemoryAssistantMemoryRepository,
+    InMemoryAssistantSessionRepository,
+    InMemoryUploadedArtifactRepository,
+    InMemoryBackgroundJobRepository,
     InMemoryDatasetStore,
     InMemoryEventRepository,
+    InMemoryGraphRepository,
+    InMemoryRetrievalActiveLearningRepository,
     InMemoryRetrievalJudgmentRepository,
     InMemoryWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.postgres import (
+    PostgresAuditRepository,
+    PostgresAssistantMemoryRepository,
+    PostgresAssistantSessionRepository,
+    PostgresUploadedArtifactRepository,
     PostgresBackboneStore,
+    PostgresBackgroundJobRepository,
     PostgresDatasetStore,
     PostgresEventRepository,
+    PostgresGraphRepository,
+    PostgresRetrievalActiveLearningRepository,
     PostgresRetrievalJudgmentRepository,
     PostgresWorkflowRepository,
 )
 from ojtflow.infrastructure.storage.sqlite import (
+    SQLiteAuditRepository,
+    SQLiteAssistantMemoryRepository,
+    SQLiteAssistantSessionRepository,
+    SQLiteUploadedArtifactRepository,
     SQLiteBackboneStore,
+    SQLiteBackgroundJobRepository,
     SQLiteDatasetStore,
     SQLiteEventRepository,
+    SQLiteGraphRepository,
+    SQLiteRetrievalActiveLearningRepository,
     SQLiteRetrievalJudgmentRepository,
     SQLiteWorkflowRepository,
 )
-
-
 bearer_scheme = HTTPBearer(auto_error=False)
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -94,6 +136,7 @@ def _build_auth_service() -> AuthService:
         allowed_redirect_uris=settings.resolved_allowed_auth_redirect_uris,
         session_ttl_seconds=settings.auth_session_ttl_seconds,
         state_ttl_seconds=settings.auth_state_ttl_seconds,
+        service_account_token_ttl_seconds=settings.service_account_token_ttl_seconds,
     )
 
 
@@ -103,12 +146,14 @@ def _build_workflow_service() -> WorkflowService:
 
     settings = get_settings()
     knowledge_root = settings.resolved_knowledge_dir
+    external_provider_policy = external_provider_policy_from_settings(settings)
     embedding_provider = build_embedding_provider(settings)
     reranker = build_reranker(settings)
     if settings.storage_backend == "memory":
         datasets = InMemoryDatasetStore()
         workflows = InMemoryWorkflowRepository()
         events = InMemoryEventRepository()
+        graph_repository = InMemoryGraphRepository()
         retrieval = _build_retrieval_repository(
             settings,
             knowledge_root,
@@ -123,6 +168,7 @@ def _build_workflow_service() -> WorkflowService:
         datasets = SQLiteDatasetStore(backbone)
         workflows = SQLiteWorkflowRepository(backbone)
         events = SQLiteEventRepository(backbone)
+        graph_repository = SQLiteGraphRepository(backbone)
         retrieval = _build_retrieval_repository(
             settings,
             knowledge_root,
@@ -137,6 +183,7 @@ def _build_workflow_service() -> WorkflowService:
         datasets = PostgresDatasetStore(backbone)
         workflows = PostgresWorkflowRepository(backbone)
         events = PostgresEventRepository(backbone)
+        graph_repository = PostgresGraphRepository(backbone)
         retrieval = _build_retrieval_repository(
             settings,
             knowledge_root,
@@ -153,8 +200,34 @@ def _build_workflow_service() -> WorkflowService:
         events=events,
         knowledge=StaticKnowledgeRepository(knowledge_root),
         retrieval=retrieval,
+        graph_repository=graph_repository,
         retrieval_rule_packs=retrieval_rule_packs(knowledge_root),
+        external_provider_policy=external_provider_policy,
     )
+
+
+@lru_cache(maxsize=1)
+def _build_retrieval_active_learning_service() -> RetrievalActiveLearningService:
+    """Build durable retrieval active-learning queue services."""
+
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryRetrievalActiveLearningRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteRetrievalActiveLearningRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresRetrievalActiveLearningRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return RetrievalActiveLearningService(repository)
 
 
 @lru_cache(maxsize=1)
@@ -180,6 +253,7 @@ def _build_retrieval_judgment_service() -> RetrievalJudgmentService:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
     return RetrievalJudgmentService(
         repository,
+        active_learning_service=_build_retrieval_active_learning_service(),
         evaluation_policy_rules=load_retrieval_evaluation_policy(settings.resolved_knowledge_dir),
     )
 
@@ -234,6 +308,28 @@ def _build_retrieval_repository(
 
 
 @lru_cache(maxsize=1)
+def _build_audit_repository() -> AuditRepository:
+    """Build the generic append-only audit repository."""
+
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        return InMemoryAuditRepository()
+    if settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        return SQLiteAuditRepository(backbone)
+    if settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        return PostgresAuditRepository(backbone)
+    raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+
+
+@lru_cache(maxsize=1)
 def _build_medical_evidence_service() -> MedicalEvidenceService:
     return MedicalEvidenceService()
 
@@ -242,21 +338,164 @@ def _build_medical_evidence_service() -> MedicalEvidenceService:
 def _build_assistant_service() -> AssistantService:
     settings = get_settings()
     planner = None
+    external_provider_policy = external_provider_policy_from_settings(settings)
+    abuse_cost_policy = load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path)
     if settings.llm_provider == "openai":
         planner = OpenAIResponsesPlanner(
             api_key=settings.openai_api_key,
             model=settings.llm_model,
+            planning_model=settings.llm_planning_model,
+            synthesis_model=settings.llm_synthesis_model,
             base_url=settings.llm_base_url,
             timeout_seconds=settings.llm_timeout_seconds,
+            external_provider_policy=external_provider_policy,
+            abuse_cost_policy=abuse_cost_policy,
         )
     return AssistantService(
         OJTFlowToolExecutor(
             workflow_service=_build_workflow_service(),
             medical_evidence_service=_build_medical_evidence_service(),
+            tool_permission_policies=load_assistant_tool_permission_policies(
+                settings.resolved_knowledge_dir
+            ),
         ),
         planner=planner,
+        audit_repository=_build_audit_repository(),
         max_tool_calls=settings.llm_max_tool_calls,
         planning_progress_interval_seconds=settings.llm_planning_progress_interval_seconds,
+        tool_progress_stages=load_assistant_tool_progress_policies(
+            settings.resolved_knowledge_dir
+        ),
+        prompt_injection_policy=load_prompt_injection_policy(
+            settings.resolved_knowledge_dir
+        ),
+    )
+
+
+@lru_cache(maxsize=1)
+def _build_assistant_session_service() -> AssistantSessionService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryAssistantSessionRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteAssistantSessionRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresAssistantSessionRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return AssistantSessionService(repository)
+
+
+@lru_cache(maxsize=1)
+def _build_assistant_memory_service() -> AssistantMemoryService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryAssistantMemoryRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteAssistantMemoryRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresAssistantMemoryRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return AssistantMemoryService(
+        repository,
+        policy=load_assistant_memory_policy(settings.resolved_knowledge_dir),
+    )
+
+
+@lru_cache(maxsize=1)
+def _build_background_job_service() -> BackgroundJobService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryBackgroundJobRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteBackgroundJobRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresBackgroundJobRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return BackgroundJobService(repository)
+
+
+@lru_cache(maxsize=1)
+def _build_document_intake_service() -> DocumentIntakeService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        artifacts = InMemoryUploadedArtifactRepository()
+        datasets = InMemoryDatasetStore()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        artifacts = SQLiteUploadedArtifactRepository(backbone)
+        datasets = SQLiteDatasetStore(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        artifacts = PostgresUploadedArtifactRepository(backbone)
+        datasets = PostgresDatasetStore(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return DocumentIntakeService(
+        artifacts=artifacts,
+        datasets=datasets,
+        jobs=_build_background_job_service(),
+        extractor=LocalDocumentExtractor(),
+        product_mode=settings.product_mode,
+        retention_rules=settings.artifact_retention_rules,
+    )
+
+
+@lru_cache(maxsize=1)
+def _build_governance_service() -> GovernanceService:
+    settings = get_settings()
+    if settings.storage_backend == "memory":
+        repository = InMemoryGovernanceRepository()
+    elif settings.storage_backend == "sqlite":
+        backbone = SQLiteBackboneStore(
+            settings.resolved_database_path,
+            settings.resolved_data_dir,
+        )
+        repository = SQLiteGovernanceRepository(backbone)
+    elif settings.storage_backend == "postgres":
+        backbone = PostgresBackboneStore(
+            settings.postgres_dsn,
+            settings.resolved_data_dir,
+        )
+        repository = PostgresGovernanceRepository(backbone)
+    else:
+        raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
+    return GovernanceService(
+        repository,
+        defaults=load_workspace_defaults(settings.resolved_knowledge_dir),
+        rbac_policy=load_rbac_policy(settings.resolved_knowledge_dir),
     )
 
 
@@ -278,10 +517,52 @@ async def get_retrieval_judgment_service() -> RetrievalJudgmentService:
     return _build_retrieval_judgment_service()
 
 
+async def get_retrieval_active_learning_service() -> RetrievalActiveLearningService:
+    """Return durable retrieval active-learning queue service."""
+
+    return _build_retrieval_active_learning_service()
+
+
+async def get_audit_repository() -> AuditRepository:
+    """Return generic append-only audit repository."""
+
+    return _build_audit_repository()
+
+
 async def get_assistant_service() -> AssistantService:
     """Return natural-language assistant service."""
 
     return _build_assistant_service()
+
+
+async def get_assistant_session_service() -> AssistantSessionService:
+    """Return persisted Assistant chat session service."""
+
+    return _build_assistant_session_service()
+
+
+async def get_assistant_memory_service() -> AssistantMemoryService:
+    """Return persisted PHI-safe Assistant memory service."""
+
+    return _build_assistant_memory_service()
+
+
+async def get_background_job_service() -> BackgroundJobService:
+    """Return durable background job service."""
+
+    return _build_background_job_service()
+
+
+async def get_document_intake_service() -> DocumentIntakeService:
+    """Return uploaded document intake service."""
+
+    return _build_document_intake_service()
+
+
+async def get_governance_service() -> GovernanceService:
+    """Return tenant/workspace governance service."""
+
+    return _build_governance_service()
 
 
 async def get_auth_service() -> AuthService:
@@ -403,4 +684,10 @@ def clear_workflow_service_cache() -> None:
     _build_auth_service.cache_clear()
     _build_medical_evidence_service.cache_clear()
     _build_retrieval_judgment_service.cache_clear()
+    _build_audit_repository.cache_clear()
     _build_assistant_service.cache_clear()
+    _build_assistant_session_service.cache_clear()
+    _build_assistant_memory_service.cache_clear()
+    _build_background_job_service.cache_clear()
+    _build_document_intake_service.cache_clear()
+    _build_governance_service.cache_clear()

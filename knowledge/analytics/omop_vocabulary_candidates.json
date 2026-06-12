@@ -1,0 +1,86 @@
+{
+  "catalog_id": "ojtflow_omop_vocabulary_candidates_v0",
+  "version": "2026-06-11",
+  "rules": [
+    {
+      "rule_id": "loinc_observation_to_measurement",
+      "source_system": "http://loinc.org",
+      "source_resource_types": ["Observation"],
+      "target_vocabulary_id": "LOINC",
+      "target_table": "measurement",
+      "source_path": "resource.code.coding",
+      "concept_id_required": true,
+      "requires_review": true,
+      "notes": ["FHIR Observation LOINC codings can support OMOP MEASUREMENT concept candidates."]
+    },
+    {
+      "rule_id": "snomed_condition_to_condition_occurrence",
+      "source_system": "http://snomed.info/sct",
+      "source_resource_types": ["Condition"],
+      "target_vocabulary_id": "SNOMED",
+      "target_table": "condition_occurrence",
+      "source_path": "resource.code.coding",
+      "concept_id_required": true,
+      "requires_review": true,
+      "notes": ["Condition concepts require reviewed SNOMED or ICD mapping before research use."]
+    },
+    {
+      "rule_id": "rxnorm_medication_to_drug_exposure",
+      "source_system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+      "source_resource_types": ["MedicationRequest", "MedicationStatement", "MedicationAdministration", "Medication"],
+      "target_vocabulary_id": "RxNorm",
+      "target_table": "drug_exposure",
+      "source_path": "resource.medicationCodeableConcept.coding",
+      "concept_id_required": true,
+      "requires_review": true,
+      "notes": ["Drug exposure concepts should be resolved through a reviewed RxNorm vocabulary release."]
+    },
+    {
+      "rule_id": "ucum_unit_to_unit_concept",
+      "source_system": "http://unitsofmeasure.org",
+      "source_resource_types": ["Observation"],
+      "target_vocabulary_id": "UCUM",
+      "target_table": "measurement",
+      "source_path": "resource.valueQuantity.code",
+      "concept_id_required": false,
+      "requires_review": true,
+      "notes": ["Unit source values need UCUM validation before unit_concept_id assignment."]
+    }
+  ],
+  "known_candidates": [
+    {
+      "source_system": "http://loinc.org",
+      "source_code": "4548-4",
+      "source_display": "HbA1c",
+      "target_vocabulary_id": "LOINC",
+      "standard_concept_id": null,
+      "standard_concept_name": null,
+      "standard_concept_code": "4548-4",
+      "confidence": 0.7,
+      "requires_review": true,
+      "source_ref": "terminology://loinc/4548-4"
+    },
+    {
+      "source_system": "http://unitsofmeasure.org",
+      "source_code": "%",
+      "source_display": "percent",
+      "target_vocabulary_id": "UCUM",
+      "standard_concept_id": null,
+      "standard_concept_name": null,
+      "standard_concept_code": "%",
+      "confidence": 0.6,
+      "requires_review": true,
+      "source_ref": "terminology://ucum/%"
+    }
+  ],
+  "standard_refs": [
+    "OHDSI OMOP vocabularies are release-specific and should be resolved from the deployed vocabulary release.",
+    "LOINC: https://loinc.org/",
+    "UCUM: https://ucum.nlm.nih.gov/ucum-service.html",
+    "RxNav/RxNorm: https://lhncbc.nlm.nih.gov/RxNav/"
+  ],
+  "warnings": [
+    "Known candidates in this catalog are seed candidates, not automatic accepted standard concepts.",
+    "A null standard_concept_id means the target deployment must resolve the concept from its OMOP vocabulary release."
+  ]
+}

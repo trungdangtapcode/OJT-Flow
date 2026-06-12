@@ -1,0 +1,55 @@
+{
+  "version": "ucum_seed.v0",
+  "source": "https://ucum.nlm.nih.gov/ucum-service.html",
+  "source_note": "Small UCUM seed list for deterministic validation scaffolding. Use the official UCUM service or a full UCUM library before production clinical validation.",
+  "units": [
+    {
+      "code": "%",
+      "display": "percent",
+      "aliases": ["%", "percent", "percentage"],
+      "clinical_domains": ["laboratory", "vital_signs"]
+    },
+    {
+      "code": "mg/dL",
+      "display": "milligram per deciliter",
+      "aliases": ["mg/dL", "mg/dl", "mg per dL", "milligrams per deciliter"],
+      "clinical_domains": ["laboratory"]
+    },
+    {
+      "code": "mmol/L",
+      "display": "millimole per liter",
+      "aliases": ["mmol/L", "mmol/l", "millimoles per liter"],
+      "clinical_domains": ["laboratory"]
+    },
+    {
+      "code": "umol/L",
+      "display": "micromole per liter",
+      "aliases": ["umol/L", "umol/l", "micromoles per liter"],
+      "clinical_domains": ["laboratory"]
+    },
+    {
+      "code": "mm[Hg]",
+      "display": "millimeter of mercury",
+      "aliases": ["mm[Hg]", "mmHg", "mm hg"],
+      "clinical_domains": ["vital_signs"]
+    },
+    {
+      "code": "/min",
+      "display": "per minute",
+      "aliases": ["/min", "per minute", "bpm", "beats/min"],
+      "clinical_domains": ["vital_signs"]
+    },
+    {
+      "code": "Cel",
+      "display": "degree Celsius",
+      "aliases": ["Cel", "C", "celsius", "degC"],
+      "clinical_domains": ["vital_signs"]
+    },
+    {
+      "code": "[degF]",
+      "display": "degree Fahrenheit",
+      "aliases": ["[degF]", "F", "fahrenheit", "degF"],
+      "clinical_domains": ["vital_signs"]
+    }
+  ]
+}

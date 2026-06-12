@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -10,10 +11,12 @@ from typing import Any
 from ojtflow.application.ports import AuthRepository, IdentityProvider, SessionCache
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
+    ServiceAccountRecord,
     SessionRecord,
     UserRecord,
 )
 from ojtflow.core.errors import OJTFlowError
+from ojtflow.core.ids import new_id
 
 
 class AuthService:
@@ -28,6 +31,7 @@ class AuthService:
         allowed_redirect_uris: set[str] | None,
         session_ttl_seconds: int,
         state_ttl_seconds: int,
+        service_account_token_ttl_seconds: int,
     ) -> None:
         self.repository = repository
         self.cache = cache
@@ -38,6 +42,7 @@ class AuthService:
         }
         self.session_ttl_seconds = session_ttl_seconds
         self.state_ttl_seconds = state_ttl_seconds
+        self.service_account_token_ttl_seconds = service_account_token_ttl_seconds
 
     def google_authorization_url(self, redirect_uri: str | None = None) -> dict[str, str]:
         self._ensure_google_configured()
@@ -124,6 +129,79 @@ class AuthService:
         self.repository.touch_session(token_hash)
         return authenticated
 
+    def create_service_account_identity(
+        self,
+        *,
+        organization_id: str,
+        slug: str,
+        display_name: str,
+        role_key: str,
+        created_by_user_id: str,
+    ) -> ServiceAccountRecord:
+        """Create an automation identity without issuing a bearer token."""
+
+        account_id = new_id("svc")
+        display_name = display_name.strip()
+        if not display_name:
+            raise OJTFlowError("Service account display name is required.")
+        return self.repository.create_service_account(
+            account_id=account_id,
+            organization_id=organization_id,
+            slug=_normalize_service_account_slug(slug),
+            display_name=display_name,
+            role_key=role_key,
+            created_by_user_id=created_by_user_id,
+        )
+
+    def issue_service_account_token(
+        self,
+        *,
+        service_account: ServiceAccountRecord,
+        token_ttl_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        """Issue a one-time bearer token for an existing service account."""
+
+        ttl_seconds = token_ttl_seconds or self.service_account_token_ttl_seconds
+        if ttl_seconds <= 0:
+            raise OJTFlowError("Service account token TTL must be positive.")
+        raw_token = f"ojt_sa_{secrets.token_urlsafe(48)}"
+        token_hash = _hash_token(raw_token)
+        expires_at = _now() + timedelta(seconds=ttl_seconds)
+        session = self.repository.create_session(
+            user_id=service_account.user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        authenticated = AuthenticatedSession(
+            user=UserRecord(
+                user_id=service_account.user_id,
+                google_sub=f"service-account:{service_account.account_id}",
+                email=_service_account_email(service_account.slug, service_account.account_id),
+                email_verified=True,
+                display_name=service_account.display_name,
+                avatar_url=None,
+                created_at=service_account.created_at,
+                updated_at=service_account.updated_at,
+                last_login_at=None,
+            ),
+            session=session,
+            identity_type="service_account",
+            service_account=service_account,
+        )
+        self.cache.set_session(token_hash, _session_payload(authenticated), ttl_seconds)
+        return {
+            "token_type": "bearer",
+            "access_token": raw_token,
+            "expires_at": expires_at.isoformat(),
+            "service_account": service_account,
+            "session": session,
+        }
+
+    def list_service_accounts(self, *, organization_id: str) -> list[ServiceAccountRecord]:
+        """List service accounts for an organization workspace."""
+
+        return self.repository.list_service_accounts(organization_id=organization_id)
+
     def logout(self, token: str) -> None:
         token_hash = _hash_token(token)
         self.repository.revoke_session(token_hash)
@@ -161,6 +239,26 @@ def _public_user(user: UserRecord) -> dict[str, Any]:
     }
 
 
+def _public_service_account(account: ServiceAccountRecord | None) -> dict[str, Any] | None:
+    if account is None:
+        return None
+    return {
+        "account_id": account.account_id,
+        "user_id": account.user_id,
+        "organization_id": account.organization_id,
+        "slug": account.slug,
+        "display_name": account.display_name,
+        "role_key": account.role_key,
+        "status": account.status,
+        "created_by_user_id": account.created_by_user_id,
+        "created_at": account.created_at.isoformat(),
+        "updated_at": account.updated_at.isoformat(),
+        "last_used_at": account.last_used_at.isoformat()
+        if account.last_used_at
+        else None,
+    }
+
+
 def _public_session(session: SessionRecord) -> dict[str, Any]:
     return {
         "session_id": session.session_id,
@@ -171,8 +269,10 @@ def _public_session(session: SessionRecord) -> dict[str, Any]:
 
 def auth_session_response(authenticated: AuthenticatedSession) -> dict[str, Any]:
     return {
+        "identity_type": authenticated.identity_type,
         "user": _public_user(authenticated.user),
         "session": _public_session(authenticated.session),
+        "service_account": _public_service_account(authenticated.service_account),
     }
 
 
@@ -200,6 +300,8 @@ def _session_payload(authenticated: AuthenticatedSession) -> dict[str, Any]:
             "revoked_at": session.revoked_at.isoformat() if session.revoked_at else None,
             "last_seen_at": session.last_seen_at.isoformat() if session.last_seen_at else None,
         },
+        "identity_type": authenticated.identity_type,
+        "service_account": _service_account_payload(authenticated.service_account),
     }
 
 
@@ -227,6 +329,48 @@ def _session_from_payload(payload: dict[str, Any]) -> AuthenticatedSession:
             revoked_at=_parse_optional_datetime(session.get("revoked_at")),
             last_seen_at=_parse_optional_datetime(session.get("last_seen_at")),
         ),
+        identity_type=payload.get("identity_type", "user"),
+        service_account=_service_account_from_payload(payload.get("service_account")),
+    )
+
+
+def _service_account_payload(
+    account: ServiceAccountRecord | None,
+) -> dict[str, Any] | None:
+    if account is None:
+        return None
+    return {
+        "account_id": account.account_id,
+        "user_id": account.user_id,
+        "organization_id": account.organization_id,
+        "slug": account.slug,
+        "display_name": account.display_name,
+        "role_key": account.role_key,
+        "status": account.status,
+        "created_by_user_id": account.created_by_user_id,
+        "created_at": account.created_at.isoformat(),
+        "updated_at": account.updated_at.isoformat(),
+        "last_used_at": account.last_used_at.isoformat()
+        if account.last_used_at
+        else None,
+    }
+
+
+def _service_account_from_payload(payload: dict[str, Any] | None) -> ServiceAccountRecord | None:
+    if not payload:
+        return None
+    return ServiceAccountRecord(
+        account_id=payload["account_id"],
+        user_id=payload["user_id"],
+        organization_id=payload["organization_id"],
+        slug=payload["slug"],
+        display_name=payload["display_name"],
+        role_key=payload["role_key"],
+        status=payload["status"],
+        created_by_user_id=payload["created_by_user_id"],
+        created_at=_parse_datetime(payload["created_at"]),
+        updated_at=_parse_datetime(payload["updated_at"]),
+        last_used_at=_parse_optional_datetime(payload.get("last_used_at")),
     )
 
 
@@ -243,3 +387,14 @@ def _parse_datetime(value: str) -> datetime:
 
 def _parse_optional_datetime(value: str | None) -> datetime | None:
     return _parse_datetime(value) if value else None
+
+
+def _normalize_service_account_slug(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    if not normalized:
+        raise OJTFlowError("Service account slug is required.")
+    return normalized
+
+
+def _service_account_email(slug: str, account_id: str) -> str:
+    return f"{slug}.{account_id}@service-account.ojtflow.local"

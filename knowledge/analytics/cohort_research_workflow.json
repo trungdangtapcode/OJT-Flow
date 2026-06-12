@@ -1,0 +1,44 @@
+{
+  "concept_id": "cohort_research_workflow_v0",
+  "version": "2026-06-11",
+  "intended_use": "Prepare governed, provenance-preserving analytics packages and cohort feasibility inputs for research or operations analytics teams after human approval.",
+  "prohibited_uses": [
+    "Clinical decision support or patient-care recommendation workflows.",
+    "Diagnosis, treatment, triage, or patient-specific clinical advice.",
+    "Autonomous cohort enrollment decisions.",
+    "Replacing IRB, privacy, data-use, or clinical governance review.",
+    "Searching or exporting raw PHI without approval."
+  ],
+  "workflow_steps": [
+    "Ingest source data or external documents as candidate artifacts.",
+    "Classify PHI/sensitivity and preserve source provenance.",
+    "Map supported clinical resources into OMOP preview target tables.",
+    "Generate vocabulary candidates and unresolved concept warnings.",
+    "Run human review for sensitive fields, semantic mappings, and export intent.",
+    "Export an ETL manifest for analytics teams or a downstream OMOP staging job.",
+    "Run downstream OHDSI DQD before using outputs for research analytics."
+  ],
+  "required_approvals": [
+    "data steward approval for semantic mappings",
+    "privacy approval for PHI-bearing source artifacts",
+    "analytics owner approval before downstream ETL",
+    "IRB or data-use approval where required by the organization"
+  ],
+  "output_artifacts": [
+    "OMOP export preview",
+    "vocabulary candidate list",
+    "source ingestion approval decision",
+    "ETL export manifest",
+    "audit and provenance refs"
+  ],
+  "separation_controls": [
+    "Research workflow language must not claim clinical decision support.",
+    "Assistant answers must label cohort outputs as analytics preparation only.",
+    "ClinicalPackage review gates remain separate from OMOP export approval.",
+    "External search results remain candidate sources until ingestion approval."
+  ],
+  "warnings": [
+    "Cohort and analytics workflow outputs are not validated for patient care.",
+    "OMOP preview packages need vocabulary and DQD validation before research use."
+  ]
+}

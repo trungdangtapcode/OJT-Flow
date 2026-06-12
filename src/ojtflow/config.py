@@ -16,8 +16,10 @@ from pydantic import BaseModel, Field, model_validator
 
 EmbeddingProvider = Literal["deterministic", "openai", "huggingface"]
 LLMProvider = Literal["disabled", "openai"]
+ProductMode = Literal["local_dev", "demo", "pilot", "production"]
 RetrievalFramework = Literal["custom", "llamaindex"]
 RerankProvider = Literal["none", "huggingface"]
+RateLimitBackend = Literal["auto", "memory", "redis"]
 StorageBackend = Literal["postgres", "sqlite", "memory"]
 RuntimeSettingsPayload = dict[str, str | int | float | bool]
 RuntimeRetrievalSettingsPayload = RuntimeSettingsPayload
@@ -49,6 +51,12 @@ COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 DNS_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 UPLOAD_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9][a-z0-9-]{0,15}$")
 ALLOWED_STORAGE_BACKENDS: tuple[StorageBackend, ...] = ("postgres", "sqlite", "memory")
+ALLOWED_PRODUCT_MODES: tuple[ProductMode, ...] = (
+    "local_dev",
+    "demo",
+    "pilot",
+    "production",
+)
 ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = (
     "deterministic",
     "openai",
@@ -63,6 +71,7 @@ OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDING_DIMENSIONS = 384
 OPENAI_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
 OPENAI_LLM_MODEL = "chat-latest"
+OPENAI_VISION_MODEL = "gpt-4.1-mini"
 HUGGINGFACE_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 HUGGINGFACE_EMBEDDING_DIMENSIONS = 384
 HUGGINGFACE_RERANK_MODEL = "BAAI/bge-reranker-base"
@@ -75,12 +84,22 @@ DEFAULT_DATABASE_PATH = Path("var/ojtflow.db")
 DEFAULT_DATA_DIR = Path("var")
 DEFAULT_RUNTIME_SETTINGS_PATH = Path("var/runtime_settings.json")
 DEFAULT_KNOWLEDGE_DIR = Path("knowledge")
+DEFAULT_RATE_LIMIT_POLICY_PATH = Path("knowledge/security/rate_limit_policy.json")
+DEFAULT_ABUSE_COST_POLICY_PATH = Path("knowledge/security/abuse_cost_policy.json")
+DEFAULT_AI_RISK_REGISTER_PATH = Path("knowledge/governance/ai_risk_register.json")
+DEFAULT_OWASP_LLM_THREAT_MODEL_PATH = Path(
+    "knowledge/security/owasp_llm_threat_model.json"
+)
+DEFAULT_DISCLAIMER_POLICY_PATH = Path("knowledge/governance/disclaimer_policy.json")
 DEFAULT_MIGRATIONS_DIR = Path("sql/postgres/migrations")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/api/v1/auth/google/callback"
 DEFAULT_GOOGLE_FRONTEND_REDIRECT_URI = "http://localhost:5173/auth/callback"
 LOCAL_OAUTH_REDIRECT_HOSTS = {"localhost", "127.0.0.1", "::1"}
 RUNTIME_RETRIEVAL_SETTING_ALIASES = {
+    "embedding_provider": "OJT_EMBEDDING_PROVIDER",
+    "embedding_model": "OJT_EMBEDDING_MODEL",
+    "embedding_dimensions": "OJT_EMBEDDING_DIMENSIONS",
     "retrieval_framework": "OJT_RETRIEVAL_FRAMEWORK",
     "retrieval_candidate_multiplier": "OJT_RETRIEVAL_CANDIDATE_MULTIPLIER",
     "retrieval_min_candidates": "OJT_RETRIEVAL_MIN_CANDIDATES",
@@ -93,9 +112,22 @@ RUNTIME_RETRIEVAL_SETTING_ALIASES = {
 RUNTIME_ASSISTANT_SETTING_ALIASES = {
     "llm_provider": "OJT_LLM_PROVIDER",
     "llm_model": "OJT_LLM_MODEL",
+    "llm_planning_model": "OJT_LLM_PLANNING_MODEL",
+    "llm_synthesis_model": "OJT_LLM_SYNTHESIS_MODEL",
+    "llm_vision_model": "OJT_LLM_VISION_MODEL",
+    "llm_base_url": "OJT_LLM_BASE_URL",
     "llm_timeout_seconds": "OJT_LLM_TIMEOUT_SECONDS",
     "llm_max_tool_calls": "OJT_LLM_MAX_TOOL_CALLS",
     "llm_planning_progress_interval_seconds": "OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS",
+    "external_openai_llm_enabled": "OJT_EXTERNAL_OPENAI_LLM_ENABLED",
+    "external_openai_llm_allow_phi": "OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI",
+    "external_openai_ocr_enabled": "OJT_EXTERNAL_OPENAI_OCR_ENABLED",
+    "external_openai_ocr_allow_phi": "OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI",
+    "external_openai_ocr_allow_unknown": "OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN",
+    "external_openai_embeddings_enabled": "OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED",
+    "external_openai_embeddings_allow_phi": "OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI",
+    "external_medical_search_enabled": "OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED",
+    "external_medical_search_allow_phi": "OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI",
 }
 RUNTIME_SETTING_ALIASES = {
     **RUNTIME_RETRIEVAL_SETTING_ALIASES,
@@ -106,6 +138,41 @@ RUNTIME_SETTING_ALIASES = {
 class Settings(BaseModel):
     """Environment-backed settings with local demo defaults."""
 
+    product_mode: ProductMode = Field(default="local_dev", alias="OJT_PRODUCT_MODE")
+    no_mock_data: bool = Field(default=False, alias="OJT_NO_MOCK_DATA")
+    audit_hash_chain_required: bool = Field(
+        default=False,
+        alias="OJT_AUDIT_HASH_CHAIN_REQUIRED",
+    )
+    rate_limit_enabled: bool = Field(default=True, alias="OJT_RATE_LIMIT_ENABLED")
+    rate_limit_backend: RateLimitBackend = Field(
+        default="auto",
+        alias="OJT_RATE_LIMIT_BACKEND",
+    )
+    rate_limit_policy_path: Path = Field(
+        default=DEFAULT_RATE_LIMIT_POLICY_PATH,
+        alias="OJT_RATE_LIMIT_POLICY_PATH",
+    )
+    abuse_cost_policy_path: Path = Field(
+        default=DEFAULT_ABUSE_COST_POLICY_PATH,
+        alias="OJT_ABUSE_COST_POLICY_PATH",
+    )
+    ai_risk_register_path: Path = Field(
+        default=DEFAULT_AI_RISK_REGISTER_PATH,
+        alias="OJT_AI_RISK_REGISTER_PATH",
+    )
+    owasp_llm_threat_model_path: Path = Field(
+        default=DEFAULT_OWASP_LLM_THREAT_MODEL_PATH,
+        alias="OJT_OWASP_LLM_THREAT_MODEL_PATH",
+    )
+    disclaimer_policy_path: Path = Field(
+        default=DEFAULT_DISCLAIMER_POLICY_PATH,
+        alias="OJT_DISCLAIMER_POLICY_PATH",
+    )
+    rate_limit_redis_prefix: str = Field(
+        default="ojtflow:rate_limit",
+        alias="OJT_RATE_LIMIT_REDIS_PREFIX",
+    )
     storage_backend: StorageBackend = Field(
         default=DEFAULT_STORAGE_BACKEND,
         alias="OJT_STORAGE_BACKEND",
@@ -156,6 +223,15 @@ class Settings(BaseModel):
         alias="OJT_AUTH_STATE_TTL_SECONDS",
         gt=0,
     )
+    service_account_token_ttl_seconds: int = Field(
+        default=90 * 24 * 60 * 60,
+        alias="OJT_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS",
+        gt=0,
+    )
+    service_account_default_role_key: str = Field(
+        default="operator",
+        alias="OJT_SERVICE_ACCOUNT_DEFAULT_ROLE_KEY",
+    )
     auth_cookie_name: str = Field(default="ojtflow_session", alias="OJT_AUTH_COOKIE_NAME")
     auth_cookie_secure: bool = Field(default=False, alias="OJT_AUTH_COOKIE_SECURE")
     auth_cookie_samesite: str = Field(default="lax", alias="OJT_AUTH_COOKIE_SAMESITE")
@@ -175,9 +251,19 @@ class Settings(BaseModel):
         alias="OJT_UPLOAD_READ_CHUNK_BYTES",
         gt=0,
     )
+    max_batch_upload_files: int = Field(
+        default=20,
+        alias="OJT_MAX_BATCH_UPLOAD_FILES",
+        gt=0,
+        le=100,
+    )
     allowed_upload_extensions: tuple[str, ...] = Field(
         default=DEFAULT_ALLOWED_UPLOAD_EXTENSIONS,
         alias="OJT_ALLOWED_UPLOAD_EXTENSIONS",
+    )
+    artifact_retention_rules: tuple[dict[str, object], ...] = Field(
+        default=(),
+        alias="OJT_ARTIFACT_RETENTION_RULES",
     )
     embedding_provider: EmbeddingProvider = Field(
         default="deterministic",
@@ -204,6 +290,9 @@ class Settings(BaseModel):
     )
     llm_provider: LLMProvider = Field(default="disabled", alias="OJT_LLM_PROVIDER")
     llm_model: str = Field(default=OPENAI_LLM_MODEL, alias="OJT_LLM_MODEL")
+    llm_planning_model: str | None = Field(default=None, alias="OJT_LLM_PLANNING_MODEL")
+    llm_synthesis_model: str | None = Field(default=None, alias="OJT_LLM_SYNTHESIS_MODEL")
+    llm_vision_model: str | None = Field(default=None, alias="OJT_LLM_VISION_MODEL")
     llm_base_url: str = Field(
         default=OPENAI_EMBEDDING_BASE_URL,
         alias="OJT_LLM_BASE_URL",
@@ -223,6 +312,42 @@ class Settings(BaseModel):
         default=2.0,
         alias="OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS",
         gt=0,
+    )
+    external_openai_llm_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_LLM_ENABLED",
+    )
+    external_openai_llm_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI",
+    )
+    external_openai_ocr_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_OCR_ENABLED",
+    )
+    external_openai_ocr_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI",
+    )
+    external_openai_ocr_allow_unknown: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN",
+    )
+    external_openai_embeddings_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED",
+    )
+    external_openai_embeddings_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI",
+    )
+    external_medical_search_enabled: bool = Field(
+        default=True,
+        alias="OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED",
+    )
+    external_medical_search_allow_phi: bool = Field(
+        default=False,
+        alias="OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI",
     )
     hf_embedding_device: str = Field(default="auto", alias="OJT_HF_EMBEDDING_DEVICE")
     hf_embedding_batch_size: int = Field(
@@ -312,6 +437,20 @@ class Settings(BaseModel):
     )
 
     @model_validator(mode="after")
+    def _normalize_llm_models(self) -> "Settings":
+        if not self.llm_planning_model:
+            self.llm_planning_model = self.llm_model
+        if not self.llm_synthesis_model:
+            self.llm_synthesis_model = self.llm_model
+        if not self.llm_vision_model:
+            self.llm_vision_model = (
+                OPENAI_VISION_MODEL
+                if self.llm_model == OPENAI_LLM_MODEL
+                else self.llm_model
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_retrieval_chunking(self) -> "Settings":
         if self.retrieval_chunk_overlap_chars >= self.retrieval_chunk_max_chars:
             raise ValueError(
@@ -329,6 +468,21 @@ class Settings(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_product_mode_policy(self) -> "Settings":
+        if self.product_mode in {"pilot", "production"}:
+            if self.storage_backend == "memory":
+                raise ValueError(
+                    "OJT_STORAGE_BACKEND=memory is not allowed when "
+                    "OJT_PRODUCT_MODE is pilot or production"
+                )
+            if self.llm_provider == "disabled":
+                raise ValueError(
+                    "OJT_LLM_PROVIDER=disabled is not allowed when "
+                    "OJT_PRODUCT_MODE is pilot or production"
+                )
+        return self
+
     @property
     def repo_root(self) -> Path:
         return Path(__file__).resolve().parents[2]
@@ -344,6 +498,26 @@ class Settings(BaseModel):
     @property
     def resolved_knowledge_dir(self) -> Path:
         return _resolve_path(self.knowledge_dir, self.repo_root)
+
+    @property
+    def resolved_rate_limit_policy_path(self) -> Path:
+        return _resolve_path(self.rate_limit_policy_path, self.repo_root)
+
+    @property
+    def resolved_abuse_cost_policy_path(self) -> Path:
+        return _resolve_path(self.abuse_cost_policy_path, self.repo_root)
+
+    @property
+    def resolved_ai_risk_register_path(self) -> Path:
+        return _resolve_path(self.ai_risk_register_path, self.repo_root)
+
+    @property
+    def resolved_owasp_llm_threat_model_path(self) -> Path:
+        return _resolve_path(self.owasp_llm_threat_model_path, self.repo_root)
+
+    @property
+    def resolved_disclaimer_policy_path(self) -> Path:
+        return _resolve_path(self.disclaimer_policy_path, self.repo_root)
 
     @property
     def resolved_migrations_dir(self) -> Path:
@@ -379,6 +553,21 @@ class Settings(BaseModel):
 
         return self.auth_cookie_secure or self.auth_cookie_samesite.lower() == "none"
 
+    @property
+    def effective_no_mock_data(self) -> bool:
+        """Return whether demo/mock data paths must be blocked."""
+
+        return self.no_mock_data or self.product_mode in {"pilot", "production"}
+
+    @property
+    def effective_audit_hash_chain_required(self) -> bool:
+        """Return whether deployment policy requires chained audit records."""
+
+        return self.audit_hash_chain_required or self.product_mode in {
+            "pilot",
+            "production",
+        }
+
 
 def _resolve_path(path: Path, root: Path) -> Path:
     return path if path.is_absolute() else root / path
@@ -389,6 +578,41 @@ def get_settings() -> Settings:
     """Return cached settings."""
 
     settings_kwargs = dict(
+        OJT_PRODUCT_MODE=_parse_product_mode(os.getenv("OJT_PRODUCT_MODE")),
+        OJT_NO_MOCK_DATA=_parse_bool(os.getenv("OJT_NO_MOCK_DATA"), default=False),
+        OJT_AUDIT_HASH_CHAIN_REQUIRED=_parse_bool(
+            os.getenv("OJT_AUDIT_HASH_CHAIN_REQUIRED"),
+            default=False,
+        ),
+        OJT_RATE_LIMIT_ENABLED=_parse_bool(
+            os.getenv("OJT_RATE_LIMIT_ENABLED"),
+            default=True,
+        ),
+        OJT_RATE_LIMIT_BACKEND=_parse_rate_limit_backend(
+            os.getenv("OJT_RATE_LIMIT_BACKEND")
+        ),
+        OJT_RATE_LIMIT_POLICY_PATH=Path(
+            os.getenv("OJT_RATE_LIMIT_POLICY_PATH", str(DEFAULT_RATE_LIMIT_POLICY_PATH))
+        ),
+        OJT_ABUSE_COST_POLICY_PATH=Path(
+            os.getenv("OJT_ABUSE_COST_POLICY_PATH", str(DEFAULT_ABUSE_COST_POLICY_PATH))
+        ),
+        OJT_AI_RISK_REGISTER_PATH=Path(
+            os.getenv("OJT_AI_RISK_REGISTER_PATH", str(DEFAULT_AI_RISK_REGISTER_PATH))
+        ),
+        OJT_OWASP_LLM_THREAT_MODEL_PATH=Path(
+            os.getenv(
+                "OJT_OWASP_LLM_THREAT_MODEL_PATH",
+                str(DEFAULT_OWASP_LLM_THREAT_MODEL_PATH),
+            )
+        ),
+        OJT_DISCLAIMER_POLICY_PATH=Path(
+            os.getenv("OJT_DISCLAIMER_POLICY_PATH", str(DEFAULT_DISCLAIMER_POLICY_PATH))
+        ),
+        OJT_RATE_LIMIT_REDIS_PREFIX=os.getenv(
+            "OJT_RATE_LIMIT_REDIS_PREFIX",
+            "ojtflow:rate_limit",
+        ),
         OJT_STORAGE_BACKEND=_parse_storage_backend(os.getenv("OJT_STORAGE_BACKEND")),
         OJT_DATABASE_URL=_parse_postgres_dsn(
             os.getenv(
@@ -443,8 +667,13 @@ def get_settings() -> Settings:
         OJT_UPLOAD_READ_CHUNK_BYTES=int(
             os.getenv("OJT_UPLOAD_READ_CHUNK_BYTES", str(1024 * 1024))
         ),
+        OJT_MAX_BATCH_UPLOAD_FILES=int(os.getenv("OJT_MAX_BATCH_UPLOAD_FILES", "20")),
         OJT_ALLOWED_UPLOAD_EXTENSIONS=_parse_extensions(
             os.getenv("OJT_ALLOWED_UPLOAD_EXTENSIONS")
+        ),
+        OJT_ARTIFACT_RETENTION_RULES=_parse_json_object_list(
+            os.getenv("OJT_ARTIFACT_RETENTION_RULES"),
+            setting_name="OJT_ARTIFACT_RETENTION_RULES",
         ),
         OJT_EMBEDDING_PROVIDER=_parse_embedding_provider(os.getenv("OJT_EMBEDDING_PROVIDER")),
         OJT_EMBEDDING_MODEL=_parse_embedding_model(
@@ -465,6 +694,15 @@ def get_settings() -> Settings:
         ),
         OJT_LLM_PROVIDER=_parse_llm_provider(os.getenv("OJT_LLM_PROVIDER")),
         OJT_LLM_MODEL=_parse_llm_model(os.getenv("OJT_LLM_MODEL")),
+        OJT_LLM_PLANNING_MODEL=_parse_optional_llm_model(
+            os.getenv("OJT_LLM_PLANNING_MODEL")
+        ),
+        OJT_LLM_SYNTHESIS_MODEL=_parse_optional_llm_model(
+            os.getenv("OJT_LLM_SYNTHESIS_MODEL")
+        ),
+        OJT_LLM_VISION_MODEL=_parse_optional_llm_model(
+            os.getenv("OJT_LLM_VISION_MODEL", os.getenv("OJT_OPENAI_VISION_MODEL"))
+        ),
         OJT_LLM_BASE_URL=_parse_openai_base_url(
             os.getenv("OJT_LLM_BASE_URL"),
             setting_name="OpenAI LLM base URL",
@@ -473,6 +711,42 @@ def get_settings() -> Settings:
         OJT_LLM_MAX_TOOL_CALLS=int(os.getenv("OJT_LLM_MAX_TOOL_CALLS", "4")),
         OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS=float(
             os.getenv("OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS", "2.0")
+        ),
+        OJT_EXTERNAL_OPENAI_LLM_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_LLM_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI"),
+            default=False,
+        ),
+        OJT_EXTERNAL_OPENAI_OCR_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_OCR_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI"),
+            default=False,
+        ),
+        OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI"),
+            default=False,
+        ),
+        OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED=_parse_bool(
+            os.getenv("OJT_EXTERNAL_MEDICAL_SEARCH_ENABLED"),
+            default=True,
+        ),
+        OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI=_parse_bool(
+            os.getenv("OJT_EXTERNAL_MEDICAL_SEARCH_ALLOW_PHI"),
+            default=False,
         ),
         OJT_HF_EMBEDDING_DEVICE=_parse_hf_embedding_device(
             os.getenv("OJT_HF_EMBEDDING_DEVICE")
@@ -538,6 +812,9 @@ def runtime_retrieval_settings(settings: Settings) -> RuntimeRetrievalSettingsPa
     """Return the retrieval settings that operators may change at runtime."""
 
     return {
+        "embedding_provider": settings.embedding_provider,
+        "embedding_model": settings.embedding_model,
+        "embedding_dimensions": settings.embedding_dimensions,
         "retrieval_framework": settings.retrieval_framework,
         "retrieval_candidate_multiplier": settings.retrieval_candidate_multiplier,
         "retrieval_min_candidates": settings.retrieval_min_candidates,
@@ -555,8 +832,26 @@ def runtime_assistant_settings(settings: Settings) -> RuntimeAssistantSettingsPa
     return {
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model,
+        "llm_planning_model": settings.llm_planning_model or settings.llm_model,
+        "llm_synthesis_model": settings.llm_synthesis_model or settings.llm_model,
+        "llm_vision_model": settings.llm_vision_model or OPENAI_VISION_MODEL,
+        "llm_base_url": settings.llm_base_url,
         "llm_timeout_seconds": settings.llm_timeout_seconds,
         "llm_max_tool_calls": settings.llm_max_tool_calls,
+        "llm_planning_progress_interval_seconds": (
+            settings.llm_planning_progress_interval_seconds
+        ),
+        "external_openai_llm_enabled": settings.external_openai_llm_enabled,
+        "external_openai_llm_allow_phi": settings.external_openai_llm_allow_phi,
+        "external_openai_ocr_enabled": settings.external_openai_ocr_enabled,
+        "external_openai_ocr_allow_phi": settings.external_openai_ocr_allow_phi,
+        "external_openai_ocr_allow_unknown": settings.external_openai_ocr_allow_unknown,
+        "external_openai_embeddings_enabled": settings.external_openai_embeddings_enabled,
+        "external_openai_embeddings_allow_phi": (
+            settings.external_openai_embeddings_allow_phi
+        ),
+        "external_medical_search_enabled": settings.external_medical_search_enabled,
+        "external_medical_search_allow_phi": settings.external_medical_search_allow_phi,
     }
 
 
@@ -576,6 +871,35 @@ def save_runtime_assistant_settings(
     """Persist runtime assistant settings and validate the effective settings first."""
 
     return _save_runtime_settings(settings, updates, RUNTIME_ASSISTANT_SETTING_ALIASES)
+
+
+def runtime_settings_history_path(settings: Settings) -> Path:
+    """Return the runtime setting history file path."""
+
+    runtime_path = settings.resolved_runtime_settings_path
+    return runtime_path.with_name(f"{runtime_path.stem}.history.jsonl")
+
+
+def load_runtime_settings_overrides(settings: Settings) -> RuntimeSettingsPayload:
+    """Return sanitized runtime settings overrides."""
+
+    return _load_runtime_settings_overrides(settings.resolved_runtime_settings_path)
+
+
+def replace_runtime_settings_overrides(
+    settings: Settings,
+    values: RuntimeSettingsPayload,
+) -> Settings:
+    """Validate and replace the full runtime settings override payload."""
+
+    sanitized = {
+        key: _coerce_runtime_setting_value(key, value)
+        for key, value in values.items()
+        if key in RUNTIME_SETTING_ALIASES
+    }
+    validated = _validate_runtime_settings(settings, sanitized)
+    _write_runtime_settings_overrides(settings.resolved_runtime_settings_path, sanitized)
+    return validated
 
 
 def _save_runtime_settings(
@@ -671,6 +995,14 @@ def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float 
         if not isinstance(value, str):
             raise ValueError("llm_model must be a string")
         return _parse_llm_model(value)
+    if key in {"llm_planning_model", "llm_synthesis_model", "llm_vision_model"}:
+        if not isinstance(value, str):
+            raise ValueError(f"{key} must be a string")
+        return _parse_llm_model(value)
+    if key == "llm_base_url":
+        if not isinstance(value, str):
+            raise ValueError("llm_base_url must be a string")
+        return _parse_openai_base_url(value, setting_name="OpenAI LLM base URL")
     if key == "llm_timeout_seconds":
         if isinstance(value, bool):
             raise ValueError("llm_timeout_seconds must be a number")
@@ -679,6 +1011,44 @@ def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float 
         if isinstance(value, bool):
             raise ValueError("llm_max_tool_calls must be an integer")
         return int(value)
+    if key == "llm_planning_progress_interval_seconds":
+        if isinstance(value, bool):
+            raise ValueError("llm_planning_progress_interval_seconds must be a number")
+        return float(value)
+    if key in {
+        "external_openai_llm_enabled",
+        "external_openai_llm_allow_phi",
+        "external_openai_ocr_enabled",
+        "external_openai_ocr_allow_phi",
+        "external_openai_ocr_allow_unknown",
+        "external_openai_embeddings_enabled",
+        "external_openai_embeddings_allow_phi",
+        "external_medical_search_enabled",
+        "external_medical_search_allow_phi",
+    }:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return _parse_bool(value, default=False)
+        raise ValueError(f"{key} must be a boolean")
+    if key == "embedding_provider":
+        if not isinstance(value, str):
+            raise ValueError("embedding_provider must be a string")
+        return _parse_embedding_provider(value)
+    if key == "embedding_model":
+        if not isinstance(value, str):
+            raise ValueError("embedding_model must be a string")
+        normalized = value.strip()
+        if not _valid_model_identifier(normalized):
+            raise ValueError("embedding_model must be a non-blank model id")
+        return normalized
+    if key == "embedding_dimensions":
+        if isinstance(value, bool):
+            raise ValueError("embedding_dimensions must be an integer")
+        parsed_dimensions = int(value)
+        if parsed_dimensions <= 0:
+            raise ValueError("embedding_dimensions must be greater than zero")
+        return parsed_dimensions
     if key == "retrieval_framework":
         if not isinstance(value, str):
             raise ValueError("retrieval_framework must be a string")
@@ -729,6 +1099,27 @@ def _parse_extensions(value: str | None) -> tuple[str, ...]:
         if extension not in extensions:
             extensions.append(extension)
     return tuple(extensions) or DEFAULT_ALLOWED_UPLOAD_EXTENSIONS
+
+
+def _parse_json_object_list(
+    value: str | None,
+    *,
+    setting_name: str,
+) -> tuple[dict[str, object], ...]:
+    if not value:
+        return ()
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{setting_name} must be valid JSON") from exc
+    if not isinstance(loaded, list):
+        raise ValueError(f"{setting_name} must be a JSON list")
+    result: list[dict[str, object]] = []
+    for index, item in enumerate(loaded):
+        if not isinstance(item, dict):
+            raise ValueError(f"{setting_name}[{index}] must be a JSON object")
+        result.append({str(key): value for key, value in item.items()})
+    return tuple(result)
 
 
 def _parse_oauth_redirect_uri(
@@ -944,6 +1335,28 @@ def _parse_storage_backend(value: str | None) -> StorageBackend:
     )
 
 
+def _parse_rate_limit_backend(value: str | None) -> RateLimitBackend:
+    normalized = "auto" if value is None else value.strip().lower()
+    if normalized in {"auto", "memory", "redis"}:
+        return normalized  # type: ignore[return-value]
+    raise ValueError(
+        "Invalid rate-limit backend environment value: "
+        f"{value}. Expected one of: auto, memory, redis"
+    )
+
+
+def _parse_product_mode(value: str | None) -> ProductMode:
+    normalized = "local_dev" if value is None else value.strip().lower().replace("-", "_")
+    if normalized in {"local", "dev", "development"}:
+        return "local_dev"
+    if normalized in ALLOWED_PRODUCT_MODES:
+        return normalized  # type: ignore[return-value]
+    allowed = ", ".join(ALLOWED_PRODUCT_MODES)
+    raise ValueError(
+        f"Invalid product mode environment value: {value}. Expected one of: {allowed}"
+    )
+
+
 def _parse_embedding_provider(value: str | None) -> EmbeddingProvider:
     normalized = "deterministic" if value is None else value.strip().lower()
     if normalized == "deterministic":
@@ -1001,6 +1414,12 @@ def _parse_llm_model(value: str | None) -> str:
     raise ValueError(
         f"Invalid LLM model environment value: {value}. Expected a non-blank model id"
     )
+
+
+def _parse_optional_llm_model(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    return _parse_llm_model(value)
 
 
 def _parse_embedding_model(value: str | None, *, provider: str | None = None) -> str:

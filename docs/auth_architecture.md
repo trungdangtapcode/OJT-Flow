@@ -3,16 +3,16 @@
 OJTFlow auth follows the same clean-architecture boundary as workflows:
 
 - `application.auth_service.AuthService` owns the use case: OAuth state, user
-  upsert, session creation, token lookup, and logout.
+  upsert, service-account creation, session creation, token lookup, and logout.
 - `application.ports` defines `IdentityProvider`, `AuthRepository`, and
   `SessionCache`.
 - `infrastructure.auth.google.GoogleOAuthClient` owns Google OpenID Connect
   details, validates token-response shape, and verifies ID tokens with Google's
   verifier.
 - `infrastructure.storage.auth_postgres.PostgresAuthRepository` stores
-  production users and sessions.
+  production users, service accounts, and sessions.
 - `infrastructure.storage.auth_sqlite.SQLiteAuthRepository` keeps local
-  fallback sessions restart-safe.
+  fallback users, service accounts, and sessions restart-safe.
 - `infrastructure.storage.auth_memory.InMemoryAuthRepository` and
   `InMemorySessionCache` are for tests and ephemeral runs.
 
@@ -34,6 +34,12 @@ OAuth state writes/reads and session cache operations raise a structured
 `dependency_unavailable` API error instead of silently using process-local
 cache. This keeps local development fallback behavior out of production-like
 multi-instance deployments.
+
+Service-account tokens use the same hashed session storage with an `ojt_sa_`
+raw-token prefix. Service accounts are represented by normal user rows with
+`google_sub = service-account:{account_id}` and are attached to an organization
+membership with an explicit RBAC role before the token is returned. See
+`docs/service_accounts_v0.md`.
 
 ## Browser Session Transport
 
@@ -105,6 +111,10 @@ that owner. Cross-user workflow or review access returns the standard
   timeout and must be positive.
 - `OJT_AUTH_SESSION_TTL_SECONDS` and `OJT_AUTH_STATE_TTL_SECONDS` control
   browser session and OAuth state lifetime. Both must be positive.
+- `OJT_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS` controls default automation bearer
+  token lifetime.
+- `OJT_SERVICE_ACCOUNT_DEFAULT_ROLE_KEY` controls the default assignable role
+  used when service-account creation omits `role_key`.
 
 ## Verification
 
@@ -123,5 +133,7 @@ Relevant coverage:
 - workflow and review endpoints are scoped to the authenticated owner
 - browser logout and revoked-session flows clear protected UI and cached server
   state
+- service-account tokens authenticate as `identity_type=service_account` and
+  remain governed by workspace RBAC
 - malformed or unexpected Google token responses are wrapped as expected
   `OJTFlowError` failures instead of leaking parser exceptions

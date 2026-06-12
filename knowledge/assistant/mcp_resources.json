@@ -1,0 +1,173 @@
+{
+  "version": "mcp_resources.v1",
+  "resources": [
+    {
+      "resource_id": "assistant_tool_catalog",
+      "uri": "ojtflow://assistant/tools",
+      "name": "assistant_tools",
+      "title": "Assistant Tool Catalog",
+      "description": "Allowlisted OJTFlow tools with permission scope, risk, approval, and input schema metadata.",
+      "mime_type": "application/json",
+      "provider_key": "assistant_tool_catalog",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "tools", "governance"],
+      "roadmap_refs": ["F105", "F113"]
+    },
+    {
+      "resource_id": "assistant_answer_templates",
+      "uri": "ojtflow://assistant/answer-templates",
+      "name": "assistant_answer_templates",
+      "title": "Assistant Answer Templates",
+      "description": "Governed response structures for validation, retrieval, standards, workflow, review, and export tasks.",
+      "mime_type": "application/json",
+      "provider_key": "assistant_answer_templates",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "answer_templates"],
+      "roadmap_refs": ["F108", "F113"]
+    },
+    {
+      "resource_id": "assistant_examples",
+      "uri": "ojtflow://assistant/examples",
+      "name": "assistant_examples",
+      "title": "Assistant Starter Examples",
+      "description": "End-user task starters loaded from trusted knowledge data.",
+      "mime_type": "application/json",
+      "provider_key": "assistant_examples",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "onboarding"],
+      "roadmap_refs": ["F096", "F113"]
+    },
+    {
+      "resource_id": "assistant_tool_progress_policies",
+      "uri": "ojtflow://assistant/tool-progress-policies",
+      "name": "assistant_tool_progress_policies",
+      "title": "Assistant Tool Progress Policies",
+      "description": "Data-driven stream progress stages for Assistant tool execution, including validation, retrieval, OCR-adjacent extraction, workflow, and review operations.",
+      "mime_type": "application/json",
+      "provider_key": "assistant_tool_progress_policies",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "streaming", "tools", "governance"],
+      "roadmap_refs": ["F100", "F113"]
+    },
+    {
+      "resource_id": "assistant_memory_policy",
+      "uri": "ojtflow://assistant/memory-policy",
+      "name": "assistant_memory_policy",
+      "title": "Assistant Memory Policy",
+      "description": "Policy-allowlisted operational preferences the Assistant may remember, plus denial rules for PHI and raw content.",
+      "mime_type": "application/json",
+      "provider_key": "assistant_memory_policy",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "memory", "governance"],
+      "roadmap_refs": ["F107", "F113"]
+    },
+    {
+      "resource_id": "remote_mcp_deployment_policy",
+      "uri": "ojtflow://assistant/mcp/remote-policy",
+      "name": "remote_mcp_deployment_policy",
+      "title": "Remote MCP Deployment Policy",
+      "description": "Readiness controls for remote MCP OAuth, resource indicators, per-user scoping, rate limits, and audit.",
+      "mime_type": "application/json",
+      "provider_key": "remote_mcp_deployment_policy",
+      "permission_scope": "data:read",
+      "tags": ["assistant", "mcp", "remote", "security", "governance"],
+      "roadmap_refs": ["F115", "F116"]
+    },
+    {
+      "resource_id": "retrieval_strategies",
+      "uri": "ojtflow://retrieval/strategies",
+      "name": "retrieval_strategies",
+      "title": "Retrieval Strategy Catalog",
+      "description": "Hybrid retrieval, RRF, metadata-filtered, exact-source, and review-oriented strategy profiles.",
+      "mime_type": "application/json",
+      "provider_key": "retrieval_strategies",
+      "permission_scope": "data:read",
+      "tags": ["retrieval", "rag", "strategy"],
+      "roadmap_refs": ["F073", "F113"]
+    },
+    {
+      "resource_id": "source_trust_policies",
+      "uri": "ojtflow://retrieval/source-policies",
+      "name": "source_trust_policies",
+      "title": "Source Trust Policies",
+      "description": "Healthcare source authority, scope, license, refresh, and intended-use policies.",
+      "mime_type": "application/json",
+      "provider_key": "source_trust_policies",
+      "permission_scope": "data:read",
+      "tags": ["retrieval", "governance", "sources"],
+      "roadmap_refs": ["F070", "F113"]
+    },
+    {
+      "resource_id": "retrieval_search_presets",
+      "uri": "ojtflow://retrieval/search-presets",
+      "name": "retrieval_search_presets",
+      "title": "Retrieval Search Presets",
+      "description": "Data-driven query presets for validation, FHIR mapping, terminology, PHI, and medical search workflows.",
+      "mime_type": "application/json",
+      "provider_key": "retrieval_search_presets",
+      "permission_scope": "data:read",
+      "tags": ["retrieval", "presets"],
+      "roadmap_refs": ["F075", "F113"]
+    },
+    {
+      "resource_id": "retrieval_search_options",
+      "uri": "ojtflow://retrieval/search-options",
+      "name": "retrieval_search_options",
+      "title": "Retrieval Search Options",
+      "description": "Allowed retrieval UI/API options such as formats, top-k values, source types, and standards filters.",
+      "mime_type": "application/json",
+      "provider_key": "retrieval_search_options",
+      "permission_scope": "data:read",
+      "tags": ["retrieval", "query_builder"],
+      "roadmap_refs": ["F080", "F113"]
+    },
+    {
+      "resource_id": "workflow_queue",
+      "uri": "ojtflow://workflows/recent",
+      "name": "workflow_queue",
+      "title": "Recent Workflow Queue",
+      "description": "Recent workflow states visible to the local MCP server runtime.",
+      "mime_type": "application/json",
+      "provider_key": "workflow_queue",
+      "permission_scope": "data:read",
+      "tags": ["workflow", "operations"],
+      "roadmap_refs": ["F113"]
+    },
+    {
+      "resource_id": "review_queue",
+      "uri": "ojtflow://reviews/pending",
+      "name": "review_queue",
+      "title": "Pending Review Queue",
+      "description": "Recent workflows with pending human review gates.",
+      "mime_type": "application/json",
+      "provider_key": "review_queue",
+      "permission_scope": "data:read",
+      "tags": ["review", "governance"],
+      "roadmap_refs": ["F113"]
+    },
+    {
+      "resource_id": "schema_catalog",
+      "uri": "ojtflow://schemas/catalog",
+      "name": "schema_catalog",
+      "title": "Schema Catalog",
+      "description": "Configured validation schemas available to workflows and Assistant tools.",
+      "mime_type": "application/json",
+      "provider_key": "schema_catalog",
+      "permission_scope": "data:read",
+      "tags": ["schemas", "validation"],
+      "roadmap_refs": ["F113"]
+    },
+    {
+      "resource_id": "knowledge_source_inventory",
+      "uri": "ojtflow://knowledge/sources",
+      "name": "knowledge_source_inventory",
+      "title": "Knowledge Source Inventory",
+      "description": "Indexed retrieval source inventory including source type, trust level, domain, standard, and chunk count.",
+      "mime_type": "application/json",
+      "provider_key": "knowledge_source_inventory",
+      "permission_scope": "data:read",
+      "tags": ["retrieval", "knowledge", "inventory"],
+      "roadmap_refs": ["F113"]
+    }
+  ]
+}

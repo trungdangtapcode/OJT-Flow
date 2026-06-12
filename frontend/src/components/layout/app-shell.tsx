@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Bot,
   ClipboardCheck,
   Database,
@@ -18,9 +19,11 @@ import {
 
 import { useAuth } from "../../app/auth";
 import { API_BASE_URL } from "../../api";
-import { useRuntimeConfigQuery } from "../../lib/server-state";
+import { useRuntimeConfigQuery, useRuntimeDisclaimersQuery } from "../../lib/server-state";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
+import { PageGuide } from "./page-guide";
+import type { DisclaimerMessage, DisclaimerSurface } from "../../types";
 
 const navGroups = [
   {
@@ -51,6 +54,7 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
   const runtimeConfigQuery = useRuntimeConfigQuery();
+  const disclaimersQuery = useRuntimeDisclaimersQuery();
   const [refreshing, setRefreshing] = React.useState(false);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const runtimeConfig = runtimeConfigQuery.data;
@@ -70,7 +74,7 @@ export function AppShell() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-[204px_minmax(0,1fr)] bg-sidebar max-lg:grid-cols-1">
+    <div className="grid h-dvh min-h-dvh grid-cols-[204px_minmax(0,1fr)] overflow-hidden bg-sidebar max-lg:h-auto max-lg:min-h-screen max-lg:grid-cols-1 max-lg:overflow-visible">
       <aside className="sticky top-0 z-20 flex h-dvh flex-col border-r border-black/15 bg-sidebar p-3 text-sidebar-foreground shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-r-0 max-lg:p-2 max-sm:grid-cols-1 max-sm:gap-0 max-sm:p-1.5">
         <div className="mb-6 flex shrink-0 items-center gap-3 px-1 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:hidden">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ccfbf1] text-[11px] font-black text-sidebar shadow-[0_8px_24px_rgba(45,212,191,0.16)] sm:h-9 sm:w-9 sm:rounded-lg sm:text-sm">
@@ -100,6 +104,7 @@ export function AppShell() {
                       active && "bg-white/12 text-white ring-1 ring-white/12 shadow-[inset_3px_0_0_#5eead4] max-lg:shadow-none",
                     )}
                     key={item.to}
+                    preload="intent"
                     title={item.label}
                     to={item.to}
                   >
@@ -112,8 +117,8 @@ export function AppShell() {
           ))}
         </nav>
       </aside>
-      <main className="min-w-0 bg-background">
-        <header className="sticky top-0 z-10 border-b border-border bg-card/88 backdrop-blur">
+      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background max-lg:min-h-screen max-lg:overflow-visible">
+        <header className="z-10 shrink-0 border-b border-border bg-card/88 backdrop-blur">
           <div className="mx-auto flex min-h-12 w-full max-w-[1440px] items-center justify-between gap-3 px-6 py-2 max-md:px-4 max-sm:gap-2 max-sm:px-3">
             <div className="hidden min-w-0 items-center gap-2 overflow-x-auto text-[11px] font-bold text-muted-foreground sm:flex">
               <span className="rounded-full bg-muted px-2 py-1">API {API_BASE_URL}</span>
@@ -140,7 +145,7 @@ export function AppShell() {
                 type="button"
                 variant="outline"
               >
-                <Link aria-label="Open assistant" to="/assistant">
+                <Link aria-label="Open assistant" preload="intent" to="/assistant">
                   <Bot className="h-4 w-4" />
                   <span className="max-sm:hidden">Assistant</span>
                 </Link>
@@ -171,12 +176,109 @@ export function AppShell() {
             </div>
           </div>
         </header>
-        <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4 max-sm:p-2">
-          <Outlet />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain max-lg:overflow-visible">
+          <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4 max-sm:p-2">
+            <PageGuide pathname={pathname} />
+            <ClinicalBoundaryBanner
+              message={disclaimerMessageForPath(disclaimersQuery.data?.surfaces, pathname)}
+            />
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>
   );
+}
+
+function ClinicalBoundaryBanner({ message }: { message?: DisclaimerMessage | null }) {
+  if (!message) return null;
+  const severityClass =
+    message.severity === "critical"
+      ? "border-red-200 bg-red-50 text-red-950"
+      : message.severity === "caution"
+        ? "border-amber-200 bg-amber-50 text-amber-950"
+        : "border-border bg-muted/40 text-muted-foreground";
+  const iconClass =
+    message.severity === "critical"
+      ? "text-red-700"
+      : message.severity === "caution"
+        ? "text-amber-700"
+        : "text-muted-foreground";
+  return (
+    <section className={cn("mb-4 rounded-md border px-3 py-2.5 text-sm", severityClass)}>
+      <div className="grid gap-2 sm:grid-cols-[20px_minmax(0,1fr)]">
+        <AlertTriangle className={cn("mt-0.5 h-4 w-4", iconClass)} />
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="font-black">{message.title}</div>
+            {message.review_required ? (
+              <span className="rounded-full border border-current/20 bg-white/50 px-2 py-0.5 text-[11px] font-bold">
+                human review required
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 leading-6">{message.message}</p>
+          <details className="mt-1">
+            <summary className="cursor-pointer text-xs font-bold uppercase tracking-normal">
+              Boundary details
+            </summary>
+            <div className="mt-2 grid gap-2 text-xs leading-5 sm:grid-cols-2">
+              <div>
+                <div className="font-bold">Review</div>
+                <p>{message.human_review_text}</p>
+              </div>
+              <div>
+                <div className="font-bold">Evidence</div>
+                <p>{message.evidence_text}</p>
+              </div>
+              {message.prohibited_uses.length ? (
+                <div className="sm:col-span-2">
+                  <div className="font-bold">Do not use for</div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {message.prohibited_uses.map((use) => (
+                      <span
+                        className="rounded-full border border-current/20 bg-white/45 px-2 py-0.5 font-semibold"
+                        key={use}
+                      >
+                        {use}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function disclaimerMessageForPath(
+  surfaces: DisclaimerMessage[] | undefined,
+  pathname: string,
+): DisclaimerMessage | null {
+  if (!surfaces?.length) return null;
+  const surfaceId = disclaimerSurfaceForPath(pathname);
+  return (
+    surfaces.find((surface) => surface.surface_id === surfaceId) ??
+    surfaces.find((surface) => surface.surface_id === "global") ??
+    null
+  );
+}
+
+function disclaimerSurfaceForPath(pathname: string): DisclaimerSurface {
+  if (pathname.startsWith("/assistant")) return "assistant";
+  if (pathname.startsWith("/workbench")) return "workbench";
+  if (pathname.startsWith("/workflows/")) return "workflow_detail";
+  if (pathname.startsWith("/workflows")) return "workflows";
+  if (pathname.startsWith("/reviews")) return "reviews";
+  if (pathname.startsWith("/retrieval")) return "retrieval";
+  if (pathname.startsWith("/audit")) return "audit";
+  if (pathname.startsWith("/schemas")) return "schemas";
+  if (pathname.startsWith("/settings")) return "settings";
+  if (pathname.startsWith("/help")) return "help";
+  return "global";
 }
 
 function UserAvatar({

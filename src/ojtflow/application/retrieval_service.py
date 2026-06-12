@@ -7,15 +7,34 @@ import json
 from hashlib import sha256
 from typing import Any
 
+from ojtflow.application.graph_conflict_service import GraphConflictService
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.ports import RetrievalRepository
+from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
+from ojtflow.core.contracts.artifacts import ArtifactRetentionPolicy
 from ojtflow.core.contracts.data import DataProfile
+from ojtflow.core.contracts.enums import DataFormat
+from ojtflow.core.contracts.external_provider import (
+    ExternalProviderDecision,
+    ExternalProviderPolicy,
+)
+from ojtflow.core.contracts.redaction import RedactionActionType
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
+    RetrievalPlan,
+    RetrievalPlanCoverageSummary,
+    RetrievalPlanTaskSummary,
     RetrievalPackage,
     RetrievalQuery,
+    RetrievalQueryAnalysis,
+    RetrievalQueryDiagnostic,
     RetrievalSource,
 )
+from ojtflow.core.errors import ToolExecutionError
+from ojtflow.core.policy.external_provider_policy import decide_external_provider_handoff
+from ojtflow.data_tools.redaction import build_redaction_preview
 
 
 class RetrievalService:
@@ -25,11 +44,17 @@ class RetrievalService:
         self,
         repository: RetrievalRepository,
         graph_ner: GraphNERService | None = None,
+        graph_conflicts: GraphConflictService | None = None,
+        answer_synthesizer: RetrievalAnswerSynthesizer | None = None,
         rule_packs: Sequence[dict[str, Any]] | None = None,
+        external_provider_policy: ExternalProviderPolicy | None = None,
     ) -> None:
         self.repository = repository
         self.graph_ner = graph_ner or GraphNERService()
+        self.graph_conflicts = graph_conflicts or GraphConflictService()
+        self.answer_synthesizer = answer_synthesizer or RetrievalAnswerSynthesizer()
         self.rule_packs = [dict(pack) for pack in rule_packs or ()]
+        self.external_provider_policy = external_provider_policy
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         """Run direct retrieval."""
@@ -37,12 +62,69 @@ class RetrievalService:
         package = self.repository.search(query)
         package = self._attach_search_metadata(package, query)
         package = self._attach_rule_pack_metadata(package)
-        return self.graph_ner.augment_package(package, query)
+        package = self._apply_external_search_policy(package, query)
+        package = self.graph_ner.augment_package(package, query)
+        package = self.graph_conflicts.augment_package(package, query)
+        return self.answer_synthesizer.augment_package(package, query)
 
-    def list_sources(self) -> list[RetrievalSource]:
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan:
+        """Build a plan-only retrieval analysis without ranking evidence."""
+
+        plan = self.repository.plan(query)
+        request = _search_request_payload(query)
+        plan = self._apply_external_search_policy_to_plan(plan, query)
+        return plan.model_copy(
+            update={
+                "search_signature": _search_request_signature(request),
+            }
+        )
+
+    def list_sources(self, organization_id: str | None = None) -> list[RetrievalSource]:
         """List configured retrieval sources."""
 
-        return self.repository.list_sources()
+        return self.repository.list_sources(organization_id=organization_id)
+
+    def ingest_private_document(
+        self,
+        *,
+        owner_user_id: str,
+        organization_id: str,
+        title: str,
+        text: str,
+        input_format: DataFormat | None = None,
+        redaction_action: RedactionActionType | None = None,
+        retention_policy: ArtifactRetentionPolicy | None = None,
+        source_ref: str | None = None,
+        artifact_id: str | None = None,
+        request_id: str | None = None,
+    ) -> PrivateCorpusIngestionResult:
+        """Redact and index a tenant-private document into retrieval."""
+
+        redaction_preview = build_redaction_preview(
+            text,
+            data_format=input_format,
+            action_override=redaction_action,
+        )
+        if not redaction_preview.redacted_text.strip():
+            raise ToolExecutionError(
+                "Private corpus ingestion produced no indexable redacted text.",
+                details={
+                    "artifact_id": artifact_id,
+                    "source_ref": source_ref,
+                    "redaction_match_count": len(redaction_preview.matches),
+                },
+            )
+        return self.repository.ingest_private_document(
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy or _default_private_retention_policy(),
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+            request_id=request_id,
+        )
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
         """Refresh retrieval index from configured trusted sources."""
@@ -51,6 +133,11 @@ class RetrievalService:
             include_seeded=include_seeded,
             include_corpus=include_corpus,
         )
+
+    def index_manifest(self) -> RetrievalIndexManifest:
+        """Return operational metadata for the active retrieval index."""
+
+        return self.repository.index_manifest()
 
     def integrity_report(
         self,
@@ -108,6 +195,97 @@ class RetrievalService:
         }
         return package.model_copy(update={"handoff_context": handoff_context})
 
+    def _apply_external_search_policy(
+        self,
+        package: RetrievalPackage,
+        query: RetrievalQuery,
+    ) -> RetrievalPackage:
+        decision = self._external_search_decision(query)
+        if decision is None:
+            return package
+
+        handoff_context = {
+            **package.handoff_context,
+            "external_provider_policy": {
+                "external_medical_search": decision.model_dump(mode="json")
+            },
+        }
+        if not decision.allowed:
+            handoff_context = _suppress_external_search_handoff(
+                handoff_context,
+                decision=decision,
+            )
+            trace = package.trace.model_copy(
+                update={
+                    "safety_flags": [
+                        *package.trace.safety_flags,
+                        "external_medical_search_policy_blocked",
+                    ],
+                    "warnings": [*package.trace.warnings, decision.reason],
+                }
+            )
+            return package.model_copy(
+                update={"handoff_context": handoff_context, "trace": trace}
+            )
+
+        return package.model_copy(update={"handoff_context": handoff_context})
+
+    def _apply_external_search_policy_to_plan(
+        self,
+        plan: RetrievalPlan,
+        query: RetrievalQuery,
+    ) -> RetrievalPlan:
+        decision = self._external_search_decision(query)
+        if decision is None or decision.allowed:
+            return plan
+
+        analysis = _suppress_external_search_analysis(
+            plan.query_analysis,
+            decision=decision,
+        )
+        blocked_count = sum(
+            1
+            for task in plan.query_analysis.retrieval_tasks
+            if task.target == "external_medical_index"
+        )
+        summary = (
+            f"{plan.summary} External medical search hints were suppressed by policy."
+        )
+        return plan.model_copy(
+            update={
+                "query_analysis": analysis,
+                "coverage_summary": _suppressed_external_search_coverage_summary(
+                    plan.coverage_summary,
+                    analysis,
+                    decision=decision,
+                ),
+                "task_summary": _suppressed_external_search_task_summary(
+                    analysis,
+                    blocked_count=blocked_count,
+                ),
+                "summary": summary,
+            }
+        )
+
+    def _external_search_decision(
+        self,
+        query: RetrievalQuery,
+    ) -> ExternalProviderDecision | None:
+        if self.external_provider_policy is None:
+            return None
+        request = _search_request_payload(query)
+        return decide_external_provider_handoff(
+            self.external_provider_policy,
+            surface="external_medical_search",
+            text=json.dumps(request, sort_keys=True, ensure_ascii=False),
+            metadata={
+                "workflow_id": query.workflow_id,
+                "schema_id": query.schema_id,
+                "field_count": len(query.fields),
+                "top_k": query.top_k,
+            },
+        )
+
     def _attach_search_metadata(
         self,
         package: RetrievalPackage,
@@ -143,3 +321,135 @@ def _search_request_signature(request: dict[str, Any]) -> str:
         ensure_ascii=True,
     )
     return f"sha256:{sha256(encoded.encode('utf-8')).hexdigest()}"
+
+
+def _suppress_external_search_handoff(
+    handoff_context: dict[str, Any],
+    *,
+    decision: ExternalProviderDecision,
+) -> dict[str, Any]:
+    query_analysis = handoff_context.get("query_analysis")
+    if isinstance(query_analysis, dict):
+        tasks = query_analysis.get("retrieval_tasks")
+        query_analysis = {
+            **query_analysis,
+            "search_hints": [],
+            "retrieval_tasks": [
+                task
+                for task in tasks
+                if not (
+                    isinstance(task, dict)
+                    and task.get("target") == "external_medical_index"
+                )
+            ]
+            if isinstance(tasks, list)
+            else [],
+            "external_search_suppressed": True,
+            "external_search_policy_reason": decision.reason,
+        }
+        handoff_context = {**handoff_context, "query_analysis": query_analysis}
+    return handoff_context
+
+
+def _suppress_external_search_analysis(
+    analysis: RetrievalQueryAnalysis,
+    *,
+    decision: ExternalProviderDecision,
+) -> RetrievalQueryAnalysis:
+    diagnostics = [
+        *analysis.diagnostics,
+        RetrievalQueryDiagnostic(
+            code="external_medical_search_policy_blocked",
+            severity="warning",
+            message=decision.reason,
+            suggested_action=(
+                "Use local trusted corpus retrieval or ask an administrator to update "
+                "external-provider policy for this workspace."
+            ),
+            metadata=decision.model_dump(mode="json"),
+        ),
+    ]
+    return analysis.model_copy(
+        update={
+            "search_hints": [],
+            "retrieval_tasks": [
+                task
+                for task in analysis.retrieval_tasks
+                if task.target != "external_medical_index"
+            ],
+            "diagnostics": diagnostics,
+        }
+    )
+
+
+def _suppressed_external_search_coverage_summary(
+    current: RetrievalPlanCoverageSummary,
+    analysis: RetrievalQueryAnalysis,
+    *,
+    decision: ExternalProviderDecision,
+) -> RetrievalPlanCoverageSummary:
+    local_tasks = [
+        task for task in analysis.retrieval_tasks if task.target == "local_corpus"
+    ]
+    required_local_count = sum(1 for task in local_tasks if task.required)
+    warnings = [*current.warnings, decision.reason]
+    return RetrievalPlanCoverageSummary(
+        ready=bool(local_tasks),
+        local_task_count=len(local_tasks),
+        required_local_task_count=required_local_count,
+        external_task_count=0,
+        standard_count=current.standard_count,
+        filter_count=current.filter_count,
+        standards=current.standards,
+        warnings=warnings,
+        next_action=(
+            "Run required local corpus search tasks; external medical follow-ups "
+            "are suppressed by policy."
+        ),
+        summary=(
+            "Plan is ready for local evidence search with "
+            f"{required_local_count} required local task(s); external follow-ups "
+            "are suppressed by policy."
+        ),
+    )
+
+
+def _suppressed_external_search_task_summary(
+    analysis: RetrievalQueryAnalysis,
+    *,
+    blocked_count: int,
+) -> RetrievalPlanTaskSummary:
+    local_tasks = [
+        task for task in analysis.retrieval_tasks if task.target == "local_corpus"
+    ]
+    required_local_count = sum(1 for task in local_tasks if task.required)
+    return RetrievalPlanTaskSummary(
+        total_task_count=len(analysis.retrieval_tasks),
+        runnable_local_count=len(local_tasks),
+        required_runnable_local_count=required_local_count,
+        external_open_count=0,
+        external_copy_count=0,
+        manual_followup_count=0,
+        blocked_task_count=blocked_count,
+        primary_action=(
+            "Run required local corpus search tasks; external medical follow-ups "
+            "are suppressed by policy."
+        ),
+        summary=(
+            f"{len(local_tasks)} local runnable task(s), 0 external/manual "
+            f"follow-up(s), and {blocked_count} blocked task(s)."
+        ),
+    )
+
+
+def _default_private_retention_policy() -> ArtifactRetentionPolicy:
+    return ArtifactRetentionPolicy(
+        policy_id="private_corpus_inline_retention_v0",
+        sensitivity_class="potential_phi",
+        action="review",
+        reason=(
+            "Inline private corpus text is treated as potential PHI and requires "
+            "workspace retention review."
+        ),
+        source="api",
+    )

@@ -37,6 +37,7 @@ class ApiError(ContractModel):
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
     workflow_id: str | None = None
+    request_id: str | None = None
 
 
 class ApiEnvelope(ContractModel):
@@ -57,7 +58,10 @@ _ARTIFACT_REF_KEYS = {
     "output_ref",
     "output_refs",
     "source_ref",
+    "source_refs",
     "storage_ref",
+    "target_refs",
+    "url",
 }
 
 
@@ -128,24 +132,37 @@ def error_response(
     status_code: int = 400,
     details: dict[str, Any] | None = None,
     workflow_id: str | None = None,
+    request_id: str | None = None,
 ) -> JSONResponse:
+    public_details = public_jsonable(details or {})
+    if request_id and isinstance(public_details, dict):
+        public_details = {**public_details, "request_id": request_id}
+    headers = {"X-Request-ID": request_id} if request_id else None
     return JSONResponse(
         status_code=status_code,
+        headers=headers,
         content={
             "data": None,
             "error": {
                 "code": code,
                 "message": message,
-                "details": public_jsonable(details or {}),
+                "details": public_details,
                 "workflow_id": workflow_id,
+                "request_id": request_id,
             },
         },
     )
 
 
+def request_id_from_state(request: Request) -> str | None:
+    value = getattr(request.state, "request_id", None)
+    return value if isinstance(value, str) and value else None
+
+
 async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSONResponse:
     workflow_id = exc.workflow_id
     details = exc.details
+    request_id = request_id_from_state(request)
     if isinstance(exc, AuthenticationError):
         return error_response(
             "unauthorized",
@@ -153,6 +170,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=401,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     if isinstance(exc, ArtifactIntegrityError):
         return error_response(
@@ -161,6 +179,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=409,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     if isinstance(exc, DependencyUnavailableError):
         return error_response(
@@ -169,6 +188,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=503,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     if isinstance(exc, NotFoundError):
         return error_response(
@@ -177,6 +197,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=404,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     if isinstance(exc, PolicyBlockedError):
         return error_response(
@@ -185,6 +206,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=403,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     if isinstance(exc, UploadTooLargeError):
         return error_response(
@@ -193,6 +215,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=413,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     if isinstance(exc, UnsupportedUploadError):
         return error_response(
@@ -201,6 +224,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=415,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     if isinstance(exc, ToolExecutionError):
         return error_response(
@@ -209,6 +233,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
             status_code=422,
             details=details,
             workflow_id=workflow_id,
+            request_id=request_id,
         )
     return error_response(
         "ojtflow_error",
@@ -216,6 +241,7 @@ async def ojtflow_exception_handler(request: Request, exc: OJTFlowError) -> JSON
         status_code=400,
         details=details,
         workflow_id=workflow_id,
+        request_id=request_id,
     )
 
 
@@ -229,6 +255,7 @@ async def http_exception_handler(
         detail,
         status_code=exc.status_code,
         details={} if isinstance(exc.detail, str) else {"detail": jsonable_encoder(exc.detail)},
+        request_id=request_id_from_state(request),
     )
 
 
@@ -241,6 +268,7 @@ async def validation_exception_handler(
         "Request validation failed",
         status_code=422,
         details={"errors": _public_validation_errors(exc.errors())},
+        request_id=request_id_from_state(request),
     )
 
 
@@ -250,6 +278,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         extra={
             "path": request.url.path,
             "method": request.method,
+            "request_id": request_id_from_state(request),
         },
     )
     return error_response(
@@ -257,6 +286,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         "Internal server error",
         status_code=500,
         details={},
+        request_id=request_id_from_state(request),
     )
 
 

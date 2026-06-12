@@ -34,22 +34,38 @@ User/API/MCP client
 
 The LLM is optional. `OJT_LLM_PROVIDER=disabled` keeps local behavior
 deterministic and token-free. `OJT_LLM_PROVIDER=openai` asks the OpenAI
-Responses API for a JSON tool plan using `OJT_LLM_MODEL` and
-`OJT_OPENAI_API_KEY` or `OPENAI_API_KEY`.
+Responses API for a strict JSON tool plan using `OJT_LLM_PLANNING_MODEL` and
+then synthesizes the final answer with `OJT_LLM_SYNTHESIS_MODEL`. Both default
+to the backwards-compatible `OJT_LLM_MODEL` value. `OJT_LLM_VISION_MODEL`
+controls OpenAI-compatible OCR/vision extraction for image-heavy uploads.
 
-Operators can change non-secret planner settings from Settings -> Assistant
-runtime or with `PUT /api/v1/runtime/assistant-settings`. Runtime changes are
-stored in `OJT_RUNTIME_SETTINGS_PATH`, reload the cached Assistant service, and
-do not expose or accept API keys. Secrets stay in environment/config management.
+Operators can change non-secret planner, synthesis, vision, timeout, and
+OpenAI-compatible endpoint settings from Settings -> Assistant runtime or with
+`PUT /api/v1/runtime/assistant-settings`. Embedding provider/model/dimension
+settings live under Settings -> Retrieval runtime because they require retrieval
+reindexing. Runtime changes are stored in `OJT_RUNTIME_SETTINGS_PATH`, reload
+cached services, and do not expose or accept API keys. Secrets stay in
+environment/config management.
 
 Tool execution remains deterministic:
 
 - Unknown tool names are skipped.
 - OpenAI planner output is constrained to the configured backend tool names.
+- Planner-visible tool schemas set `additionalProperties=false`, require all
+  declared fields, and represent optional inputs as nullable values so OpenAI
+  strict structured outputs do not silently omit tool arguments.
 - Tool arguments are normalized by backend code.
 - Workflow ownership is enforced by the API route through authenticated user ID.
 - `start_workflow` requires `execute_write_actions=true`.
+- The browser Assistant must also require a one-use confirmation before sending
+  `execute_write_actions=true`, using the backend tool catalog to list
+  write-gated tools and approval reasons.
 - Review approval/rejection tools are not exposed in v0.
+- Assistant memory is limited to data-driven, policy-allowlisted operational
+  preferences from `knowledge/assistant/memory_policy.json`. The API injects
+  these preferences into chat planning and removes caller-provided
+  `assistant_memory` context first. It must never persist raw PHI, uploaded
+  content, patient identifiers, or clinical facts as memory.
 
 ## API Entry Point
 
@@ -64,18 +80,81 @@ runtime defaults: the Assistant form starts empty, and selecting an example
 only fills the message/context fields for the user to edit before execution.
 Do not bury demo payloads in React state or backend control flow.
 
+`GET /api/v1/assistant/answer-templates` returns governed answer structures
+loaded from `knowledge/assistant/answer_templates.json`.
+
+`GET /api/v1/assistant/mcp/resources` returns the MCP resource catalog loaded
+from `knowledge/assistant/mcp_resources.json`.
+
+`GET /api/v1/assistant/mcp/prompts` returns the MCP prompt catalog loaded from
+`knowledge/assistant/mcp_prompts.json`.
+
+`GET /api/v1/assistant/mcp/remote-policy` returns the remote MCP deployment
+readiness policy loaded from
+`knowledge/assistant/remote_mcp_deployment_policy.json`.
+
+`GET /api/v1/assistant/sessions`
+
+`POST /api/v1/assistant/sessions`
+
+`GET /api/v1/assistant/sessions/{session_id}`
+
+`PATCH /api/v1/assistant/sessions/{session_id}`
+
+`POST /api/v1/assistant/sessions/{session_id}/archive`
+
+`DELETE /api/v1/assistant/sessions/{session_id}`
+
+`POST /api/v1/assistant/sessions/{session_id}/messages`
+
+Assistant sessions are persisted through the same storage backend as workflows:
+memory for tests, SQLite for local single-file development, and Postgres for
+production-like Docker/runtime deployments. Sessions are scoped by authenticated
+user ID. A session stores title, archive state, message count, timestamps, and
+ordered messages. Messages store role (`user`, `assistant`, `system`, or
+`tool`), content, explicit `workflow_refs`, and a structured payload for tool
+calls, stream events, context snapshots, or final assistant responses. The
+service also extracts common workflow reference fields from nested payloads as a
+fallback, so tool outputs that include `workflow_id` become linkable in chat
+history. The API returns sanitized session/message contracts only; it does not
+expose session tokens or auth material.
+
+Sessions created with the placeholder title `New chat` are renamed by the
+backend when the first user message is appended. Generated titles are
+operational summaries such as validation, evidence search, workflow inspection,
+conversion, or FHIR profiling; they avoid copying raw uploaded data, patient
+identifiers, SSNs, emails, or file content into the chat rail.
+
+Session listing accepts `q` to search session titles and persisted message
+content server-side within the authenticated user's boundary. The browser
+sidebar uses this query instead of relying on browser-only history.
+
 `POST /api/v1/assistant/chat`
 
 `POST /api/v1/assistant/chat/stream`
 
 The browser Assistant uses the streaming route. It sends the same request
 payload as `/assistant/chat`, then receives server-sent events for planning,
-tool start/completion, warnings, answer synthesis, answer text deltas, and the
-final `AssistantResponse`. Mid-stream failures are emitted as structured
-`error` events because the HTTP status may already be committed. In OpenAI
-mode, synthesis calls the OpenAI Responses API with `stream: true` and forwards
-`response.output_text.delta` chunks to the UI so users see the answer as it is
-generated.
+tool start, data-driven `tool_progress` stages, tool completion, warnings,
+answer synthesis, answer text deltas, and the final `AssistantResponse`.
+Progress stage copy lives in `knowledge/assistant/tool_progress_policies.json`
+and is also exposed through the MCP resource catalog as
+`ojtflow://assistant/tool-progress-policies`. Mid-stream failures are emitted
+as structured `error` events because the HTTP status may already be committed.
+Client disconnects and explicit stop actions are persisted as stream replay
+status `cancelled` with a cancellation event when the backend can record it;
+they are not reported as successful completions.
+In OpenAI mode, synthesis calls the OpenAI Responses API with `stream: true`
+and forwards `response.output_text.delta` chunks to the UI so users see the
+answer as it is generated.
+
+Failed tool recovery is carried through `context.assistant_recovery`. A
+`retry_tool` action includes the original `tool_name` and `arguments`, and the
+backend bypasses LLM planning to execute that exact allowlisted tool call
+through the normal permission gates. A `continue_after_failure` action records
+the failed tool summaries and returns a deterministic continuation without
+executing another backend tool, so unresolved failures remain visible instead
+of being silently treated as fixed.
 
 ```json
 {
@@ -172,6 +251,8 @@ Exposed MCP tools:
 - `get_workflow`
 - `workflow_summary`
 - `start_workflow`
+- `generate_mapping_draft`
+- `create_review_task`
 
 Use `assistant_chat` for the normal operator path. Use the lower-level tools
 when an automation client already knows the exact backend operation it needs.
@@ -181,17 +262,47 @@ standards evidence. It accepts the same governed source scope as
 `retrieval_search`; use `source_id` when the user asks for evidence from one
 exact approved source such as a specific FHIR profile, schema, guideline, or
 terminology entry. `workflow_summary` is the primary workflow inspection tool
-for chat clients.
+for chat clients. `generate_mapping_draft` creates a review-gated transform
+plan without executing conversion. `create_review_task` creates durable
+workflow/review state for unresolved data quality, terminology, evidence, or
+workflow decisions. Both are write-gated through the same approval controls as
+other write actions.
 
-The MCP server is for trusted local/operator use in v0. For remote enterprise
-deployment, add OAuth/resource-indicator authorization, per-user tool scoping,
-rate limits, and audit correlation IDs before exposing it outside the local
-runtime.
+Exposed MCP resources are registered from `knowledge/assistant/mcp_resources.json`.
+The v0 catalog includes read-only resources for the Assistant tool catalog,
+answer templates, starter examples, retrieval strategy catalog, source trust
+policies, retrieval presets, retrieval search options, recent workflows,
+pending reviews, schema catalog, and knowledge source inventory. Unknown
+provider keys fail server creation.
+
+Exposed MCP prompts are registered from `knowledge/assistant/mcp_prompts.json`.
+The v0 catalog includes standard tasks for validating lab CSV with evidence,
+profiling FHIR-like JSON, finding UCUM/unit evidence, inspecting pending
+reviews, summarizing a workflow, and preparing export review. Prompts do not
+grant execution authority; tool calls still run through the allowlisted backend
+executor and write gates.
+
+Retrieval tool outputs include `support_matrix` and copy the same object into
+`handoff_context.support_matrix`. Assistant and MCP clients should use it for
+source-backed answer claims instead of inferring support from free text.
+
+Assistant tool calls and local MCP tool calls append generic audit records
+through the configured storage backend. Audit records are correlated by owner,
+request ID, Assistant session ID when supplied, workflow ID, and workflow event
+refs discovered in the tool result. They store redacted input/output
+fingerprints and sanitized metadata such as tool name, argument keys,
+approval requirement, status, and payload character count; they do not store raw
+uploaded data, chat messages, retrieval queries, or tool output payloads.
+
+The MCP server is for trusted local/operator use in v0. Remote enterprise
+deployment is blocked by the data-driven remote MCP policy until OAuth
+protected-resource metadata, resource indicators, per-user tool scoping, rate
+limits, audit correlation, and tool manifest review are implemented and
+verified.
 
 ## Extension Path
 
-1. Add conversation persistence keyed by user/session.
-2. Add a second LLM synthesis step over tool outputs with citation constraints.
-3. Add tool-call audit events for assistant and MCP invocations.
-4. Add remote MCP authorization and per-user owner scoping.
-5. Add eval fixtures for natural-language commands and tool selection quality.
+1. Add retention settings and admin export for persisted sessions.
+2. Implement the remote MCP transport/auth gateway described in the policy.
+3. Expand `knowledge/assistant/evaluation_cases.json` with LLM-backed and
+   browser-backed eval cases after deterministic coverage is stable.

@@ -12,9 +12,33 @@ except ImportError:  # pragma: no cover - exercised only when optional dependenc
     psycopg = None
     dict_row = None
 
+from ojtflow.core.audit_hash_chain import link_audit_record
+from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
+    ArtifactRetentionPolicy,
+    ParsingPipelineTrace,
+    UploadedArtifact,
+)
+from ojtflow.core.contracts.assistant import (
+    AssistantChatMessage,
+    AssistantChatSessionDetail,
+    AssistantChatSessionSummary,
+    AssistantMemoryPreference,
+    AssistantMessageRole,
+    AssistantStreamReplay,
+)
+from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.graph import GraphContextRecord
+from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobProgress, JobType
 from ojtflow.core.contracts.retrieval import (
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
     RetrievalRelevanceJudgment,
     RetrievalRelevanceJudgmentWrite,
 )
@@ -47,8 +71,10 @@ class PostgresBackboneStore:
         self.data_dir = Path(data_dir)
         self.datasets_dir = self.data_dir / "datasets"
         self.outputs_dir = self.data_dir / "outputs"
+        self.uploads_dir = self.data_dir / "uploads"
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
+        self.uploads_dir.mkdir(parents=True, exist_ok=True)
         if apply_migrations:
             self.init_schema()
 
@@ -166,6 +192,239 @@ class PostgresDatasetStore:
             [self.backbone.datasets_dir, self.backbone.outputs_dir],
         )
         return path.read_text(encoding="utf-8")
+
+    def list_records(self, limit: int = 1000) -> list[DatasetRecord]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select dataset_id, workflow_id, source_kind, declared_format,
+                           detected_format, byte_size, sha256, storage_ref
+                    from ojtflow.datasets
+                    order by created_at desc, dataset_id desc
+                    limit %s
+                    """,
+                    (max(0, min(limit, 10_000)),),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_dataset_record_from_row(row) for row in rows]
+
+
+class PostgresUploadedArtifactRepository:
+    """Postgres-backed uploaded artifact metadata with local file bytes."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def put_bytes(
+        self,
+        *,
+        owner_user_id: str,
+        filename: str,
+        mime_type: str,
+        data: bytes,
+        source: str = "upload",
+        retention_policy: ArtifactRetentionPolicy | None = None,
+        metadata: dict | None = None,
+    ) -> UploadedArtifact:
+        digest = sha256_bytes(data)
+        extension = Path(filename).suffix.lower()
+        duplicate = self._canonical_for_hash(
+            owner_user_id=owner_user_id,
+            sha256=digest,
+            byte_size=len(data),
+        )
+        if duplicate:
+            storage_ref = duplicate.storage_ref
+        else:
+            storage_path = self.backbone.uploads_dir / f"{new_id('blob')}{extension or '.bin'}"
+            storage_path.write_bytes(data)
+            storage_ref = storage_path.resolve().as_uri()
+
+        artifact = UploadedArtifact(
+            owner_user_id=owner_user_id,
+            filename=filename,
+            mime_type=mime_type or "application/octet-stream",
+            extension=extension,
+            byte_size=len(data),
+            sha256=digest,
+            source=source,
+            storage_ref=storage_ref,
+            duplicate_of_artifact_id=duplicate.artifact_id if duplicate else None,
+            retention_policy=retention_policy or ArtifactRetentionPolicy(),
+            metadata=metadata or {},
+        )
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.uploaded_artifacts (
+                        artifact_id, owner_user_id, filename, mime_type, extension,
+                        byte_size, sha256, source, storage_ref, dataset_id,
+                        duplicate_of_artifact_id, retention_policy, metadata, created_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::jsonb, %s::jsonb, %s::timestamptz
+                    )
+                    """,
+                    _postgres_uploaded_artifact_values(artifact),
+                )
+            connection.commit()
+        return artifact
+
+    def get(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.uploaded_artifacts
+                    where owner_user_id = %s and artifact_id = %s
+                    """,
+                    (owner_user_id, artifact_id),
+                )
+                row = cursor.fetchone()
+        if not row:
+            raise NotFoundError(f"Uploaded artifact not found: {artifact_id}")
+        return _postgres_uploaded_artifact_from_row(row)
+
+    def get_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes:
+        artifact = self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        path = artifact_path_from_file_ref(
+            artifact.storage_ref,
+            [self.backbone.uploads_dir],
+        )
+        return path.read_bytes()
+
+    def list(self, *, owner_user_id: str, limit: int = 100) -> list[UploadedArtifact]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.uploaded_artifacts
+                    where owner_user_id = %s
+                    order by created_at desc, artifact_id desc
+                    limit %s
+                    """,
+                    (owner_user_id, max(1, min(limit, 500))),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_uploaded_artifact_from_row(row) for row in rows]
+
+    def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace:
+        self.get(owner_user_id=trace.owner_user_id, artifact_id=trace.artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.document_parse_traces (
+                        trace_id, artifact_id, owner_user_id, job_id, trace_json,
+                        created_at, completed_at
+                    ) values (
+                        %s, %s, %s, %s, %s::jsonb, %s::timestamptz,
+                        %s::timestamptz
+                    )
+                    """,
+                    (
+                        trace.trace_id,
+                        trace.artifact_id,
+                        trace.owner_user_id,
+                        trace.job_id,
+                        trace.model_dump_json(),
+                        trace.started_at,
+                        trace.completed_at,
+                    ),
+                )
+            connection.commit()
+        return trace
+
+    def list_traces(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ParsingPipelineTrace]:
+        self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select trace_json from ojtflow.document_parse_traces
+                    where owner_user_id = %s and artifact_id = %s
+                    order by created_at desc, trace_id desc
+                    """,
+                    (owner_user_id, artifact_id),
+                )
+                rows = cursor.fetchall()
+        return [ParsingPipelineTrace.model_validate(row["trace_json"]) for row in rows]
+
+    def append_access_event(self, event: ArtifactAccessEvent) -> ArtifactAccessEvent:
+        self.get(owner_user_id=event.owner_user_id, artifact_id=event.artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.artifact_access_events (
+                        event_id, artifact_id, owner_user_id, actor_user_id, action,
+                        request_id, event_json, created_at
+                    ) values (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::timestamptz)
+                    """,
+                    (
+                        event.event_id,
+                        event.artifact_id,
+                        event.owner_user_id,
+                        event.actor_user_id,
+                        event.action,
+                        event.request_id,
+                        event.model_dump_json(),
+                        event.timestamp,
+                    ),
+                )
+            connection.commit()
+        return event
+
+    def list_access_events(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ArtifactAccessEvent]:
+        self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select event_json from ojtflow.artifact_access_events
+                    where owner_user_id = %s and artifact_id = %s
+                    order by created_at desc, event_id desc
+                    """,
+                    (owner_user_id, artifact_id),
+                )
+                rows = cursor.fetchall()
+        return [ArtifactAccessEvent.model_validate(row["event_json"]) for row in rows]
+
+    def _canonical_for_hash(
+        self,
+        *,
+        owner_user_id: str,
+        sha256: str,
+        byte_size: int,
+    ) -> UploadedArtifact | None:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.uploaded_artifacts
+                    where owner_user_id = %s
+                      and sha256 = %s
+                      and byte_size = %s
+                      and duplicate_of_artifact_id is null
+                    order by created_at asc, artifact_id asc
+                    limit 1
+                    """,
+                    (owner_user_id, sha256, byte_size),
+                )
+                row = cursor.fetchone()
+        return _postgres_uploaded_artifact_from_row(row) if row else None
 
 
 class PostgresWorkflowRepository:
@@ -534,6 +793,212 @@ class PostgresEventRepository:
         return [WorkflowEvent.model_validate(row["event_json"]) for row in rows]
 
 
+class PostgresAuditRepository:
+    """Postgres-backed generic audit record repository."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def append(self, record: AuditRecord) -> AuditRecord:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                previous = self._latest_scoped_record(cursor, record)
+                linked = link_audit_record(record, previous)
+                cursor.execute(
+                    """
+                    insert into ojtflow.audit_records (
+                        audit_id, owner_user_id, workflow_id, assistant_session_id,
+                        assistant_message_id, request_id, action, actor_id,
+                        actor_type, status, input_hash, output_hash,
+                        chain_scope, chain_sequence, previous_record_hash,
+                        record_hash, hash_algorithm, chain_status,
+                        workflow_event_refs, metadata, record_json, timestamp
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
+                        %s::timestamptz
+                    )
+                    """,
+                    (
+                        linked.audit_id,
+                        linked.owner_user_id,
+                        linked.workflow_id,
+                        linked.assistant_session_id,
+                        linked.assistant_message_id,
+                        linked.request_id,
+                        linked.action,
+                        linked.actor_id,
+                        linked.actor_type,
+                        linked.status,
+                        linked.input_hash,
+                        linked.output_hash,
+                        linked.chain_scope,
+                        linked.chain_sequence,
+                        linked.previous_record_hash,
+                        linked.record_hash,
+                        linked.hash_algorithm,
+                        linked.chain_status,
+                        json.dumps(linked.workflow_event_refs),
+                        json.dumps(linked.metadata),
+                        linked.model_dump_json(),
+                        linked.timestamp,
+                    ),
+                )
+            connection.commit()
+        return linked
+
+    def _latest_scoped_record(
+        self,
+        cursor,
+        record: AuditRecord,
+    ) -> AuditRecord | None:
+        if record.owner_user_id is None:
+            where = "owner_user_id is null"
+            params: tuple[object, ...] = ()
+        else:
+            where = "owner_user_id = %s"
+            params = (record.owner_user_id,)
+        cursor.execute(
+            f"""
+            select record_json from ojtflow.audit_records
+            where {where}
+            order by chain_sequence desc nulls last, timestamp desc, audit_id desc
+            limit 1
+            """,
+            params,
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return AuditRecord.model_validate(row["record_json"])
+
+    def list(
+        self,
+        *,
+        owner_user_id: str | None = None,
+        action: str | None = None,
+        workflow_id: str | None = None,
+        assistant_session_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = %s")
+            params.append(owner_user_id)
+        if action is not None:
+            clauses.append("action = %s")
+            params.append(action)
+        if workflow_id is not None:
+            clauses.append("workflow_id = %s")
+            params.append(workflow_id)
+        if assistant_session_id is not None:
+            clauses.append("assistant_session_id = %s")
+            params.append(assistant_session_id)
+        params.append(max(1, min(limit, 1000)))
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select record_json from ojtflow.audit_records
+                    {where}
+                    order by timestamp desc, audit_id desc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [AuditRecord.model_validate(row["record_json"]) for row in rows]
+
+
+class PostgresGraphRepository:
+    """Postgres Graph-NER context repository."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def save_context(self, record: GraphContextRecord) -> GraphContextRecord:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.graph_contexts (
+                        graph_id, owner_user_id, workflow_id, request_id,
+                        search_signature, query_text, resource_type, fields_json,
+                        node_count, edge_count, triple_count, graph_json,
+                        record_json, created_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
+                        %s, %s, %s, %s::jsonb, %s::jsonb, %s::timestamptz
+                    )
+                    on conflict(graph_id) do update set
+                        owner_user_id = excluded.owner_user_id,
+                        workflow_id = excluded.workflow_id,
+                        request_id = excluded.request_id,
+                        search_signature = excluded.search_signature,
+                        query_text = excluded.query_text,
+                        resource_type = excluded.resource_type,
+                        fields_json = excluded.fields_json,
+                        node_count = excluded.node_count,
+                        edge_count = excluded.edge_count,
+                        triple_count = excluded.triple_count,
+                        graph_json = excluded.graph_json,
+                        record_json = excluded.record_json,
+                        created_at = excluded.created_at
+                    """,
+                    (
+                        record.graph_id,
+                        record.owner_user_id,
+                        record.workflow_id,
+                        record.request_id,
+                        record.search_signature,
+                        record.query,
+                        record.resource_type,
+                        json.dumps(record.fields),
+                        record.node_count,
+                        record.edge_count,
+                        record.triple_count,
+                        json.dumps(record.graph_context),
+                        record.model_dump_json(),
+                        record.created_at,
+                    ),
+                )
+            connection.commit()
+        return record
+
+    def list_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = %s")
+            params.append(owner_user_id)
+        if workflow_id is not None:
+            clauses.append("workflow_id = %s")
+            params.append(workflow_id)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select record_json from ojtflow.graph_contexts
+                    {where}
+                    order by created_at desc, graph_id desc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [GraphContextRecord.model_validate(row["record_json"]) for row in rows]
+
+
 class PostgresRetrievalJudgmentRepository:
     """Postgres-backed user retrieval relevance judgments."""
 
@@ -657,6 +1122,906 @@ class PostgresRetrievalJudgmentRepository:
             raise NotFoundError(f"Retrieval judgment not found: {judgment_id}")
 
 
+class PostgresRetrievalActiveLearningRepository:
+    """Postgres-backed active-learning queue for retrieval benchmark candidates."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        candidate_key: str,
+        write: RetrievalActiveLearningCandidateWrite,
+    ) -> RetrievalActiveLearningCandidate:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select candidate_id, status, reviewer_user_id, reviewer_note,
+                           reviewed_at, created_at
+                    from ojtflow.retrieval_active_learning_candidates
+                    where owner_user_id = %s and candidate_key = %s
+                    """,
+                    (owner_user_id, candidate_key),
+                )
+                existing = cursor.fetchone()
+                candidate_id = existing["candidate_id"] if existing else new_id("alc")
+                status = existing["status"] if existing else "open"
+                created_at = existing["created_at"].isoformat() if existing else now
+                cursor.execute(
+                    """
+                    insert into ojtflow.retrieval_active_learning_candidates (
+                        candidate_id, owner_user_id, candidate_key, query_hash, query_text,
+                        source_kind, trigger_reason, priority, status, evidence_id, source_id,
+                        source_type, source_version, run_id, workflow_id, judgment_id, claim_id,
+                        support_status, suggested_expected_evidence_ids, suggested_filters,
+                        benchmark_metadata, metadata, reviewer_user_id, reviewer_note,
+                        reviewed_at, created_at, updated_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
+                        %s::jsonb, %s, %s, %s::timestamptz, %s::timestamptz,
+                        %s::timestamptz
+                    )
+                    on conflict(owner_user_id, candidate_key) do update set
+                        query_text = excluded.query_text,
+                        source_kind = excluded.source_kind,
+                        trigger_reason = excluded.trigger_reason,
+                        priority = excluded.priority,
+                        evidence_id = excluded.evidence_id,
+                        source_id = excluded.source_id,
+                        source_type = excluded.source_type,
+                        source_version = excluded.source_version,
+                        run_id = excluded.run_id,
+                        workflow_id = excluded.workflow_id,
+                        judgment_id = excluded.judgment_id,
+                        claim_id = excluded.claim_id,
+                        support_status = excluded.support_status,
+                        suggested_expected_evidence_ids = excluded.suggested_expected_evidence_ids,
+                        suggested_filters = excluded.suggested_filters,
+                        benchmark_metadata = excluded.benchmark_metadata,
+                        metadata = excluded.metadata,
+                        updated_at = excluded.updated_at
+                    returning *
+                    """,
+                    (
+                        candidate_id,
+                        owner_user_id,
+                        candidate_key,
+                        query_hash,
+                        write.query,
+                        write.source_kind,
+                        write.trigger_reason,
+                        write.priority,
+                        status,
+                        write.evidence_id,
+                        write.source_id,
+                        write.source_type.value if write.source_type else None,
+                        write.source_version,
+                        write.run_id,
+                        write.workflow_id,
+                        write.judgment_id,
+                        write.claim_id,
+                        write.support_status,
+                        json.dumps(write.suggested_expected_evidence_ids),
+                        json.dumps(write.suggested_filters),
+                        json.dumps(write.benchmark_metadata),
+                        json.dumps(write.metadata),
+                        existing["reviewer_user_id"] if existing else None,
+                        existing["reviewer_note"] if existing else None,
+                        existing["reviewed_at"] if existing else None,
+                        created_at,
+                        now,
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        return _postgres_active_learning_candidate_from_row(row)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: RetrievalActiveLearningStatus | None = None,
+        source_kind: RetrievalActiveLearningSourceKind | None = None,
+        priority: RetrievalActiveLearningPriority | None = None,
+        query_hash: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalActiveLearningCandidate]:
+        clauses = ["owner_user_id = %s"]
+        params: list[object] = [owner_user_id]
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status)
+        if source_kind is not None:
+            clauses.append("source_kind = %s")
+            params.append(source_kind)
+        if priority is not None:
+            clauses.append("priority = %s")
+            params.append(priority)
+        if query_hash is not None:
+            clauses.append("query_hash = %s")
+            params.append(query_hash)
+        params.append(max(1, min(limit, 1000)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select *
+                    from ojtflow.retrieval_active_learning_candidates
+                    where {' and '.join(clauses)}
+                    order by updated_at desc, candidate_id asc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_active_learning_candidate_from_row(row) for row in rows]
+
+    def update(
+        self,
+        *,
+        owner_user_id: str,
+        candidate_id: str,
+        reviewer_user_id: str | None,
+        update: RetrievalActiveLearningCandidateUpdate,
+    ) -> RetrievalActiveLearningCandidate:
+        now = utc_now().isoformat()
+        assignments = ["updated_at = %s::timestamptz"]
+        params: list[object] = [now]
+        if update.status is not None:
+            assignments.extend(
+                [
+                    "status = %s",
+                    "reviewed_at = %s::timestamptz",
+                    "reviewer_user_id = %s",
+                ]
+            )
+            params.extend([update.status, now, reviewer_user_id])
+        if update.priority is not None:
+            assignments.append("priority = %s")
+            params.append(update.priority)
+        if update.reviewer_note is not None:
+            assignments.append("reviewer_note = %s")
+            params.append(update.reviewer_note)
+        if update.benchmark_metadata is not None:
+            assignments.append("benchmark_metadata = %s::jsonb")
+            params.append(json.dumps(update.benchmark_metadata))
+        if update.metadata is not None:
+            assignments.append("metadata = %s::jsonb")
+            params.append(json.dumps(update.metadata))
+        params.extend([owner_user_id, candidate_id])
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    update ojtflow.retrieval_active_learning_candidates
+                    set {', '.join(assignments)}
+                    where owner_user_id = %s and candidate_id = %s
+                    returning *
+                    """,
+                    tuple(params),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if row is None:
+            raise NotFoundError(f"Retrieval active-learning candidate not found: {candidate_id}")
+        return _postgres_active_learning_candidate_from_row(row)
+
+
+class PostgresAssistantSessionRepository:
+    """Postgres-backed user Assistant chat sessions."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def create_session(self, *, owner_user_id: str, title: str) -> AssistantChatSessionSummary:
+        now = utc_now().isoformat()
+        session = AssistantChatSessionSummary(
+            owner_user_id=owner_user_id,
+            title=title,
+            message_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.assistant_chat_sessions (
+                        session_id, owner_user_id, title, message_count,
+                        archived_at, created_at, updated_at
+                    ) values (%s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz)
+                    """,
+                    (
+                        session.session_id,
+                        session.owner_user_id,
+                        session.title,
+                        session.message_count,
+                        session.archived_at,
+                        session.created_at,
+                        session.updated_at,
+                    ),
+                )
+            connection.commit()
+        return session
+
+    def list_sessions(
+        self,
+        *,
+        owner_user_id: str,
+        include_archived: bool = False,
+        limit: int = 100,
+        q: str | None = None,
+    ) -> list[AssistantChatSessionSummary]:
+        clauses = ["owner_user_id = %s"]
+        params: list[object] = [owner_user_id]
+        if not include_archived:
+            clauses.append("archived_at is null")
+        if q:
+            pattern = _postgres_like_pattern(q)
+            clauses.append(
+                """
+                (
+                    title ilike %s escape '\\'
+                    or exists (
+                        select 1 from ojtflow.assistant_chat_messages message
+                        where message.session_id = assistant_chat_sessions.session_id
+                          and message.owner_user_id = assistant_chat_sessions.owner_user_id
+                          and message.content ilike %s escape '\\'
+                    )
+                )
+                """
+            )
+            params.extend([pattern, pattern])
+        params.append(max(1, min(limit, 500)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select * from ojtflow.assistant_chat_sessions
+                    where {' and '.join(clauses)}
+                    order by updated_at desc, session_id asc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_assistant_session_from_row(row) for row in rows]
+
+    def get_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionDetail:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.assistant_chat_sessions
+                    where owner_user_id = %s and session_id = %s
+                    """,
+                    (owner_user_id, session_id),
+                )
+                session_row = cursor.fetchone()
+                if not session_row:
+                    raise NotFoundError(f"Assistant chat session not found: {session_id}")
+                cursor.execute(
+                    """
+                    select * from ojtflow.assistant_chat_messages
+                    where owner_user_id = %s and session_id = %s
+                    order by created_at, message_id
+                    """,
+                    (owner_user_id, session_id),
+                )
+                message_rows = cursor.fetchall()
+        return AssistantChatSessionDetail(
+            session=_postgres_assistant_session_from_row(session_row),
+            messages=[_postgres_assistant_message_from_row(row) for row in message_rows],
+        )
+
+    def rename_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        title: str,
+    ) -> AssistantChatSessionSummary:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.assistant_chat_sessions
+                    set title = %s, updated_at = %s::timestamptz
+                    where owner_user_id = %s and session_id = %s
+                    returning *
+                    """,
+                    (title, now, owner_user_id, session_id),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if not row:
+            raise NotFoundError(f"Assistant chat session not found: {session_id}")
+        return _postgres_assistant_session_from_row(row)
+
+    def archive_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionSummary:
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.assistant_chat_sessions
+                    set archived_at = coalesce(archived_at, %s::timestamptz),
+                        updated_at = %s::timestamptz
+                    where owner_user_id = %s and session_id = %s
+                    returning *
+                    """,
+                    (now, now, owner_user_id, session_id),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if not row:
+            raise NotFoundError(f"Assistant chat session not found: {session_id}")
+        return _postgres_assistant_session_from_row(row)
+
+    def delete_session(self, *, owner_user_id: str, session_id: str) -> None:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    delete from ojtflow.assistant_chat_sessions
+                    where owner_user_id = %s and session_id = %s
+                    """,
+                    (owner_user_id, session_id),
+                )
+                deleted = cursor.rowcount
+            connection.commit()
+        if deleted == 0:
+            raise NotFoundError(f"Assistant chat session not found: {session_id}")
+
+    def append_message(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        role: AssistantMessageRole,
+        content: str,
+        payload: dict | None = None,
+        workflow_refs: list[str] | None = None,
+    ) -> AssistantChatMessage:
+        now = utc_now().isoformat()
+        message = AssistantChatMessage(
+            session_id=session_id,
+            owner_user_id=owner_user_id,
+            role=role,
+            content=content,
+            workflow_refs=workflow_refs or [],
+            payload=payload or {},
+            phi_classification=(payload or {}).get("phi_classification"),
+            created_at=now,
+        )
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select session_id from ojtflow.assistant_chat_sessions
+                    where owner_user_id = %s and session_id = %s
+                    """,
+                    (owner_user_id, session_id),
+                )
+                if not cursor.fetchone():
+                    raise NotFoundError(f"Assistant chat session not found: {session_id}")
+                cursor.execute(
+                    """
+                    insert into ojtflow.assistant_chat_messages (
+                        message_id, session_id, owner_user_id, role,
+                        content, workflow_refs, payload, created_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::timestamptz
+                    )
+                    """,
+                    (
+                        message.message_id,
+                        message.session_id,
+                        message.owner_user_id,
+                        message.role,
+                        message.content,
+                        json.dumps(message.workflow_refs),
+                        json.dumps(message.payload),
+                        message.created_at,
+                    ),
+                )
+                cursor.execute(
+                    """
+                    update ojtflow.assistant_chat_sessions
+                    set message_count = message_count + 1,
+                        updated_at = %s::timestamptz
+                    where owner_user_id = %s and session_id = %s
+                    """,
+                    (now, owner_user_id, session_id),
+                )
+            connection.commit()
+        return message
+
+    def append_stream_replay(self, *, replay: AssistantStreamReplay) -> AssistantStreamReplay:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select session_id from ojtflow.assistant_chat_sessions
+                    where owner_user_id = %s and session_id = %s
+                    """,
+                    (replay.owner_user_id, replay.session_id),
+                )
+                if not cursor.fetchone():
+                    raise NotFoundError(
+                        f"Assistant chat session not found: {replay.session_id}"
+                    )
+                cursor.execute(
+                    """
+                    insert into ojtflow.assistant_stream_replays (
+                        stream_id, session_id, owner_user_id, status,
+                        events, created_at, completed_at
+                    ) values (
+                        %s, %s, %s, %s, %s::jsonb, %s::timestamptz, %s::timestamptz
+                    )
+                    """,
+                    (
+                        replay.stream_id,
+                        replay.session_id,
+                        replay.owner_user_id,
+                        replay.status,
+                        json.dumps(replay.events),
+                        replay.created_at,
+                        replay.completed_at,
+                    ),
+                )
+            connection.commit()
+        return replay
+
+    def list_stream_replays(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> list[AssistantStreamReplay]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select session_id from ojtflow.assistant_chat_sessions
+                    where owner_user_id = %s and session_id = %s
+                    """,
+                    (owner_user_id, session_id),
+                )
+                if not cursor.fetchone():
+                    raise NotFoundError(f"Assistant chat session not found: {session_id}")
+                cursor.execute(
+                    """
+                    select * from ojtflow.assistant_stream_replays
+                    where owner_user_id = %s and session_id = %s
+                    order by created_at, stream_id
+                    """,
+                    (owner_user_id, session_id),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_assistant_stream_replay_from_row(row) for row in rows]
+
+
+class PostgresAssistantMemoryRepository:
+    """Postgres-backed Assistant preference memory."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def list_preferences(
+        self,
+        *,
+        owner_user_id: str,
+    ) -> list[AssistantMemoryPreference]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.assistant_memory_preferences
+                    where owner_user_id = %s
+                    order by key
+                    """,
+                    (owner_user_id,),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_assistant_memory_preference_from_row(row) for row in rows]
+
+    def upsert_preference(
+        self,
+        *,
+        preference: AssistantMemoryPreference,
+    ) -> AssistantMemoryPreference:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.assistant_memory_preferences (
+                        owner_user_id, key, value, category, source,
+                        policy_version, created_at, updated_at
+                    ) values (
+                        %s, %s, %s::jsonb, %s, %s, %s,
+                        %s::timestamptz, %s::timestamptz
+                    )
+                    on conflict(owner_user_id, key) do update set
+                        value = excluded.value,
+                        category = excluded.category,
+                        source = excluded.source,
+                        policy_version = excluded.policy_version,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        preference.owner_user_id,
+                        preference.key,
+                        json.dumps(preference.value),
+                        preference.category,
+                        preference.source,
+                        preference.policy_version,
+                        preference.created_at,
+                        preference.updated_at,
+                    ),
+                )
+            connection.commit()
+        return preference
+
+    def delete_preference(self, *, owner_user_id: str, key: str) -> None:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    delete from ojtflow.assistant_memory_preferences
+                    where owner_user_id = %s and key = %s
+                    """,
+                    (owner_user_id, key),
+                )
+            connection.commit()
+
+
+class PostgresBackgroundJobRepository:
+    """Postgres-backed durable background jobs."""
+
+    def __init__(self, backbone: PostgresBackboneStore) -> None:
+        self.backbone = backbone
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        job_type: JobType,
+        input: dict,
+        max_attempts: int = 1,
+    ) -> BackgroundJob:
+        now = utc_now().isoformat()
+        job = BackgroundJob(
+            owner_user_id=owner_user_id,
+            job_type=job_type,
+            input=input,
+            max_attempts=max_attempts,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into ojtflow.background_jobs (
+                        job_id, owner_user_id, job_type, status, input, output,
+                        error, progress, attempts, max_attempts, created_at,
+                        updated_at, started_at, completed_at
+                    ) values (
+                        %s, %s, %s, %s, %s::jsonb, %s::jsonb,
+                        %s::jsonb, %s::jsonb, %s, %s, %s::timestamptz,
+                        %s::timestamptz, %s::timestamptz, %s::timestamptz
+                    )
+                    """,
+                    _postgres_job_values(job),
+                )
+            connection.commit()
+        return job
+
+    def get(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.background_jobs
+                    where owner_user_id = %s and job_id = %s
+                    """,
+                    (owner_user_id, job_id),
+                )
+                row = cursor.fetchone()
+        if not row:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return _postgres_background_job_from_row(row)
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: str | None = None,
+        job_type: str | None = None,
+        limit: int = 100,
+    ) -> list[BackgroundJob]:
+        clauses = ["owner_user_id = %s"]
+        params: list[object] = [owner_user_id]
+        if status:
+            clauses.append("status = %s")
+            params.append(status)
+        if job_type:
+            clauses.append("job_type = %s")
+            params.append(job_type)
+        params.append(max(1, min(limit, 500)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select * from ojtflow.background_jobs
+                    where {' and '.join(clauses)}
+                    order by updated_at desc, job_id desc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_background_job_from_row(row) for row in rows]
+
+    def mark_running(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        job = self.get(owner_user_id=owner_user_id, job_id=job_id)
+        now = utc_now().isoformat()
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.background_jobs
+                    set status = 'running',
+                        attempts = attempts + 1,
+                        started_at = coalesce(started_at, %s::timestamptz),
+                        updated_at = %s::timestamptz
+                    where owner_user_id = %s and job_id = %s
+                    returning *
+                    """,
+                    (now, now, owner_user_id, job.job_id),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if not row:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return _postgres_background_job_from_row(row)
+
+    def mark_succeeded(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        output: dict,
+    ) -> BackgroundJob:
+        now = utc_now().isoformat()
+        progress = {"current": 1, "total": 1, "message": "Completed."}
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.background_jobs
+                    set status = 'succeeded',
+                        output = %s::jsonb,
+                        error = null,
+                        progress = %s::jsonb,
+                        completed_at = %s::timestamptz,
+                        updated_at = %s::timestamptz
+                    where owner_user_id = %s and job_id = %s
+                    returning *
+                    """,
+                    (
+                        json.dumps(output),
+                        json.dumps(progress),
+                        now,
+                        now,
+                        owner_user_id,
+                        job_id,
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if not row:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return _postgres_background_job_from_row(row)
+
+    def mark_failed(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob:
+        now = utc_now().isoformat()
+        progress = {"current": 0, "total": None, "message": error.message}
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.background_jobs
+                    set status = 'failed',
+                        error = %s::jsonb,
+                        progress = %s::jsonb,
+                        completed_at = %s::timestamptz,
+                        updated_at = %s::timestamptz
+                    where owner_user_id = %s and job_id = %s
+                    returning *
+                    """,
+                    (
+                        error.model_dump_json(),
+                        json.dumps(progress),
+                        now,
+                        now,
+                        owner_user_id,
+                        job_id,
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if not row:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return _postgres_background_job_from_row(row)
+
+    def mark_cancelled(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob:
+        now = utc_now().isoformat()
+        progress = {"current": 0, "total": None, "message": error.message}
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update ojtflow.background_jobs
+                    set status = 'cancelled',
+                        error = %s::jsonb,
+                        progress = %s::jsonb,
+                        completed_at = %s::timestamptz,
+                        updated_at = %s::timestamptz
+                    where owner_user_id = %s and job_id = %s
+                    returning *
+                    """,
+                    (
+                        error.model_dump_json(),
+                        json.dumps(progress),
+                        now,
+                        now,
+                        owner_user_id,
+                        job_id,
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        if not row:
+            raise NotFoundError(f"Background job not found: {job_id}")
+        return _postgres_background_job_from_row(row)
+
+
+def _postgres_dataset_record_from_row(row) -> DatasetRecord:
+    return DatasetRecord(
+        dataset_id=row["dataset_id"],
+        workflow_id=row["workflow_id"],
+        source_kind=row["source_kind"],
+        declared_format=row["declared_format"],
+        detected_format=row["detected_format"],
+        byte_size=int(row["byte_size"]),
+        sha256=row["sha256"],
+        storage_ref=row["storage_ref"],
+    )
+
+
+def _postgres_uploaded_artifact_values(artifact: UploadedArtifact) -> tuple[object, ...]:
+    return (
+        artifact.artifact_id,
+        artifact.owner_user_id,
+        artifact.filename,
+        artifact.mime_type,
+        artifact.extension,
+        artifact.byte_size,
+        artifact.sha256,
+        artifact.source,
+        artifact.storage_ref,
+        artifact.dataset_id,
+        artifact.duplicate_of_artifact_id,
+        artifact.retention_policy.model_dump_json(),
+        json.dumps(artifact.metadata),
+        artifact.created_at,
+    )
+
+
+def _postgres_uploaded_artifact_from_row(row) -> UploadedArtifact:
+    metadata = row["metadata"] if isinstance(row["metadata"], dict) else {}
+    retention_policy = (
+        row["retention_policy"] if isinstance(row["retention_policy"], dict) else {}
+    )
+    return UploadedArtifact(
+        artifact_id=row["artifact_id"],
+        owner_user_id=row["owner_user_id"],
+        filename=row["filename"],
+        mime_type=row["mime_type"],
+        extension=row["extension"],
+        byte_size=int(row["byte_size"]),
+        sha256=row["sha256"],
+        source=row["source"],
+        storage_ref=row["storage_ref"],
+        dataset_id=row["dataset_id"],
+        duplicate_of_artifact_id=row["duplicate_of_artifact_id"],
+        retention_policy=retention_policy,
+        metadata=metadata,
+        created_at=row["created_at"].isoformat(),
+    )
+
+
+def _postgres_job_values(job: BackgroundJob) -> tuple[object, ...]:
+    return (
+        job.job_id,
+        job.owner_user_id,
+        job.job_type,
+        job.status,
+        json.dumps(job.input),
+        json.dumps(job.output),
+        job.error.model_dump_json() if job.error else None,
+        job.progress.model_dump_json(),
+        job.attempts,
+        job.max_attempts,
+        job.created_at,
+        job.updated_at,
+        job.started_at,
+        job.completed_at,
+    )
+
+
+def _postgres_background_job_from_row(row) -> BackgroundJob:
+    return BackgroundJob(
+        job_id=row["job_id"],
+        owner_user_id=row["owner_user_id"],
+        job_type=row["job_type"],
+        status=row["status"],
+        input=row["input"] if isinstance(row["input"], dict) else {},
+        output=row["output"] if isinstance(row["output"], dict) else {},
+        error=_postgres_job_error(row["error"]),
+        progress=_postgres_job_progress(row["progress"]),
+        attempts=int(row["attempts"]),
+        max_attempts=int(row["max_attempts"]),
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+        started_at=row["started_at"].isoformat() if row["started_at"] else None,
+        completed_at=row["completed_at"].isoformat() if row["completed_at"] else None,
+    )
+
+
+def _postgres_job_error(value: object) -> JobError | None:
+    if not isinstance(value, dict):
+        return None
+    return JobError.model_validate(value)
+
+
+def _postgres_job_progress(value: object) -> JobProgress:
+    if not isinstance(value, dict):
+        return JobProgress()
+    return JobProgress.model_validate(value)
+
+
 def _postgres_judgment_from_row(row) -> RetrievalRelevanceJudgment:
     metadata = row["metadata"] if isinstance(row["metadata"], dict) else {}
     return RetrievalRelevanceJudgment(
@@ -676,3 +2041,107 @@ def _postgres_judgment_from_row(row) -> RetrievalRelevanceJudgment:
         created_at=row["created_at"].isoformat(),
         updated_at=row["updated_at"].isoformat(),
     )
+
+
+def _postgres_active_learning_candidate_from_row(row) -> RetrievalActiveLearningCandidate:
+    return RetrievalActiveLearningCandidate(
+        candidate_id=row["candidate_id"],
+        owner_user_id=row["owner_user_id"],
+        candidate_key=row["candidate_key"],
+        query_hash=row["query_hash"],
+        query=row["query_text"],
+        source_kind=row["source_kind"],
+        trigger_reason=row["trigger_reason"],
+        priority=row["priority"],
+        status=row["status"],
+        evidence_id=row["evidence_id"],
+        source_id=row["source_id"],
+        source_type=row["source_type"],
+        source_version=row["source_version"],
+        run_id=row["run_id"],
+        workflow_id=row["workflow_id"],
+        judgment_id=row["judgment_id"],
+        claim_id=row["claim_id"],
+        support_status=row["support_status"],
+        suggested_expected_evidence_ids=_postgres_json_list(
+            row["suggested_expected_evidence_ids"]
+        ),
+        suggested_filters=_postgres_json_dict(row["suggested_filters"]),
+        benchmark_metadata=_postgres_json_dict(row["benchmark_metadata"]),
+        metadata=_postgres_json_dict(row["metadata"]),
+        reviewer_user_id=row["reviewer_user_id"],
+        reviewer_note=row["reviewer_note"],
+        reviewed_at=row["reviewed_at"].isoformat() if row["reviewed_at"] else None,
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+def _postgres_assistant_session_from_row(row) -> AssistantChatSessionSummary:
+    return AssistantChatSessionSummary(
+        session_id=row["session_id"],
+        owner_user_id=row["owner_user_id"],
+        title=row["title"],
+        message_count=int(row["message_count"]),
+        archived_at=row["archived_at"].isoformat() if row["archived_at"] else None,
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+def _postgres_assistant_message_from_row(row) -> AssistantChatMessage:
+    payload = row["payload"] if isinstance(row["payload"], dict) else {}
+    return AssistantChatMessage(
+        message_id=row["message_id"],
+        session_id=row["session_id"],
+        owner_user_id=row["owner_user_id"],
+        role=row["role"],
+        content=row["content"],
+        workflow_refs=_postgres_json_list(
+            row["workflow_refs"] if "workflow_refs" in row else []
+        ),
+        payload=payload,
+        phi_classification=payload.get("phi_classification"),
+        created_at=row["created_at"].isoformat(),
+    )
+
+
+def _postgres_assistant_stream_replay_from_row(row) -> AssistantStreamReplay:
+    events = row["events"] if isinstance(row["events"], list) else []
+    return AssistantStreamReplay(
+        stream_id=row["stream_id"],
+        session_id=row["session_id"],
+        owner_user_id=row["owner_user_id"],
+        status=row["status"],
+        events=events,
+        created_at=row["created_at"].isoformat(),
+        completed_at=row["completed_at"].isoformat(),
+    )
+
+
+def _postgres_assistant_memory_preference_from_row(row) -> AssistantMemoryPreference:
+    return AssistantMemoryPreference(
+        owner_user_id=row["owner_user_id"],
+        key=row["key"],
+        value=row["value"],
+        category=row["category"],
+        source=row["source"],
+        policy_version=row["policy_version"],
+        created_at=row["created_at"].isoformat(),
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+def _postgres_json_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _postgres_json_dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _postgres_like_pattern(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

@@ -13,8 +13,21 @@ from ojtflow.core.contracts.auth import (
     SessionRecord,
     UserRecord,
 )
+from ojtflow.core.contracts.data import TransformationOutput
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision
-from ojtflow.core.errors import DependencyUnavailableError
+from ojtflow.core.contracts.governance import (
+    OrganizationMembershipRecord,
+    OrganizationRecord,
+    WorkspaceDetail,
+    WorkspaceSettingsRecord,
+)
+from ojtflow.core.contracts.retrieval import (
+    RetrievalIntegrityItem,
+    RetrievalIntegrityReport,
+)
+from ojtflow.core.contracts.storage import DatasetRecord
+from ojtflow.core.contracts.workflow import WorkflowInput, WorkflowOutput, WorkflowState
+from ojtflow.core.errors import DependencyUnavailableError, PolicyBlockedError
 from ojtflow.data_tools.hashing import sha256_text
 from ojtflow.interfaces.api.app import create_app
 from ojtflow.interfaces.api.deps import (
@@ -22,12 +35,20 @@ from ojtflow.interfaces.api.deps import (
     clear_workflow_service_cache,
     get_auth_service,
     get_assistant_service,
+    get_governance_service,
     get_medical_evidence_service,
+    get_retrieval_active_learning_service,
     get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
 )
 from ojtflow.interfaces.api.routes import runtime as runtime_routes
+from ojtflow.interfaces.api.routes.retrieval import _retrieval_query_from_request
+from ojtflow.interfaces.api.schemas import RetrievalSearchRequest
+from ojtflow.infrastructure.storage.consistency import (
+    build_storage_repair_plan,
+    write_storage_repair_marker,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +87,64 @@ async def _authenticated_dependency() -> AuthenticatedSession:
     return _authenticated_session()
 
 
+def test_retrieval_api_request_overrides_caller_organization_filter() -> None:
+    timestamp = "2026-06-12T00:00:00+00:00"
+    workspace = WorkspaceDetail(
+        organization=OrganizationRecord(
+            organization_id="org_a",
+            slug="org-a",
+            display_name="Org A",
+            created_by_user_id="usr_api_test",
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+        membership=OrganizationMembershipRecord(
+            membership_id="mem_a",
+            organization_id="org_a",
+            user_id="usr_api_test",
+            role_key="operator",
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+        settings=WorkspaceSettingsRecord(
+            organization_id="org_a",
+            settings={},
+            updated_at=timestamp,
+        ),
+    )
+    request = RetrievalSearchRequest(
+        query="HbA1c unit evidence",
+        filters={"organization_id": "org_b", "corpus_partition": "tenant_policies"},
+    )
+
+    query = _retrieval_query_from_request(request, workspace=workspace)
+
+    assert query.filters["organization_id"] == "org_a"
+    assert query.filters["corpus_partition"] == "tenant_policies"
+
+    private_request = RetrievalSearchRequest(
+        query="private HbA1c policy",
+        filters={"corpus_partition": "private_documents"},
+    )
+    private_query = _retrieval_query_from_request(private_request, workspace=workspace)
+
+    assert private_query.filters["organization_id"] == "org_a"
+    assert private_query.filters["corpus_partition"] == "private_documents"
+    assert "trust_level" not in private_query.filters
+
+    explicitly_approved_private_request = RetrievalSearchRequest(
+        query="private HbA1c policy",
+        trust_level="approved",
+        filters={"corpus_partition": "private_documents"},
+    )
+    explicitly_approved_private_query = _retrieval_query_from_request(
+        explicitly_approved_private_request,
+        workspace=workspace,
+    )
+
+    assert explicitly_approved_private_query.filters["trust_level"] == "approved"
+
+
 class FakeAuthService:
     def __init__(self) -> None:
         self.logged_out_token: str | None = None
@@ -97,6 +176,21 @@ class FakeAuthService:
 
     def logout(self, token: str) -> None:
         self.logged_out_token = token
+
+
+class FakeGovernanceService:
+    def __init__(self, allowed_permissions: set[str] | None = None) -> None:
+        self.allowed_permissions = allowed_permissions or set()
+        self.calls: list[tuple[str, str]] = []
+
+    def require_permission(self, *, user: UserRecord, permission_scope: str):
+        self.calls.append((user.user_id, permission_scope))
+        if permission_scope not in self.allowed_permissions:
+            raise PolicyBlockedError(
+                "Current user is not permitted to perform this operation.",
+                details={"permission_scope": permission_scope},
+            )
+        return None
 
 
 async def _client() -> httpx.AsyncClient:
@@ -163,6 +257,8 @@ def test_api_v1_route_handlers_use_response_envelopes() -> None:
         source_file = Path(route.endpoint.__code__.co_filename)
         source = source_file.read_text(encoding="utf-8")
         function_source = _function_source(source, route.endpoint.__name__)
+        if "StreamingResponse(" in function_source:
+            continue
         if "return ok(" not in function_source:
             methods = ",".join(sorted(route.methods or []))
             violations.append(f"{methods} {route.path} -> {route.endpoint.__name__}")
@@ -171,7 +267,8 @@ def test_api_v1_route_handlers_use_response_envelopes() -> None:
 
 
 def test_openapi_exposes_core_request_examples() -> None:
-    schemas = create_app().openapi()["components"]["schemas"]
+    openapi = create_app().openapi()
+    schemas = openapi["components"]["schemas"]
 
     workflow_examples = schemas["StartWorkflowRequest"]["examples"]
     assert any("2026/01/02" in example["data"] for example in workflow_examples)
@@ -213,6 +310,150 @@ def test_openapi_exposes_core_request_examples() -> None:
     assistant_examples = schemas["AssistantChatRequest"]["examples"]
     assert any("HbA1c" in example["message"] for example in assistant_examples)
     assert any("data" in example["context"] for example in assistant_examples)
+
+    plan_response_schema = openapi["paths"]["/api/v1/retrieval/plan"]["post"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    search_response_schema = openapi["paths"]["/api/v1/retrieval/search"]["post"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    assert plan_response_schema["$ref"] == "#/components/schemas/RetrievalPlanEnvelope"
+    assert search_response_schema["$ref"] == "#/components/schemas/RetrievalPackageEnvelope"
+    assert schemas["RetrievalPlanEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalPlan"
+    )
+    assert schemas["RetrievalPackageEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalPackage"
+    )
+    retrieval_support_response_models = [
+        ("/api/v1/retrieval/presets", "get", "RetrievalPresetsEnvelope"),
+        ("/api/v1/retrieval/search-options", "get", "RetrievalSearchOptionsEnvelope"),
+        (
+            "/api/v1/retrieval/private-corpus/ingest",
+            "post",
+            "PrivateCorpusIngestionEnvelope",
+        ),
+        ("/api/v1/retrieval/source-policies", "get", "RetrievalSourcePoliciesEnvelope"),
+        ("/api/v1/retrieval/corpus/adapters", "get", "RetrievalCorpusAdaptersEnvelope"),
+        ("/api/v1/retrieval/corpus/partitions", "get", "RetrievalCorpusPartitionsEnvelope"),
+        ("/api/v1/retrieval/corpus/manifest", "get", "RetrievalCorpusManifestEnvelope"),
+        (
+            "/api/v1/retrieval/corpus/chunking-profiles",
+            "get",
+            "RetrievalCorpusChunkingProfilesEnvelope",
+        ),
+        ("/api/v1/retrieval/strategies", "get", "RetrievalStrategiesEnvelope"),
+        ("/api/v1/retrieval/sources", "get", "RetrievalSourcesEnvelope"),
+        ("/api/v1/retrieval/reindex", "post", "RetrievalReindexEnvelope"),
+        ("/api/v1/retrieval/integrity", "get", "RetrievalIntegrityEnvelope"),
+        ("/api/v1/retrieval/judgments", "get", "RetrievalJudgmentsEnvelope"),
+        (
+            "/api/v1/retrieval/judgments/summary",
+            "get",
+            "RetrievalJudgmentSummaryEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/judgments/evaluate",
+            "post",
+            "RetrievalJudgmentEvaluationEnvelope",
+        ),
+        ("/api/v1/retrieval/judgments", "put", "RetrievalJudgmentEnvelope"),
+        (
+            "/api/v1/retrieval/judgments/{judgment_id}",
+            "delete",
+            "RetrievalJudgmentDeleteEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/active-learning/candidates",
+            "get",
+            "RetrievalActiveLearningCandidatesEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/active-learning/summary",
+            "get",
+            "RetrievalActiveLearningSummaryEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/active-learning/candidates",
+            "post",
+            "RetrievalActiveLearningCandidateEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/active-learning/candidates/{candidate_id}",
+            "patch",
+            "RetrievalActiveLearningCandidateEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/graph/contexts",
+            "get",
+            "RetrievalGraphContextsEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/graph/export",
+            "get",
+            "RetrievalGraphExportEnvelope",
+        ),
+        (
+            "/api/v1/retrieval/graph/neighborhood",
+            "get",
+            "RetrievalGraphNeighborhoodEnvelope",
+        ),
+    ]
+    for path, method, schema_name in retrieval_support_response_models:
+        schema = openapi["paths"][path][method]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        assert schema["$ref"] == f"#/components/schemas/{schema_name}"
+    assert schemas["RetrievalPresetsEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/RetrievalSearchPreset"
+    )
+    assert schemas["RetrievalSearchOptionsEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalSearchOptions"
+    )
+    assert schemas["RetrievalSourcePoliciesEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalSourceTrustPolicyCatalog"
+    )
+    assert schemas["RetrievalStrategiesEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalStrategyCatalog"
+    )
+    assert schemas["RetrievalSourcesEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/RetrievalSource"
+    )
+    assert schemas["RetrievalIntegrityEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalIntegrityReport"
+    )
+    assert "chunks_indexed" in schemas["RetrievalReindexResult"]["properties"]
+    assert schemas["RetrievalJudgmentsEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/RetrievalRelevanceJudgment"
+    )
+    assert schemas["RetrievalJudgmentSummaryEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalRelevanceJudgmentSummary"
+    )
+    assert schemas["RetrievalJudgmentEvaluationEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalJudgmentEvaluationResult"
+    )
+    assert schemas["RetrievalJudgmentEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalRelevanceJudgment"
+    )
+    assert "judgment_id" in schemas["RetrievalJudgmentDeleteResult"]["properties"]
+    assert schemas["RetrievalActiveLearningCandidatesEnvelope"]["properties"]["data"]["items"][
+        "$ref"
+    ] == "#/components/schemas/RetrievalActiveLearningCandidate"
+    assert schemas["RetrievalActiveLearningCandidateEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalActiveLearningCandidate"
+    )
+    assert schemas["RetrievalActiveLearningSummaryEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/RetrievalActiveLearningSummary"
+    )
+    assert schemas["RetrievalGraphContextsEnvelope"]["properties"]["data"]["items"]["$ref"] == (
+        "#/components/schemas/GraphContextRecord"
+    )
+    assert schemas["RetrievalGraphExportEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/GraphExport"
+    )
+    assert schemas["RetrievalGraphNeighborhoodEnvelope"]["properties"]["data"]["$ref"] == (
+        "#/components/schemas/GraphNeighborhood"
+    )
 
 
 def test_api_contract_doc_covers_current_route_surface() -> None:
@@ -454,6 +695,10 @@ async def test_api_rejects_blank_optional_identifiers_and_filters(monkeypatch) -
                 "/api/v1/retrieval/search",
                 json={"query": "lab result schema", "clinical_domain": "   "},
             ),
+            await client.post(
+                "/api/v1/retrieval/plan",
+                json={"query": "", "top_k": 2},
+            ),
         ]
 
     for response in blank_requests:
@@ -471,11 +716,13 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
         def __init__(self) -> None:
             self.calls: list[dict] = []
 
-        def search_retrieval(self, query, owner_user_id=None):
+        def search_retrieval(self, query, owner_user_id=None, request_id=None):
             self.calls.append(
                 {
+                    "method": "search",
                     "query": query.model_dump(mode="json"),
                     "owner_user_id": owner_user_id,
+                    "request_id": request_id,
                 }
             )
             return {
@@ -492,7 +739,62 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "handoff_context": {},
             }
 
+        def plan_retrieval(self, query, owner_user_id=None):
+            self.calls.append(
+                {
+                    "method": "plan",
+                    "query": query.model_dump(mode="json"),
+                    "owner_user_id": owner_user_id,
+                }
+            )
+            return {
+                "query": query.model_dump(mode="json"),
+                "query_analysis": {
+                    "strategy": "fake",
+                    "detected_concepts": [],
+                    "concept_candidates": [],
+                    "expanded_terms": [],
+                    "standards": [],
+                    "rule_ids": [],
+                    "query_variants": [query.query],
+                    "query_variant_details": [],
+                    "filter_suggestions": [],
+                    "diagnostics": [],
+                    "search_hints": [],
+                    "query_profile": None,
+                    "query_aspects": [],
+                    "retrieval_tasks": [],
+                },
+                "coverage_summary": {
+                    "ready": False,
+                    "local_task_count": 0,
+                    "required_local_task_count": 0,
+                    "external_task_count": 0,
+                    "standard_count": 0,
+                    "filter_count": 0,
+                    "standards": [],
+                    "warnings": [],
+                    "next_action": "Add a healthcare standard before running search.",
+                    "summary": "Plan needs more detail before review-grade search.",
+                },
+                "task_summary": {
+                    "total_task_count": 0,
+                    "runnable_local_count": 0,
+                    "required_runnable_local_count": 0,
+                    "external_open_count": 0,
+                    "external_copy_count": 0,
+                    "manual_followup_count": 0,
+                    "blocked_task_count": 0,
+                    "primary_action": "Add a more specific healthcare query before executing retrieval.",
+                    "summary": "0 local runnable task(s), 0 external/manual follow-up(s), and 0 blocked task(s).",
+                },
+                "risk_signals": [],
+                "search_signature": "fake_signature",
+                "summary": "Fake retrieval plan.",
+            }
+
     fake_service = FakeWorkflowService()
+    request_id = "web_retrieval_route_123"
     app = create_app()
     app.dependency_overrides[require_authentication] = _authenticated_dependency
 
@@ -505,6 +807,25 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.post(
             "/api/v1/retrieval/search",
+            headers={"X-Request-ID": request_id},
+            json={
+                "query": "  lab result schema  ",
+                "workflow_id": "  wf_example  ",
+                "schema_id": "  lab_result_v1  ",
+                "fields": ["  date  ", "  unit  "],
+                "detected_format": "  csv  ",
+                "resource_type": "  Observation  ",
+                "clinical_domain": "  laboratory  ",
+                "standard_system": "  UCUM  ",
+                "trust_level": "approved",
+                "filters": {
+                    "source_id": "  terminology:ucum  ",
+                    "source_type": "terminology_system",
+                },
+            },
+        )
+        plan_response = await client.post(
+            "/api/v1/retrieval/plan",
             json={
                 "query": "  lab result schema  ",
                 "workflow_id": "  wf_example  ",
@@ -523,8 +844,13 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
         )
 
     assert response.status_code == 200
+    assert plan_response.status_code == 200
+    organization_id = fake_service.calls[0]["query"]["filters"]["organization_id"]
+    assert re.fullmatch(r"org_[0-9a-f]{12}", organization_id)
+    assert fake_service.calls[1]["query"]["filters"]["organization_id"] == organization_id
     assert fake_service.calls == [
         {
+            "method": "search",
             "query": {
                 "query": "lab result schema",
                 "workflow_id": "wf_example",
@@ -535,6 +861,29 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
                 "top_k": 5,
                 "filters": {
                     "clinical_domain": "laboratory",
+                    "organization_id": organization_id,
+                    "source_id": "terminology:ucum",
+                    "standard_system": "UCUM",
+                    "source_type": "terminology_system",
+                    "trust_level": "approved",
+                },
+            },
+            "owner_user_id": "usr_api_test",
+            "request_id": request_id,
+        },
+        {
+            "method": "plan",
+            "query": {
+                "query": "lab result schema",
+                "workflow_id": "wf_example",
+                "fields": ["date", "unit"],
+                "schema_id": "lab_result_v1",
+                "detected_format": "csv",
+                "resource_type": "Observation",
+                "top_k": 5,
+                "filters": {
+                    "clinical_domain": "laboratory",
+                    "organization_id": organization_id,
                     "source_id": "terminology:ucum",
                     "standard_system": "UCUM",
                     "source_type": "terminology_system",
@@ -543,6 +892,179 @@ async def test_retrieval_route_trims_optional_query_context(monkeypatch) -> None
             },
             "owner_user_id": "usr_api_test",
         }
+    ]
+    plan_body = _assert_success_envelope(plan_response)
+    plan_data = plan_body["data"]
+    assert plan_data["coverage_summary"]["next_action"]
+    assert plan_data["task_summary"]["primary_action"]
+    assert plan_data["task_summary"]["total_task_count"] == 0
+    assert plan_data["risk_signals"] == []
+
+
+@pytest.mark.asyncio
+async def test_retrieval_graph_routes_use_authenticated_owner(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def list_graph_contexts(self, **kwargs):
+            self.calls.append({"method": "list", **kwargs})
+            return [
+                {
+                    "graph_id": "graph_api",
+                    "owner_user_id": kwargs["owner_user_id"],
+                    "workflow_id": kwargs["workflow_id"],
+                    "request_id": "req_api",
+                    "search_signature": "sig_api",
+                    "query": "Observation HbA1c unit",
+                    "resource_type": "Observation",
+                    "fields": ["unit"],
+                    "node_count": 2,
+                    "edge_count": 1,
+                    "triple_count": 1,
+                    "graph_context": {
+                        "graph_contract": "graph_ner_handoff.v0",
+                        "summary": {"node_count": 2, "edge_count": 1, "triple_count": 1},
+                    },
+                    "created_at": "2026-06-11T00:00:00+00:00",
+                }
+            ]
+
+        def export_graph_contexts(self, **kwargs):
+            self.calls.append({"method": "export", **kwargs})
+            return {
+                "format": kwargs["export_format"],
+                "content_type": "application/x-ndjson",
+                "graph_count": 1,
+                "node_count": 2,
+                "edge_count": 1,
+                "triple_count": 1,
+                "generated_at": "2026-06-11T00:00:00+00:00",
+                "content": (
+                    '{"graph_id":"graph_api","subject":"Observation.valueQuantity.unit",'
+                    '"predicate":"uses","object":"UCUM","evidence_id":"ev_ucum"}'
+                ),
+            }
+
+        def graph_neighborhood(self, **kwargs):
+            self.calls.append({"method": "neighborhood", **kwargs})
+            return {
+                "query": kwargs["query"].model_dump(mode="json"),
+                "source_graph_ids": ["graph_api"],
+                "graph_count": 1,
+                "node_count": 2,
+                "edge_count": 1,
+                "triple_count": 1,
+                "matched_node_ids": ["standard:ucum"],
+                "matched_evidence_ids": ["ev_ucum"],
+                "nodes": [
+                    {
+                        "graph_id": "graph_api",
+                        "id": "standard:ucum",
+                        "label": "UCUM",
+                        "type": "standard",
+                    }
+                ],
+                "edges": [],
+                "triples": [
+                    {
+                        "graph_id": "graph_api",
+                        "subject": "Observation.valueQuantity.unit",
+                        "predicate": "uses",
+                        "object": "UCUM",
+                        "evidence_id": "ev_ucum",
+                    }
+                ],
+                "warnings": [],
+                "generated_at": "2026-06-11T00:00:00+00:00",
+            }
+
+    fake_service = FakeWorkflowService()
+    fake_governance = FakeGovernanceService({"retrieval:read"})
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    async def fake_governance_service() -> FakeGovernanceService:
+        return fake_governance
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    app.dependency_overrides[get_governance_service] = fake_governance_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        contexts_response = await client.get(
+            "/api/v1/retrieval/graph/contexts",
+            params={"workflow_id": "  wf_graph  ", "limit": 5},
+        )
+        export_response = await client.get(
+            "/api/v1/retrieval/graph/export",
+            params={"workflow_id": "  wf_graph  ", "limit": 5, "format": "rdf_jsonl"},
+        )
+        neighborhood_response = await client.get(
+            "/api/v1/retrieval/graph/neighborhood",
+            params={
+                "workflow_id": "  wf_graph  ",
+                "q": "  UCUM  ",
+                "relation": "  uses  ",
+                "limit": 5,
+                "max_depth": 1,
+            },
+        )
+
+    assert contexts_response.status_code == 200
+    assert export_response.status_code == 200
+    assert neighborhood_response.status_code == 200
+    contexts = _assert_success_envelope(contexts_response)["data"]
+    export = _assert_success_envelope(export_response)["data"]
+    neighborhood = _assert_success_envelope(neighborhood_response)["data"]
+    assert contexts[0]["owner_user_id"] == "usr_api_test"
+    assert contexts[0]["workflow_id"] == "wf_graph"
+    assert export["format"] == "rdf_jsonl"
+    assert neighborhood["query"]["q"] == "UCUM"
+    assert neighborhood["query"]["relation"] == "uses"
+    assert [call["method"] for call in fake_service.calls] == [
+        "list",
+        "export",
+        "neighborhood",
+    ]
+    assert fake_service.calls[0] == {
+        "method": "list",
+        "owner_user_id": "usr_api_test",
+        "workflow_id": "wf_graph",
+        "limit": 5,
+    }
+    assert fake_service.calls[1] == {
+        "method": "export",
+        "owner_user_id": "usr_api_test",
+        "workflow_id": "wf_graph",
+        "limit": 5,
+        "export_format": "rdf_jsonl",
+    }
+    assert fake_service.calls[2]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[2]["query"].model_dump(mode="json") == {
+        "workflow_id": "wf_graph",
+        "q": "UCUM",
+        "node_id": None,
+        "evidence_id": None,
+        "source_id": None,
+        "normalized_code": None,
+        "resource_type": None,
+        "field": None,
+        "relation": "uses",
+        "limit": 5,
+        "max_depth": 1,
+    }
+    assert fake_governance.calls == [
+        ("usr_api_test", "retrieval:read"),
+        ("usr_api_test", "retrieval:read"),
+        ("usr_api_test", "retrieval:read"),
     ]
 
 
@@ -588,13 +1110,20 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "relevant_count": 1,
                 "partial_count": 0,
                 "not_relevant_count": 0,
+                "unsafe_count": 0,
+                "stale_count": 0,
+                "source_policy_blocked_count": 0,
                 "average_rating": 3.0,
                 "latest_updated_at": "2026-06-04T00:00:00+00:00",
                 "sample_limit": kwargs["limit"],
                 "value_counts": {
                     "relevant": 1,
                     "partial": 0,
+                    "irrelevant": 0,
                     "not_relevant": 0,
+                    "unsafe": 0,
+                    "stale": 0,
+                    "source_policy_blocked": 0,
                 },
             }
 
@@ -609,6 +1138,9 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "relevant_count": 1,
                 "partial_count": 0,
                 "not_relevant_count": 0,
+                "unsafe_count": 0,
+                "stale_count": 0,
+                "source_policy_blocked_count": 0,
                 "coverage_at_k": 0.5,
                 "hit_rate_at_k": 1.0,
                 "precision_at_k": 0.5,
@@ -653,13 +1185,29 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
             self.calls.append({"method": "delete", **kwargs})
 
     fake_service = FakeRetrievalJudgmentService()
+
+    class FakeActiveLearningService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def enqueue_from_evaluation(self, **kwargs):
+            self.calls.append({"method": "enqueue_from_evaluation", **kwargs})
+            return []
+
+    fake_active_learning = FakeActiveLearningService()
     app = create_app()
     app.dependency_overrides[require_authentication] = _authenticated_dependency
 
     async def fake_judgment_service() -> FakeRetrievalJudgmentService:
         return fake_service
 
+    async def fake_active_learning_service() -> FakeActiveLearningService:
+        return fake_active_learning
+
     app.dependency_overrides[get_retrieval_judgment_service] = fake_judgment_service
+    app.dependency_overrides[get_retrieval_active_learning_service] = (
+        fake_active_learning_service
+    )
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -686,8 +1234,8 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
                 "evidence_id": "ev_schema",
                 "source_id": "schema:lab_result_v1",
                 "source_type": "schema",
-                "value": "relevant",
-                "rating": 3,
+                "value": "source_policy_blocked",
+                "rating": 0,
                 "run_id": "run_1",
                 "search_signature": "signature",
                 "metadata": {"review_surface": "retrieval_console"},
@@ -730,15 +1278,212 @@ async def test_retrieval_judgment_routes_use_authenticated_owner(monkeypatch) ->
         "ranked_evidence_ids": ["ev_schema", "ev_missing"],
         "cutoff": 2,
     }
+    assert fake_active_learning.calls[0]["method"] == "enqueue_from_evaluation"
+    assert fake_active_learning.calls[0]["owner_user_id"] == "usr_api_test"
+    assert fake_active_learning.calls[0]["evaluation"]["query"] == "FHIR Observation HbA1c"
     assert fake_service.calls[3]["method"] == "upsert"
     assert fake_service.calls[3]["owner_user_id"] == "usr_api_test"
-    assert fake_service.calls[3]["value"] == "relevant"
+    assert fake_service.calls[3]["value"] == "source_policy_blocked"
+    assert fake_service.calls[3]["rating"] == 0
     assert fake_service.calls[3]["metadata"] == {"review_surface": "retrieval_console"}
     assert fake_service.calls[4] == {
         "method": "delete",
         "owner_user_id": "usr_api_test",
         "judgment_id": "rj_saved",
     }
+
+
+@pytest.mark.asyncio
+async def test_retrieval_active_learning_routes_use_authenticated_owner(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeActiveLearningService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def list(self, **kwargs):
+            self.calls.append({"method": "list", **kwargs})
+            return [
+                {
+                    "candidate_id": "alc_existing",
+                    "owner_user_id": kwargs["owner_user_id"],
+                    "candidate_key": "2" * 64,
+                    "query_hash": "3" * 64,
+                    "query": kwargs["query"],
+                    "source_kind": kwargs["source_kind"],
+                    "trigger_reason": "Reviewer marked source policy conflict.",
+                    "priority": kwargs["priority"],
+                    "status": kwargs["status"],
+                    "evidence_id": "ev_policy",
+                    "source_id": "standard:fhir_observation_r4",
+                    "source_type": "healthcare_standard",
+                    "source_version": None,
+                    "run_id": "run_1",
+                    "workflow_id": None,
+                    "judgment_id": "rj_policy",
+                    "claim_id": None,
+                    "support_status": "unsupported",
+                    "suggested_expected_evidence_ids": [],
+                    "suggested_filters": {},
+                    "benchmark_metadata": {},
+                    "metadata": {},
+                    "reviewer_user_id": None,
+                    "reviewer_note": None,
+                    "reviewed_at": None,
+                    "created_at": "2026-06-04T00:00:00+00:00",
+                    "updated_at": "2026-06-04T00:00:00+00:00",
+                }
+            ]
+
+        def summary(self, **kwargs):
+            self.calls.append({"method": "summary", **kwargs})
+            return {
+                "total_count": 1,
+                "open_count": 1,
+                "accepted_count": 0,
+                "rejected_count": 0,
+                "promoted_count": 0,
+                "archived_count": 0,
+                "critical_count": 1,
+                "high_count": 0,
+                "source_kind_counts": {
+                    "low_confidence_retrieval": 0,
+                    "unsupported_claim": 0,
+                    "reviewer_correction": 0,
+                    "weak_support": 0,
+                    "negative_judgment": 1,
+                },
+                "latest_updated_at": "2026-06-04T00:00:00+00:00",
+                "sample_limit": kwargs["limit"],
+            }
+
+        def enqueue(self, **kwargs):
+            self.calls.append({"method": "enqueue", **kwargs})
+            write = kwargs["write"]
+            return {
+                **write.model_dump(mode="json"),
+                "candidate_id": "alc_created",
+                "owner_user_id": kwargs["owner_user_id"],
+                "candidate_key": "4" * 64,
+                "query_hash": "5" * 64,
+                "status": "open",
+                "reviewer_user_id": None,
+                "reviewer_note": None,
+                "reviewed_at": None,
+                "created_at": "2026-06-04T00:00:00+00:00",
+                "updated_at": "2026-06-04T00:00:00+00:00",
+            }
+
+        def update(self, **kwargs):
+            self.calls.append({"method": "update", **kwargs})
+            update = kwargs["update"]
+            return {
+                "candidate_id": kwargs["candidate_id"],
+                "owner_user_id": kwargs["owner_user_id"],
+                "candidate_key": "4" * 64,
+                "query_hash": "5" * 64,
+                "query": "FHIR Observation source policy",
+                "source_kind": "negative_judgment",
+                "trigger_reason": "Reviewer marked source policy conflict.",
+                "priority": update.priority,
+                "status": update.status,
+                "evidence_id": "ev_policy",
+                "source_id": "standard:fhir_observation_r4",
+                "source_type": "healthcare_standard",
+                "source_version": None,
+                "run_id": "run_1",
+                "workflow_id": None,
+                "judgment_id": "rj_policy",
+                "claim_id": None,
+                "support_status": "unsupported",
+                "suggested_expected_evidence_ids": [],
+                "suggested_filters": {},
+                "benchmark_metadata": update.benchmark_metadata or {},
+                "metadata": update.metadata or {},
+                "reviewer_user_id": kwargs["reviewer_user_id"],
+                "reviewer_note": update.reviewer_note,
+                "reviewed_at": "2026-06-04T00:00:00+00:00",
+                "created_at": "2026-06-04T00:00:00+00:00",
+                "updated_at": "2026-06-04T00:00:00+00:00",
+            }
+
+    fake_service = FakeActiveLearningService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_active_learning_service() -> FakeActiveLearningService:
+        return fake_service
+
+    app.dependency_overrides[get_retrieval_active_learning_service] = (
+        fake_active_learning_service
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        listed = await client.get(
+            "/api/v1/retrieval/active-learning/candidates",
+            params={
+                "status": "open",
+                "source_kind": "negative_judgment",
+                "priority": "critical",
+                "query": "FHIR Observation source policy",
+            },
+        )
+        summary = await client.get("/api/v1/retrieval/active-learning/summary")
+        created = await client.post(
+            "/api/v1/retrieval/active-learning/candidates",
+            json={
+                "source_kind": "unsupported_claim",
+                "query": "FHIR Observation source policy",
+                "trigger_reason": "Unsupported answer claim.",
+                "priority": "high",
+                "evidence_id": "ev_policy",
+                "source_id": "standard:fhir_observation_r4",
+                "source_type": "healthcare_standard",
+                "support_status": "unsupported",
+                "benchmark_metadata": {"case_family": "source_policy"},
+            },
+        )
+        updated = await client.patch(
+            "/api/v1/retrieval/active-learning/candidates/alc_created",
+            json={
+                "status": "accepted",
+                "priority": "high",
+                "reviewer_note": "Promote into benchmark.",
+                "benchmark_metadata": {"case_family": "source_policy"},
+            },
+        )
+
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["candidate_id"] == "alc_existing"
+    assert summary.status_code == 200
+    assert summary.json()["data"]["critical_count"] == 1
+    assert created.status_code == 200
+    assert created.json()["data"]["source_kind"] == "unsupported_claim"
+    assert updated.status_code == 200
+    assert updated.json()["data"]["status"] == "accepted"
+    assert fake_service.calls[0] == {
+        "method": "list",
+        "owner_user_id": "usr_api_test",
+        "status": "open",
+        "source_kind": "negative_judgment",
+        "priority": "critical",
+        "query": "FHIR Observation source policy",
+        "limit": 500,
+    }
+    assert fake_service.calls[1] == {
+        "method": "summary",
+        "owner_user_id": "usr_api_test",
+        "limit": 1000,
+    }
+    assert fake_service.calls[2]["method"] == "enqueue"
+    assert fake_service.calls[2]["owner_user_id"] == "usr_api_test"
+    assert fake_service.calls[2]["write"].source_kind == "unsupported_claim"
+    assert fake_service.calls[3]["method"] == "update"
+    assert fake_service.calls[3]["reviewer_user_id"] == "usr_api_test"
+    assert fake_service.calls[3]["update"].status == "accepted"
 
 
 @pytest.mark.asyncio
@@ -837,6 +1582,238 @@ async def test_retrieval_reindex_route_delegates_to_workflow_service(monkeypatch
             "include_corpus": True,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_settings_write_requires_settings_permission(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    governance = FakeGovernanceService(allowed_permissions={"settings:read"})
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_governance_service] = lambda: governance
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.put(
+            "/api/v1/runtime/retrieval-settings",
+            json={"retrieval_candidate_multiplier": 3},
+        )
+
+    assert response.status_code == 403
+    body = _assert_error_envelope(response, expected_code="policy_blocked")
+    assert body["error"]["details"]["permission_scope"] == "settings:write"
+    assert governance.calls == [("usr_api_test", "settings:write")]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_reindex_requires_admin_write_permission(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    governance = FakeGovernanceService(allowed_permissions={"retrieval:read"})
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    app.dependency_overrides[get_governance_service] = lambda: governance
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/api/v1/retrieval/reindex",
+            json={"include_seeded": True, "include_corpus": True},
+        )
+
+    assert response.status_code == 403
+    body = _assert_error_envelope(response, expected_code="policy_blocked")
+    assert body["error"]["details"]["permission_scope"] == "admin:write"
+    assert governance.calls == [("usr_api_test", "admin:write")]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_reindex_job_persists_and_runs_synchronously(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def reindex_retrieval(self, *, include_seeded=True, include_corpus=True):
+            self.calls.append(
+                {
+                    "include_seeded": include_seeded,
+                    "include_corpus": include_corpus,
+                }
+            )
+            return {
+                "repository": "fake",
+                "chunks_indexed": 7,
+                "include_seeded": include_seeded,
+                "include_corpus": include_corpus,
+            }
+
+    fake_service = FakeWorkflowService()
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return fake_service
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+    request_id = "web_job_reindex_test"
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        created = await client.post(
+            "/api/v1/jobs/retrieval-reindex",
+            headers={"X-Request-ID": request_id},
+            json={
+                "include_seeded": False,
+                "include_corpus": True,
+                "execute_now": True,
+            },
+        )
+        job = _assert_success_envelope(created)["data"]
+        listed = await client.get("/api/v1/jobs", params={"job_type": "retrieval_reindex"})
+        fetched = await client.get(f"/api/v1/jobs/{job['job_id']}")
+
+    assert created.status_code == 200
+    assert job["status"] == "succeeded"
+    assert job["job_type"] == "retrieval_reindex"
+    assert job["input"] == {
+        "include_seeded": False,
+        "include_corpus": True,
+        "request_id": request_id,
+    }
+    assert created.headers["x-request-id"] == request_id
+    assert job["output"]["chunks_indexed"] == 7
+    assert job["attempts"] == 1
+    assert job["started_at"]
+    assert job["completed_at"]
+    assert listed.status_code == 200
+    assert [item["job_id"] for item in listed.json()["data"]] == [job["job_id"]]
+    assert fetched.status_code == 200
+    assert fetched.json()["data"]["job_id"] == job["job_id"]
+    assert fake_service.calls == [
+        {
+            "include_seeded": False,
+            "include_corpus": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_embedding_reindex_job_requires_dry_run_approval(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_DATA_DIR", str(tmp_path))
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        dry_run = await client.get(
+            "/api/v1/retrieval/embedding-reindex/dry-run",
+            params={"include_seeded": False, "include_corpus": True},
+        )
+        dry_run_data = _assert_success_envelope(dry_run)["data"]
+        invalid = await client.post(
+            "/api/v1/jobs/embedding-reindex",
+            json={
+                "include_seeded": False,
+                "include_corpus": True,
+                "approval_token": "wrong",
+                "execute_now": True,
+            },
+        )
+        created = await client.post(
+            "/api/v1/jobs/embedding-reindex",
+            json={
+                "include_seeded": False,
+                "include_corpus": True,
+                "approval_token": dry_run_data["approval_token"],
+                "execute_now": True,
+            },
+        )
+
+    assert dry_run.status_code == 200
+    assert dry_run_data["version"] == "embedding_reindex_safety_report.v1"
+    assert dry_run_data["approval_token"].startswith("approve_embedding_reindex_")
+    assert dry_run_data["impact"]["expected_job_type"] == "embedding_reindex"
+
+    assert invalid.status_code == 403
+    _assert_error_envelope(invalid, expected_code="policy_blocked")
+
+    job = _assert_success_envelope(created)["data"]
+    assert created.status_code == 200
+    assert job["job_type"] == "embedding_reindex"
+    assert job["status"] == "succeeded"
+    assert "approval_token" not in job["input"]
+    assert job["input"]["approval_token_hash"] == dry_run_data["approval_token_hash"]
+    assert (
+        job["output"]["safety_report"]["approval_token_hash"]
+        == dry_run_data["approval_token_hash"]
+    )
+    assert "approval_token" not in job["output"]["safety_report"]
+    assert job["output"]["rollback_marker"]["destructive"] is False
+    assert job["output"]["rollback_marker"]["job_id"] == job["job_id"]
+    assert job["output"]["quality_comparison"]["chunk_count_after"] >= 1
+    assert job["output"]["quality_comparison"]["status"] in {
+        "completed",
+        "improved",
+        "warning",
+    }
+
+    marker_id = job["output"]["rollback_marker"]["marker_id"]
+    marker_path = tmp_path / "repair_markers" / "embedding_reindex" / f"{marker_id}.json"
+    assert marker_path.exists()
+    marker_payload = marker_path.read_text(encoding="utf-8")
+    assert dry_run_data["approval_token"] not in marker_payload
+    assert dry_run_data["approval_token_hash"] in marker_payload
+
+
+@pytest.mark.asyncio
+async def test_background_job_cancel_route_marks_queued_job_cancelled(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    class FakeWorkflowService:
+        def reindex_retrieval(self, *, include_seeded=True, include_corpus=True):
+            del include_seeded, include_corpus
+            raise AssertionError("Queued cancellation must not run the job")
+
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+    async def fake_workflow_service() -> FakeWorkflowService:
+        return FakeWorkflowService()
+
+    app.dependency_overrides[get_workflow_service] = fake_workflow_service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        created = await client.post(
+            "/api/v1/jobs/retrieval-reindex",
+            json={"include_seeded": True, "include_corpus": False, "execute_now": False},
+        )
+        job = _assert_success_envelope(created)["data"]
+        cancelled = await client.post(f"/api/v1/jobs/{job['job_id']}/cancel")
+        fetched = await client.get(f"/api/v1/jobs/{job['job_id']}")
+
+    assert created.status_code == 200
+    assert job["status"] == "queued"
+    assert cancelled.status_code == 200
+    cancelled_job = _assert_success_envelope(cancelled)["data"]
+    assert cancelled_job["status"] == "cancelled"
+    assert cancelled_job["error"]["code"] == "job_cancelled"
+    assert cancelled_job["progress"]["message"] == "Job was cancelled by the user."
+    assert fetched.json()["data"]["status"] == "cancelled"
 
 
 @pytest.mark.asyncio
@@ -981,9 +1958,32 @@ async def test_unhandled_api_errors_do_not_expose_internal_exception_types() -> 
     assert response.status_code == 500
     body = _assert_error_envelope(response, expected_code="internal_error")
     assert body["error"]["message"] == "Internal server error"
-    assert body["error"]["details"] == {}
+    assert set(body["error"]["details"]) == {"request_id"}
+    assert body["error"]["request_id"] == body["error"]["details"]["request_id"]
     assert "RuntimeError" not in response.text
     assert "database password" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_api_request_id_is_echoed_and_included_in_error_envelopes(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+    request_id = "web_test_request_123"
+    transport = httpx.ASGITransport(app=create_app())
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        health = await client.get("/health", headers={"X-Request-ID": request_id})
+        unauthorized = await client.get(
+            "/api/v1/workflows",
+            headers={"X-Request-ID": request_id},
+        )
+
+    assert health.headers["x-request-id"] == request_id
+    assert unauthorized.headers["x-request-id"] == request_id
+    body = _assert_error_envelope(unauthorized, expected_code="unauthorized")
+    assert body["error"]["request_id"] == request_id
+    assert body["error"]["details"]["request_id"] == request_id
 
 
 @pytest.mark.asyncio
@@ -1038,8 +2038,21 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         extractors = await client.get("/api/v1/parse/extractors")
         runtime_config = await client.get("/api/v1/runtime/config")
         runtime_readiness = await client.get("/api/v1/runtime/readiness")
+        runtime_storage_repair_plan = await client.get("/api/v1/runtime/storage-repair-plan")
+        runtime_storage_repair_markers = await client.post(
+            "/api/v1/runtime/storage-repair-markers"
+        )
         assistant_tools = await client.get("/api/v1/assistant/tools")
         assistant_examples = await client.get("/api/v1/assistant/examples")
+        assistant_answer_templates = await client.get("/api/v1/assistant/answer-templates")
+        assistant_mcp_resources = await client.get("/api/v1/assistant/mcp/resources")
+        assistant_mcp_prompts = await client.get("/api/v1/assistant/mcp/prompts")
+        assistant_mcp_remote_policy = await client.get(
+            "/api/v1/assistant/mcp/remote-policy"
+        )
+        assistant_stream_replays = await client.get(
+            "/api/v1/assistant/sessions/chat_missing/stream-replays"
+        )
         assistant_stream = await client.post(
             "/api/v1/assistant/chat/stream",
             json={"message": "Find evidence for lab units."},
@@ -1048,14 +2061,47 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
             "/api/v1/retrieval/search",
             json={"query": "lab result schema", "top_k": 1},
         )
+        retrieval_private_corpus = await client.post(
+            "/api/v1/retrieval/private-corpus/ingest",
+            json={"data": "patient_id,ssn\nP001,123-45-6789\n", "title": "Private"},
+        )
         retrieval_presets = await client.get("/api/v1/retrieval/presets")
         retrieval_search_options = await client.get("/api/v1/retrieval/search-options")
+        retrieval_source_policies = await client.get("/api/v1/retrieval/source-policies")
+        retrieval_corpus_adapters = await client.get("/api/v1/retrieval/corpus/adapters")
+        retrieval_corpus_partitions = await client.get("/api/v1/retrieval/corpus/partitions")
+        retrieval_corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
+        retrieval_corpus_ledger = await client.get("/api/v1/retrieval/corpus/ledger")
+        retrieval_corpus_chunking_profiles = await client.get(
+            "/api/v1/retrieval/corpus/chunking-profiles"
+        )
+        retrieval_strategies = await client.get("/api/v1/retrieval/strategies")
         retrieval_reindex = await client.post(
             "/api/v1/retrieval/reindex",
             json={"include_seeded": True, "include_corpus": True},
         )
         retrieval_sources = await client.get("/api/v1/retrieval/sources")
         retrieval_integrity = await client.get("/api/v1/retrieval/integrity")
+        retrieval_index_manifest = await client.get("/api/v1/retrieval/index-manifest")
+        retrieval_embedding_reindex_dry_run = await client.get(
+            "/api/v1/retrieval/embedding-reindex/dry-run"
+        )
+        jobs = await client.get("/api/v1/jobs")
+        job_detail = await client.get("/api/v1/jobs/job_missing")
+        job_cancel = await client.post("/api/v1/jobs/job_missing/cancel")
+        retrieval_reindex_job = await client.post(
+            "/api/v1/jobs/retrieval-reindex",
+            json={"include_seeded": True, "include_corpus": True, "execute_now": True},
+        )
+        embedding_reindex_job = await client.post(
+            "/api/v1/jobs/embedding-reindex",
+            json={
+                "include_seeded": True,
+                "include_corpus": True,
+                "approval_token": "missing",
+                "execute_now": True,
+            },
+        )
         review = await client.post(
             "/api/v1/review/rev_missing",
             json={"decision": "approve"},
@@ -1097,24 +2143,74 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(runtime_config, expected_code="unauthorized")
     assert runtime_readiness.status_code == 401
     _assert_error_envelope(runtime_readiness, expected_code="unauthorized")
+    assert runtime_storage_repair_plan.status_code == 401
+    _assert_error_envelope(runtime_storage_repair_plan, expected_code="unauthorized")
+    assert runtime_storage_repair_markers.status_code == 401
+    _assert_error_envelope(runtime_storage_repair_markers, expected_code="unauthorized")
     assert assistant_tools.status_code == 401
     _assert_error_envelope(assistant_tools, expected_code="unauthorized")
     assert assistant_examples.status_code == 401
     _assert_error_envelope(assistant_examples, expected_code="unauthorized")
+    assert assistant_answer_templates.status_code == 401
+    _assert_error_envelope(assistant_answer_templates, expected_code="unauthorized")
+    assert assistant_mcp_resources.status_code == 401
+    _assert_error_envelope(assistant_mcp_resources, expected_code="unauthorized")
+    assert assistant_mcp_prompts.status_code == 401
+    _assert_error_envelope(assistant_mcp_prompts, expected_code="unauthorized")
+    assert assistant_mcp_remote_policy.status_code == 401
+    _assert_error_envelope(assistant_mcp_remote_policy, expected_code="unauthorized")
+    assert assistant_stream_replays.status_code == 401
+    _assert_error_envelope(assistant_stream_replays, expected_code="unauthorized")
     assert assistant_stream.status_code == 401
     _assert_error_envelope(assistant_stream, expected_code="unauthorized")
     assert retrieval.status_code == 401
     _assert_error_envelope(retrieval, expected_code="unauthorized")
+    assert retrieval_private_corpus.status_code == 401
+    _assert_error_envelope(retrieval_private_corpus, expected_code="unauthorized")
     assert retrieval_presets.status_code == 401
     _assert_error_envelope(retrieval_presets, expected_code="unauthorized")
     assert retrieval_search_options.status_code == 401
     _assert_error_envelope(retrieval_search_options, expected_code="unauthorized")
+    assert retrieval_source_policies.status_code == 401
+    _assert_error_envelope(retrieval_source_policies, expected_code="unauthorized")
+    assert retrieval_corpus_adapters.status_code == 401
+    _assert_error_envelope(retrieval_corpus_adapters, expected_code="unauthorized")
+    assert retrieval_corpus_partitions.status_code == 401
+    _assert_error_envelope(retrieval_corpus_partitions, expected_code="unauthorized")
+    assert retrieval_corpus_manifest.status_code == 401
+    _assert_error_envelope(retrieval_corpus_manifest, expected_code="unauthorized")
+    assert retrieval_corpus_ledger.status_code == 401
+    _assert_error_envelope(retrieval_corpus_ledger, expected_code="unauthorized")
+    assert retrieval_corpus_chunking_profiles.status_code == 401
+    _assert_error_envelope(
+        retrieval_corpus_chunking_profiles,
+        expected_code="unauthorized",
+    )
+    assert retrieval_strategies.status_code == 401
+    _assert_error_envelope(retrieval_strategies, expected_code="unauthorized")
     assert retrieval_reindex.status_code == 401
     _assert_error_envelope(retrieval_reindex, expected_code="unauthorized")
     assert retrieval_sources.status_code == 401
     _assert_error_envelope(retrieval_sources, expected_code="unauthorized")
     assert retrieval_integrity.status_code == 401
     _assert_error_envelope(retrieval_integrity, expected_code="unauthorized")
+    assert retrieval_index_manifest.status_code == 401
+    _assert_error_envelope(retrieval_index_manifest, expected_code="unauthorized")
+    assert retrieval_embedding_reindex_dry_run.status_code == 401
+    _assert_error_envelope(
+        retrieval_embedding_reindex_dry_run,
+        expected_code="unauthorized",
+    )
+    assert jobs.status_code == 401
+    _assert_error_envelope(jobs, expected_code="unauthorized")
+    assert job_detail.status_code == 401
+    _assert_error_envelope(job_detail, expected_code="unauthorized")
+    assert job_cancel.status_code == 401
+    _assert_error_envelope(job_cancel, expected_code="unauthorized")
+    assert retrieval_reindex_job.status_code == 401
+    _assert_error_envelope(retrieval_reindex_job, expected_code="unauthorized")
+    assert embedding_reindex_job.status_code == 401
+    _assert_error_envelope(embedding_reindex_job, expected_code="unauthorized")
     assert review.status_code == 401
     _assert_error_envelope(review, expected_code="unauthorized")
     assert logout.status_code == 401
@@ -1176,12 +2272,22 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     clear_workflow_service_cache()
 
     try:
-        async with await _client() as client:
+        app = create_app()
+        app.dependency_overrides[require_authentication] = _authenticated_dependency
+        app.dependency_overrides[get_governance_service] = lambda: FakeGovernanceService(
+            {"settings:read"}
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
             response = await client.get("/api/v1/runtime/config")
 
         assert response.status_code == 200
         body = _assert_success_envelope(response)["data"]
         assert body["status"] == "ok"
+        assert body["product_mode"] == "local_dev"
         assert body["storage_backend"] == "postgres"
         assert body["persistent_storage"] is True
         assert body["postgres_configured"] is True
@@ -1237,6 +2343,15 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         )
         assert rule_packs["strategy_recommendations"]["rule_count"] > 0
         assert len(rule_packs["strategy_recommendations"]["content_hash"]) == 64
+        assert rule_packs["standard_search_playbook"]["status"] == "ok"
+        assert rule_packs["standard_search_playbook"]["env_var"] == (
+            "OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH"
+        )
+        assert rule_packs["standard_search_playbook"]["version"] == (
+            "retrieval_standard_search_playbook_rules.v1"
+        )
+        assert rule_packs["standard_search_playbook"]["rule_count"] > 0
+        assert len(rule_packs["standard_search_playbook"]["content_hash"]) == 64
         assert rule_packs["evidence_buckets"]["status"] == "ok"
         assert rule_packs["evidence_buckets"]["env_var"] == "OJT_EVIDENCE_BUCKET_RULES_PATH"
         assert rule_packs["evidence_buckets"]["version"] == (
@@ -1244,8 +2359,23 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         )
         assert rule_packs["evidence_buckets"]["rule_count"] > 0
         assert len(rule_packs["evidence_buckets"]["content_hash"]) == 64
+        assert rule_packs["fhir_search_parameters"]["status"] == "ok"
+        assert rule_packs["fhir_search_parameters"]["env_var"] == (
+            "OJT_FHIR_SEARCH_PARAMETERS_PATH"
+        )
+        assert rule_packs["fhir_search_parameters"]["version"] == (
+            "FHIR R4 curated seed v0"
+        )
+        assert rule_packs["fhir_search_parameters"]["rule_count"] > 0
+        assert len(rule_packs["fhir_search_parameters"]["content_hash"]) == 64
         assert body["upload"]["max_inline_data_bytes"] == 4096
         assert body["upload"]["allowed_extensions"]
+        assert body["policy"] == {
+            "no_mock_data": False,
+            "effective_no_mock_data": False,
+            "requires_real_llm": False,
+            "requires_persistent_storage": False,
+        }
         response_text = response.text
         assert "client-secret" not in response_text
         assert "secret@example" not in response_text
@@ -1254,6 +2384,47 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     finally:
         clear_settings_cache()
         clear_workflow_service_cache()
+
+
+def test_product_mode_policy_rejects_disabled_llm_for_pilot(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_PRODUCT_MODE", "pilot")
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "postgres")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="OJT_LLM_PROVIDER=disabled"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+def test_product_mode_policy_rejects_memory_storage_for_production(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_PRODUCT_MODE", "production")
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "openai")
+    clear_settings_cache()
+
+    try:
+        with pytest.raises(ValueError, match="OJT_STORAGE_BACKEND=memory"):
+            get_settings()
+    finally:
+        clear_settings_cache()
+
+
+def test_product_mode_policy_enables_no_mock_for_pilot(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_PRODUCT_MODE", "pilot")
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "postgres")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "openai")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+    finally:
+        clear_settings_cache()
+
+    assert settings.product_mode == "pilot"
+    assert settings.effective_no_mock_data is True
 
 
 @pytest.mark.asyncio
@@ -1272,6 +2443,9 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
             response = await client.put(
                 "/api/v1/runtime/retrieval-settings",
                 json={
+                    "embedding_provider": "openai",
+                    "embedding_model": "text-embedding-3-small",
+                    "embedding_dimensions": 384,
                     "retrieval_framework": "llamaindex",
                     "retrieval_candidate_multiplier": 3,
                     "retrieval_min_candidates": 9,
@@ -1287,6 +2461,9 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
         assert response.status_code == 200
         data = _assert_success_envelope(response)["data"]
         assert data["reloaded"] is True
+        assert data["settings"]["embedding_provider"] == "openai"
+        assert data["settings"]["embedding_model"] == "text-embedding-3-small"
+        assert data["settings"]["embedding_dimensions"] == 384
         assert data["settings"]["retrieval_framework"] == "llamaindex"
         assert data["settings"]["retrieval_candidate_multiplier"] == 3
         assert data["settings"]["retrieval_min_candidates"] == 9
@@ -1298,9 +2475,13 @@ async def test_runtime_retrieval_settings_endpoint_persists_and_reloads(
 
         assert runtime_path.exists()
         saved = json.loads(runtime_path.read_text(encoding="utf-8"))
-        assert saved == data["settings"]
+        for key, value in saved.items():
+            assert data["settings"][key] == value
 
         config = _assert_success_envelope(runtime_config)["data"]
+        assert config["embedding"]["provider"] == "openai"
+        assert config["embedding"]["model"] == "text-embedding-3-small"
+        assert config["embedding"]["dimensions"] == 384
         assert config["retrieval"]["framework"] == "llamaindex"
         assert config["retrieval"]["candidate_multiplier"] == 3
         assert config["retrieval"]["runtime_settings"] == data["settings"]
@@ -1327,8 +2508,13 @@ async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
                 json={
                     "llm_provider": "openai",
                     "llm_model": "gpt-4.1-mini",
+                    "llm_planning_model": "gpt-4.1-mini",
+                    "llm_synthesis_model": "gpt-4.1",
+                    "llm_vision_model": "gpt-4.1-mini",
+                    "llm_base_url": "https://api.openai.com/v1",
                     "llm_timeout_seconds": 45.0,
                     "llm_max_tool_calls": 6,
+                    "llm_planning_progress_interval_seconds": 1.25,
                 },
             )
             runtime_config = await client.get("/api/v1/runtime/config")
@@ -1338,18 +2524,31 @@ async def test_runtime_assistant_settings_endpoint_persists_and_reloads(
         assert data["reloaded"] is True
         assert data["settings"]["llm_provider"] == "openai"
         assert data["settings"]["llm_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_planning_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_synthesis_model"] == "gpt-4.1"
+        assert data["settings"]["llm_vision_model"] == "gpt-4.1-mini"
+        assert data["settings"]["llm_base_url"] == "https://api.openai.com/v1"
         assert data["settings"]["llm_timeout_seconds"] == 45.0
         assert data["settings"]["llm_max_tool_calls"] == 6
+        assert data["settings"]["llm_planning_progress_interval_seconds"] == 1.25
 
         assert runtime_path.exists()
         saved = json.loads(runtime_path.read_text(encoding="utf-8"))
-        assert saved == data["settings"]
+        for key, value in saved.items():
+            assert data["settings"][key] == value
+        assert data["settings"]["external_openai_embeddings_enabled"] is True
+        assert data["settings"]["external_medical_search_enabled"] is True
 
         config = _assert_success_envelope(runtime_config)["data"]
         assert config["llm"]["provider"] == "openai"
         assert config["llm"]["model"] == "gpt-4.1-mini"
+        assert config["llm"]["planning_model"] == "gpt-4.1-mini"
+        assert config["llm"]["synthesis_model"] == "gpt-4.1"
+        assert config["llm"]["vision_model"] == "gpt-4.1-mini"
+        assert config["llm"]["base_url"] == "https://api.openai.com/v1"
         assert config["llm"]["timeout_seconds"] == 45.0
         assert config["llm"]["max_tool_calls"] == 6
+        assert config["llm"]["planning_progress_interval_seconds"] == 1.25
         assert config["llm"]["runtime_settings"] == data["settings"]
         assert "openai_api_key" not in runtime_config.text
     finally:
@@ -1374,7 +2573,13 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         assert body["status"] == "ready"
         checks = {check["name"]: check for check in body["checks"]}
         assert checks["settings"]["status"] == "ok"
+        assert checks["postgres_migrations"]["status"] == "ok"
+        assert checks["postgres_migrations"]["details"]["required"] is False
         assert checks["artifact_directory"]["status"] == "ok"
+        assert checks["auth_configuration"]["status"] == "ok"
+        assert checks["embedding_configuration"]["status"] == "ok"
+        assert checks["llm_configuration"]["status"] == "ok"
+        assert checks["mcp_tool_registry"]["status"] == "ok"
         assert checks["retrieval_rule_packs"]["status"] == "ok"
         assert checks["retrieval_rule_packs"]["details"]["pack_count"] >= 6
         assert checks["retrieval_rule_packs"]["details"]["issue_count"] == 0
@@ -1387,6 +2592,8 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
         assert isinstance(checks["retrieval_inventory"]["details"]["probe_warning_count"], int)
         assert checks["retrieval_inventory"]["details"]["probe_warning_count"] >= 0
         assert checks["session_cache"]["details"]["mode"] == "process_local"
+        assert checks["storage_consistency"]["status"] == "ok"
+        assert checks["storage_consistency"]["details"]["required"] is False
         response_text = response.text
         assert "secret@example" not in response_text
         assert "secret-cache" not in response_text
@@ -1674,6 +2881,8 @@ def test_runtime_readiness_artifact_directory_probes_writable_dirs(
     data_dir = tmp_path / "var"
     (data_dir / "datasets").mkdir(parents=True)
     (data_dir / "outputs").mkdir()
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("OJT_DATABASE_PATH", str(tmp_path / "ojtflow.db"))
     monkeypatch.setenv("OJT_DATA_DIR", str(data_dir))
     clear_settings_cache()
 
@@ -1695,6 +2904,8 @@ def test_runtime_readiness_artifact_directory_reports_missing_dirs(
     tmp_path,
 ) -> None:
     data_dir = tmp_path / "missing-var"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("OJT_DATABASE_PATH", str(tmp_path / "ojtflow.db"))
     monkeypatch.setenv("OJT_DATA_DIR", str(data_dir))
     clear_settings_cache()
 
@@ -1713,6 +2924,431 @@ def test_runtime_readiness_artifact_directory_reports_missing_dirs(
     assert check["details"]["datasets_dir"]["writable"] is False
     assert check["details"]["outputs_dir"]["writable"] is False
     assert str(data_dir) not in json.dumps(check)
+
+
+def test_runtime_readiness_provider_configuration_flags_missing_keys(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OJT_OPENAI_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    clear_settings_cache()
+
+    try:
+        settings = get_settings()
+        embedding_check = runtime_routes._embedding_configuration_check(settings)
+        llm_check = runtime_routes._llm_configuration_check(settings)
+    finally:
+        clear_settings_cache()
+
+    assert embedding_check["status"] == "error"
+    assert embedding_check["details"]["api_key_configured"] is False
+    assert llm_check["status"] == "error"
+    assert llm_check["details"]["api_key_configured"] is False
+    assert "OPENAI_API_KEY" not in json.dumps(embedding_check)
+    assert "OPENAI_API_KEY" not in json.dumps(llm_check)
+
+
+def test_runtime_readiness_mcp_tool_registry_is_sane() -> None:
+    check = runtime_routes._mcp_tool_registry_check()
+
+    assert check["status"] == "ok"
+    assert check["details"]["tool_count"] >= 1
+    assert check["details"]["duplicate_names"] == []
+    assert check["details"]["missing_agent_scope_count"] == 0
+
+
+def test_runtime_readiness_storage_consistency_checks_refs_and_hashes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    data_dir = tmp_path / "var"
+    datasets_dir = data_dir / "datasets"
+    outputs_dir = data_dir / "outputs"
+    datasets_dir.mkdir(parents=True)
+    outputs_dir.mkdir()
+    input_path = datasets_dir / "input.txt"
+    output_path = outputs_dir / "output.txt"
+    orphan_path = datasets_dir / "orphan.txt"
+    input_path.write_text("date,patient_id,lab_name,value,unit\n", encoding="utf-8")
+    output_path.write_text('[{"ok": true}]', encoding="utf-8")
+    orphan_path.write_text("orphan", encoding="utf-8")
+    missing_path = outputs_dir / "missing.txt"
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("OJT_DATA_DIR", str(data_dir))
+    clear_settings_cache()
+
+    workflow = WorkflowState(
+        workflow_id="wf_runtime_consistency",
+        owner_user_id="usr_api_test",
+        user_instruction="Validate data.",
+        input=WorkflowInput(
+            dataset_ref=input_path.resolve().as_uri(),
+            input_hash=sha256_text(input_path.read_text(encoding="utf-8")),
+            declared_format=DataFormat.CSV,
+            detected_format=DataFormat.CSV,
+        ),
+        output=WorkflowOutput(
+            transformation=TransformationOutput(
+                output_format=DataFormat.JSON,
+                output_ref=output_path.resolve().as_uri(),
+                output_hash=sha256_text("different content"),
+            )
+        ),
+        handoff_context={"extracted_dataset_ref": missing_path.resolve().as_uri()},
+    )
+
+    class WorkflowServiceStub:
+        class Datasets:
+            def list_records(self, limit=300):
+                assert limit == 300
+                return [
+                    DatasetRecord(
+                        dataset_id="ds_input",
+                        workflow_id="wf_runtime_consistency",
+                        source_kind="inline",
+                        declared_format="csv",
+                        detected_format="csv",
+                        byte_size=input_path.stat().st_size,
+                        sha256=sha256_text(input_path.read_text(encoding="utf-8")),
+                        storage_ref=input_path.resolve().as_uri(),
+                    ),
+                    DatasetRecord(
+                        dataset_id="ds_output",
+                        workflow_id="wf_runtime_consistency",
+                        source_kind="generated",
+                        declared_format="json",
+                        detected_format="json",
+                        byte_size=output_path.stat().st_size,
+                        sha256=sha256_text(output_path.read_text(encoding="utf-8")),
+                        storage_ref=output_path.resolve().as_uri(),
+                    ),
+                    DatasetRecord(
+                        dataset_id="ds_orphan_candidate",
+                        workflow_id="wf_runtime_consistency",
+                        source_kind="inline",
+                        byte_size=orphan_path.stat().st_size,
+                        sha256=sha256_text(orphan_path.read_text(encoding="utf-8")),
+                        storage_ref=orphan_path.resolve().as_uri(),
+                    ),
+                ]
+
+        datasets = Datasets()
+
+        def list_workflows(self, limit=100, owner_user_id=None):
+            assert limit == 100
+            assert owner_user_id == "usr_api_test"
+            return [workflow]
+
+        def retrieval_integrity_report(self, *, include_seeded=True, include_corpus=False):
+            assert include_seeded is True
+            assert include_corpus is False
+            return RetrievalIntegrityReport(
+                repository="static",
+                status="warning",
+                checked_scope="seeded",
+                expected_source_count=2,
+                indexed_source_count=1,
+                ok_count=1,
+                stale_count=0,
+                missing_count=1,
+                extra_count=0,
+                checks=[
+                    RetrievalIntegrityItem(
+                        source_id="schema:lab_result_v1",
+                        status="ok",
+                        expected_chunk_count=1,
+                        indexed_chunk_count=1,
+                        message="Indexed source matches trusted source content.",
+                    ),
+                    RetrievalIntegrityItem(
+                        source_id="terminology:ucum",
+                        status="missing",
+                        expected_chunk_count=1,
+                        indexed_chunk_count=0,
+                        message="Trusted source is missing from the retrieval index.",
+                    ),
+                ],
+                warnings=["Trusted source is missing from the retrieval index."],
+            )
+
+    try:
+        check = runtime_routes._storage_consistency_check(
+            WorkflowServiceStub(),
+            get_settings(),
+            "usr_api_test",
+        )
+    finally:
+        clear_settings_cache()
+
+    assert check["status"] == "error"
+    assert check["details"]["sampled_workflow_count"] == 1
+    assert check["details"]["artifact_ref_count"] == 3
+    assert check["details"]["dataset_record_count"] == 3
+    assert check["details"]["checked_hash_count"] == 2
+    assert check["details"]["checked_dataset_file_count"] == 3
+    assert check["details"]["missing_count"] == 1
+    assert check["details"]["missing_dataset_record_count"] == 1
+    assert check["details"]["missing_dataset_file_count"] == 0
+    assert check["details"]["hash_mismatch_count"] == 1
+    assert check["details"]["dataset_hash_mismatch_count"] == 0
+    assert check["details"]["unreferenced_dataset_record_count"] == 1
+    assert check["details"]["knowledge_checked_scope"] == "seeded"
+    assert check["details"]["knowledge_source_count"] == 2
+    assert check["details"]["indexed_knowledge_source_count"] == 1
+    assert check["details"]["knowledge_missing_source_count"] == 1
+    assert check["details"]["knowledge_warning_count"] == 1
+    response_text = json.dumps(check)
+    assert str(tmp_path) not in response_text
+
+
+def test_storage_repair_plan_classifies_non_destructive_candidates(tmp_path) -> None:
+    data_dir = tmp_path / "var"
+    datasets_dir = data_dir / "datasets"
+    outputs_dir = data_dir / "outputs"
+    datasets_dir.mkdir(parents=True)
+    outputs_dir.mkdir()
+    input_path = datasets_dir / "input.txt"
+    output_path = outputs_dir / "output.txt"
+    orphan_row_path = datasets_dir / "orphan-row.txt"
+    orphan_file_path = outputs_dir / "orphan-file.txt"
+    missing_path = outputs_dir / "missing.txt"
+    input_path.write_text("date,patient_id,lab_name,value,unit\n", encoding="utf-8")
+    output_path.write_text('[{"ok": true}]', encoding="utf-8")
+    orphan_row_path.write_text("orphan row", encoding="utf-8")
+    orphan_file_path.write_text("orphan file", encoding="utf-8")
+
+    workflow = WorkflowState(
+        workflow_id="wf_repair_plan",
+        owner_user_id="usr_api_test",
+        user_instruction="Validate data.",
+        input=WorkflowInput(
+            dataset_ref=input_path.resolve().as_uri(),
+            input_hash=sha256_text(input_path.read_text(encoding="utf-8")),
+            declared_format=DataFormat.CSV,
+            detected_format=DataFormat.CSV,
+        ),
+        output=WorkflowOutput(
+            transformation=TransformationOutput(
+                output_format=DataFormat.JSON,
+                output_ref=output_path.resolve().as_uri(),
+                output_hash=sha256_text("different content"),
+            )
+        ),
+        handoff_context={"extracted_dataset_ref": missing_path.resolve().as_uri()},
+    )
+    records = [
+        DatasetRecord(
+            dataset_id="ds_input",
+            workflow_id="wf_repair_plan",
+            source_kind="inline",
+            declared_format="csv",
+            detected_format="csv",
+            byte_size=input_path.stat().st_size,
+            sha256=sha256_text(input_path.read_text(encoding="utf-8")),
+            storage_ref=input_path.resolve().as_uri(),
+        ),
+        DatasetRecord(
+            dataset_id="ds_output",
+            workflow_id="wf_repair_plan",
+            source_kind="generated",
+            declared_format="json",
+            detected_format="json",
+            byte_size=output_path.stat().st_size,
+            sha256=sha256_text(output_path.read_text(encoding="utf-8")),
+            storage_ref=output_path.resolve().as_uri(),
+        ),
+        DatasetRecord(
+            dataset_id="ds_orphan_row",
+            workflow_id="wf_repair_plan",
+            source_kind="inline",
+            byte_size=orphan_row_path.stat().st_size,
+            sha256=sha256_text(orphan_row_path.read_text(encoding="utf-8")),
+            storage_ref=orphan_row_path.resolve().as_uri(),
+        ),
+    ]
+
+    plan = build_storage_repair_plan(
+        [workflow],
+        data_dir=data_dir,
+        required=True,
+        dataset_records=records,
+        max_candidates=10,
+    )
+
+    kinds = {candidate.kind for candidate in plan.candidates}
+    assert plan.required is True
+    assert plan.mutation_applied is False
+    assert plan.scanned_file_count == 4
+    assert {
+        "missing_dataset_record",
+        "missing_artifact_ref",
+        "hash_mismatch",
+        "orphaned_dataset_record",
+        "orphaned_file_artifact",
+    }.issubset(kinds)
+    assert all(candidate.destructive is False for candidate in plan.candidates)
+    assert any(
+        candidate.recommended_action == "mark_orphaned_dataset_row"
+        for candidate in plan.candidates
+    )
+    assert any(
+        candidate.recommended_action == "mark_orphaned_file_artifact"
+        for candidate in plan.candidates
+    )
+    assert str(tmp_path) not in json.dumps(plan.model_dump(mode="json"))
+
+    marker = write_storage_repair_marker(plan, data_dir=data_dir)
+
+    marker_dir = data_dir / "repair_markers" / "storage_consistency"
+    marker_path = marker_dir / f"{marker.marker_id}.json"
+    assert marker_path.exists()
+    assert marker.candidate_count == plan.returned_candidate_count
+    assert marker.destructive is False
+    marker_payload = marker_path.read_text(encoding="utf-8")
+    assert str(tmp_path) not in marker_payload
+    assert "mark_orphaned_dataset_row" in marker_payload
+
+
+@pytest.mark.asyncio
+async def test_runtime_storage_consistency_endpoint_returns_sanitized_report(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/storage-consistency")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "consistent"
+    assert body["report"] == {
+        "required": False,
+        "sampled_workflow_count": 0,
+        "artifact_ref_count": 0,
+        "dataset_record_count": 0,
+        "checked_hash_count": 0,
+        "checked_dataset_file_count": 0,
+        "missing_count": 0,
+        "missing_dataset_file_count": 0,
+        "missing_dataset_record_count": 0,
+        "hash_mismatch_count": 0,
+        "dataset_hash_mismatch_count": 0,
+        "unreferenced_dataset_record_count": 0,
+        "knowledge_checked_scope": None,
+        "knowledge_source_count": 0,
+        "indexed_knowledge_source_count": 0,
+        "knowledge_missing_source_count": 0,
+        "knowledge_stale_source_count": 0,
+        "knowledge_extra_source_count": 0,
+        "knowledge_warning_count": 0,
+        "examples": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_runtime_storage_repair_plan_endpoint_returns_memory_not_required(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/storage-repair-plan")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "not_required"
+    assert body["plan"]["required"] is False
+    assert body["plan"]["mutation_applied"] is False
+    assert body["plan"]["candidates"] == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_storage_repair_markers_endpoint_returns_memory_not_required(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.post("/api/v1/runtime/storage-repair-markers")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "not_required"
+    assert body["plan"]["required"] is False
+    assert "marker" not in body
+
+
+@pytest.mark.asyncio
+async def test_runtime_migrations_endpoint_returns_manifest_when_postgres_not_required(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    try:
+        async with await _client() as client:
+            response = await client.get("/api/v1/runtime/migrations")
+    finally:
+        clear_settings_cache()
+        clear_workflow_service_cache()
+
+    assert response.status_code == 200
+    body = _assert_success_envelope(response)["data"]
+    assert body["status"] == "not_required"
+    assert body["storage_backend"] == "memory"
+    assert body["bootstrap_code"] == "not_required"
+    assert body["manifest_count"] >= 8
+    assert body["latest_available_version"]
+    assert len(body["migrations"]) == body["manifest_count"]
+    assert {migration["status"] for migration in body["migrations"]} == {"pending"}
+    assert "postgresql://" not in json.dumps(body)
+
+
+def test_runtime_migration_bootstrap_error_classifier_is_operator_specific() -> None:
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("Duplicate migration version 005 in /app/sql/postgres/migrations")
+        )
+        == "duplicate_migration"
+    )
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("password authentication failed for user ojtflow")
+        )
+        == "auth_failed"
+    )
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("could not translate host name postgres")
+        )
+        == "dns_failed"
+    )
+    assert (
+        runtime_routes._classify_migration_bootstrap_error(
+            Exception("connection refused")
+        )
+        == "network_refused"
+    )
 
 
 @pytest.mark.asyncio
@@ -1860,6 +3496,57 @@ async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
 
 
 @pytest.mark.asyncio
+async def test_service_account_token_authenticates_with_workspace_role(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    app = create_app()
+    app.dependency_overrides[require_authentication] = _authenticated_dependency
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        created = await client.post(
+            "/api/v1/auth/service-accounts",
+            json={
+                "slug": "nightly-ingestion",
+                "display_name": "Nightly Ingestion",
+                "role_key": "operator",
+                "token_ttl_seconds": 3600,
+            },
+        )
+        listed = await client.get("/api/v1/auth/service-accounts")
+        token = _assert_success_envelope(created)["data"]["access_token"]
+
+        app.dependency_overrides.pop(require_authentication)
+        headers = {"Authorization": f"Bearer {token}"}
+        me = await client.get("/api/v1/auth/me", headers=headers)
+        workflows = await client.get("/api/v1/workflows", headers=headers)
+        reindex = await client.post(
+            "/api/v1/retrieval/reindex",
+            headers=headers,
+            json={"include_seeded": True, "include_corpus": False},
+        )
+
+    assert created.status_code == 200, created.text
+    created_data = _assert_success_envelope(created)["data"]
+    assert created_data["token_type"] == "bearer"
+    assert created_data["access_token"].startswith("ojt_sa_")
+    assert created_data["service_account"]["role_key"] == "operator"
+    assert listed.status_code == 200
+    listed_items = _assert_success_envelope(listed)["data"]["items"]
+    assert [item["slug"] for item in listed_items] == ["nightly-ingestion"]
+    assert me.status_code == 200, me.text
+    me_data = _assert_success_envelope(me)["data"]
+    assert me_data["identity_type"] == "service_account"
+    assert me_data["service_account"]["slug"] == "nightly-ingestion"
+    assert workflows.status_code == 200, workflows.text
+    assert reindex.status_code == 403
+    body = _assert_error_envelope(reindex, expected_code="policy_blocked")
+    assert body["error"]["details"]["permission_scope"] == "admin:write"
+
+
+@pytest.mark.asyncio
 async def test_auth_callback_can_return_bearer_token_when_requested() -> None:
     fake_service = FakeAuthService()
     app = create_app()
@@ -1904,10 +3591,10 @@ async def test_auth_dependency_failures_return_service_unavailable_envelope() ->
 
     assert response.status_code == 503
     body = _assert_error_envelope(response, expected_code="dependency_unavailable")
-    assert body["error"]["details"] == {
-        "dependency": "redis",
-        "operation": "set_oauth_state",
-    }
+    details = body["error"]["details"]
+    assert details["dependency"] == "redis"
+    assert details["operation"] == "set_oauth_state"
+    assert details["request_id"] == body["error"]["request_id"]
 
 
 @pytest.mark.asyncio
@@ -1945,6 +3632,7 @@ async def test_auth_url_and_session_responses_are_not_cacheable() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_cookie_samesite_none_forces_secure_cookie(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("OJT_AUTH_COOKIE_SECURE", "false")
     monkeypatch.setenv("OJT_AUTH_COOKIE_SAMESITE", "none")
     clear_settings_cache()
@@ -2099,6 +3787,10 @@ async def test_public_api_success_and_error_envelope_contracts(monkeypatch) -> N
                 "/api/v1/retrieval/search",
                 json={"query": "lab result schema", "top_k": 2},
             ),
+            await client.post(
+                "/api/v1/retrieval/plan",
+                json={"query": "lab result schema", "top_k": 2},
+            ),
             await client.get("/api/v1/retrieval/sources"),
             await client.get("/api/v1/parse/extractors"),
         ]
@@ -2157,10 +3849,12 @@ async def test_api_workflow_review_roundtrip(monkeypatch) -> None:
     clear_settings_cache()
     clear_workflow_service_cache()
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
+    request_id = "web_workflow_roundtrip_123"
 
     async with await _client() as client:
         response = await client.post(
             "/api/v1/workflows",
+            headers={"X-Request-ID": request_id},
             json={
                 "instruction": "Clean this CSV, convert it to JSON, and explain anomalies.",
                 "data": text,
@@ -2174,10 +3868,21 @@ async def test_api_workflow_review_roundtrip(monkeypatch) -> None:
         body = response.json()["data"]
         assert body["status"] == "needs_human_review"
         assert body["steps"]
+        assert body["handoff_context"]["request_id"] == request_id
+        assert body["handoff_context"]["retrieval_trace"]["request_id"] == request_id
 
         workflows = await client.get("/api/v1/workflows")
         assert workflows.status_code == 200
         assert workflows.json()["data"][0]["workflow_id"] == body["workflow_id"]
+        events = await client.get(f"/api/v1/workflows/{body['workflow_id']}/events")
+        assert events.status_code == 200
+        event_payloads = events.json()["data"]
+        assert event_payloads
+        assert {event["request_id"] for event in event_payloads} == {request_id}
+        assert all(
+            event["metadata"].get("request_id") == request_id
+            for event in event_payloads
+        )
 
         summaries = await client.get("/api/v1/workflows/summary?page=1&page_size=10")
         assert summaries.status_code == 200
@@ -2233,6 +3938,35 @@ async def test_api_workflow_review_roundtrip(monkeypatch) -> None:
         assert output_body["byte_size"] == len(output_body["content"].encode("utf-8"))
         assert "[MASKED]" in output_body["content"]
         assert output_body["diff_summary"]["target_row_count"] == 3
+
+        package_export = await client.get(
+            f"/api/v1/workflows/{body['workflow_id']}/clinical-package/export"
+        )
+        assert package_export.status_code == 200
+        package_export_body = package_export.json()["data"]
+        assert package_export_body["workflow_id"] == body["workflow_id"]
+        assert package_export_body["approved_for_export"] is True
+        assert package_export_body["review_status"] == "approved"
+        assert package_export_body["clinical_package"]["package_type"] == (
+            "ojtflow_clinical_package"
+        )
+        assert package_export_body["fhir_like_bundle"]["resourceType"] == "Bundle"
+        assert package_export_body["fhir_like_bundle"]["entry"]
+
+        import_validation = await client.post(
+            "/api/v1/interoperability/clinical-package/validate-import",
+            json={"payload": package_export_body, "require_hash_match": True},
+        )
+        assert import_validation.status_code == 200
+        import_validation_body = import_validation.json()["data"]
+        assert import_validation_body["valid"] is True
+        assert import_validation_body["package_hash"] == package_export_body["package_hash"]
+        assert import_validation_body["fhir_like_bundle_hash"] == (
+            package_export_body["fhir_like_bundle_hash"]
+        )
+        assert import_validation_body["clinical_package"]["package_id"] == (
+            package_export_body["clinical_package"]["package_id"]
+        )
 
         service = await get_workflow_service()
         output_ref = approved_body["output"]["transformation"]["output_ref"]
@@ -3058,9 +4792,7 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         assert retrieval.status_code == 200
         retrieval_data = retrieval.json()["data"]
         assert retrieval_data["trace"]["strategy"] == "static_hybrid_rrf"
-        assert retrieval_data["trace"]["safety_flags"] == [
-            "sensitive_field_context"
-        ]
+        assert "sensitive_field_context" in retrieval_data["trace"]["safety_flags"]
         assert retrieval_data["evidence"]
         assert retrieval_data["recommended_actions"]
         assert retrieval_data["recommended_action_summary"]["count"] == len(
@@ -3069,6 +4801,15 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         assert retrieval_data["remediation_summary"]
         assert retrieval_data["interpretation"]["summary"]
         assert retrieval_data["interpretation"]["top_source_id"]
+        assert retrieval_data["support_matrix"]["version"] == (
+            "retrieval_evidence_support_matrix.v1"
+        )
+        assert retrieval_data["support_matrix"]["row_count"] == len(retrieval_data["hits"])
+        assert retrieval_data["support_matrix"]["rows"][0]["evidence_id"] == (
+            retrieval_data["hits"][0]["evidence"]["evidence_id"]
+        )
+        assert retrieval_data["support_matrix"]["rows"][0]["source_locator"]
+        assert retrieval_data["support_matrix"]["rows"][0]["reasoning"]
         assert retrieval_data["handoff_context"]["recommended_action_summary"] == (
             retrieval_data["recommended_action_summary"]
         )
@@ -3078,6 +4819,9 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         assert retrieval_data["handoff_context"]["interpretation"] == (
             retrieval_data["interpretation"]
         )
+        assert retrieval_data["handoff_context"]["support_matrix"] == (
+            retrieval_data["support_matrix"]
+        )
         assert retrieval_data["strategy_recommendations"]
         assert retrieval_data["handoff_context"]["strategy_recommendations"] == (
             retrieval_data["strategy_recommendations"]
@@ -3086,12 +4830,51 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             "graph_ner_handoff.v0"
         )
 
+        private_ingest = await client.post(
+            "/api/v1/retrieval/private-corpus/ingest",
+            json={
+                "title": "Private tenant lab policy",
+                "data": "patient_id,ssn,lab_name,value\nP001,123-45-6789,HbA1c,7.4\n",
+                "input_format": "csv",
+                "redaction_action": "mask",
+                "source_ref": "tenant://policies/private-lab.csv",
+            },
+        )
+        assert private_ingest.status_code == 200
+        private_data = private_ingest.json()["data"]
+        assert private_data["source"]["corpus_partition_id"] == "private_documents"
+        assert private_data["source"]["corpus_visibility"] == "private"
+        assert private_data["source"]["external_provider_allowed"] is False
+        assert private_data["redaction_preview"]["matches"]
+        assert "123-45-6789" not in private_data["redaction_preview"]["redacted_text"]
+
+        private_search = await client.post(
+            "/api/v1/retrieval/search",
+            json={
+                "query": "private tenant HbA1c policy",
+                "top_k": 5,
+                "filters": {"corpus_partition": "private_documents"},
+            },
+        )
+        assert private_search.status_code == 200
+        private_sources = {
+            item["source_id"] for item in private_search.json()["data"]["evidence"]
+        }
+        assert private_data["source_id"] in private_sources
+
         sources = await client.get("/api/v1/retrieval/sources")
         assert sources.status_code == 200
         assert any(
             source["source_id"] == "standard:fhir_observation_r4"
             for source in sources.json()["data"]
         )
+        private_source = next(
+            source
+            for source in sources.json()["data"]
+            if source["source_id"] == private_data["source_id"]
+        )
+        assert private_source["corpus_partition_id"] == "private_documents"
+        assert private_source["phi_allowed"] is True
 
         presets = await client.get("/api/v1/retrieval/presets")
         assert presets.status_code == 200
@@ -3120,6 +4903,108 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             for option in option_data["detected_formats"]
         )
         assert option_data["top_k_values"] == [3, 5, 8, 10, 15, 20]
+
+        source_policies = await client.get("/api/v1/retrieval/source-policies")
+        assert source_policies.status_code == 200
+        policy_data = source_policies.json()["data"]
+        assert policy_data["version"] == "source_trust_policies.v1"
+        assert any(
+            policy["source_id"] == "hl7_fhir_r4"
+            and policy["evidence_tier"] == "authoritative_standard"
+            and "FHIR-like profiling" in policy["clinical_scope"]
+            for policy in policy_data["policies"]
+        )
+
+        corpus_adapters = await client.get("/api/v1/retrieval/corpus/adapters")
+        assert corpus_adapters.status_code == 200
+        adapter_data = corpus_adapters.json()["data"]
+        assert adapter_data["version"] == "corpus_adapters.v1"
+        assert any(
+            adapter["adapter_id"] == "external_loinc_selected_public_pages_v1"
+            and adapter["license"]["license_id"] == "loinc_terms"
+            and adapter["lifecycle_state"] == "candidate"
+            for adapter in adapter_data["adapters"]
+        )
+        assert any(
+            adapter["adapter_id"] == "external_hl7_fhir_r4_patient_v1"
+            and adapter["metadata"]["resource_type"] == "Patient"
+            and adapter["source_urls"]["primary"].endswith("/patient.html")
+            for adapter in adapter_data["adapters"]
+        )
+
+        corpus_partitions = await client.get("/api/v1/retrieval/corpus/partitions")
+        assert corpus_partitions.status_code == 200
+        partition_data = corpus_partitions.json()["data"]
+        partitions = {item["partition_id"]: item for item in partition_data["partitions"]}
+        assert partition_data["version"] == "corpus_partitions.v1"
+        assert partition_data["default_partition_id"] == "global_standards"
+        assert partitions["global_standards"]["visibility"] == "global"
+        assert partitions["tenant_policies"]["visibility"] == "organization"
+        assert partitions["private_documents"]["phi_allowed"] is True
+        assert partitions["private_documents"]["external_provider_allowed"] is False
+
+        corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
+        assert corpus_manifest.status_code == 200
+        manifest_data = corpus_manifest.json()["data"]
+        assert manifest_data["version"] == "corpus_ingestion_manifest.v1"
+        assert manifest_data["adapter_catalog_version"] == "corpus_adapters.v1"
+        assert manifest_data["item_count"] >= 1
+        assert any(
+            item["adapter_id"] == "local_medical_search_playbook_v1"
+            and item["content_hash"].startswith("sha256:")
+            and item["reviewer_state"] == "approved"
+            for item in manifest_data["items"]
+        )
+
+        corpus_ledger = await client.get("/api/v1/retrieval/corpus/ledger")
+        assert corpus_ledger.status_code == 200
+        ledger_data = corpus_ledger.json()["data"]
+        assert ledger_data["version"] == "corpus_ingestion_ledger.v1"
+        assert ledger_data["adapter_catalog_version"] == "corpus_adapters.v1"
+        assert ledger_data["summary"]["chunk_count"] == len(ledger_data["records"])
+        assert any(
+            record["adapter_id"] == "local_medical_search_playbook_v1"
+            and record["raw_artifact_hash"].startswith("sha256:")
+            and record["chunk_content_hash"].startswith("sha256:")
+            and record["adapter_version"] == "corpus_adapters.v1"
+            and record["reviewer_decision"] == "approved"
+            for record in ledger_data["records"]
+        )
+
+        chunking_profiles = await client.get("/api/v1/retrieval/corpus/chunking-profiles")
+        assert chunking_profiles.status_code == 200
+        profile_data = chunking_profiles.json()["data"]
+        assert profile_data["version"] == "corpus_chunking_profiles.v1"
+        assert any(
+            profile["profile_id"] == "section_window_v0"
+            and profile["boundary_strategy"] == "markdown_section"
+            and "section_heading" in profile["metadata_fields"]
+            for profile in profile_data["profiles"]
+        )
+
+        strategies = await client.get("/api/v1/retrieval/strategies")
+        assert strategies.status_code == 200
+        strategy_data = strategies.json()["data"]
+        assert strategy_data["version"] == "retrieval_strategy_catalog.v1"
+        assert any(
+            strategy["strategy_id"] == "hybrid_rrf"
+            and strategy["status"] == "available"
+            and "source diversity" in strategy["risk_controls"]
+            for strategy in strategy_data["strategies"]
+        )
+
+        index_manifest = await client.get("/api/v1/retrieval/index-manifest")
+        assert index_manifest.status_code == 200
+        index_manifest_data = index_manifest.json()["data"]
+        index_components = {
+            component["component_id"]: component
+            for component in index_manifest_data["components"]
+        }
+        assert index_manifest_data["version"] == "retrieval_index_manifest.v1"
+        assert index_manifest_data["summary"]["chunk_count"] >= 1
+        assert index_components["lexical"]["generation_id"].startswith("lexidx:")
+        assert index_components["vector"]["expected_generation_id"].startswith("embgen:")
+        assert index_components["graph"]["status"] in {"empty", "ready"}
 
         invalid = await client.post("/api/v1/convert", json={"data": "x", "target_format": "bad"})
         assert invalid.status_code == 422
@@ -3154,6 +5039,8 @@ async def test_assistant_chat_runs_retrieval_tool_without_llm_tokens(monkeypatch
     assert body["tool_calls"][0]["output"]["evidence"]
     assert body["findings"][0]["title"] == "Trusted evidence retrieved"
     assert body["evidence_summary"][0]["source_id"]
+    assert body["evidence_summary"][0]["evidence_id"]
+    assert isinstance(body["evidence_summary"][0]["locator"], dict)
     assert body["evidence_summary"][0]["match_explanation"]["version"] == 1
     assert body["evidence_summary"][0]["match_explanation"]["support_status"] in {
         "strong",
@@ -3202,11 +5089,62 @@ async def test_assistant_chat_stream_emits_tool_progress_and_final_response(monk
     assert event_text.index("event: stream_opened") < event_text.index("event: planning_started")
     assert "event: plan_ready" in event_text
     assert "event: tool_started" in event_text
+    assert "event: tool_progress" in event_text
     assert "event: tool_completed" in event_text
     assert "event: final" in event_text
+    assert event_text.index("event: tool_started") < event_text.index("event: tool_progress")
+    assert event_text.index("event: tool_progress") < event_text.index("event: tool_completed")
     assert '"tool_name":"retrieval_search"' in event_text
+    assert "Search and rerank evidence" in event_text
     assert '"status":"completed"' in event_text
     assert '"mode":"deterministic"' in event_text
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_stream_persists_replay_artifact(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        created_session = await client.post(
+            "/api/v1/assistant/sessions",
+            json={"title": "Replay test"},
+        )
+        session_id = created_session.json()["data"]["session_id"]
+        async with client.stream(
+            "POST",
+            "/api/v1/assistant/chat/stream",
+            json={
+                "session_id": session_id,
+                "message": "Find evidence for HbA1c CSV missing unit FHIR Observation",
+                "context": {
+                    "schema_id": "lab_result_v1",
+                    "fields": ["lab_name", "value", "unit"],
+                    "clinical_domain": "laboratory",
+                },
+            },
+        ) as response:
+            body = await response.aread()
+        replays = await client.get(
+            f"/api/v1/assistant/sessions/{session_id}/stream-replays"
+        )
+        session_detail = await client.get(f"/api/v1/assistant/sessions/{session_id}")
+
+    assert response.status_code == 200
+    event_text = body.decode("utf-8")
+    assert "stream_id" in event_text
+    replay_body = _assert_success_envelope(replays)["data"]
+    assert len(replay_body) == 1
+    replay = replay_body[0]
+    assert replay["session_id"] == session_id
+    assert replay["status"] == "completed"
+    assert replay["events"][0]["type"] == "stream_opened"
+    assert replay["events"][0]["sequence"] == 1
+    assert replay["events"][-1]["type"] == "final"
+    messages = _assert_success_envelope(session_detail)["data"]["messages"]
+    assert messages == []
 
 
 @pytest.mark.asyncio
@@ -3262,10 +5200,27 @@ async def test_assistant_tools_endpoint_returns_allowlist(monkeypatch) -> None:
     tool_names = {tool["name"] for tool in tools}
     assert "validate_with_evidence" in tool_names
     assert "start_workflow" in tool_names
+    assert "generate_mapping_draft" in tool_names
+    assert "create_review_task" in tool_names
     start_workflow = next(tool for tool in tools if tool["name"] == "start_workflow")
     assert start_workflow["requires_approval"] is True
     assert start_workflow["permission_scope"] == "data:transform"
+    assert start_workflow["risk_level"] == "high"
+    assert "write-gated" in start_workflow["permission_tags"]
+    assert "Creates durable workflow state" in start_workflow["approval_reason"]
     assert start_workflow["input_schema"]["type"] == "object"
+    generate_mapping_draft = next(
+        tool for tool in tools if tool["name"] == "generate_mapping_draft"
+    )
+    assert generate_mapping_draft["requires_approval"] is True
+    assert generate_mapping_draft["permission_scope"] == "data:transform"
+    assert generate_mapping_draft["risk_level"] == "high"
+    assert "transform" in generate_mapping_draft["permission_tags"]
+    create_review_task = next(tool for tool in tools if tool["name"] == "create_review_task")
+    assert create_review_task["requires_approval"] is True
+    assert create_review_task["permission_scope"] == "review:write"
+    assert create_review_task["risk_level"] == "high"
+    assert "review" in create_review_task["permission_tags"]
 
 
 @pytest.mark.asyncio
@@ -3286,6 +5241,269 @@ async def test_assistant_examples_endpoint_returns_data_driven_starters(monkeypa
         "review_work_queue",
     }
     assert all("data" not in example["context"] for example in examples)
+
+
+@pytest.mark.asyncio
+async def test_assistant_answer_templates_endpoint_returns_data_driven_contracts(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        response = await client.get("/api/v1/assistant/answer-templates")
+
+    assert response.status_code == 200
+    templates = response.json()["data"]
+    retrieval = next(
+        template for template in templates if template["template_id"] == "retrieval_answer"
+    )
+    assert retrieval["evidence_required"] is True
+    assert "retrieval_search" in retrieval["tool_names"]
+    assert any(section["section_id"] == "gaps" for section in retrieval["sections"])
+
+
+@pytest.mark.asyncio
+async def test_assistant_mcp_catalog_endpoints_return_data_driven_contracts(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        resources_response = await client.get("/api/v1/assistant/mcp/resources")
+        prompts_response = await client.get("/api/v1/assistant/mcp/prompts")
+        remote_policy_response = await client.get("/api/v1/assistant/mcp/remote-policy")
+
+    assert resources_response.status_code == 200
+    resources = resources_response.json()["data"]
+    assert resources["version"] == "mcp_resources.v1"
+    assert any(
+        resource["uri"] == "ojtflow://retrieval/strategies"
+        and "F113" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
+    assert any(
+        resource["uri"] == "ojtflow://assistant/tool-progress-policies"
+        and "F100" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
+    assert any(
+        resource["uri"] == "ojtflow://assistant/memory-policy"
+        and "F107" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
+    assert any(
+        resource["uri"] == "ojtflow://assistant/mcp/remote-policy"
+        and "F115" in resource["roadmap_refs"]
+        for resource in resources["resources"]
+    )
+
+    assert prompts_response.status_code == 200
+    prompts = prompts_response.json()["data"]
+    assert prompts["version"] == "mcp_prompts.v1"
+    validation_prompt = next(
+        prompt
+        for prompt in prompts["prompts"]
+        if prompt["prompt_id"] == "validate_lab_csv_with_evidence"
+    )
+    assert validation_prompt["recommended_tools"] == ["validate_with_evidence"]
+    assert validation_prompt["evidence_required"] is True
+    assert any(argument["name"] == "data" for argument in validation_prompt["arguments"])
+
+    assert remote_policy_response.status_code == 200
+    remote_policy = remote_policy_response.json()["data"]
+    assert remote_policy["version"] == "remote_mcp_deployment_policy.v1"
+    assert remote_policy["remote_exposure_allowed"] is False
+    assert any(
+        control["control_id"] == "resource_indicators"
+        for control in remote_policy["required_controls"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_assistant_memory_routes_persist_safe_preferences(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        policy_response = await client.get("/api/v1/assistant/memory-policy")
+        empty_snapshot_response = await client.get("/api/v1/assistant/memory")
+        upsert_response = await client.put(
+            "/api/v1/assistant/memory/evidence_detail_level",
+            json={"value": "detailed"},
+        )
+        snapshot_response = await client.get("/api/v1/assistant/memory")
+        rejected_response = await client.put(
+            "/api/v1/assistant/memory/patient_id",
+            json={"value": "P001"},
+        )
+        deleted_response = await client.delete(
+            "/api/v1/assistant/memory/evidence_detail_level"
+        )
+        after_delete_response = await client.get("/api/v1/assistant/memory")
+
+    assert policy_response.status_code == 200
+    policy = _assert_success_envelope(policy_response)["data"]
+    assert policy["version"] == "assistant_memory.v1"
+    assert any(
+        preference["key"] == "evidence_detail_level"
+        for preference in policy["preferences"]
+    )
+
+    assert empty_snapshot_response.status_code == 200
+    assert _assert_success_envelope(empty_snapshot_response)["data"]["context"] == {}
+
+    assert upsert_response.status_code == 200
+    saved = _assert_success_envelope(upsert_response)["data"]
+    assert saved["key"] == "evidence_detail_level"
+    assert saved["value"] == "detailed"
+
+    snapshot = _assert_success_envelope(snapshot_response)["data"]
+    assert snapshot["context"] == {"evidence_detail_level": "detailed"}
+    assert snapshot["preferences"][0]["policy_version"] == "assistant_memory.v1"
+
+    assert rejected_response.status_code == 400
+    assert rejected_response.json()["error"]["code"] == "ojtflow_error"
+
+    assert deleted_response.status_code == 200
+    assert _assert_success_envelope(deleted_response)["data"] == {
+        "deleted": True,
+        "key": "evidence_detail_level",
+    }
+    assert _assert_success_envelope(after_delete_response)["data"]["context"] == {}
+
+
+@pytest.mark.asyncio
+async def test_assistant_session_titles_are_generated_by_backend(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        created = await client.post(
+            "/api/v1/assistant/sessions",
+            json={"title": "New chat"},
+        )
+        session_id = created.json()["data"]["session_id"]
+        await client.post(
+            f"/api/v1/assistant/sessions/{session_id}/messages",
+            json={
+                "role": "user",
+                "content": (
+                    "Validate this lab CSV and explain PHI issues:\n"
+                    "patient_id,ssn,value\nP001,123-45-6789,7.4\n"
+                ),
+                "payload": {
+                    "context": {
+                        "schema_id": "lab_result_v1",
+                        "input_format": "csv",
+                    }
+                },
+            },
+        )
+        detail = await client.get(f"/api/v1/assistant/sessions/{session_id}")
+
+    assert created.status_code == 200
+    detail_data = _assert_success_envelope(detail)["data"]
+    assert detail_data["session"]["title"] == "Validate healthcare data / lab result v1 / CSV"
+    assert "123-45-6789" not in detail_data["session"]["title"]
+    assert "P001" not in detail_data["session"]["title"]
+
+
+@pytest.mark.asyncio
+async def test_assistant_session_routes_persist_user_scoped_chat(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    async with await _client() as client:
+        created = await client.post(
+            "/api/v1/assistant/sessions",
+            json={"title": "Lab review"},
+        )
+        session = created.json()["data"]
+        session_id = session["session_id"]
+        user_message = await client.post(
+            f"/api/v1/assistant/sessions/{session_id}/messages",
+            json={
+                "role": "user",
+                "content": "Validate this lab CSV.",
+                "payload": {"context": {"schema_id": "lab_result_v1"}},
+            },
+        )
+        assistant_message = await client.post(
+            f"/api/v1/assistant/sessions/{session_id}/messages",
+            json={
+                "role": "assistant",
+                "content": "Two validation issues need review.",
+                "payload": {
+                    "finding_count": 2,
+                    "response": {
+                        "tool_calls": [
+                            {"output": {"workflow_id": "wf_assistant_link"}}
+                        ]
+                    },
+                },
+            },
+        )
+        detail = await client.get(f"/api/v1/assistant/sessions/{session_id}")
+        renamed = await client.patch(
+            f"/api/v1/assistant/sessions/{session_id}",
+            json={"title": "Reviewed lab CSV"},
+        )
+        active_list = await client.get("/api/v1/assistant/sessions")
+        matched_search = await client.get(
+            "/api/v1/assistant/sessions",
+            params={"q": "validation issues"},
+        )
+        unmatched_search = await client.get(
+            "/api/v1/assistant/sessions",
+            params={"q": "not in this chat"},
+        )
+        archived = await client.post(f"/api/v1/assistant/sessions/{session_id}/archive")
+        active_after_archive = await client.get("/api/v1/assistant/sessions")
+        archived_list = await client.get(
+            "/api/v1/assistant/sessions?include_archived=true"
+        )
+        deleted = await client.delete(f"/api/v1/assistant/sessions/{session_id}")
+
+    assert created.status_code == 200
+    assert session["title"] == "Lab review"
+    assert session["owner_user_id"] == "usr_api_test"
+    assert user_message.status_code == 200
+    assert user_message.json()["data"]["role"] == "user"
+    assert assistant_message.status_code == 200
+    assert assistant_message.json()["data"]["role"] == "assistant"
+    assert assistant_message.json()["data"]["workflow_refs"] == ["wf_assistant_link"]
+    assert detail.status_code == 200
+    detail_data = detail.json()["data"]
+    assert detail_data["session"]["message_count"] == 2
+    assert [message["role"] for message in detail_data["messages"]] == [
+        "user",
+        "assistant",
+    ]
+    assert detail_data["messages"][0]["payload"]["context"]["schema_id"] == "lab_result_v1"
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["title"] == "Reviewed lab CSV"
+    assert active_list.status_code == 200
+    assert [item["session_id"] for item in active_list.json()["data"]] == [session_id]
+    assert matched_search.status_code == 200
+    assert [item["session_id"] for item in matched_search.json()["data"]] == [session_id]
+    assert unmatched_search.status_code == 200
+    assert unmatched_search.json()["data"] == []
+    assert archived.status_code == 200
+    assert archived.json()["data"]["archived_at"]
+    assert active_after_archive.status_code == 200
+    assert active_after_archive.json()["data"] == []
+    assert archived_list.status_code == 200
+    assert [item["session_id"] for item in archived_list.json()["data"]] == [session_id]
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] == {"deleted": True, "session_id": session_id}
 
 
 @pytest.mark.asyncio
@@ -3327,6 +5545,131 @@ async def test_assistant_chat_requires_explicit_write_execution(monkeypatch) -> 
     assert allowed_call["output"]["workflow_id"].startswith("wf_")
     assert allowed_call["output"]["owner_user_id"] == "usr_api_test"
     assert allowed.json()["data"]["findings"][0]["title"] == "Workflow created"
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_creates_write_gated_review_task(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    payload = {
+        "message": "Create a review task for this unresolved lab issue.",
+        "context": {
+            "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+            "input_format": "csv",
+            "schema_id": "lab_result_v1",
+            "assistant_review_task": {
+                "action": "create_review_task",
+                "question": "Review missing HbA1c value and unit before export.",
+                "review_focus": "Missing lab value and UCUM unit",
+                "issue_kinds": ["missing_value", "missing_unit"],
+                "evidence_ids": ["schema_lab_result_v1"],
+            },
+        },
+    }
+
+    async with await _client() as client:
+        gated = await client.post("/api/v1/assistant/chat", json=payload)
+        allowed = await client.post(
+            "/api/v1/assistant/chat",
+            json={**payload, "execute_write_actions": True},
+        )
+        reviews = await client.get("/api/v1/reviews")
+
+    assert gated.status_code == 200
+    gated_call = gated.json()["data"]["tool_calls"][0]
+    assert gated_call["tool_name"] == "create_review_task"
+    assert gated_call["status"] == "requires_approval"
+    assert gated_call["requires_approval"] is True
+    assert gated.json()["data"]["findings"][0]["severity"] == "action_required"
+
+    assert allowed.status_code == 200
+    allowed_body = allowed.json()["data"]
+    allowed_call = allowed_body["tool_calls"][0]
+    assert allowed_call["tool_name"] == "create_review_task"
+    assert allowed_call["status"] == "completed"
+    assert allowed_call["output"]["status"] == "needs_human_review"
+    assert allowed_call["output"]["workflow_id"].startswith("wf_")
+    assert allowed_call["output"]["review"]["trigger"] == "manual_assistant_review_task"
+    assert allowed_call["output"]["review_task"]["review_id"].startswith("rev_")
+    assert allowed_body["findings"][0]["title"] == "Review task created"
+    assert any("Open Reviews" in suggestion for suggestion in allowed_body["suggestions"])
+
+    assert reviews.status_code == 200
+    review_items = reviews.json()["data"]
+    assert any(
+        item["review"]["review_id"] == allowed_call["output"]["review_task"]["review_id"]
+        for item in review_items
+    )
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_generates_write_gated_mapping_draft(monkeypatch) -> None:
+    monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("OJT_LLM_PROVIDER", "disabled")
+    clear_settings_cache()
+    clear_workflow_service_cache()
+
+    payload = {
+        "message": "Generate a mapping draft for this lab CSV before transforming it.",
+        "context": {
+            "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P002,HbA1c,,\n",
+            "input_format": "csv",
+            "target_format": "json",
+            "schema_id": "lab_result_v1",
+            "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+            "assistant_mapping_draft": {
+                "action": "generate_mapping_draft",
+                "mapping_goal": "Draft a lab-result JSON mapping with missing value/unit review.",
+                "source_fields": ["date", "patient_id", "lab_name", "value", "unit"],
+                "target_fields": ["date", "patient_id", "lab_name", "value", "unit"],
+                "evidence_ids": ["schema_lab_result_v1"],
+            },
+        },
+    }
+
+    async with await _client() as client:
+        gated = await client.post("/api/v1/assistant/chat", json=payload)
+        allowed = await client.post(
+            "/api/v1/assistant/chat",
+            json={**payload, "execute_write_actions": True},
+        )
+        reviews = await client.get("/api/v1/reviews")
+
+    assert gated.status_code == 200
+    gated_call = gated.json()["data"]["tool_calls"][0]
+    assert gated_call["tool_name"] == "generate_mapping_draft"
+    assert gated_call["status"] == "requires_approval"
+    assert gated_call["requires_approval"] is True
+    assert gated.json()["data"]["findings"][0]["severity"] == "action_required"
+
+    assert allowed.status_code == 200
+    allowed_body = allowed.json()["data"]
+    allowed_call = allowed_body["tool_calls"][0]
+    assert allowed_call["tool_name"] == "generate_mapping_draft"
+    assert allowed_call["status"] == "completed"
+    output = allowed_call["output"]
+    assert output["status"] == "needs_human_review"
+    assert output["workflow_id"].startswith("wf_")
+    assert output["transformation_plan"]["requires_review"] is True
+    assert output["review"]["trigger"] == "mapping_draft_transform_plan"
+    assert output["review"]["proposed_action"]["draft_type"] == "assistant_mapping_draft"
+    assert output["review"]["proposed_action"]["mapping_goal"]
+    assert output["mapping_draft"]["plan_id"] == output["transformation_plan"]["plan_id"]
+    assert output["output"] is None
+    assert allowed_body["findings"][0]["title"] == "Mapping draft created"
+    assert any(
+        "drafted mapping plan" in suggestion
+        for suggestion in allowed_body["suggestions"]
+    )
+
+    assert reviews.status_code == 200
+    assert any(
+        item["review"]["review_id"] == output["mapping_draft"]["review_id"]
+        for item in reviews.json()["data"]
+    )
 
 
 @pytest.mark.asyncio

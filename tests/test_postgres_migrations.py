@@ -1,9 +1,11 @@
 from pathlib import Path
+from hashlib import sha256
 
 import pytest
 
 from ojtflow.config import clear_settings_cache
 from ojtflow.core.errors import OJTFlowError
+from ojtflow.infrastructure.storage import migrations as migrations_module
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
 
 
@@ -24,6 +26,20 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         "005",
         "006",
         "007",
+        "008",
+        "009",
+        "010",
+        "011",
+        "012",
+        "013",
+        "014",
+        "015",
+        "016",
+        "017",
+        "018",
+        "019",
+        "020",
+        "021",
     ]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
@@ -32,6 +48,20 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
     assert migrations[4].name == "workflow_owner_scope"
     assert migrations[5].name == "semantic_embedding_vector"
     assert migrations[6].name == "retrieval_relevance_judgments"
+    assert migrations[7].name == "assistant_chat_sessions"
+    assert migrations[8].name == "background_jobs"
+    assert migrations[9].name == "assistant_stream_replays"
+    assert migrations[10].name == "uploaded_artifacts"
+    assert migrations[11].name == "artifact_access_events"
+    assert migrations[12].name == "assistant_stream_replay_cancelled"
+    assert migrations[13].name == "assistant_memory_preferences"
+    assert migrations[14].name == "audit_records"
+    assert migrations[15].name == "organization_workspace_model"
+    assert migrations[16].name == "service_accounts"
+    assert migrations[17].name == "audit_hash_chain"
+    assert migrations[18].name == "graph_contexts"
+    assert migrations[19].name == "retrieval_judgment_policy_labels"
+    assert migrations[20].name == "retrieval_active_learning_candidates"
     assert all(len(migration.checksum) == 64 for migration in migrations)
 
 
@@ -51,6 +81,126 @@ def test_postgres_migration_default_directory_comes_from_settings(
         clear_settings_cache()
 
     assert [migration.name for migration in migrations] == ["custom"]
+
+
+def test_postgres_migration_inspection_reports_pending_unknown_and_mismatched(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    first_sql = "select 1;"
+    second_sql = "select 2;"
+    (tmp_path / "001_initial.sql").write_text(first_sql, encoding="utf-8")
+    (tmp_path / "002_next.sql").write_text(second_sql, encoding="utf-8")
+
+    class FakeCursor:
+        def __init__(self) -> None:
+            self.query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            del exc_type, exc, traceback
+
+        def execute(self, query: str, params=None) -> None:
+            del params
+            self.query = query
+
+        def fetchone(self):
+            assert "to_regclass" in self.query
+            return {"table_name": "ojtflow.schema_migrations"}
+
+        def fetchall(self):
+            if "information_schema.columns" in self.query:
+                return [
+                    {"column_name": "version"},
+                    {"column_name": "name"},
+                    {"column_name": "checksum"},
+                    {"column_name": "applied_at"},
+                    {"column_name": "duration_ms"},
+                    {"column_name": "failure_reason"},
+                ]
+            assert "from ojtflow.schema_migrations" in self.query
+            return [
+                {
+                    "version": "001",
+                    "name": "initial",
+                    "checksum": sha256(b"edited").hexdigest(),
+                    "applied_at": "2026-06-11 00:00:00+00",
+                    "duration_ms": 12,
+                    "failure_reason": None,
+                },
+                {
+                    "version": "999",
+                    "name": "manual",
+                    "checksum": "x" * 64,
+                    "applied_at": "2026-06-11 00:00:00+00",
+                    "duration_ms": None,
+                    "failure_reason": "manual row",
+                },
+            ]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            del exc_type, exc, traceback
+
+        def cursor(self):
+            return FakeCursor()
+
+    class FakePsycopg:
+        @staticmethod
+        def connect(dsn, row_factory=None):
+            assert dsn == "postgresql://unused"
+            assert row_factory is migrations_module.dict_row
+            return FakeConnection()
+
+    monkeypatch.setattr(migrations_module, "psycopg", FakePsycopg)
+
+    report = PostgresMigrator("postgresql://unused", tmp_path).inspect_database()
+
+    assert report["table_exists"] is True
+    assert report["manifest_count"] == 2
+    assert report["applied_count"] == 1
+    assert report["pending_count"] == 1
+    assert report["unknown_applied_count"] == 1
+    assert report["checksum_mismatch_count"] == 1
+    assert report["latest_available_version"] == "002"
+    assert report["latest_applied_version"] == "001"
+    assert report["pending_versions"] == ["002"]
+    assert report["unknown_applied_versions"] == ["999"]
+    assert report["checksum_mismatches"] == ["001"]
+    assert report["migrations"] == [
+        {
+            "version": "001",
+            "name": "initial",
+            "checksum": sha256(b"edited").hexdigest(),
+            "status": "checksum_mismatch",
+            "applied_at": "2026-06-11 00:00:00+00",
+            "duration_ms": 12,
+            "failure_reason": None,
+        },
+        {
+            "version": "002",
+            "name": "next",
+            "checksum": sha256(second_sql.encode("utf-8")).hexdigest(),
+            "status": "pending",
+            "applied_at": None,
+            "duration_ms": None,
+            "failure_reason": None,
+        },
+        {
+            "version": "999",
+            "name": "manual",
+            "checksum": "x" * 64,
+            "status": "unknown_applied",
+            "applied_at": "2026-06-11 00:00:00+00",
+            "duration_ms": None,
+            "failure_reason": "manual row",
+        },
+    ]
 
 
 def test_postgres_migration_loader_rejects_missing_directory(tmp_path: Path) -> None:
@@ -110,6 +260,42 @@ def test_backend_v0_migration_has_industrial_tables_and_constraints() -> None:
     assert "workflow_events_event_type_check" in sql
     assert "evidence_source_type_check" in sql
     assert "evidence_trust_level_check" in sql
+
+
+def test_audit_records_migration_has_correlation_and_redaction_fields() -> None:
+    sql = (ROOT / "sql/postgres/migrations/015_audit_records.sql").read_text()
+
+    assert "create table if not exists ojtflow.audit_records" in sql
+    assert "owner_user_id text" in sql
+    assert "workflow_id text" in sql
+    assert "assistant_session_id text" in sql
+    assert "request_id text" in sql
+    assert "input_hash text" in sql
+    assert "output_hash text" in sql
+    assert "workflow_event_refs jsonb" in sql
+    assert "metadata jsonb" in sql
+    assert "record_json jsonb" in sql
+    assert "idx_audit_records_owner_timestamp" in sql
+    assert "idx_audit_records_workflow_timestamp" in sql
+    assert "idx_audit_records_session_timestamp" in sql
+    assert "references ojtflow.workflows(workflow_id)" in sql
+
+
+def test_organization_workspace_migration_has_tenant_tables_and_indexes() -> None:
+    sql = (ROOT / "sql/postgres/migrations/016_organization_workspace_model.sql").read_text()
+
+    assert "create table if not exists ojtflow.organizations" in sql
+    assert "create table if not exists ojtflow.organization_memberships" in sql
+    assert "create table if not exists ojtflow.organization_groups" in sql
+    assert "create table if not exists ojtflow.organization_group_memberships" in sql
+    assert "create table if not exists ojtflow.workspace_settings" in sql
+    assert "created_by_user_id text not null references ojtflow.users(user_id)" in sql
+    assert "role_key text not null" in sql
+    assert "role_keys jsonb not null default '[]'::jsonb" in sql
+    assert "settings_json jsonb not null default '{}'::jsonb" in sql
+    assert "unique (organization_id, user_id)" in sql
+    assert "idx_org_memberships_user_status" in sql
+    assert "idx_org_group_memberships_org_user" in sql
 
 
 def test_retrieval_v0_migration_has_search_tables_and_pgvector_fallback() -> None:
@@ -173,3 +359,58 @@ def test_retrieval_relevance_judgment_migration_has_user_scoped_labels() -> None
     assert "retrieval_judgments_value_check" in sql
     assert "retrieval_judgments_rating_check" in sql
     assert "idx_retrieval_judgments_owner_query" in sql
+
+
+def test_assistant_chat_sessions_migration_has_session_and_message_tables() -> None:
+    sql = (ROOT / "sql/postgres/migrations/008_assistant_chat_sessions.sql").read_text()
+
+    assert "ojtflow.assistant_chat_sessions" in sql
+    assert "ojtflow.assistant_chat_messages" in sql
+    assert "owner_user_id text not null" in sql
+    assert "message_count integer not null default 0" in sql
+    assert "references ojtflow.assistant_chat_sessions(session_id)" in sql
+    assert "role in ('user', 'assistant', 'system', 'tool')" in sql
+    assert "workflow_refs jsonb not null" in sql
+    assert "assistant_chat_messages_workflow_refs_array" in sql
+    assert "idx_assistant_messages_workflow_refs" in sql
+    assert "payload jsonb not null" in sql
+    assert "idx_assistant_sessions_owner_updated" in sql
+    assert "idx_assistant_messages_session_created" in sql
+
+
+def test_background_jobs_migration_has_job_table_and_indexes() -> None:
+    sql = (ROOT / "sql/postgres/migrations/009_background_jobs.sql").read_text()
+
+    assert "ojtflow.background_jobs" in sql
+    assert "owner_user_id text not null" in sql
+    assert "job_type text not null" in sql
+    assert "status text not null" in sql
+    assert "retrieval_reindex" in sql
+    assert "file_parse" in sql
+    assert "ocr_extract" in sql
+    assert "embedding_reindex" in sql
+    assert "external_ingest" in sql
+    assert "export_package" in sql
+    assert "idx_background_jobs_owner_updated" in sql
+    assert "idx_background_jobs_owner_status" in sql
+
+
+def test_assistant_stream_replays_migration_has_replay_table_and_indexes() -> None:
+    sql = (ROOT / "sql/postgres/migrations/010_assistant_stream_replays.sql").read_text()
+
+    assert "ojtflow.assistant_stream_replays" in sql
+    assert "session_id text not null references ojtflow.assistant_chat_sessions" in sql
+    assert "events jsonb not null" in sql
+    assert "assistant_stream_replays_events_array" in sql
+    assert "idx_assistant_stream_replays_session_created" in sql
+    assert "idx_assistant_stream_replays_owner_created" in sql
+
+
+def test_assistant_stream_replay_cancelled_migration_extends_status_constraint() -> None:
+    sql = (
+        ROOT
+        / "sql/postgres/migrations/013_assistant_stream_replay_cancelled.sql"
+    ).read_text()
+
+    assert "drop constraint if exists assistant_stream_replays_status_check" in sql
+    assert "status in ('completed', 'failed', 'cancelled')" in sql

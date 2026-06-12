@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
-from ojtflow.core.contracts.base import ContractModel
+from ojtflow.core.contracts.base import ContractModel, NonBlankStr
+from ojtflow.core.contracts.clinical import ClinicalPackage
 from ojtflow.core.contracts.data import (
     DataProfile,
     ExplanationReport,
@@ -82,6 +83,42 @@ class WorkflowFailure(ContractModel):
     failed_at: str = Field(default_factory=lambda: utc_now().isoformat())
 
 
+WorkflowProvenanceActivity = Literal[
+    "workflow",
+    "assistant",
+    "upload",
+    "extract",
+    "parse",
+    "profile",
+    "retrieve_evidence",
+    "validate",
+    "policy_review",
+    "review",
+    "convert",
+    "retrieval_derived_transform",
+    "explain",
+    "failure",
+]
+
+
+class WorkflowProvenanceRecord(ContractModel):
+    """Provenance-like lineage record for workflow-level operations."""
+
+    provenance_id: NonBlankStr = Field(default_factory=lambda: new_id("wprov"))
+    activity: WorkflowProvenanceActivity
+    agent: NonBlankStr
+    event_refs: list[NonBlankStr] = Field(default_factory=list)
+    source_refs: list[NonBlankStr] = Field(default_factory=list)
+    target_refs: list[NonBlankStr] = Field(default_factory=list)
+    evidence_ids: list[NonBlankStr] = Field(default_factory=list)
+    issue_ids: list[NonBlankStr] = Field(default_factory=list)
+    review_ids: list[NonBlankStr] = Field(default_factory=list)
+    request_id: NonBlankStr | None = None
+    occurred_at: NonBlankStr = Field(default_factory=lambda: utc_now().isoformat())
+    summary: NonBlankStr
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class WorkflowState(ContractModel):
     """Single auditable source of truth for one workflow run."""
 
@@ -103,7 +140,9 @@ class WorkflowState(ContractModel):
     review: HumanReview | None = None
     output: WorkflowOutput | None = None
     explanation: ExplanationReport | None = None
+    clinical_package: ClinicalPackage | None = None
     failure: WorkflowFailure | None = None
+    provenance: list[WorkflowProvenanceRecord] = Field(default_factory=list)
     handoff_context: dict[str, Any] = Field(default_factory=dict)
     risk_flags: list[str] = Field(default_factory=list)
     audit_event_refs: list[str] = Field(default_factory=list)

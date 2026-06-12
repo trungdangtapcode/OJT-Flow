@@ -9,15 +9,52 @@ from typing import Any, Protocol
 from ojtflow.core.contracts.auth import (
     AuthenticatedSession,
     GoogleIdentityProfile,
+    ServiceAccountRecord,
     SessionRecord,
     UserRecord,
 )
-from ojtflow.core.contracts.assistant import AssistantPlan, AssistantToolSpec
+from ojtflow.core.contracts.artifacts import (
+    ArtifactAccessEvent,
+    ArtifactRetentionPolicy,
+    ParsingPipelineTrace,
+    UploadedArtifact,
+)
+from ojtflow.core.contracts.assistant import (
+    AssistantChatMessage,
+    AssistantChatSessionDetail,
+    AssistantChatSessionSummary,
+    AssistantMemoryPreference,
+    AssistantPlan,
+    AssistantMessageRole,
+    AssistantStreamReplay,
+    AssistantToolSpec,
+)
+from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.governance import (
+    OrganizationGroupMembershipRecord,
+    OrganizationGroupRecord,
+    OrganizationMembershipRecord,
+    OrganizationRecord,
+    WorkspaceDetail,
+    WorkspaceSettingsRecord,
+)
+from ojtflow.core.contracts.graph import GraphContextRecord
+from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
+from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalRelevanceJudgment,
@@ -50,6 +87,102 @@ class DatasetStore(Protocol):
     ) -> DatasetRecord: ...
 
     def get_text(self, storage_ref: str) -> str: ...
+
+    def list_records(self, limit: int = 1000) -> list[DatasetRecord]: ...
+
+
+class UploadedArtifactRepository(Protocol):
+    def put_bytes(
+        self,
+        *,
+        owner_user_id: str,
+        filename: str,
+        mime_type: str,
+        data: bytes,
+        source: str = "upload",
+        retention_policy: ArtifactRetentionPolicy | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> UploadedArtifact: ...
+
+    def get(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact: ...
+
+    def get_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        limit: int = 100,
+    ) -> list[UploadedArtifact]: ...
+
+    def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace: ...
+
+    def list_traces(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ParsingPipelineTrace]: ...
+
+    def append_access_event(self, event: ArtifactAccessEvent) -> ArtifactAccessEvent: ...
+
+    def list_access_events(
+        self,
+        *,
+        owner_user_id: str,
+        artifact_id: str,
+    ) -> list[ArtifactAccessEvent]: ...
+
+
+class GovernanceRepository(Protocol):
+    def get_current_workspace(self, *, user_id: str) -> WorkspaceDetail | None: ...
+
+    def list_workspaces(self, *, user_id: str) -> list[WorkspaceDetail]: ...
+
+    def create_default_workspace(
+        self,
+        *,
+        organization: OrganizationRecord,
+        membership: OrganizationMembershipRecord,
+        group: OrganizationGroupRecord,
+        group_membership: OrganizationGroupMembershipRecord,
+        settings: WorkspaceSettingsRecord,
+    ) -> WorkspaceDetail: ...
+
+    def update_workspace_settings(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        settings: dict[str, Any],
+        updated_by_user_id: str,
+    ) -> WorkspaceDetail: ...
+
+    def create_group(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        group: OrganizationGroupRecord,
+    ) -> WorkspaceDetail: ...
+
+    def add_membership(
+        self,
+        *,
+        organization_id: str,
+        actor_user_id: str,
+        membership: OrganizationMembershipRecord,
+    ) -> WorkspaceDetail: ...
+
+
+class DocumentExtractor(Protocol):
+    def extract(
+        self,
+        *,
+        data: bytes,
+        filename: str,
+        prefer: str = "auto",
+    ) -> Any: ...
 
 
 class WorkflowRepository(Protocol):
@@ -88,6 +221,20 @@ class EventRepository(Protocol):
     def list_for_workflow(self, workflow_id: str) -> list[WorkflowEvent]: ...
 
 
+class AuditRepository(Protocol):
+    def append(self, record: AuditRecord) -> AuditRecord: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str | None = None,
+        action: str | None = None,
+        workflow_id: str | None = None,
+        assistant_session_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditRecord]: ...
+
+
 class KnowledgeRepository(Protocol):
     def get_schema(self, schema_id: str | None) -> dict | None: ...
 
@@ -111,6 +258,23 @@ class IdentityProvider(Protocol):
 
 class AuthRepository(Protocol):
     def upsert_google_user(self, profile: GoogleIdentityProfile) -> UserRecord: ...
+
+    def create_service_account(
+        self,
+        *,
+        account_id: str,
+        organization_id: str,
+        slug: str,
+        display_name: str,
+        role_key: str,
+        created_by_user_id: str,
+    ) -> ServiceAccountRecord: ...
+
+    def list_service_accounts(
+        self,
+        *,
+        organization_id: str,
+    ) -> list[ServiceAccountRecord]: ...
 
     def create_session(
         self,
@@ -154,11 +318,29 @@ class SessionCache(Protocol):
     def consume_oauth_state(self, state: str) -> dict | None: ...
 
 class RetrievalRepository(Protocol):
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan: ...
+
     def search(self, query: RetrievalQuery) -> RetrievalPackage: ...
 
-    def list_sources(self) -> list[RetrievalSource]: ...
+    def list_sources(self, organization_id: str | None = None) -> list[RetrievalSource]: ...
+
+    def ingest_private_document(
+        self,
+        *,
+        owner_user_id: str,
+        organization_id: str,
+        title: str,
+        text: str,
+        redaction_preview: RedactionPreview,
+        retention_policy: ArtifactRetentionPolicy,
+        source_ref: str | None = None,
+        artifact_id: str | None = None,
+        request_id: str | None = None,
+    ) -> PrivateCorpusIngestionResult: ...
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict: ...
+
+    def index_manifest(self) -> RetrievalIndexManifest: ...
 
     def integrity_report(
         self,
@@ -188,6 +370,179 @@ class RetrievalJudgmentRepository(Protocol):
     ) -> list[RetrievalRelevanceJudgment]: ...
 
     def delete(self, *, owner_user_id: str, judgment_id: str) -> None: ...
+
+
+class RetrievalActiveLearningRepository(Protocol):
+    def upsert(
+        self,
+        *,
+        owner_user_id: str,
+        query_hash: str,
+        candidate_key: str,
+        write: RetrievalActiveLearningCandidateWrite,
+    ) -> RetrievalActiveLearningCandidate: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: RetrievalActiveLearningStatus | None = None,
+        source_kind: RetrievalActiveLearningSourceKind | None = None,
+        priority: RetrievalActiveLearningPriority | None = None,
+        query_hash: str | None = None,
+        limit: int = 500,
+    ) -> list[RetrievalActiveLearningCandidate]: ...
+
+    def update(
+        self,
+        *,
+        owner_user_id: str,
+        candidate_id: str,
+        reviewer_user_id: str | None,
+        update: RetrievalActiveLearningCandidateUpdate,
+    ) -> RetrievalActiveLearningCandidate: ...
+
+
+class GraphRepository(Protocol):
+    def save_context(self, record: GraphContextRecord) -> GraphContextRecord: ...
+
+    def list_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]: ...
+
+
+class AssistantSessionRepository(Protocol):
+    def create_session(self, *, owner_user_id: str, title: str) -> AssistantChatSessionSummary: ...
+
+    def list_sessions(
+        self,
+        *,
+        owner_user_id: str,
+        include_archived: bool = False,
+        limit: int = 100,
+        q: str | None = None,
+    ) -> list[AssistantChatSessionSummary]: ...
+
+    def get_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionDetail: ...
+
+    def rename_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        title: str,
+    ) -> AssistantChatSessionSummary: ...
+
+    def archive_session(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> AssistantChatSessionSummary: ...
+
+    def delete_session(self, *, owner_user_id: str, session_id: str) -> None: ...
+
+    def append_message(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        role: AssistantMessageRole,
+        content: str,
+        payload: dict[str, Any] | None = None,
+        workflow_refs: list[str] | None = None,
+    ) -> AssistantChatMessage: ...
+
+    def append_stream_replay(
+        self,
+        *,
+        replay: AssistantStreamReplay,
+    ) -> AssistantStreamReplay: ...
+
+    def list_stream_replays(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> list[AssistantStreamReplay]: ...
+
+
+class AssistantMemoryRepository(Protocol):
+    def list_preferences(
+        self,
+        *,
+        owner_user_id: str,
+    ) -> list[AssistantMemoryPreference]: ...
+
+    def upsert_preference(
+        self,
+        *,
+        preference: AssistantMemoryPreference,
+    ) -> AssistantMemoryPreference: ...
+
+    def delete_preference(
+        self,
+        *,
+        owner_user_id: str,
+        key: str,
+    ) -> None: ...
+
+
+class BackgroundJobRepository(Protocol):
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        job_type: JobType,
+        input: dict[str, Any],
+        max_attempts: int = 1,
+    ) -> BackgroundJob: ...
+
+    def get(self, *, owner_user_id: str, job_id: str) -> BackgroundJob: ...
+
+    def list(
+        self,
+        *,
+        owner_user_id: str,
+        status: str | None = None,
+        job_type: str | None = None,
+        limit: int = 100,
+    ) -> list[BackgroundJob]: ...
+
+    def mark_running(self, *, owner_user_id: str, job_id: str) -> BackgroundJob: ...
+
+    def mark_succeeded(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        output: dict[str, Any],
+    ) -> BackgroundJob: ...
+
+    def mark_failed(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob: ...
+
+    def mark_cancelled(
+        self,
+        *,
+        owner_user_id: str,
+        job_id: str,
+        error: JobError,
+    ) -> BackgroundJob: ...
 
 
 class AssistantPlanner(Protocol):

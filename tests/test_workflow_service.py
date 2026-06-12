@@ -31,6 +31,18 @@ def make_service() -> WorkflowService:
     )
 
 
+def _resource_by_type(package, resource_type: str):
+    return next(
+        record
+        for record in package.clinical_bundle.resources
+        if record.resource_type == resource_type
+    )
+
+
+def _provenance_activities(workflow):
+    return [record.activity for record in workflow.provenance]
+
+
 def test_workflow_pauses_for_review_then_completes_after_approval() -> None:
     service = make_service()
     text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
@@ -71,6 +83,356 @@ def test_workflow_pauses_for_review_then_completes_after_approval() -> None:
     assert completed.output.transformation is not None
     assert completed.explanation is not None
     assert completed.explanation.intended_use.startswith("Support data validation")
+    activities = set(_provenance_activities(completed))
+    assert {
+        "workflow",
+        "upload",
+        "parse",
+        "retrieve_evidence",
+        "validate",
+        "policy_review",
+        "review",
+        "convert",
+        "retrieval_derived_transform",
+        "explain",
+    }.issubset(activities)
+    assert all(record.event_refs for record in completed.provenance)
+    derived_transform = next(
+        record
+        for record in completed.provenance
+        if record.activity == "retrieval_derived_transform"
+    )
+    assert derived_transform.evidence_ids == [
+        item.evidence_id for item in completed.retrieved_context
+    ]
+    assert completed.input.dataset_ref in derived_transform.source_refs
+    assert completed.output.transformation.output_ref in derived_transform.target_refs
+    assert derived_transform.metadata["plan_id"] == completed.transformation_plan.plan_id
+    assert completed.handoff_context["provenance_summary"]["record_count"] == len(
+        completed.provenance
+    )
+
+
+def test_clean_lab_workflow_builds_clinical_package_with_field_provenance() -> None:
+    service = make_service()
+    text = "date,patient_id,lab_name,value,unit\n2026-01-01,P001,HbA1c,7.4,%\n"
+
+    workflow = service.start_workflow(
+        instruction="Convert this lab row into a governed clinical package.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    assert workflow.status == WorkflowStatus.COMPLETED
+    package = workflow.clinical_package
+    assert package is not None
+    assert package.package_type == "ojtflow_clinical_package"
+    assert package.schema_version == "clinical_package.v0"
+    assert package.raw_input.detected_format == DataFormat.CSV
+    assert package.clinical_bundle.resourceType == "Bundle"
+    resource_types = {record.resource_type for record in package.clinical_bundle.resources}
+    assert {
+        "Patient",
+        "Observation",
+        "DiagnosticReport",
+        "DocumentReference",
+    }.issubset(resource_types)
+
+    patient = _resource_by_type(package, "Patient")
+    assert patient.resource["id"] == "P001"
+    assert patient.resource["identifier"][0]["value"] == "P001"
+    assert {
+        "Patient.resourceType",
+        "Patient.id",
+        "Patient.identifier[0].value",
+    }.issubset({item.target_path for item in patient.field_provenance})
+
+    observation = _resource_by_type(package, "Observation")
+    assert observation.resource_type == "Observation"
+    assert observation.resource["subject"]["reference"] == "Patient/P001"
+    assert observation.resource["code"]["text"] == "HbA1c"
+    assert observation.resource["valueQuantity"]["value"] == 7.4
+    assert observation.resource["valueQuantity"]["unit"] == "%"
+    field_paths = {item.target_path for item in observation.field_provenance}
+    assert {
+        "Observation.resourceType",
+        "Observation.id",
+        "Observation.status",
+        "Observation.subject.reference",
+        "Observation.effectiveDateTime",
+        "Observation.code.text",
+        "Observation.valueQuantity.value",
+        "Observation.valueQuantity.unit",
+    }.issubset(field_paths)
+    unit_provenance = next(
+        item
+        for item in observation.field_provenance
+        if item.target_path == "Observation.valueQuantity.unit"
+    )
+    assert unit_provenance.location is not None
+    assert unit_provenance.location.row == 2
+    assert unit_provenance.location.field == "unit"
+    report = _resource_by_type(package, "DiagnosticReport")
+    assert report.resource["subject"]["reference"] == "Patient/P001"
+    assert report.resource["result"] == [
+        {"reference": f"Observation/{observation.resource_id}"}
+    ]
+    assert {
+        "DiagnosticReport.resourceType",
+        "DiagnosticReport.id",
+        "DiagnosticReport.status",
+        "DiagnosticReport.code.text",
+        "DiagnosticReport.subject.reference",
+        "DiagnosticReport.result",
+        "DiagnosticReport.effectiveDateTime",
+    }.issubset({item.target_path for item in report.field_provenance})
+    document = _resource_by_type(package, "DocumentReference")
+    assert document.resource["status"] == "current"
+    assert document.resource["subject"]["reference"] == "Patient/P001"
+    assert document.resource["content"][0]["attachment"]["url"] == workflow.input.dataset_ref
+    assert {
+        "DocumentReference.resourceType",
+        "DocumentReference.id",
+        "DocumentReference.status",
+        "DocumentReference.type.text",
+        "DocumentReference.content[0].attachment.url",
+        "DocumentReference.subject.reference",
+    }.issubset({item.target_path for item in document.field_provenance})
+    assert all(record.field_provenance for record in package.clinical_bundle.resources)
+    assert package.operation_outcome.resourceType == "OperationOutcome"
+    assert any(issue.code == "possible_phi" for issue in package.operation_outcome.issue)
+    assert len(package.terminology_candidates) == 1
+    loinc = package.terminology_candidates[0]
+    assert loinc.standard_system == "LOINC"
+    assert loinc.code == "4548-4"
+    assert loinc.requires_review is True
+    assert len(package.unit_validations) == 1
+    assert package.unit_validations[0].status == "valid"
+    assert package.unit_validations[0].normalized_unit == "%"
+    gate_types = {gate.gate_type for gate in package.semantic_normalization_gates}
+    assert {"lab_name", "unit", "date", "patient_identifier"}.issubset(gate_types)
+    assert all(gate.requires_review for gate in package.semantic_normalization_gates)
+    assert all(gate.blocks_automatic_change for gate in package.semantic_normalization_gates)
+    lab_gate = next(
+        gate
+        for gate in package.semantic_normalization_gates
+        if gate.gate_type == "lab_name"
+    )
+    assert lab_gate.proposed_system == "LOINC"
+    assert lab_gate.proposed_code == "4548-4"
+    unit_gate = next(
+        gate for gate in package.semantic_normalization_gates if gate.gate_type == "unit"
+    )
+    assert unit_gate.proposed_system == "UCUM"
+    assert unit_gate.proposed_code == "%"
+    assert package.output_refs == [workflow.output.transformation.output_ref]
+    assert package.audit_event_refs == workflow.audit_event_refs
+    assert package.handoff_context["terminology_candidate_count"] == 1
+    assert package.handoff_context["unit_validation_count"] == 1
+    assert package.handoff_context["semantic_normalization_gate_count"] == len(
+        package.semantic_normalization_gates
+    )
+    assert set(package.handoff_context["semantic_normalization_gate_types"]) == gate_types
+    assert package.handoff_context["workflow_provenance_record_count"] == len(
+        workflow.provenance
+    )
+    assert package.handoff_context["workflow_provenance_ids"] == [
+        item.provenance_id for item in workflow.provenance
+    ]
+    assert package.handoff_context["fhir_compliance"] == "fhir_like_not_validated"
+    assert package.handoff_context["fhir_profile_registry_version"] == (
+        "fhir_like_resource_profiles.v0"
+    )
+    assert package.handoff_context["fhir_resource_profile_ids"]["Observation"] == (
+        "ojtflow_fhir_like_observation_lab_v0"
+    )
+    assert "DiagnosticReport" in package.handoff_context["fhir_search_parameters_by_resource"]
+    map_provenance = next(
+        item for item in package.provenance if item.activity == "map"
+    )
+    assert set(map_provenance.metadata["semantic_normalization_gate_ids"]) == {
+        gate.gate_id for gate in package.semantic_normalization_gates
+    }
+    assert "FHIR-like package has not been validated" in package.warnings[0]
+    assert any("Semantic normalization candidates require human review" in warning for warning in package.warnings)
+
+
+def test_clinical_package_export_builds_bundle_and_reloads_losslessly() -> None:
+    service = make_service()
+    text = "date,patient_id,lab_name,value,unit\n2026-01-01,P001,HbA1c,7.4,%\n"
+
+    workflow = service.start_workflow(
+        instruction="Convert this lab row into an exportable clinical package.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    package_export = service.export_workflow_clinical_package(workflow.workflow_id)
+    assert package_export.approved_for_export is True
+    assert package_export.workflow_id == workflow.workflow_id
+    assert package_export.package_hash
+    assert package_export.fhir_like_bundle_hash
+    assert package_export.fhir_like_bundle["resourceType"] == "Bundle"
+    exported_resource_types = {
+        entry["resource"]["resourceType"]
+        for entry in package_export.fhir_like_bundle["entry"]
+    }
+    assert {
+        "Patient",
+        "Observation",
+        "DiagnosticReport",
+        "DocumentReference",
+        "OperationOutcome",
+        "Provenance",
+    }.issubset(exported_resource_types)
+    assert package_export.evidence_count == len(workflow.clinical_package.evidence)
+    assert package_export.provenance_count == len(workflow.clinical_package.provenance)
+
+    validation = service.validate_clinical_package_import(
+        package_export.model_dump(mode="json")
+    )
+    assert validation.valid is True
+    assert validation.package_hash == package_export.package_hash
+    assert validation.fhir_like_bundle_hash == package_export.fhir_like_bundle_hash
+    assert validation.clinical_package is not None
+    assert validation.clinical_package.package_id == workflow.clinical_package.package_id
+    assert validation.provenance_count == len(workflow.clinical_package.provenance)
+    assert validation.evidence_count == len(workflow.clinical_package.evidence)
+
+    tampered = package_export.model_dump(mode="json")
+    tampered["clinical_package"]["workflow_id"] = "wf_tampered"
+    tampered_validation = service.validate_clinical_package_import(tampered)
+    assert tampered_validation.valid is False
+    assert any(issue.code == "package_hash_mismatch" for issue in tampered_validation.issues)
+
+
+def test_clinical_package_adds_rxnorm_and_snomed_candidates_for_extra_fields() -> None:
+    service = make_service()
+    text = (
+        "date,patient_id,lab_name,value,unit,medication,diagnosis\n"
+        "2026-01-01,P001,HbA1c,7.4,%,metformin,type 2 diabetes\n"
+    )
+
+    workflow = service.start_workflow(
+        instruction="Create clinical terminology candidates for this lab row.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    assert workflow.clinical_package is not None
+    candidates = {
+        (candidate.standard_system, candidate.source_field): candidate
+        for candidate in workflow.clinical_package.terminology_candidates
+    }
+    rxnorm = candidates[("RxNorm", "medication")]
+    assert rxnorm.code == "6809"
+    assert rxnorm.metadata["normalization_policy"] == "review_required_no_auto_replacement"
+    assert rxnorm.requires_review is True
+
+    snomed = candidates[("SNOMED CT", "diagnosis")]
+    assert snomed.code == "44054006"
+    assert snomed.metadata["implementation_status"] == "placeholder_contract"
+    assert "license" in snomed.metadata["license_note"].lower()
+    assert snomed.requires_review is True
+    gates = {
+        gate.gate_type: gate
+        for gate in workflow.clinical_package.semantic_normalization_gates
+    }
+    assert gates["medication"].proposed_system == "RxNorm"
+    assert gates["medication"].candidate_id == rxnorm.candidate_id
+    assert gates["diagnosis"].proposed_system == "SNOMED CT"
+    assert gates["diagnosis"].candidate_id == snomed.candidate_id
+
+
+def test_clinical_package_adds_procedure_normalization_gate_without_candidate() -> None:
+    service = make_service()
+    text = (
+        "date,patient_id,lab_name,value,unit,procedure\n"
+        "2026-01-01,P001,HbA1c,7.4,%,unmapped procedure text\n"
+    )
+
+    workflow = service.start_workflow(
+        instruction="Create review gates for procedure normalization.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=False,
+    )
+
+    assert workflow.clinical_package is not None
+    procedure_gate = next(
+        gate
+        for gate in workflow.clinical_package.semantic_normalization_gates
+        if gate.gate_type == "procedure"
+    )
+    assert procedure_gate.source_field == "procedure"
+    assert procedure_gate.target_resource_type == "Procedure"
+    assert procedure_gate.target_path == "Procedure.code.coding"
+    assert procedure_gate.candidate_id is None
+    assert procedure_gate.metadata["candidate_status"] == "not_found"
+    assert procedure_gate.requires_review is True
+
+
+def test_assistant_created_review_task_records_workflow_provenance() -> None:
+    service = make_service()
+
+    workflow = service.create_review_task(
+        question="Review whether this terminology mapping is safe.",
+        proposed_action={"field": "diagnosis", "candidate_system": "SNOMED CT"},
+        source_context={"assistant_session_id": "asst_test"},
+        owner_user_id="usr_test",
+        request_id="req_test",
+    )
+
+    assert workflow.status == WorkflowStatus.NEEDS_HUMAN_REVIEW
+    activities = _provenance_activities(workflow)
+    assert activities.count("assistant") >= 2
+    assert "review" in activities
+    assert workflow.provenance[0].request_id == "req_test"
+    review_record = next(record for record in workflow.provenance if record.activity == "review")
+    assert review_record.review_ids == [workflow.review.review_id]
+    assert review_record.metadata["event_type"] == "review.requested"
+    assert workflow.handoff_context["provenance_summary"]["activity_counts"]["assistant"] >= 2
+
+
+def test_review_gated_lab_workflow_clinical_package_carries_review_and_issues() -> None:
+    service = make_service()
+    text = (ROOT / "data/fixtures/structured/lab_results_messy.csv").read_text()
+
+    workflow = service.start_workflow(
+        instruction="Prepare this lab CSV for review.",
+        data=text,
+        declared_format=DataFormat.CSV,
+        target_format=DataFormat.JSON,
+        schema_id="lab_result_v1",
+        require_human_review=True,
+    )
+
+    assert workflow.status == WorkflowStatus.NEEDS_HUMAN_REVIEW
+    package = workflow.clinical_package
+    assert package is not None
+    assert package.review is not None
+    assert package.review["status"] == "pending"
+    assert package.output_refs == []
+    assert any(issue.code == "missing_unit" for issue in package.operation_outcome.issue)
+    assert any(result.status == "missing" for result in package.unit_validations)
+    assert any(candidate.standard_system == "LOINC" for candidate in package.terminology_candidates)
+    assert any(record.review_required for record in package.clinical_bundle.resources)
+    assert any(
+        "missing_unit_requires_review" in record.warnings
+        for record in package.clinical_bundle.resources
+    )
+    assert package.audit_event_refs == workflow.audit_event_refs
 
 
 def test_validate_data_rejects_missing_requested_schema() -> None:
@@ -595,8 +957,21 @@ def test_fhir_like_workflow_adds_profile_evidence_and_handoff_context() -> None:
     assert workflow.status == WorkflowStatus.COMPLETED
     assert workflow.handoff_context["fhir_profile"]["is_fhir_like"] is True
     assert workflow.handoff_context["fhir_profile"]["resource_type"] == "Observation"
+    assert workflow.handoff_context["fhir_profile"]["profile_registry_version"] == (
+        "fhir_like_resource_profiles.v0"
+    )
+    assert workflow.handoff_context["fhir_profile"]["search_parameters"]["Observation"]
     assert workflow.handoff_context["fhir_handoff"]["graphner_ready"] is True
+    assert workflow.handoff_context["fhir_handoff"]["profiled_resource_types"] == [
+        "Observation"
+    ]
     assert any(step.name == "fhir_profile" for step in workflow.steps)
     source_ids = {evidence.source_id for evidence in workflow.retrieved_context}
     assert "fhir_like:Observation" in source_ids
     assert "standard:fhir_observation_r4" in source_ids
+    assert workflow.clinical_package is not None
+    assert workflow.clinical_package.clinical_bundle.resources[0].resource_type == "Observation"
+    assert workflow.clinical_package.clinical_bundle.resources[0].resource["code"]["text"] == "HbA1c"
+    assert workflow.clinical_package.clinical_bundle.resources[0].warnings == [
+        "fhir_like_resource_preserved_without_full_hl7_validation"
+    ]

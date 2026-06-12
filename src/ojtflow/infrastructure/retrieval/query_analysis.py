@@ -15,13 +15,20 @@ from urllib.parse import quote_plus
 from ojtflow.core.contracts.retrieval import (
     RetrievalConceptCandidate,
     RetrievalFilterSuggestion,
+    RetrievalPlan,
+    RetrievalPlanCoverageSummary,
+    RetrievalPlanRiskSignal,
+    RetrievalPlanTaskSummary,
     RetrievalQuery,
     RetrievalQueryAnalysis,
     RetrievalQueryAspect,
     RetrievalQueryDiagnostic,
     RetrievalQueryProfile,
+    RetrievalQueryRoute,
+    RetrievalRouteBudget,
     RetrievalQueryVariant,
     RetrievalSearchHint,
+    RetrievalSearchTask,
 )
 
 QUERY_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
@@ -43,8 +50,26 @@ DEFAULT_QUERY_PROFILE_RULE_REGISTRY = (
 DEFAULT_QUERY_ASPECT_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "query_aspect_rules.json"
 )
+DEFAULT_QUERY_TRANSFORMATION_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "query_transformation_rules.json"
+)
+DEFAULT_QUERY_ROUTE_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "query_route_rules.json"
+)
 DEFAULT_SEARCH_HINT_TARGET_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "search_hint_targets.json"
+)
+DEFAULT_FHIR_SEARCH_PARAMETER_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "terminologies"
+    / "fhir_search_parameters.json"
 )
 
 SUPPORTED_FILTER_SUGGESTION_FIELDS = {
@@ -159,6 +184,70 @@ class QueryAspectRule:
 
 
 @dataclass(frozen=True)
+class QueryTransformationMatch:
+    """Matcher for a data-driven query transformation rule."""
+
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_rule_ids: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    any_profile_ids: tuple[str, ...] = ()
+    any_profile_routes: tuple[str, ...] = ()
+    any_candidate_domains: tuple[str, ...] = ()
+    any_candidate_standards: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class QueryTransformationRule:
+    """One rewrite, step-back, multi-query, or optional HyDE transformation."""
+
+    rule_id: str
+    strategy: str
+    reason: str
+    variant_template: str
+    priority: int
+    enabled: bool
+    requires_hyde_enabled: bool
+    match: QueryTransformationMatch
+
+
+@dataclass(frozen=True)
+class QueryRouteMatch:
+    """Matcher for a data-driven retrieval strategy route."""
+
+    any_profile_ids: tuple[str, ...] = ()
+    any_profile_routes: tuple[str, ...] = ()
+    any_retrieval_modes: tuple[str, ...] = ()
+    any_detected_formats: tuple[str, ...] = ()
+    any_resource_types: tuple[str, ...] = ()
+    any_filter_keys: tuple[str, ...] = ()
+    any_filter_values: tuple[str, ...] = ()
+    any_diagnostic_codes: tuple[str, ...] = ()
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    require_fields: bool = False
+
+
+@dataclass(frozen=True)
+class QueryRouteRule:
+    """One data-driven strategy selection rule."""
+
+    rule_id: str
+    route_id: str
+    strategy_id: str
+    label: str
+    retrieval_mode: str
+    rationale: str
+    priority: int
+    confidence: float
+    suggested_filters: dict[str, str]
+    risk_controls: tuple[str, ...]
+    budget: RetrievalRouteBudget | None
+    match: QueryRouteMatch
+
+
+@dataclass(frozen=True)
 class SearchHintTarget:
     """Operator-facing metadata for one external search target."""
 
@@ -166,6 +255,26 @@ class SearchHintTarget:
     label: str
     rationale: str
     warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FhirSearchParameter:
+    """Curated FHIR search parameter hint loaded from trusted registry data."""
+
+    name: str
+    parameter_type: str
+    target_field: str
+    example: str
+    standard_systems: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FhirSearchResource:
+    """FHIR resource-level search parameter seed."""
+
+    resource_type: str
+    clinical_domain: str | None
+    parameters: tuple[FhirSearchParameter, ...]
 
 
 def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
@@ -218,9 +327,21 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         candidate_domains=candidate_domains,
         candidate_standards=candidate_standards,
     )
+    transformation_variants = _query_transformation_variant_details(
+        query,
+        concepts=concepts,
+        standards=standards,
+        rule_ids=rule_ids,
+        tokens=tokens,
+        candidate_domains=candidate_domains,
+        candidate_standards=candidate_standards,
+        query_profile=query_profile,
+        query_aspects=query_aspects,
+    )
     variant_details = _dedupe_query_variant_details(
         [
             *base_variants,
+            *transformation_variants,
             *(
                 RetrievalQueryVariant(
                     variant=rule.variant,
@@ -241,6 +362,33 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         ]
     )
     variants = [detail.variant for detail in variant_details]
+    filter_suggestions = _filter_suggestions(
+        query,
+        concepts,
+        standards,
+        rule_ids,
+        concept_candidates,
+    )
+    diagnostics = _query_diagnostics(
+        query,
+        concepts=concepts,
+        standards=standards,
+        tokens=tokens,
+    )
+    search_hints = _search_hints(
+        query,
+        concepts=concepts,
+        standards=standards,
+        concept_candidates=concept_candidates,
+    )
+    query_route = _query_route(
+        query,
+        concepts=concepts,
+        standards=standards,
+        tokens=tokens,
+        query_profile=query_profile,
+        diagnostics=diagnostics,
+    )
     return RetrievalQueryAnalysis(
         detected_concepts=concepts,
         concept_candidates=concept_candidates,
@@ -249,28 +397,247 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
         rule_ids=rule_ids,
         query_variants=variants,
         query_variant_details=variant_details,
-        filter_suggestions=_filter_suggestions(
-            query,
-            concepts,
-            standards,
-            rule_ids,
-            concept_candidates,
-        ),
-        diagnostics=_query_diagnostics(
-            query,
-            concepts=concepts,
-            standards=standards,
-            tokens=tokens,
-        ),
-        search_hints=_search_hints(
-            query,
-            concepts=concepts,
-            standards=standards,
-            concept_candidates=concept_candidates,
-        ),
+        filter_suggestions=filter_suggestions,
+        diagnostics=diagnostics,
+        search_hints=search_hints,
         query_profile=query_profile,
+        query_route=query_route,
         query_aspects=query_aspects,
+        retrieval_tasks=_retrieval_tasks(
+            query,
+            aspects=query_aspects,
+            hints=search_hints,
+            variants=variant_details,
+            filter_suggestions=filter_suggestions,
+            standards=standards,
+        ),
     )
+
+
+def build_retrieval_plan(query: RetrievalQuery) -> RetrievalPlan:
+    """Build a plan-only retrieval response from deterministic query analysis."""
+
+    analysis = analyze_query(query)
+    profile_label = analysis.query_profile.label if analysis.query_profile else "standard retrieval"
+    coverage_summary = _plan_coverage_summary(analysis)
+    return RetrievalPlan(
+        query=query,
+        query_analysis=analysis,
+        coverage_summary=coverage_summary,
+        task_summary=_plan_task_summary(analysis),
+        risk_signals=_plan_risk_signals(analysis, coverage_summary),
+        search_signature="pending",
+        summary=(
+            f"Plan uses {profile_label} with {len(analysis.query_aspects)} "
+            f"search aspect(s) and {len(analysis.search_hints)} medical search hint(s)."
+        ),
+    )
+
+
+def _plan_risk_signals(
+    analysis: RetrievalQueryAnalysis,
+    coverage_summary: RetrievalPlanCoverageSummary,
+) -> list[RetrievalPlanRiskSignal]:
+    signals: list[RetrievalPlanRiskSignal] = []
+    if coverage_summary.required_local_task_count == 0:
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code="no_required_local_task",
+                severity="warning",
+                message="The retrieval plan has no required local corpus task.",
+                suggested_action=(
+                    "Add a healthcare standard, schema, resource type, field list, or clinical domain "
+                    "so the trusted corpus search has a concrete coverage target."
+                ),
+                source="coverage_summary",
+                metadata={
+                    "local_task_count": coverage_summary.local_task_count,
+                    "external_task_count": coverage_summary.external_task_count,
+                },
+            )
+        )
+    if coverage_summary.standard_count == 0:
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code="no_standard_inferred",
+                severity="warning",
+                message="No healthcare standard was inferred for this plan.",
+                suggested_action=(
+                    "Specify FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, openFDA, or a known schema "
+                    "when those standards are relevant."
+                ),
+                source="coverage_summary",
+                metadata={"detected_concepts": list(analysis.detected_concepts)},
+            )
+        )
+    if coverage_summary.filter_count == 0 and coverage_summary.ready:
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code="unscoped_ready_plan",
+                severity="info",
+                message="The plan is ready but has no suggested metadata filters.",
+                suggested_action=(
+                    "Run the broad search first, then apply evidence facets only if coverage is too noisy."
+                ),
+                source="coverage_summary",
+            )
+        )
+    for diagnostic in analysis.diagnostics:
+        if diagnostic.severity == "info":
+            continue
+        signals.append(
+            RetrievalPlanRiskSignal(
+                code=f"diagnostic_{diagnostic.code}",
+                severity=diagnostic.severity,
+                message=diagnostic.message,
+                suggested_action=diagnostic.suggested_action,
+                source="query_diagnostic",
+                metadata=dict(diagnostic.metadata),
+            )
+        )
+    signals.sort(key=lambda signal: (_risk_severity_rank(signal.severity), signal.code))
+    return signals[:6]
+
+
+def _risk_severity_rank(severity: str) -> int:
+    if severity in {"destructive", "error"}:
+        return 0
+    if severity == "warning":
+        return 1
+    if severity == "info":
+        return 2
+    return 3
+
+
+def _plan_coverage_summary(analysis: RetrievalQueryAnalysis) -> RetrievalPlanCoverageSummary:
+    local_tasks = [task for task in analysis.retrieval_tasks if task.target == "local_corpus"]
+    external_tasks = [
+        task for task in analysis.retrieval_tasks if task.target == "external_medical_index"
+    ]
+    standards = _dedupe(
+        [
+            *analysis.standards,
+            *(standard for task in analysis.retrieval_tasks for standard in task.standards),
+        ]
+    )
+    filters = {
+        (suggestion.field, suggestion.value)
+        for suggestion in analysis.filter_suggestions
+        if not suggestion.applied
+    }
+    filters.update(
+        (field, value)
+        for task in analysis.retrieval_tasks
+        for field, value in task.suggested_filters.items()
+    )
+    warnings = _dedupe(
+        [
+            *(
+                diagnostic.code
+                for diagnostic in analysis.diagnostics
+                if diagnostic.severity != "info"
+            ),
+            *(warning for task in analysis.retrieval_tasks for warning in task.warnings),
+        ]
+    )
+    required_local_task_count = sum(1 for task in local_tasks if task.required)
+    ready = required_local_task_count > 0 and bool(standards)
+    summary = (
+        f"{required_local_task_count}/{len(local_tasks)} required local task(s), "
+        f"{len(external_tasks)} external follow-up(s), {len(standards)} standard(s), "
+        f"and {len(filters)} suggested filter(s)."
+    )
+    if not ready:
+        summary = (
+            "Plan needs more detail before review-grade search: "
+            f"{summary}"
+        )
+    next_action = _plan_coverage_next_action(
+        ready=ready,
+        required_local_task_count=required_local_task_count,
+        external_task_count=len(external_tasks),
+        standard_count=len(standards),
+        filter_count=len(filters),
+    )
+    return RetrievalPlanCoverageSummary(
+        ready=ready,
+        local_task_count=len(local_tasks),
+        required_local_task_count=required_local_task_count,
+        external_task_count=len(external_tasks),
+        standard_count=len(standards),
+        filter_count=len(filters),
+        standards=standards,
+        warnings=warnings,
+        next_action=next_action,
+        summary=summary,
+    )
+
+
+def _plan_task_summary(analysis: RetrievalQueryAnalysis) -> RetrievalPlanTaskSummary:
+    runnable_local = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.target == "local_corpus" and task.action_type == "run_local_search"
+    ]
+    required_runnable_local = [task for task in runnable_local if task.required]
+    external_open = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.target == "external_medical_index" and task.action_type == "open_external_url"
+    ]
+    external_copy = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.target == "external_medical_index" and task.action_type == "copy_query"
+    ]
+    blocked_tasks = [
+        task
+        for task in analysis.retrieval_tasks
+        if task.action_type not in {"run_local_search", "open_external_url", "copy_query"}
+    ]
+    manual_followup_count = len(external_open) + len(external_copy)
+    if required_runnable_local:
+        primary_action = "Run required local search tasks first, then review external follow-ups."
+    elif runnable_local:
+        primary_action = "Run the local search task, then review external follow-ups."
+    elif manual_followup_count:
+        primary_action = "Review external medical search follow-ups before trusting the plan."
+    else:
+        primary_action = "Add a more specific healthcare query before executing retrieval."
+    return RetrievalPlanTaskSummary(
+        total_task_count=len(analysis.retrieval_tasks),
+        runnable_local_count=len(runnable_local),
+        required_runnable_local_count=len(required_runnable_local),
+        external_open_count=len(external_open),
+        external_copy_count=len(external_copy),
+        manual_followup_count=manual_followup_count,
+        blocked_task_count=len(blocked_tasks),
+        primary_action=primary_action,
+        summary=(
+            f"{len(runnable_local)} local runnable task(s), "
+            f"{manual_followup_count} external/manual follow-up(s), "
+            f"and {len(blocked_tasks)} blocked task(s)."
+        ),
+    )
+
+
+def _plan_coverage_next_action(
+    *,
+    ready: bool,
+    required_local_task_count: int,
+    external_task_count: int,
+    standard_count: int,
+    filter_count: int,
+) -> str:
+    if not ready and standard_count == 0:
+        return "Add a healthcare standard, schema, resource type, field list, or clinical domain."
+    if not ready and required_local_task_count == 0:
+        return "Refine the query until the plan has at least one required local corpus task."
+    if filter_count > 0:
+        return "Review suggested filters, then run the local evidence search."
+    if external_task_count > 0:
+        return "Run local evidence search, then inspect external follow-up tasks if coverage is incomplete."
+    return "Run local evidence search."
 
 
 def _concept_candidates(
@@ -997,6 +1364,515 @@ def _ensure_unique_query_aspect_rule_ids(
         )
 
 
+def _query_transformation_rules() -> tuple[QueryTransformationRule, ...]:
+    path = os.environ.get("OJT_QUERY_TRANSFORMATION_RULES_PATH")
+    return _load_query_transformation_rules(
+        path or str(DEFAULT_QUERY_TRANSFORMATION_RULE_REGISTRY)
+    )
+
+
+def _load_query_transformation_rules(path_text: str) -> tuple[QueryTransformationRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: expected rules list"
+        )
+    rules = tuple(_query_transformation_rule(record, path=path) for record in records)
+    _ensure_unique_query_transformation_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_transformation_rule(record: Any, *, path: Path) -> QueryTransformationRule:
+    if not isinstance(record, dict):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: rule must be an object"
+        )
+    required = ("rule_id", "strategy", "reason", "variant_template", "match")
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: missing {missing_text}"
+        )
+    match = record["match"]
+    if not isinstance(match, dict):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: match must be an object"
+        )
+    transformation_match = QueryTransformationMatch(
+        any_concepts=_query_transformation_text_tuple(match.get("any_concepts"), path=path),
+        any_standards=_query_transformation_text_tuple(match.get("any_standards"), path=path),
+        any_rule_ids=_query_transformation_text_tuple(match.get("any_rule_ids"), path=path),
+        any_tokens=_query_transformation_text_tuple(match.get("any_tokens"), path=path),
+        any_profile_ids=_query_transformation_text_tuple(
+            match.get("any_profile_ids"),
+            path=path,
+        ),
+        any_profile_routes=_query_transformation_text_tuple(
+            match.get("any_profile_routes"),
+            path=path,
+        ),
+        any_candidate_domains=_query_transformation_text_tuple(
+            match.get("any_candidate_domains"),
+            path=path,
+        ),
+        any_candidate_standards=_query_transformation_text_tuple(
+            match.get("any_candidate_standards"),
+            path=path,
+        ),
+    )
+    if not any(transformation_match.__dict__.values()):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: match must include criteria"
+        )
+    return QueryTransformationRule(
+        rule_id=_required_query_transformation_text(
+            record["rule_id"],
+            field="rule_id",
+            path=path,
+        ),
+        strategy=_required_query_transformation_text(
+            record["strategy"],
+            field="strategy",
+            path=path,
+        ),
+        reason=_required_query_transformation_text(
+            record["reason"],
+            field="reason",
+            path=path,
+        ),
+        variant_template=_required_query_transformation_text(
+            record["variant_template"],
+            field="variant_template",
+            path=path,
+        ),
+        priority=_optional_query_transformation_int(
+            record.get("priority"),
+            default=100,
+            path=path,
+        ),
+        enabled=_optional_query_transformation_bool(
+            record.get("enabled"),
+            default=True,
+            path=path,
+            field="enabled",
+        ),
+        requires_hyde_enabled=_optional_query_transformation_bool(
+            record.get("requires_hyde_enabled"),
+            default=False,
+            path=path,
+            field="requires_hyde_enabled",
+        ),
+        match=transformation_match,
+    )
+
+
+def _required_query_transformation_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: {field} cannot be blank"
+        )
+    return text
+
+
+def _optional_query_transformation_int(value: Any, *, default: int, path: Path) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, int):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: priority must be an integer"
+        )
+    if value < 1:
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: priority must be positive"
+        )
+    return value
+
+
+def _optional_query_transformation_bool(
+    value: Any,
+    *,
+    default: bool,
+    path: Path,
+    field: str,
+) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: {field} must be boolean"
+        )
+    return value
+
+
+def _query_transformation_text_tuple(value: Any, *, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: match values must be lists"
+        )
+    return tuple(
+        _required_query_transformation_text(item, field="match value", path=path)
+        for item in value
+    )
+
+
+def _ensure_unique_query_transformation_rule_ids(
+    rules: tuple[QueryTransformationRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query transformation registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
+def _query_route(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    tokens: set[str],
+    query_profile: RetrievalQueryProfile | None,
+    diagnostics: list[RetrievalQueryDiagnostic],
+) -> RetrievalQueryRoute | None:
+    matched = [
+        (rule, criteria)
+        for rule in _query_route_rules()
+        if (criteria := _query_route_match_criteria(
+            rule,
+            query=query,
+            concepts=concepts,
+            standards=standards,
+            tokens=tokens,
+            query_profile=query_profile,
+            diagnostics=diagnostics,
+        ))
+    ]
+    if not matched:
+        return None
+    matched.sort(key=lambda item: (item[0].priority, item[0].route_id))
+    selected, criteria = matched[0]
+    metadata = {
+        "profile_id": query_profile.profile_id if query_profile else None,
+        "profile_route": query_profile.route if query_profile else None,
+        "detected_format": query.detected_format,
+        "resource_type": query.resource_type,
+        "filter_keys": sorted(query.filters),
+        "diagnostic_codes": [diagnostic.code for diagnostic in diagnostics],
+    }
+    return RetrievalQueryRoute(
+        route_id=selected.route_id,
+        strategy_id=selected.strategy_id,
+        label=selected.label,
+        retrieval_mode=selected.retrieval_mode,
+        rationale=selected.rationale,
+        rule_id=selected.rule_id,
+        priority=selected.priority,
+        confidence=selected.confidence,
+        matched_criteria=criteria,
+        suggested_filters=dict(selected.suggested_filters),
+        risk_controls=list(selected.risk_controls),
+        budget=selected.budget,
+        metadata={key: value for key, value in metadata.items() if value},
+    )
+
+
+def _query_route_match_criteria(
+    rule: QueryRouteRule,
+    *,
+    query: RetrievalQuery,
+    concepts: list[str],
+    standards: list[str],
+    tokens: set[str],
+    query_profile: RetrievalQueryProfile | None,
+    diagnostics: list[RetrievalQueryDiagnostic],
+) -> list[str]:
+    match = rule.match
+    criteria: list[str] = []
+    profile_ids = [query_profile.profile_id] if query_profile else []
+    profile_routes = [query_profile.route] if query_profile else []
+    retrieval_modes = [query_profile.retrieval_mode] if query_profile else []
+    detected_formats = [query.detected_format] if query.detected_format else []
+    resource_types = [query.resource_type] if query.resource_type else []
+    filter_keys = [str(key) for key in query.filters]
+    filter_values = [str(value) for value in query.filters.values() if value is not None]
+    diagnostic_codes = [diagnostic.code for diagnostic in diagnostics]
+    checks = [
+        ("profile_id", _intersection_values(profile_ids, match.any_profile_ids)),
+        ("profile_route", _intersection_values(profile_routes, match.any_profile_routes)),
+        (
+            "retrieval_mode",
+            _intersection_values(retrieval_modes, match.any_retrieval_modes),
+        ),
+        (
+            "detected_format",
+            _intersection_values(detected_formats, match.any_detected_formats),
+        ),
+        ("resource_type", _intersection_values(resource_types, match.any_resource_types)),
+        ("filter_key", _intersection_values(filter_keys, match.any_filter_keys)),
+        ("filter_value", _intersection_values(filter_values, match.any_filter_values)),
+        (
+            "diagnostic_code",
+            _intersection_values(diagnostic_codes, match.any_diagnostic_codes),
+        ),
+        ("concept", _intersection_values(concepts, match.any_concepts)),
+        ("standard", _intersection_values(standards, match.any_standards)),
+        ("token", _intersection_values(tokens, match.any_tokens)),
+    ]
+    for label, values in checks:
+        criteria.extend(f"{label}:{value}" for value in values)
+    if match.require_fields and query.fields:
+        criteria.append("fields:present")
+    return criteria
+
+
+def _query_route_rules() -> tuple[QueryRouteRule, ...]:
+    path = os.environ.get("OJT_QUERY_ROUTE_RULES_PATH")
+    return _load_query_route_rules(path or str(DEFAULT_QUERY_ROUTE_RULE_REGISTRY))
+
+
+def _load_query_route_rules(path_text: str) -> tuple[QueryRouteRule, ...]:
+    path = Path(path_text)
+    if not path.exists():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid query route registry at {path}: expected rules list")
+    rules = tuple(_query_route_rule(record, path=path) for record in records)
+    _ensure_unique_query_route_rule_ids(rules, path=path)
+    return rules
+
+
+def _query_route_rule(record: Any, *, path: Path) -> QueryRouteRule:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid query route registry at {path}: rule must be an object")
+    required = (
+        "rule_id",
+        "route_id",
+        "strategy_id",
+        "label",
+        "retrieval_mode",
+        "rationale",
+        "match",
+    )
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(f"Invalid query route registry at {path}: missing {missing_text}")
+    match = record["match"]
+    if not isinstance(match, dict):
+        raise ValueError(f"Invalid query route registry at {path}: match must be an object")
+    route_match = QueryRouteMatch(
+        any_profile_ids=_query_route_text_tuple(match.get("any_profile_ids"), path=path),
+        any_profile_routes=_query_route_text_tuple(match.get("any_profile_routes"), path=path),
+        any_retrieval_modes=_query_route_text_tuple(
+            match.get("any_retrieval_modes"),
+            path=path,
+        ),
+        any_detected_formats=_query_route_text_tuple(
+            match.get("any_detected_formats"),
+            path=path,
+        ),
+        any_resource_types=_query_route_text_tuple(match.get("any_resource_types"), path=path),
+        any_filter_keys=_query_route_text_tuple(match.get("any_filter_keys"), path=path),
+        any_filter_values=_query_route_text_tuple(match.get("any_filter_values"), path=path),
+        any_diagnostic_codes=_query_route_text_tuple(
+            match.get("any_diagnostic_codes"),
+            path=path,
+        ),
+        any_concepts=_query_route_text_tuple(match.get("any_concepts"), path=path),
+        any_standards=_query_route_text_tuple(match.get("any_standards"), path=path),
+        any_tokens=_query_route_text_tuple(match.get("any_tokens"), path=path),
+        require_fields=_optional_query_route_bool(
+            match.get("require_fields"),
+            default=False,
+            path=path,
+            field="match.require_fields",
+        ),
+    )
+    if not any(
+        (
+            route_match.any_profile_ids,
+            route_match.any_profile_routes,
+            route_match.any_retrieval_modes,
+            route_match.any_detected_formats,
+            route_match.any_resource_types,
+            route_match.any_filter_keys,
+            route_match.any_filter_values,
+            route_match.any_diagnostic_codes,
+            route_match.any_concepts,
+            route_match.any_standards,
+            route_match.any_tokens,
+            route_match.require_fields,
+        )
+    ):
+        raise ValueError(f"Invalid query route registry at {path}: match must include criteria")
+    suggested_filters = record.get("suggested_filters", {})
+    if not isinstance(suggested_filters, dict):
+        raise ValueError(
+            f"Invalid query route registry at {path}: suggested_filters must be an object"
+        )
+    return QueryRouteRule(
+        rule_id=_required_query_route_text(record["rule_id"], field="rule_id", path=path),
+        route_id=_required_query_route_text(record["route_id"], field="route_id", path=path),
+        strategy_id=_required_query_route_text(
+            record["strategy_id"],
+            field="strategy_id",
+            path=path,
+        ),
+        label=_required_query_route_text(record["label"], field="label", path=path),
+        retrieval_mode=_required_query_route_text(
+            record["retrieval_mode"],
+            field="retrieval_mode",
+            path=path,
+        ),
+        rationale=_required_query_route_text(
+            record["rationale"],
+            field="rationale",
+            path=path,
+        ),
+        priority=_optional_query_route_int(record.get("priority"), default=100, path=path),
+        confidence=_optional_query_route_float(
+            record.get("confidence"),
+            default=0.8,
+            path=path,
+        ),
+        suggested_filters=_query_route_text_map(
+            suggested_filters,
+            key_field="suggested_filters key",
+            value_field="suggested_filters value",
+            path=path,
+        ),
+        risk_controls=_query_route_text_tuple(record.get("risk_controls"), path=path),
+        budget=_query_route_budget(record.get("budget"), path=path),
+        match=route_match,
+    )
+
+
+def _query_route_budget(value: Any, *, path: Path) -> RetrievalRouteBudget | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"Invalid query route registry at {path}: budget must be an object")
+    try:
+        return RetrievalRouteBudget.model_validate(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid query route registry at {path}: invalid budget") from exc
+
+
+def _required_query_route_text(value: Any, *, field: str, path: Path) -> str:
+    text = " ".join(str(value).split())
+    if not text:
+        raise ValueError(f"Invalid query route registry at {path}: {field} cannot be blank")
+    return text
+
+
+def _optional_query_route_int(value: Any, *, default: int, path: Path) -> int:
+    if value is None:
+        return default
+    if not isinstance(value, int):
+        raise ValueError(f"Invalid query route registry at {path}: priority must be an integer")
+    if value < 1:
+        raise ValueError(f"Invalid query route registry at {path}: priority must be positive")
+    return value
+
+
+def _optional_query_route_float(value: Any, *, default: float, path: Path) -> float:
+    if value is None:
+        return default
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"Invalid query route registry at {path}: confidence must be a number")
+    confidence = float(value)
+    if confidence < 0.0 or confidence > 1.0:
+        raise ValueError(
+            f"Invalid query route registry at {path}: confidence must be between 0 and 1"
+        )
+    return confidence
+
+
+def _optional_query_route_bool(
+    value: Any,
+    *,
+    default: bool,
+    path: Path,
+    field: str,
+) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(f"Invalid query route registry at {path}: {field} must be boolean")
+    return value
+
+
+def _query_route_text_tuple(value: Any, *, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"Invalid query route registry at {path}: match values must be lists")
+    return tuple(_required_query_route_text(item, field="match value", path=path) for item in value)
+
+
+def _query_route_text_map(
+    value: dict[Any, Any],
+    *,
+    key_field: str,
+    value_field: str,
+    path: Path,
+) -> dict[str, str]:
+    return {
+        _required_query_route_text(key, field=key_field, path=path): _required_query_route_text(
+            item,
+            field=value_field,
+            path=path,
+        )
+        for key, item in value.items()
+    }
+
+
+def _ensure_unique_query_route_rule_ids(
+    rules: tuple[QueryRouteRule, ...],
+    *,
+    path: Path,
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for rule in rules:
+        if rule.rule_id in seen:
+            duplicates.add(rule.rule_id)
+        seen.add(rule.rule_id)
+    if duplicates:
+        duplicate_text = ", ".join(sorted(duplicates))
+        raise ValueError(
+            f"Invalid query route registry at {path}: duplicate rule_id {duplicate_text}"
+        )
+
+
+def _intersection_values(values: Iterable[str], candidates: tuple[str, ...]) -> list[str]:
+    candidate_lookup = {candidate.casefold(): candidate for candidate in candidates}
+    matched: list[str] = []
+    for value in values:
+        candidate = candidate_lookup.get(str(value).casefold())
+        if candidate:
+            matched.append(candidate)
+    return _dedupe(matched)
+
+
 def _search_hint_target(target: str) -> SearchHintTarget:
     targets = {item.target: item for item in _search_hint_targets()}
     return targets.get(
@@ -1013,6 +1889,129 @@ def _search_hint_target(target: str) -> SearchHintTarget:
 def _search_hint_targets() -> tuple[SearchHintTarget, ...]:
     path = os.environ.get("OJT_SEARCH_HINT_TARGETS_PATH")
     return _load_search_hint_targets(path or str(DEFAULT_SEARCH_HINT_TARGET_REGISTRY))
+
+
+def _fhir_search_resource(resource_type: str) -> FhirSearchResource | None:
+    resources = {
+        item.resource_type.lower(): item for item in _fhir_search_resources()
+    }
+    return resources.get(resource_type.lower())
+
+
+def _fhir_parameter_examples(
+    resource_seed: FhirSearchResource | None,
+    *,
+    query_fields: list[str],
+) -> list[dict[str, Any]]:
+    if not resource_seed:
+        return []
+    field_tokens = {token for field in query_fields for token in _tokens(field)}
+    preferred_names = _fhir_preferred_parameter_names(field_tokens)
+    parameters = sorted(
+        resource_seed.parameters,
+        key=lambda parameter: (
+            0 if parameter.name in preferred_names else 1,
+            parameter.name,
+        ),
+    )
+    return [
+        {
+            "name": parameter.name,
+            "type": parameter.parameter_type,
+            "target_field": parameter.target_field,
+            "example": parameter.example,
+            "standard_systems": list(parameter.standard_systems),
+            "matched_dataset_field": parameter.name in preferred_names,
+        }
+        for parameter in parameters[:5]
+    ]
+
+
+def _fhir_preferred_parameter_names(field_tokens: set[str]) -> set[str]:
+    preferred: set[str] = set()
+    if {"lab", "test", "code", "loinc", "lab_name", "test_name"}.intersection(field_tokens):
+        preferred.update({"code", "combo-code"})
+    if {"patient", "patient_id", "subject", "mrn"}.intersection(field_tokens):
+        preferred.update({"patient", "subject"})
+    if {"date", "effective", "effective_date"}.intersection(field_tokens):
+        preferred.add("date")
+    if {"value", "unit", "units", "result_value"}.intersection(field_tokens):
+        preferred.add("value-quantity")
+    return preferred
+
+
+def _fhir_search_registry_version() -> str | None:
+    return _fhir_search_registry_raw().get("version")
+
+
+def _fhir_search_resources() -> tuple[FhirSearchResource, ...]:
+    raw = _fhir_search_registry_raw()
+    records = raw.get("resources")
+    path = Path(os.environ.get("OJT_FHIR_SEARCH_PARAMETERS_PATH") or str(DEFAULT_FHIR_SEARCH_PARAMETER_REGISTRY))
+    if not isinstance(records, list):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: resources must be a list")
+    return tuple(_fhir_search_resource_record(record, path=path) for record in records)
+
+
+@lru_cache(maxsize=4)
+def _fhir_search_registry_raw() -> dict[str, Any]:
+    path = Path(
+        os.environ.get("OJT_FHIR_SEARCH_PARAMETERS_PATH")
+        or str(DEFAULT_FHIR_SEARCH_PARAMETER_REGISTRY)
+    )
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: expected object")
+    return raw
+
+
+def _fhir_search_resource_record(record: Any, *, path: Path) -> FhirSearchResource:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: resource must be an object")
+    parameters = record.get("parameters")
+    if not isinstance(parameters, list):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: parameters must be a list")
+    return FhirSearchResource(
+        resource_type=_required_search_hint_text(
+            record.get("resource_type"),
+            field="resource_type",
+            path=path,
+        ),
+        clinical_domain=_optional_fhir_registry_text(record.get("clinical_domain")),
+        parameters=tuple(
+            _fhir_search_parameter_record(parameter, path=path)
+            for parameter in parameters
+        ),
+    )
+
+
+def _fhir_search_parameter_record(record: Any, *, path: Path) -> FhirSearchParameter:
+    if not isinstance(record, dict):
+        raise ValueError(f"Invalid FHIR search parameter registry at {path}: parameter must be an object")
+    return FhirSearchParameter(
+        name=_required_search_hint_text(record.get("name"), field="name", path=path),
+        parameter_type=_required_search_hint_text(record.get("type"), field="type", path=path),
+        target_field=_required_search_hint_text(
+            record.get("target_field"),
+            field="target_field",
+            path=path,
+        ),
+        example=_required_search_hint_text(record.get("example"), field="example", path=path),
+        standard_systems=_search_hint_text_tuple(
+            record.get("standard_systems"),
+            field="standard_systems",
+            path=path,
+        ),
+    )
+
+
+def _optional_fhir_registry_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None
 
 
 def _load_search_hint_targets(path_text: str) -> tuple[SearchHintTarget, ...]:
@@ -1546,6 +2545,134 @@ def _query_aspects(
     ]
 
 
+def _query_transformation_variant_details(
+    query: RetrievalQuery,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
+    query_profile: RetrievalQueryProfile | None,
+    query_aspects: list[RetrievalQueryAspect],
+) -> list[RetrievalQueryVariant]:
+    matched = [
+        rule
+        for rule in _query_transformation_rules()
+        if _query_transformation_enabled(rule)
+        and _query_transformation_rule_matches(
+            rule,
+            concepts=concepts,
+            standards=standards,
+            rule_ids=rule_ids,
+            tokens=tokens,
+            candidate_domains=candidate_domains,
+            candidate_standards=candidate_standards,
+            query_profile=query_profile,
+        )
+    ]
+    matched.sort(key=lambda rule: (rule.priority, rule.rule_id))
+    variants: list[RetrievalQueryVariant] = []
+    for rule in matched:
+        variant = _render_query_transformation_template(
+            rule.variant_template,
+            query=query,
+            concepts=concepts,
+            standards=standards,
+            query_profile=query_profile,
+            query_aspects=query_aspects,
+        )
+        if not variant:
+            continue
+        variants.append(
+            RetrievalQueryVariant(
+                variant=variant,
+                source="query_transformation_rule",
+                reason=rule.reason,
+                metadata={
+                    "rule_id": rule.rule_id,
+                    "strategy": rule.strategy,
+                    "priority": rule.priority,
+                    "requires_hyde_enabled": rule.requires_hyde_enabled,
+                },
+            )
+        )
+    return variants
+
+
+def _query_transformation_rule_matches(
+    rule: QueryTransformationRule,
+    *,
+    concepts: list[str],
+    standards: list[str],
+    rule_ids: list[str],
+    tokens: set[str],
+    candidate_domains: list[str],
+    candidate_standards: list[str],
+    query_profile: RetrievalQueryProfile | None,
+) -> bool:
+    profile_ids = [query_profile.profile_id] if query_profile else []
+    profile_routes = [query_profile.route] if query_profile else []
+    match = rule.match
+    checks = [
+        _has_intersection(concepts, match.any_concepts),
+        _has_intersection(standards, match.any_standards),
+        _has_intersection(rule_ids, match.any_rule_ids),
+        _has_intersection(tokens, match.any_tokens),
+        _has_intersection(profile_ids, match.any_profile_ids),
+        _has_intersection(profile_routes, match.any_profile_routes),
+        _has_intersection(candidate_domains, match.any_candidate_domains),
+        _has_intersection(candidate_standards, match.any_candidate_standards),
+    ]
+    return any(checks)
+
+
+def _query_transformation_enabled(rule: QueryTransformationRule) -> bool:
+    if rule.requires_hyde_enabled:
+        return _env_flag("OJT_RETRIEVAL_ENABLE_HYDE")
+    return rule.enabled
+
+
+def _render_query_transformation_template(
+    template: str,
+    *,
+    query: RetrievalQuery,
+    concepts: list[str],
+    standards: list[str],
+    query_profile: RetrievalQueryProfile | None,
+    query_aspects: list[RetrievalQueryAspect],
+) -> str:
+    values = {
+        "query": query.query,
+        "fields": " ".join(query.fields),
+        "schema_id": query.schema_id or "",
+        "detected_format": query.detected_format or "",
+        "resource_type": query.resource_type or "",
+        "concepts": " ".join(concepts),
+        "standards": " ".join(standards),
+        "profile_id": query_profile.profile_id if query_profile else "",
+        "profile_label": query_profile.label if query_profile else "",
+        "profile_route": query_profile.route if query_profile else "",
+        "retrieval_mode": query_profile.retrieval_mode if query_profile else "",
+        "aspects": " ".join(aspect.label for aspect in query_aspects),
+        "aspect_terms": " ".join(
+            term for aspect in query_aspects for term in aspect.suggested_terms
+        ),
+    }
+    rendered = template.format_map(_SafeTemplateValues(values))
+    return " ".join(rendered.split())
+
+
+class _SafeTemplateValues(dict):
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _query_aspect_rule_matches(
     rule: QueryAspectRule,
     *,
@@ -1566,6 +2693,111 @@ def _query_aspect_rule_matches(
         _has_intersection(candidate_standards, match.any_candidate_standards),
     ]
     return any(checks)
+
+
+def _retrieval_tasks(
+    query: RetrievalQuery,
+    *,
+    aspects: list[RetrievalQueryAspect],
+    hints: list[RetrievalSearchHint],
+    variants: list[RetrievalQueryVariant],
+    filter_suggestions: list[RetrievalFilterSuggestion],
+    standards: list[str],
+) -> list[RetrievalSearchTask]:
+    tasks: list[RetrievalSearchTask] = []
+    variant_lookup = _aspect_variant_lookup(variants)
+    global_filters = _filter_suggestions_as_dict(filter_suggestions)
+
+    for aspect in aspects:
+        task_filters = {**global_filters, **dict(aspect.suggested_filters)}
+        aspect_variants = variant_lookup.get(aspect.aspect_id, [])
+        tasks.append(
+            RetrievalSearchTask(
+                task_id=f"local:{aspect.aspect_id}",
+                label=aspect.label,
+                target="local_corpus",
+                action_type="run_local_search",
+                query=aspect_variants[0] if aspect_variants else aspect.question,
+                rationale=aspect.rationale,
+                priority=aspect.priority,
+                required=True,
+                aspect_id=aspect.aspect_id,
+                query_variants=aspect_variants[:3],
+                standards=standards,
+                suggested_filters=task_filters,
+                metadata={"rule_id": aspect.rule_id},
+            )
+        )
+
+    if not tasks:
+        tasks.append(
+            RetrievalSearchTask(
+                task_id="local:primary",
+                label="Primary evidence search",
+                target="local_corpus",
+                action_type="run_local_search",
+                query=query.query,
+                rationale="Search the trusted local corpus with the normalized user query.",
+                priority=1,
+                required=True,
+                query_variants=[variant.variant for variant in variants[:3]],
+                standards=standards,
+                suggested_filters=global_filters,
+            )
+        )
+
+    next_priority = max((task.priority for task in tasks), default=0) + 1
+    for index, hint in enumerate(hints, start=0):
+        tasks.append(
+            RetrievalSearchTask(
+                task_id=f"external:{hint.target}:{index + 1}",
+                label=f"{_human_label(hint.target)} follow-up",
+                target="external_medical_index",
+                action_type="open_external_url" if hint.url else "copy_query",
+                query=hint.query,
+                rationale=hint.rationale,
+                priority=next_priority + index,
+                required=False,
+                search_hint_target=hint.target,
+                standards=standards,
+                suggested_filters=global_filters,
+                warnings=list(hint.warnings),
+                metadata={
+                    "url": hint.url,
+                    "target": hint.target,
+                },
+            )
+        )
+
+    tasks.sort(key=lambda task: (task.priority, task.target, task.task_id))
+    return tasks[:8]
+
+
+def _aspect_variant_lookup(
+    variants: list[RetrievalQueryVariant],
+) -> dict[str, list[str]]:
+    lookup: dict[str, list[str]] = {}
+    for variant in variants:
+        aspect_id = variant.metadata.get("aspect_id")
+        if not isinstance(aspect_id, str) or not aspect_id:
+            continue
+        lookup.setdefault(aspect_id, []).append(variant.variant)
+    return {aspect_id: _dedupe(items) for aspect_id, items in lookup.items()}
+
+
+def _filter_suggestions_as_dict(
+    suggestions: list[RetrievalFilterSuggestion],
+) -> dict[str, str]:
+    filters: dict[str, str] = {}
+    for suggestion in suggestions:
+        if suggestion.applied:
+            continue
+        filters.setdefault(suggestion.field, suggestion.value)
+    return filters
+
+
+def _human_label(value: str) -> str:
+    return " ".join(part for part in re.split(r"[_\W]+", value) if part).title()
 
 
 def _search_hints(
@@ -1590,8 +2822,19 @@ def _search_hints(
         hints.append(_clinicaltrials_search_hint(query, concept_candidates=concept_candidates))
     if "regulatory_drug_safety_search" in concept_set or "openFDA" in standard_set:
         hints.extend(_openfda_search_hints(query, concept_candidates=concept_candidates))
-    if "fhir_observation_profile" in concept_set or query.resource_type:
+    if "fhir_allergyintolerance_profile" in concept_set:
+        hints.append(_allergyintolerance_search_hint(query))
+    if (
+        "fhir_observation_profile" in concept_set
+        or "fhir_condition_profile" in concept_set
+        or "fhir_allergyintolerance_profile" in concept_set
+        or query.resource_type
+    ):
         hints.append(_fhir_search_hint(query))
+    if "LOINC" in standard_set:
+        hints.append(_loinc_search_hint(query, concept_candidates=concept_candidates))
+    if "UCUM" in standard_set:
+        hints.append(_ucum_search_hint(query, concept_candidates=concept_candidates))
     return hints
 
 
@@ -1617,9 +2860,74 @@ def _pubmed_search_hint(
     )
 
 
+def _loinc_search_terms(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> list[str]:
+    terms = _dedupe(
+        [
+            *(
+                candidate.display_name
+                for candidate in concept_candidates
+                if candidate.standard_system == "LOINC"
+            ),
+            *(
+                alias
+                for candidate in concept_candidates
+                if candidate.standard_system == "LOINC"
+                for alias in candidate.matched_aliases[:2]
+            ),
+            *(
+                field
+                for field in query.fields
+                if field.lower() in {"lab_name", "test_name", "code", "loinc_code"}
+            ),
+        ]
+    )
+    return terms[:5]
+
+
+def _ucum_unit_candidates(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> list[str]:
+    metadata_units = [
+        unit
+        for candidate in concept_candidates
+        for units in [candidate.metadata.get("preferred_units")]
+        if isinstance(units, list)
+        for unit in units
+        if isinstance(unit, str) and unit.strip()
+    ]
+    query_units = [
+        token
+        for token in _tokens(query.query)
+        if _looks_like_unit_token(token)
+    ]
+    return _dedupe([*metadata_units, *query_units])[:5]
+
+
+def _looks_like_unit_token(token: str) -> bool:
+    normalized = token.strip()
+    if not normalized:
+        return False
+    if normalized in {"mg/dl", "mmol/l", "umol/l", "ng/ml", "g/dl", "ml/min"}:
+        return True
+    return any(character in normalized for character in {"/", "%"})
+
+
 def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
     resource_type = query.resource_type or "Observation"
-    if resource_type.lower() == "observation":
+    resource_seed = _fhir_search_resource(resource_type)
+    parameter_examples = _fhir_parameter_examples(
+        resource_seed,
+        query_fields=query.fields,
+    )
+    if parameter_examples:
+        template = " ; ".join(example["example"] for example in parameter_examples[:3])
+    elif resource_type.lower() == "observation":
         template = (
             "Observation?code=<loinc-code>&subject=Patient/<id>&date=ge<yyyy-mm-dd>"
         )
@@ -1631,6 +2939,164 @@ def _fhir_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
         query=template,
         rationale=target.rationale,
         warnings=list(target.warnings),
+        metadata={
+            "resource_type": resource_type,
+            "registry_version": _fhir_search_registry_version(),
+            "clinical_domain": resource_seed.clinical_domain if resource_seed else None,
+            "parameter_examples": parameter_examples,
+            "lineage_followup": [
+                {
+                    "parameter": "_revinclude=Provenance:target",
+                    "purpose": "Return Provenance resources that point at the matched clinical resources when the server supports this join.",
+                },
+                {
+                    "parameter": "_revinclude=AuditEvent:entity",
+                    "purpose": "Return access/use audit events tied to the matched entity when supported by the concrete server.",
+                },
+            ],
+            "capability_warning": (
+                "Verify the concrete FHIR server CapabilityStatement before execution."
+            ),
+        },
+    )
+
+
+def _allergyintolerance_search_hint(query: RetrievalQuery) -> RetrievalSearchHint:
+    resource_seed = _fhir_search_resource("AllergyIntolerance")
+    parameter_examples = _fhir_parameter_examples(
+        resource_seed,
+        query_fields=query.fields,
+    )
+    template = (
+        " ; ".join(example["example"] for example in parameter_examples[:4])
+        if parameter_examples
+        else "AllergyIntolerance?patient=<patient-id>&code=<substance-or-finding-code>"
+    )
+    target = _search_hint_target("allergyintolerance")
+    return RetrievalSearchHint(
+        target=target.target,
+        query=template,
+        rationale=target.rationale,
+        warnings=list(target.warnings),
+        metadata={
+            "resource_type": "AllergyIntolerance",
+            "registry_version": _fhir_search_registry_version(),
+            "clinical_domain": resource_seed.clinical_domain if resource_seed else "allergy",
+            "parameter_examples": parameter_examples,
+            "capability_warning": (
+                "Verify the concrete FHIR server CapabilityStatement before execution."
+            ),
+        },
+    )
+
+
+def _loinc_search_hint(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> RetrievalSearchHint:
+    target = _search_hint_target("loinc")
+    terms = _loinc_search_terms(query, concept_candidates=concept_candidates)
+    text_query = " ".join(terms) if terms else query.query
+    encoded_query = quote_plus(text_query)
+    return RetrievalSearchHint(
+        target=target.target,
+        query=f"GET /searchapi/loincs?query={encoded_query}&rows=20&offset=0",
+        rationale=target.rationale,
+        warnings=list(target.warnings),
+        metadata={
+            "api_base_url": "https://loinc.regenstrief.org/searchapi",
+            "authentication_required": True,
+            "scope_endpoints": [
+                "/searchapi/loincs",
+                "/searchapi/answerlists",
+                "/searchapi/parts",
+                "/searchapi/groups",
+            ],
+            "parameter_examples": [
+                {
+                    "name": "query",
+                    "type": "string",
+                    "target_field": "LOINC search text",
+                    "example": f"query={encoded_query}",
+                    "standard_systems": ["LOINC"],
+                    "matched_dataset_field": bool(query.fields),
+                },
+                {
+                    "name": "rows",
+                    "type": "integer",
+                    "target_field": "result page size",
+                    "example": "rows=20",
+                    "standard_systems": ["LOINC"],
+                    "matched_dataset_field": False,
+                },
+                {
+                    "name": "offset",
+                    "type": "integer",
+                    "target_field": "result page offset",
+                    "example": "offset=0",
+                    "standard_systems": ["LOINC"],
+                    "matched_dataset_field": False,
+                },
+            ],
+            "selected_terms": terms,
+            "capability_warning": "LOINC Search API authentication and endpoint scope must be configured before execution.",
+        },
+    )
+
+
+def _ucum_search_hint(
+    query: RetrievalQuery,
+    *,
+    concept_candidates: list[RetrievalConceptCandidate],
+) -> RetrievalSearchHint:
+    target = _search_hint_target("ucum")
+    unit_candidates = _ucum_unit_candidates(query, concept_candidates=concept_candidates)
+    code = unit_candidates[0] if unit_candidates else "<unit-code>"
+    encoded_code = quote_plus(code)
+    validation_path = (
+        "/ucum-fhir/R4/CodeSystem/$validate-code?"
+        f"url=http://unitsofmeasure.org&code={encoded_code}&_format=application/fhir+json"
+    )
+    return RetrievalSearchHint(
+        target=target.target,
+        query=f"GET {validation_path}",
+        url=f"https://ucum.nlm.nih.gov{validation_path}" if unit_candidates else None,
+        rationale=target.rationale,
+        warnings=list(target.warnings),
+        metadata={
+            "api_base_url": "https://ucum.nlm.nih.gov",
+            "operation": "FHIR CodeSystem $validate-code",
+            "launchable": bool(unit_candidates),
+            "parameter_examples": [
+                {
+                    "name": "url",
+                    "type": "uri",
+                    "target_field": "CodeSystem URL",
+                    "example": "url=http://unitsofmeasure.org",
+                    "standard_systems": ["UCUM", "FHIR"],
+                    "matched_dataset_field": False,
+                },
+                {
+                    "name": "code",
+                    "type": "code",
+                    "target_field": "source unit string",
+                    "example": f"code={encoded_code}",
+                    "standard_systems": ["UCUM"],
+                    "matched_dataset_field": "unit" in {field.lower() for field in query.fields},
+                },
+                {
+                    "name": "_format",
+                    "type": "mime-type",
+                    "target_field": "response format",
+                    "example": "_format=application/fhir+json",
+                    "standard_systems": ["FHIR"],
+                    "matched_dataset_field": False,
+                },
+            ],
+            "selected_unit_candidates": unit_candidates,
+            "capability_warning": "URL encode unit strings before execution and preserve the original source unit for audit.",
+        },
     )
 
 

@@ -97,6 +97,10 @@ class RetrievalEvalCaseResult(ContractModel):
     relevance_ratings: dict[str, int] = Field(default_factory=dict)
     selected_source_count: int = 0
     duplicate_selected_source_count: int = 0
+    source_diversity_at_k: float = 0.0
+    support_row_count: int = 0
+    unsupported_claim_count: int = 0
+    unsupported_claim_rate: float = 0.0
 
 
 class RetrievalEvalSummary(ContractModel):
@@ -110,7 +114,11 @@ class RetrievalEvalSummary(ContractModel):
     mean_average_precision_at_k: float
     mean_ndcg_at_k: float
     mean_reciprocal_rank: float
+    mean_source_diversity_at_k: float
     mean_selected_source_count: float
+    unsupported_claim_rate: float
+    total_support_rows: int
+    total_unsupported_claims: int
     total_missing_source_ids: int
     passed: bool
     thresholds: dict[str, float]
@@ -134,6 +142,8 @@ def evaluate_retrieval_repository(
     min_mean_recall_at_k: float = 0.8,
     min_mean_reciprocal_rank: float = 0.8,
     min_mean_ndcg_at_k: float = 0.8,
+    min_mean_source_diversity_at_k: float = 0.6,
+    max_unsupported_claim_rate: float = 0.2,
 ) -> RetrievalEvalSummary:
     """Evaluate a repository against labeled retrieval cases."""
 
@@ -149,12 +159,22 @@ def evaluate_retrieval_repository(
     mean_ap = _mean(result.average_precision_at_k for result in results)
     mean_ndcg = _mean(result.ndcg_at_k for result in results)
     mean_rr = _mean(result.reciprocal_rank for result in results)
+    mean_source_diversity = _mean(result.source_diversity_at_k for result in results)
     mean_sources = _mean(result.selected_source_count for result in results)
+    total_support_rows = sum(result.support_row_count for result in results)
+    total_unsupported_claims = sum(
+        result.unsupported_claim_count for result in results
+    )
+    unsupported_claim_rate = (
+        total_unsupported_claims / total_support_rows if total_support_rows else 0.0
+    )
     thresholds = {
         "min_hit_rate_at_k": min_hit_rate_at_k,
         "min_mean_recall_at_k": min_mean_recall_at_k,
         "min_mean_reciprocal_rank": min_mean_reciprocal_rank,
         "min_mean_ndcg_at_k": min_mean_ndcg_at_k,
+        "min_mean_source_diversity_at_k": min_mean_source_diversity_at_k,
+        "max_unsupported_claim_rate": max_unsupported_claim_rate,
     }
     return RetrievalEvalSummary(
         case_count=case_count,
@@ -165,13 +185,19 @@ def evaluate_retrieval_repository(
         mean_average_precision_at_k=round(mean_ap, 6),
         mean_ndcg_at_k=round(mean_ndcg, 6),
         mean_reciprocal_rank=round(mean_rr, 6),
+        mean_source_diversity_at_k=round(mean_source_diversity, 6),
         mean_selected_source_count=round(mean_sources, 6),
+        unsupported_claim_rate=round(unsupported_claim_rate, 6),
+        total_support_rows=total_support_rows,
+        total_unsupported_claims=total_unsupported_claims,
         total_missing_source_ids=sum(len(result.missing_source_ids) for result in results),
         passed=(
             hit_rate >= min_hit_rate_at_k
             and mean_recall >= min_mean_recall_at_k
             and mean_rr >= min_mean_reciprocal_rank
             and mean_ndcg >= min_mean_ndcg_at_k
+            and mean_source_diversity >= min_mean_source_diversity_at_k
+            and unsupported_claim_rate <= max_unsupported_claim_rate
         ),
         thresholds=thresholds,
         results=results,
@@ -193,8 +219,8 @@ def _evaluate_case(repository: Any, case: RetrievalEvalCase) -> RetrievalEvalCas
         source_id for source_id in retrieved if ratings.get(source_id, 0) > 0
     }
     first_rank = min(relevant_ranks) if relevant_ranks else None
-    raw_diversity = package.handoff_context.get("diversity", {})
-    diversity = raw_diversity if isinstance(raw_diversity, dict) else {}
+    diversity = _package_diversity_summary(package, retrieved)
+    support = _package_support_summary(package)
     return RetrievalEvalCaseResult(
         case_id=case.case_id,
         description=case.description,
@@ -212,14 +238,80 @@ def _evaluate_case(repository: Any, case: RetrievalEvalCase) -> RetrievalEvalCas
         judged_source_count=len(ratings),
         judged_retrieved_source_count=retrieved_judged_count,
         relevance_ratings=ratings,
-        selected_source_count=int(diversity.get("selected_source_count", len(set(retrieved)))),
-        duplicate_selected_source_count=int(
+        selected_source_count=diversity["selected_source_count"],
+        duplicate_selected_source_count=diversity["duplicate_selected_source_count"],
+        source_diversity_at_k=round(diversity["source_diversity_at_k"], 6),
+        support_row_count=support["support_row_count"],
+        unsupported_claim_count=support["unsupported_claim_count"],
+        unsupported_claim_rate=round(support["unsupported_claim_rate"], 6),
+    )
+
+
+def _package_diversity_summary(package: Any, retrieved: list[str]) -> dict[str, float | int]:
+    diversity_contract = getattr(package, "diversity", None)
+    if diversity_contract is not None:
+        selected_source_count = getattr(diversity_contract, "selected_source_count", None)
+        duplicate_selected_source_count = getattr(
+            diversity_contract,
+            "duplicate_selected_source_count",
+            None,
+        )
+        if isinstance(selected_source_count, int) and isinstance(
+            duplicate_selected_source_count,
+            int,
+        ):
+            return {
+                "selected_source_count": selected_source_count,
+                "duplicate_selected_source_count": duplicate_selected_source_count,
+                "source_diversity_at_k": _source_diversity_at_k(retrieved),
+            }
+
+    handoff_context = getattr(package, "handoff_context", {})
+    raw_diversity = (
+        handoff_context.get("diversity", {})
+        if isinstance(handoff_context, dict)
+        else {}
+    )
+    diversity = raw_diversity if isinstance(raw_diversity, dict) else {}
+    return {
+        "selected_source_count": int(
+            diversity.get("selected_source_count", len(set(retrieved)))
+        ),
+        "duplicate_selected_source_count": int(
             diversity.get(
                 "duplicate_selected_source_count",
                 len(retrieved) - len(set(retrieved)),
             )
         ),
-    )
+        "source_diversity_at_k": _source_diversity_at_k(retrieved),
+    }
+
+
+def _source_diversity_at_k(retrieved: list[str]) -> float:
+    if not retrieved:
+        return 0.0
+    return len(set(retrieved)) / len(retrieved)
+
+
+def _package_support_summary(package: Any) -> dict[str, float | int]:
+    support_matrix = getattr(package, "support_matrix", None)
+    rows = list(getattr(support_matrix, "rows", []) or [])
+    if not rows:
+        return {
+            "support_row_count": 0,
+            "unsupported_claim_count": 0,
+            "unsupported_claim_rate": 0.0,
+        }
+    unsupported = [
+        row
+        for row in rows
+        if getattr(row, "support_status", None) == "unsupported"
+    ]
+    return {
+        "support_row_count": len(rows),
+        "unsupported_claim_count": len(unsupported),
+        "unsupported_claim_rate": len(unsupported) / len(rows),
+    }
 
 
 def _average_precision_at_k(

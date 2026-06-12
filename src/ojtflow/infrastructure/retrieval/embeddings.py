@@ -9,7 +9,17 @@ from typing import Any, Protocol
 import httpx
 
 from ojtflow.config import Settings
+from ojtflow.core.contracts.abuse_cost import AbuseCostPolicy
+from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
 from ojtflow.core.errors import DependencyUnavailableError, OJTFlowError
+from ojtflow.core.policy.abuse_cost_policy import (
+    load_abuse_cost_policy,
+    require_embedding_budget,
+)
+from ojtflow.core.policy.external_provider_policy import (
+    external_provider_policy_from_settings,
+    require_external_provider_handoff,
+)
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     NullEmbeddingProvider,
@@ -49,6 +59,8 @@ class OpenAIEmbeddingProvider:
         dimensions: int,
         base_url: str,
         timeout_seconds: float,
+        external_provider_policy: ExternalProviderPolicy | None = None,
+        abuse_cost_policy: AbuseCostPolicy | None = None,
         client: httpx.Client | None = None,
     ) -> None:
         if not api_key:
@@ -61,6 +73,8 @@ class OpenAIEmbeddingProvider:
         self.dimensions = dimensions
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.external_provider_policy = external_provider_policy
+        self.abuse_cost_policy = abuse_cost_policy
         self._client = client
         self._cache: dict[str, list[float]] = {}
 
@@ -75,7 +89,7 @@ class OpenAIEmbeddingProvider:
             return []
         missing = [text for text in texts if self._cache_key("document", text) not in self._cache]
         if missing:
-            embeddings = self._request_embeddings(missing)
+            embeddings = self._request_embeddings(missing, purpose="document")
             for text, embedding in zip(missing, embeddings, strict=True):
                 self._cache[self._cache_key("document", text)] = embedding
         return [self._cache[self._cache_key("document", text)] for text in texts]
@@ -91,18 +105,36 @@ class OpenAIEmbeddingProvider:
     def _embed_one(self, text: str, *, purpose: str) -> list[float]:
         key = self._cache_key(purpose, text)
         if key not in self._cache:
-            self._cache[key] = self._request_embeddings([text])[0]
+            self._cache[key] = self._request_embeddings([text], purpose=purpose)[0]
         return self._cache[key]
 
     def _cache_key(self, purpose: str, text: str) -> str:
         return f"{purpose}:{text}"
 
-    def _request_embeddings(self, texts: list[str]) -> list[list[float]]:
+    def _request_embeddings(self, texts: list[str], *, purpose: str) -> list[list[float]]:
         clean_texts = [text.strip() for text in texts]
         if any(not text for text in clean_texts):
             raise OJTFlowError(
                 "Embedding input cannot be blank.",
                 details={"provider": self.provider_name, "model": self.model},
+            )
+        if self.abuse_cost_policy is not None:
+            require_embedding_budget(
+                self.abuse_cost_policy,
+                surface="openai_embeddings",
+                texts=clean_texts,
+            )
+        if self.external_provider_policy is not None:
+            require_external_provider_handoff(
+                self.external_provider_policy,
+                surface="openai_embeddings",
+                text="\n".join(clean_texts),
+                metadata={
+                    "provider": self.provider_name,
+                    "model": self.model,
+                    "purpose": purpose,
+                    "input_count": len(clean_texts),
+                },
             )
         payload: dict[str, Any] = {
             "model": self.model,
@@ -306,12 +338,15 @@ def build_embedding_provider(settings: Settings) -> EmbeddingProvider:
     if settings.embedding_provider == "deterministic":
         return DeterministicEmbeddingProvider(settings.embedding_dimensions)
     if settings.embedding_provider == "openai":
+        abuse_cost_policy = load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path)
         return OpenAIEmbeddingProvider(
             api_key=settings.openai_api_key,
             model=settings.embedding_model,
             dimensions=settings.embedding_dimensions,
             base_url=settings.openai_embedding_base_url,
             timeout_seconds=settings.openai_embedding_timeout_seconds,
+            external_provider_policy=external_provider_policy_from_settings(settings),
+            abuse_cost_policy=abuse_cost_policy,
         )
     if settings.embedding_provider == "huggingface":
         return HuggingFaceEmbeddingProvider(

@@ -6,6 +6,9 @@ import math
 from collections.abc import Iterable
 
 from ojtflow.application.ports import RetrievalJudgmentRepository
+from ojtflow.application.retrieval_active_learning_service import (
+    RetrievalActiveLearningService,
+)
 from ojtflow.application.retrieval_evaluation_policy import (
     RetrievalEvaluationPolicyRule,
     recommendations_from_policy,
@@ -22,6 +25,24 @@ from ojtflow.core.contracts.retrieval import (
 from ojtflow.data_tools.hashing import sha256_text
 
 
+NON_RELEVANT_JUDGMENT_VALUES = {
+    "irrelevant",
+    "not_relevant",
+    "unsafe",
+    "stale",
+    "source_policy_blocked",
+}
+RETRIEVAL_JUDGMENT_VALUES = (
+    "relevant",
+    "partial",
+    "irrelevant",
+    "not_relevant",
+    "unsafe",
+    "stale",
+    "source_policy_blocked",
+)
+
+
 class RetrievalJudgmentService:
     """Coordinates user-scoped relevance judgments for retrieval evaluation."""
 
@@ -31,9 +52,11 @@ class RetrievalJudgmentService:
     def __init__(
         self,
         repository: RetrievalJudgmentRepository,
+        active_learning_service: RetrievalActiveLearningService | None = None,
         evaluation_policy_rules: Iterable[RetrievalEvaluationPolicyRule] = (),
     ) -> None:
         self.repository = repository
+        self.active_learning_service = active_learning_service
         self.evaluation_policy_rules = tuple(evaluation_policy_rules)
 
     def upsert(
@@ -63,11 +86,17 @@ class RetrievalJudgmentService:
             search_signature=search_signature,
             metadata=metadata or {},
         )
-        return self.repository.upsert(
+        judgment = self.repository.upsert(
             owner_user_id=owner_user_id,
             query_hash=query_hash(write.query),
             write=write,
         )
+        if self.active_learning_service is not None:
+            self.active_learning_service.enqueue_from_judgment(
+                owner_user_id=owner_user_id,
+                judgment=judgment,
+            )
+        return judgment
 
     def list(
         self,
@@ -100,12 +129,14 @@ class RetrievalJudgmentService:
             limit=sample_limit,
         )
         value_counts = {
-            "relevant": sum(1 for judgment in judgments if judgment.value == "relevant"),
-            "partial": sum(1 for judgment in judgments if judgment.value == "partial"),
-            "not_relevant": sum(
-                1 for judgment in judgments if judgment.value == "not_relevant"
-            ),
+            value: sum(1 for judgment in judgments if judgment.value == value)
+            for value in RETRIEVAL_JUDGMENT_VALUES
         }
+        not_relevant_count = sum(
+            count
+            for value, count in value_counts.items()
+            if value in NON_RELEVANT_JUDGMENT_VALUES
+        )
         source_ids = {
             judgment.source_id
             for judgment in judgments
@@ -119,7 +150,10 @@ class RetrievalJudgmentService:
             source_count=len(source_ids),
             relevant_count=value_counts["relevant"],
             partial_count=value_counts["partial"],
-            not_relevant_count=value_counts["not_relevant"],
+            not_relevant_count=not_relevant_count,
+            unsafe_count=value_counts["unsafe"],
+            stale_count=value_counts["stale"],
+            source_policy_blocked_count=value_counts["source_policy_blocked"],
             average_rating=(
                 round(sum(judgment.rating for judgment in judgments) / len(judgments), 6)
                 if judgments
@@ -166,7 +200,16 @@ class RetrievalJudgmentService:
         relevant_count = sum(1 for judgment in ranked_judgments if judgment.value == "relevant")
         partial_count = sum(1 for judgment in ranked_judgments if judgment.value == "partial")
         not_relevant_count = sum(
-            1 for judgment in ranked_judgments if judgment.value == "not_relevant"
+            1
+            for judgment in ranked_judgments
+            if judgment.value in NON_RELEVANT_JUDGMENT_VALUES
+        )
+        unsafe_count = sum(1 for judgment in ranked_judgments if judgment.value == "unsafe")
+        stale_count = sum(1 for judgment in ranked_judgments if judgment.value == "stale")
+        source_policy_blocked_count = sum(
+            1
+            for judgment in ranked_judgments
+            if judgment.value == "source_policy_blocked"
         )
         positive_count = relevant_count + partial_count
         judged_count = len(ranked_judgments)
@@ -215,6 +258,9 @@ class RetrievalJudgmentService:
             "positive_count": positive_count,
             "precision_at_k": precision_at_k,
             "relevant_count": relevant_count,
+            "source_policy_blocked_count": source_policy_blocked_count,
+            "stale_count": stale_count,
+            "unsafe_count": unsafe_count,
             "unjudged_count": len(unjudged_ids),
         }
         return RetrievalJudgmentEvaluationResult(
@@ -226,6 +272,9 @@ class RetrievalJudgmentService:
             relevant_count=relevant_count,
             partial_count=partial_count,
             not_relevant_count=not_relevant_count,
+            unsafe_count=unsafe_count,
+            stale_count=stale_count,
+            source_policy_blocked_count=source_policy_blocked_count,
             coverage_at_k=coverage_at_k,
             hit_rate_at_k=hit_rate_at_k,
             precision_at_k=precision_at_k,

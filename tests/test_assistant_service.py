@@ -1,12 +1,39 @@
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
+from ojtflow.application.assistant_memory_service import (
+    AssistantMemoryService,
+    merge_assistant_memory_context,
+)
+from ojtflow.application.assistant_session_service import AssistantSessionService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_tools import ASSISTANT_TOOL_SPECS, OJTFlowToolExecutor
-from ojtflow.core.contracts.assistant import AssistantPlan, AssistantToolPlan
-from ojtflow.core.errors import ToolExecutionError
-from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
+from ojtflow.core.contracts.assistant import (
+    AssistantMemoryPolicy,
+    AssistantMemoryPreferenceDefinition,
+    AssistantPlan,
+    AssistantToolPlan,
+    AssistantToolProgressStage,
+)
+from ojtflow.core.errors import OJTFlowError, ToolExecutionError
+from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
+from ojtflow.infrastructure.llm.openai import (
+    OpenAIResponsesPlanner,
+    _stream_delta_from_line,
+    _stream_event_from_line,
+    _stream_failure_from_event,
+    _stream_final_text_from_event,
+)
+from ojtflow.infrastructure.storage.in_memory import (
+    InMemoryAssistantMemoryRepository,
+    InMemoryAssistantSessionRepository,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class _FakeToolExecutor:
@@ -14,8 +41,15 @@ class _FakeToolExecutor:
     def tool_specs(self):
         return []
 
-    def execute(self, plan, *, execute_write_actions=False, owner_user_id=None):
-        del execute_write_actions, owner_user_id
+    def execute(
+        self,
+        plan,
+        *,
+        execute_write_actions=False,
+        owner_user_id=None,
+        request_id=None,
+    ):
+        del execute_write_actions, owner_user_id, request_id
         from ojtflow.core.contracts.assistant import AssistantToolResult
 
         return AssistantToolResult(
@@ -29,6 +63,9 @@ class _FakeToolExecutor:
 
 class _FakePlanner:
     model_name = "fake-model"
+
+    def __init__(self) -> None:
+        self.last_tool_results = None
 
     async def plan(self, *, message, context, tools, max_tool_calls):
         del message, context, tools, max_tool_calls
@@ -53,7 +90,8 @@ class _FakePlanner:
         findings,
         evidence_summary,
     ):
-        del message, context, plan, tool_results, findings, evidence_summary
+        del message, context, plan, findings, evidence_summary
+        self.last_tool_results = tool_results
         return "LLM synthesized answer with cited evidence."
 
 
@@ -89,7 +127,10 @@ class _FailingPlanner:
 
     async def plan(self, *, message, context, tools, max_tool_calls):
         del message, context, tools, max_tool_calls
-        raise ToolExecutionError("Planner unavailable.")
+        raise ToolExecutionError(
+            "Planner unavailable.",
+            details={"status_code": 429, "message": "quota exceeded"},
+        )
 
 
 class _FailingSynthesizer(_FakePlanner):
@@ -112,8 +153,15 @@ class _FakeRetrievalToolExecutor:
     def tool_specs(self):
         return []
 
-    def execute(self, plan, *, execute_write_actions=False, owner_user_id=None):
-        del execute_write_actions, owner_user_id
+    def execute(
+        self,
+        plan,
+        *,
+        execute_write_actions=False,
+        owner_user_id=None,
+        request_id=None,
+    ):
+        del execute_write_actions, owner_user_id, request_id
         from ojtflow.core.contracts.assistant import AssistantToolResult
 
         return AssistantToolResult(
@@ -194,16 +242,145 @@ class _FakeRetrievalToolExecutor:
                         "metadata": {"corrective_rule_id": "missing_required_bucket_recovery"},
                     }
                 ],
+                "diversity": {
+                    "enabled": True,
+                    "selection_mode": "mmr_source_diversity",
+                    "lambda_value": 0.72,
+                    "candidate_source_count": 3,
+                    "selected_source_count": 2,
+                    "duplicate_selected_source_count": 0,
+                    "selected_hits": [
+                        {
+                            "evidence_id": "ev_schema",
+                            "source_id": "schema:lab_result_v1",
+                            "selected_rank": 1,
+                            "original_rank": 1,
+                            "relevance_score": 1.0,
+                            "redundancy_score": 0.0,
+                            "selection_score": 1.0,
+                            "reason": "Top-ranked hit selected as the initial MMR seed.",
+                        },
+                        {
+                            "evidence_id": "ev_policy",
+                            "source_id": "policy:review_gate",
+                            "selected_rank": 2,
+                            "original_rank": 4,
+                            "relevance_score": 0.72,
+                            "redundancy_score": 0.0,
+                            "selection_score": 0.52,
+                            "reason": "Selected from a new source with no measured redundancy penalty.",
+                        },
+                    ],
+                },
+                "standard_search_plan": {
+                    "plan_id": "standard_search_playbook.v1",
+                    "summary": (
+                        "Run 2 governed healthcare-standard search step(s) before "
+                        "treating this evidence package as complete."
+                    ),
+                    "primary_route": "unit_validation",
+                    "steps": [
+                        {
+                            "step_id": "standard_search:ucum_unit_validation",
+                            "label": "UCUM unit validation",
+                            "standard_system": "UCUM",
+                            "route_type": "unit_validation",
+                            "query": "Validate units for lab_name, unit.",
+                            "rationale": "Units can change clinical meaning.",
+                            "priority": 30,
+                            "suggested_filters": {"standard_system": "UCUM"},
+                            "governance_notes": [
+                                "Do not silently convert units without preserving source evidence."
+                            ],
+                            "metadata": {"rule_id": "ucum_unit_validation"},
+                        },
+                        {
+                            "step_id": "standard_search:fhir_observation_with_provenance",
+                            "label": "FHIR Observation + Provenance trace",
+                            "standard_system": "FHIR",
+                            "route_type": "fhir_search",
+                            "query": "Search FHIR Observation records with Provenance.",
+                            "rationale": "Clinical data search should preserve lineage.",
+                            "priority": 40,
+                            "suggested_filters": {"standard_system": "FHIR"},
+                            "governance_notes": [
+                                "Confirm the concrete FHIR server supports the requested search parameters."
+                            ],
+                            "metadata": {"rule_id": "fhir_observation_with_provenance"},
+                        },
+                    ],
+                    "missing_routes": [],
+                    "governance_notes": [
+                        "Do not silently convert units without preserving source evidence.",
+                        "Confirm the concrete FHIR server supports the requested search parameters.",
+                    ],
+                    "metadata": {"query_profile_id": "laboratory_standardization"},
+                },
+                "handoff_context": {
+                    "query_analysis": {
+                        "search_hints": [
+                            {
+                                "target": "ucum",
+                                "query": (
+                                    "GET /ucum-fhir/R4/CodeSystem/$validate-code?"
+                                    "url=http://unitsofmeasure.org&code=%25"
+                                ),
+                                "url": (
+                                    "https://ucum.nlm.nih.gov/ucum-fhir/R4/"
+                                    "CodeSystem/$validate-code?url=http://unitsofmeasure.org&code=%25"
+                                ),
+                                "rationale": "Validate UCUM unit strings.",
+                                "warnings": ["Preserve original source unit."],
+                                "metadata": {
+                                    "launchable": True,
+                                    "selected_unit_candidates": [
+                                        "%",
+                                        "mg/dL",
+                                        "mmol/L",
+                                        "umol/L",
+                                        "g/dL",
+                                        "ng/mL",
+                                        "mL/min",
+                                        "IU/L",
+                                        "extra-unit",
+                                    ],
+                                    "parameter_examples": [
+                                        {"name": f"p{index}", "example": str(index)}
+                                        for index in range(10)
+                                    ],
+                                },
+                            },
+                            {
+                                "target": "loinc",
+                                "query": "GET /searchapi/loincs?query=hba1c&rows=20",
+                                "url": None,
+                                "rationale": "Resolve lab identity.",
+                                "warnings": ["LOINC API authentication is required."],
+                                "metadata": {
+                                    "scope_endpoints": ["/searchapi/loincs"],
+                                    "selected_terms": ["HbA1c"],
+                                },
+                            },
+                        ]
+                    }
+                },
             },
             summary="Retrieved evidence.",
         )
 
 
+class _FakeRetrievalToolExecutorWithSpec(_FakeToolExecutor):
+    @property
+    def tool_specs(self):
+        return [ASSISTANT_TOOL_SPECS["retrieval_search"]]
+
+
 @pytest.mark.asyncio
 async def test_assistant_service_uses_planner_but_backend_executor_owns_tools() -> None:
+    planner = _FakePlanner()
     service = AssistantService(
-        _FakeToolExecutor(),  # type: ignore[arg-type]
-        planner=_FakePlanner(),
+        _FakeRetrievalToolExecutor(),  # type: ignore[arg-type]
+        planner=planner,
         max_tool_calls=2,
     )
 
@@ -216,6 +393,21 @@ async def test_assistant_service_uses_planner_but_backend_executor_owns_tools() 
     assert response.tool_calls[0].tool_name == "retrieval_search"
     assert response.tool_calls[0].status == "completed"
     assert response.findings[0].title == "Trusted evidence retrieved"
+    assert planner.last_tool_results is not None
+    assert planner.last_tool_results[0]["medical_search_hints"][0]["target"] == "ucum"
+    assert planner.last_tool_results[0]["medical_search_hints"][0]["metadata"]["launchable"] is True
+    assert len(
+        planner.last_tool_results[0]["medical_search_hints"][0]["metadata"][
+            "selected_unit_candidates"
+        ]
+    ) == 8
+    assert len(
+        planner.last_tool_results[0]["medical_search_hints"][0]["metadata"][
+            "parameter_examples"
+        ]
+    ) == 8
+    assert planner.last_tool_results[0]["diversity"]["selected_source_count"] == 2
+    assert len(planner.last_tool_results[0]["diversity"]["selected_hits"]) == 2
 
 
 @pytest.mark.asyncio
@@ -271,6 +463,206 @@ async def test_assistant_stream_emits_streamed_planner_steps_and_deltas() -> Non
 
 
 @pytest.mark.asyncio
+async def test_assistant_stream_emits_data_driven_tool_progress_events() -> None:
+    service = AssistantService(
+        _FakeRetrievalToolExecutorWithSpec(),  # type: ignore[arg-type]
+        planner=_FakePlanner(),
+        max_tool_calls=2,
+        tool_progress_stages={
+            "retrieval_search": [
+                AssistantToolProgressStage(
+                    stage_id="search_index",
+                    label="Search evidence index",
+                    message="Running the configured retrieval strategy.",
+                    progress=55,
+                    event="before_execute",
+                ),
+                AssistantToolProgressStage(
+                    stage_id="package_trace",
+                    label="Package retrieval trace",
+                    message="Preparing evidence trace metadata.",
+                    progress=90,
+                    event="after_execute",
+                ),
+            ]
+        },
+    )
+
+    events = [
+        event
+        async for event in service.chat_stream(
+            message="search HbA1c",
+            owner_user_id="usr_test",
+        )
+    ]
+
+    event_types = [event["type"] for event in events]
+    progress_events = [event for event in events if event["type"] == "tool_progress"]
+    assert len(progress_events) == 2
+    assert progress_events[0]["stage_id"] == "search_index"
+    assert progress_events[0]["progress"] == 55
+    assert progress_events[1]["stage_id"] == "package_trace"
+    assert event_types.index("tool_started") < event_types.index("tool_progress")
+    assert event_types.index("tool_progress") < event_types.index("tool_completed")
+
+
+@pytest.mark.asyncio
+async def test_assistant_recovery_retry_reuses_failed_tool_arguments() -> None:
+    service = AssistantService(
+        _FakeRetrievalToolExecutorWithSpec(),  # type: ignore[arg-type]
+        planner=_FakePlanner(),
+        max_tool_calls=2,
+    )
+
+    events = [
+        event
+        async for event in service.chat_stream(
+            message="Retry the failed tool call.",
+            context={
+                "assistant_recovery": {
+                    "action": "retry_tool",
+                    "tool_name": "retrieval_search",
+                    "arguments": {"query": "HbA1c missing unit", "top_k": 3},
+                    "failed_status": "failed",
+                    "failed_summary": "Prior retrieval failed.",
+                }
+            },
+            owner_user_id="usr_test",
+        )
+    ]
+
+    plan = next(event for event in events if event["type"] == "plan_ready")["plan"]
+    started = next(event for event in events if event["type"] == "tool_started")
+    assert plan["message"] == "Retrying failed assistant tool call: retrieval_search."
+    assert plan["tool_calls"][0]["tool_name"] == "retrieval_search"
+    assert plan["tool_calls"][0]["arguments"] == {
+        "query": "HbA1c missing unit",
+        "top_k": 3,
+    }
+    assert started["tool_call"]["arguments"]["query"] == "HbA1c missing unit"
+
+
+@pytest.mark.asyncio
+async def test_assistant_recovery_continue_does_not_execute_failed_tool() -> None:
+    service = AssistantService(
+        _FakeRetrievalToolExecutorWithSpec(),  # type: ignore[arg-type]
+        planner=_FakePlanner(),
+        max_tool_calls=2,
+    )
+
+    response = await service.chat(
+        message="Continue without retrying.",
+        context={
+            "assistant_recovery": {
+                "action": "continue_after_failure",
+                "failed_tool_calls": [
+                    {
+                        "tool_name": "retrieval_search",
+                        "status": "failed",
+                        "summary": "Prior retrieval failed.",
+                    }
+                ],
+            }
+        },
+        owner_user_id="usr_test",
+    )
+
+    assert response.tool_calls == []
+    assert response.message.startswith("Continuing without retrying retrieval_search.")
+    assert response.warnings == ["Assistant continued without re-running failed tool calls."]
+
+
+def test_assistant_stream_replay_preserves_cancelled_status() -> None:
+    service = AssistantSessionService(InMemoryAssistantSessionRepository())
+    session = service.create_session(owner_user_id="usr_test")
+
+    replay = service.append_stream_replay(
+        owner_user_id="usr_test",
+        session_id=session.session_id,
+        stream_id="astream_cancelled",
+        status="cancelled",
+        events=[
+            {
+                "type": "stream_opened",
+                "created_at": "2026-06-11T00:00:00+00:00",
+            },
+            {
+                "type": "cancelled",
+                "message": "Assistant stream was cancelled by the client.",
+                "created_at": "2026-06-11T00:00:01+00:00",
+            },
+        ],
+    )
+
+    assert replay.status == "cancelled"
+    persisted = service.list_stream_replays(
+        owner_user_id="usr_test",
+        session_id=session.session_id,
+    )
+    assert persisted[0].status == "cancelled"
+    assert persisted[0].events[-1]["type"] == "cancelled"
+
+
+def test_assistant_memory_stores_only_safe_operational_preferences() -> None:
+    service = AssistantMemoryService(
+        InMemoryAssistantMemoryRepository(),
+        policy=load_assistant_memory_policy(ROOT / "knowledge"),
+    )
+
+    preference = service.upsert_preference(
+        owner_user_id="usr_test",
+        key="evidence_detail_level",
+        value="detailed",
+    )
+    snapshot = service.snapshot(owner_user_id="usr_test")
+    context = merge_assistant_memory_context(
+        {"assistant_memory": {"preferences": {"evidence_detail_level": "spoofed"}}},
+        service.assistant_context(owner_user_id="usr_test"),
+    )
+
+    assert preference.value == "detailed"
+    assert snapshot.context == {"evidence_detail_level": "detailed"}
+    assert context["assistant_memory"]["preferences"] == {
+        "evidence_detail_level": "detailed"
+    }
+    assert context["assistant_memory"]["safety"] == (
+        "operational_preferences_only_no_phi_no_uploaded_content"
+    )
+
+    with pytest.raises(OJTFlowError, match="not allowed"):
+        service.upsert_preference(
+            owner_user_id="usr_test",
+            key="patient_id",
+            value="P001",
+        )
+
+    phi_policy = AssistantMemoryPolicy(
+        version="assistant_memory.test",
+        preferences=[
+            AssistantMemoryPreferenceDefinition(
+                key="operator_note",
+                label="Operator note",
+                description="Safe operational note.",
+                value_type="string",
+                max_length=80,
+            )
+        ],
+        rejected_key_terms=["patient"],
+        rejected_value_patterns=[r"\b\d{3}-\d{2}-\d{4}\b"],
+    )
+    phi_service = AssistantMemoryService(
+        InMemoryAssistantMemoryRepository(),
+        policy=phi_policy,
+    )
+    with pytest.raises(OJTFlowError, match="operational preferences"):
+        phi_service.upsert_preference(
+            owner_user_id="usr_test",
+            key="operator_note",
+            value="SSN 123-45-6789",
+        )
+
+
+@pytest.mark.asyncio
 async def test_assistant_service_flags_missing_required_evidence_buckets() -> None:
     service = AssistantService(_FakeRetrievalToolExecutor())  # type: ignore[arg-type]
 
@@ -290,10 +682,19 @@ async def test_assistant_service_flags_missing_required_evidence_buckets() -> No
     assert "required evidence support is missing for Policy" in response.findings[1].detail
     assert response.findings[2].title == "Retrieval remediation"
     assert response.findings[2].detail == "Recover Policy evidence (P20; apply filter 1)"
-    assert response.findings[3].title == "Evidence pack needs attention"
-    assert "Policy" in response.findings[3].detail
-    assert response.findings[4].title == "Recommended search action"
-    assert "Recover Policy evidence" in response.findings[4].detail
+    assert response.findings[3].title == "Healthcare search plan"
+    assert "Primary route: unit_validation" in response.findings[3].detail
+    assert "2 step(s)" in response.findings[3].detail
+    assert response.findings[4].title == "Medical search hints"
+    assert "2 governed follow-up route(s)" in response.findings[4].detail
+    assert "1 launchable" in response.findings[4].detail
+    assert response.findings[5].title == "Source diversity"
+    assert "Selected 2 of 3 candidate source(s)" in response.findings[5].detail
+    assert response.findings[6].title == "Evidence pack needs attention"
+    assert "Policy" in response.findings[6].detail
+    assert response.findings[7].title == "Recommended search action"
+    assert "Recover Policy evidence" in response.findings[7].detail
+    assert response.tool_calls[0].output["standard_search_plan"]["steps"][0]["standard_system"] == "UCUM"
     assert response.suggestions[0] == "Recover Policy evidence: Run a targeted policy evidence search."
     assert response.suggestions[1] == (
         "Next retrieval step: Recover Policy evidence (P20; apply filter 1)"
@@ -315,7 +716,9 @@ async def test_assistant_service_falls_back_when_llm_planning_fails() -> None:
 
     assert response.mode == "deterministic"
     assert response.tool_calls[0].status == "completed"
-    assert response.warnings == ["LLM planning failed: Planner unavailable."]
+    assert response.warnings == [
+        "LLM planning failed: Planner unavailable. (429; quota exceeded)"
+    ]
 
 
 @pytest.mark.asyncio
@@ -355,7 +758,8 @@ def test_assistant_retrieval_tool_forwards_exact_source_filters() -> None:
         def __init__(self) -> None:
             self.query = None
 
-        def search_retrieval(self, query, owner_user_id=None):
+        def search_retrieval(self, query, owner_user_id=None, request_id=None):
+            del owner_user_id, request_id
             self.query = query
             return type(
                 "Package",
@@ -441,6 +845,8 @@ async def test_openai_responses_planner_builds_structured_plan_request(monkeypat
     planner = OpenAIResponsesPlanner(
         api_key="test-key",
         model="chat-latest",
+        planning_model="gpt-4.1-mini",
+        synthesis_model="gpt-4.1",
         base_url="https://api.openai.com/v1",
         timeout_seconds=9.0,
     )
@@ -455,14 +861,58 @@ async def test_openai_responses_planner_builds_structured_plan_request(monkeypat
     assert plan.tool_calls[0].tool_name == "retrieval_search"
     assert captured["url"] == "https://api.openai.com/v1/responses"
     assert captured["headers"]["Authorization"] == "Bearer test-key"
-    assert captured["json"]["model"] == "chat-latest"
+    assert captured["json"]["model"] == "gpt-4.1-mini"
     assert captured["json"]["text"]["format"]["type"] == "json_schema"
+    assert captured["json"]["text"]["format"]["strict"] is True
     tool_call_schema = captured["json"]["text"]["format"]["schema"]["properties"][
         "tool_calls"
     ]["items"]
     assert "arguments_json" in tool_call_schema["properties"]
     assert "arguments" not in tool_call_schema["properties"]
     assert tool_call_schema["additionalProperties"] is False
+    visible_tools = json.loads(captured["json"]["input"][1]["content"][0]["text"])[
+        "available_tools"
+    ]
+    retrieval_schema = next(
+        tool["input_schema"] for tool in visible_tools if tool["name"] == "retrieval_search"
+    )
+    assert retrieval_schema["additionalProperties"] is False
+    assert set(retrieval_schema["required"]) == set(retrieval_schema["properties"])
+    assert retrieval_schema["properties"]["query"]["type"] == "string"
+    assert "null" in retrieval_schema["properties"]["schema_id"]["type"]
+    assert "null" in retrieval_schema["properties"]["fields"]["type"]
+
+
+def test_openai_responses_stream_parser_handles_current_events() -> None:
+    delta_line = 'data: {"type":"response.output_text.delta","delta":"{\\"message\\""}'
+    done_line = 'data: {"type":"response.output_text.done","text":"{\\"message\\":\\"ok\\"}"}'
+    failed_line = (
+        'data: {"type":"response.failed","response":{"status":"failed",'
+        '"error":{"code":"server_error","message":"The model failed."}}}'
+    )
+    incomplete_line = (
+        'data: {"type":"response.incomplete","response":{"status":"incomplete",'
+        '"incomplete_details":{"reason":"max_output_tokens"}}}'
+    )
+
+    assert _stream_delta_from_line(delta_line) == '{"message"'
+    done_event = _stream_event_from_line(done_line)
+    assert done_event is not None
+    assert _stream_final_text_from_event(done_event) == '{"message":"ok"}'
+
+    failed = _stream_failure_from_event(_stream_event_from_line(failed_line) or {})
+    assert failed == {
+        "event_type": "response.failed",
+        "status": "failed",
+        "error_code": "server_error",
+        "message": "The model failed.",
+    }
+    incomplete = _stream_failure_from_event(_stream_event_from_line(incomplete_line) or {})
+    assert incomplete == {
+        "event_type": "response.incomplete",
+        "status": "incomplete",
+        "incomplete_reason": "max_output_tokens",
+    }
 
 
 @pytest.mark.asyncio
@@ -503,7 +953,9 @@ async def test_openai_responses_planner_synthesizes_answer_from_tool_results(
     )
     planner = OpenAIResponsesPlanner(
         api_key="test-key",
-        model="gpt-5-mini",
+        model="chat-latest",
+        planning_model="gpt-4.1-mini",
+        synthesis_model="gpt-5-mini",
         base_url="https://api.openai.com/v1",
         timeout_seconds=9.0,
     )

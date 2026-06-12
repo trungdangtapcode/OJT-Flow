@@ -1,0 +1,116 @@
+{
+  "version": "graph_conflict_rules.v1",
+  "contradiction_rules": [
+    {
+      "rule_id": "required_vs_not_required",
+      "label": "Required versus not-required guidance",
+      "severity": "warning",
+      "aspect_terms": [
+        "date",
+        "patient",
+        "patient_id",
+        "identifier",
+        "code",
+        "unit",
+        "value",
+        "observation",
+        "lab",
+        "result"
+      ],
+      "positive_patterns": [
+        "must include",
+        "must have",
+        "is required",
+        "are required",
+        "requires",
+        "require",
+        "mandatory"
+      ],
+      "negative_patterns": [
+        "does not require",
+        "do not require",
+        "not required",
+        "is optional",
+        "are optional",
+        "may omit",
+        "can omit"
+      ],
+      "message_template": "Retrieved evidence contains contradictory guidance about {aspect}.",
+      "suggested_action": "Route this evidence set to human review and prefer the current authoritative source version before applying guidance."
+    },
+    {
+      "rule_id": "allowed_vs_prohibited",
+      "label": "Allowed versus prohibited guidance",
+      "severity": "warning",
+      "aspect_terms": [
+        "patient identifier",
+        "phi",
+        "ssn",
+        "diagnosis",
+        "medication",
+        "export",
+        "sharing",
+        "external provider"
+      ],
+      "positive_patterns": [
+        "allowed",
+        "may include",
+        "can include",
+        "permitted",
+        "approved"
+      ],
+      "negative_patterns": [
+        "not allowed",
+        "must not",
+        "prohibited",
+        "blocked",
+        "requires redaction",
+        "remove before export"
+      ],
+      "message_template": "Retrieved evidence contains conflicting allow/block guidance about {aspect}.",
+      "suggested_action": "Keep the action review-gated and resolve the policy conflict before export or external-provider handoff."
+    }
+  ],
+  "deprecated_mapping": {
+    "severity": "warning",
+    "source_version_markers": [
+      "deprecated",
+      "retired",
+      "inactive",
+      "obsolete",
+      "superseded"
+    ],
+    "lifecycle_states": [
+      "deprecated",
+      "blocked",
+      "failed"
+    ],
+    "reviewer_states": [
+      "deprecated",
+      "blocked",
+      "failed",
+      "needs_review"
+    ],
+    "message_template": "Terminology or standard mapping evidence comes from a deprecated, blocked, failed, or review-required source.",
+    "suggested_action": "Refresh the source, verify the mapping against the current official release, and keep downstream coding review-gated."
+  },
+  "version_mismatch": {
+    "severity": "warning",
+    "group_locator_keys": [
+      "standard_system",
+      "resource"
+    ],
+    "ignore_versions": [
+      "",
+      "unknown",
+      "n/a"
+    ],
+    "message_template": "Retrieved standard guidance for {group_key} spans multiple source versions: {versions}.",
+    "suggested_action": "Prefer the configured current source version, refresh stale chunks, or split the answer by source version."
+  },
+  "unit_conflict": {
+    "severity": "warning",
+    "message_template": "Retrieved evidence links {concept} to multiple unit candidates: {units}.",
+    "suggested_action": "Normalize units with an approved UCUM conversion path before merging or comparing values."
+  }
+}

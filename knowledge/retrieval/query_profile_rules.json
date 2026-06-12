@@ -48,10 +48,6 @@
           "medication_normalization",
           "regulatory_drug_safety_search"
         ],
-        "any_standards": [
-          "RxNorm",
-          "openFDA"
-        ],
         "any_candidate_domains": [
           "medication"
         ],
@@ -60,6 +56,111 @@
           "drug",
           "adverse",
           "boxed_warning"
+        ]
+      }
+    },
+    {
+      "rule_id": "profile_condition_problem_list_grounding",
+      "profile_id": "condition_problem_list_grounding",
+      "label": "Condition and diagnosis grounding",
+      "route": "clinical_problem_list_grounding",
+      "complexity": "high",
+      "retrieval_mode": "hybrid_with_standard_coverage",
+      "description": "Use when the query is about diagnosis fields, problem-list records, FHIR Condition, ICD-10-CM, or SNOMED CT grounding.",
+      "priority": 9,
+      "suggested_filters": {
+        "clinical_domain": "problem_list",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "fhir_condition_profile",
+          "condition_terminology_coding",
+          "type_2_diabetes_icd10cm_seed",
+          "essential_hypertension_icd10cm_seed"
+        ],
+        "any_standards": [
+          "ICD-10-CM"
+        ],
+        "any_candidate_domains": [
+          "problem_list"
+        ],
+        "any_tokens": [
+          "diagnosis",
+          "diagnoses",
+          "condition",
+          "icd"
+        ]
+      }
+    },
+    {
+      "rule_id": "profile_allergy_intolerance_grounding",
+      "profile_id": "allergy_intolerance_grounding",
+      "label": "Allergy and intolerance grounding",
+      "route": "clinical_allergy_grounding",
+      "complexity": "high",
+      "retrieval_mode": "hybrid_with_standard_coverage",
+      "description": "Use when the query is about allergies, intolerances, adverse reactions, FHIR AllergyIntolerance, reaction substances, or manifestation fields.",
+      "priority": 7,
+      "suggested_filters": {
+        "clinical_domain": "allergy",
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed",
+          "latex_allergy_seed"
+        ],
+        "any_candidate_domains": [
+          "allergy"
+        ],
+        "any_tokens": [
+          "allergy",
+          "allergies",
+          "intolerance",
+          "reaction",
+          "manifestation"
+        ]
+      }
+    },
+    {
+      "rule_id": "profile_vital_signs_standardization",
+      "profile_id": "vital_signs_standardization",
+      "label": "Vital signs standardization",
+      "route": "clinical_vitals_grounding",
+      "complexity": "moderate",
+      "retrieval_mode": "hybrid_with_standard_coverage",
+      "description": "Use when the query is about blood pressure, vital signs, or LOINC/FHIR Observation grounding for vitals.",
+      "priority": 8,
+      "suggested_filters": {
+        "trust_level": "approved"
+      },
+      "match": {
+        "any_concepts": [
+          "vital_sign_observation",
+          "vital_sign_blood_pressure",
+          "vital_sign_heart_rate",
+          "vital_sign_oxygen_saturation",
+          "vital_sign_body_temperature",
+          "systolic_blood_pressure",
+          "diastolic_blood_pressure",
+          "heart_rate",
+          "oxygen_saturation_pulse_oximetry",
+          "body_temperature"
+        ],
+        "any_candidate_domains": [
+          "vital_signs"
+        ],
+        "any_tokens": [
+          "bp",
+          "htn",
+          "sbp",
+          "dbp",
+          "vitals",
+          "pulse",
+          "spo2",
+          "temperature"
         ]
       }
     },

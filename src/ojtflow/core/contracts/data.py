@@ -9,6 +9,7 @@ from pydantic import Field
 from ojtflow.core.contracts.base import ContractModel
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.issue import Issue
+from ojtflow.core.contracts.phi import PhiClassification
 from ojtflow.core.ids import new_id
 
 
@@ -52,6 +53,7 @@ class DataProfile(ContractModel):
     row_count: int
     column_count: int
     fields: list[FieldProfile] = Field(default_factory=list)
+    phi_classification: PhiClassification | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -64,6 +66,7 @@ class ValidationReport(ContractModel):
     schema_confidence: float | None = None
     severity_summary: dict[str, int] = Field(default_factory=dict)
     issues: list[Issue] = Field(default_factory=list)
+    phi_classification: PhiClassification | None = None
     requires_review: bool = False
 
 
@@ -96,6 +99,7 @@ class TransformationOutput(ContractModel):
     output_ref: str | None = None
     output_hash: str | None = None
     preview: str | None = None
+    phi_classification: PhiClassification | None = None
     diff_summary: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
@@ -112,4 +116,3 @@ class ExplanationReport(ContractModel):
     data_quality_flags: list[str] = Field(default_factory=list)
     uncertainty: dict[str, Any] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list)
-

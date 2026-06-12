@@ -81,6 +81,78 @@
       }
     },
     {
+      "concept_id": "systolic_blood_pressure",
+      "display_name": "Systolic blood pressure",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8480-6",
+      "source": "https://loinc.org/8480-6",
+      "aliases": ["systolic blood pressure", "sbp", "bp systolic", "sys bp", "bp sys"],
+      "metadata": {
+        "loinc_long_common_name": "Systolic blood pressure",
+        "preferred_units": ["mm[Hg]"]
+      }
+    },
+    {
+      "concept_id": "diastolic_blood_pressure",
+      "display_name": "Diastolic blood pressure",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8462-4",
+      "source": "https://loinc.org/8462-4",
+      "aliases": ["diastolic blood pressure", "dbp", "bp diastolic", "dia bp", "bp dia"],
+      "metadata": {
+        "loinc_long_common_name": "Diastolic blood pressure",
+        "preferred_units": ["mm[Hg]"]
+      }
+    },
+    {
+      "concept_id": "heart_rate",
+      "display_name": "Heart rate",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8867-4",
+      "source": "https://loinc.org/8867-4",
+      "aliases": ["heart rate", "pulse", "pulse rate", "hr", "bpm"],
+      "metadata": {
+        "loinc_long_common_name": "Heart rate",
+        "preferred_units": ["/min", "beats/min"]
+      }
+    },
+    {
+      "concept_id": "oxygen_saturation_pulse_oximetry",
+      "display_name": "Oxygen saturation by pulse oximetry",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "59408-5",
+      "source": "https://loinc.org/59408-5",
+      "aliases": [
+        "oxygen saturation",
+        "spo2",
+        "o2 sat",
+        "pulse ox",
+        "pulse oximetry",
+        "sao2"
+      ],
+      "metadata": {
+        "loinc_long_common_name": "Oxygen saturation in Arterial blood by Pulse oximetry",
+        "preferred_units": ["%"]
+      }
+    },
+    {
+      "concept_id": "body_temperature",
+      "display_name": "Body temperature",
+      "clinical_domain": "vital_signs",
+      "standard_system": "LOINC",
+      "code": "8310-5",
+      "source": "https://loinc.org/8310-5",
+      "aliases": ["body temperature", "temperature", "temp", "fever"],
+      "metadata": {
+        "loinc_long_common_name": "Body temperature",
+        "preferred_units": ["Cel", "[degF]"]
+      }
+    },
+    {
       "concept_id": "metformin_medication",
       "display_name": "Metformin",
       "clinical_domain": "medication",
@@ -112,9 +184,119 @@
       "standard_system": "MeSH",
       "code": "D006973",
       "source": "https://www.ncbi.nlm.nih.gov/mesh?Cmd=DetailsSearch&Db=mesh&Term=%22Hypertension%22%5BMeSH+Terms%5D",
-      "aliases": ["hypertension", "high blood pressure", "blood pressure high"],
+      "aliases": ["hypertension", "high blood pressure", "blood pressure high", "htn", "bp"],
       "metadata": {
         "identifier_type": "MeSH Descriptor UI"
+      }
+    },
+    {
+      "concept_id": "type_2_diabetes_icd10cm_seed",
+      "display_name": "Type 2 diabetes mellitus diagnosis",
+      "clinical_domain": "problem_list",
+      "standard_system": "ICD-10-CM",
+      "code": "E11.9",
+      "source": "https://www.cdc.gov/nchs/icd/icd-10-cm/index.html",
+      "aliases": [
+        "type 2 diabetes",
+        "type ii diabetes",
+        "t2dm",
+        "diabetes diagnosis",
+        "diabetes problem"
+      ],
+      "metadata": {
+        "coding_system_scope": "diagnosis coding seed",
+        "review_note": "Use as retrieval grounding only; final ICD-10-CM assignment requires coder or clinician review."
+      }
+    },
+    {
+      "concept_id": "type_2_diabetes_snomed_seed",
+      "display_name": "Type 2 diabetes mellitus",
+      "clinical_domain": "problem_list",
+      "standard_system": "SNOMED CT",
+      "code": "44054006",
+      "source": "https://browser.ihtsdotools.org/",
+      "aliases": [
+        "type 2 diabetes",
+        "type ii diabetes",
+        "t2dm",
+        "diabetes mellitus type 2",
+        "type 2 diabetes mellitus",
+        "diabetes diagnosis",
+        "diabetes problem"
+      ],
+      "metadata": {
+        "coding_system_scope": "clinical finding seed",
+        "implementation_status": "placeholder_contract",
+        "license_note": "SNOMED CT access and use depend on deployment jurisdiction and license; verify before production use.",
+        "review_note": "Use as retrieval grounding only; final SNOMED CT assignment requires licensed lookup and clinician or coder review."
+      }
+    },
+    {
+      "concept_id": "essential_hypertension_icd10cm_seed",
+      "display_name": "Essential hypertension diagnosis",
+      "clinical_domain": "problem_list",
+      "standard_system": "ICD-10-CM",
+      "code": "I10",
+      "source": "https://www.cdc.gov/nchs/icd/icd-10-cm/index.html",
+      "aliases": [
+        "essential hypertension",
+        "primary hypertension",
+        "hypertension diagnosis",
+        "hypertension problem"
+      ],
+      "metadata": {
+        "coding_system_scope": "diagnosis coding seed",
+        "review_note": "Use as retrieval grounding only; final ICD-10-CM assignment requires coder or clinician review."
+      }
+    },
+    {
+      "concept_id": "penicillin_allergy_seed",
+      "display_name": "Penicillin allergy",
+      "clinical_domain": "allergy",
+      "standard_system": "RxNorm",
+      "code": "70618",
+      "source": "https://rxnav.nlm.nih.gov/REST/rxcui/70618/allrelated",
+      "aliases": [
+        "penicillin allergy",
+        "pcn allergy",
+        "penicillin reaction",
+        "penicillin intolerance",
+        "allergy to penicillin"
+      ],
+      "metadata": {
+        "coding_system_scope": "ingredient-level allergy substance seed",
+        "review_note": "Use as retrieval grounding only; final allergy status and severity require clinician review."
+      }
+    },
+    {
+      "concept_id": "colonoscopy_procedure_seed",
+      "display_name": "Colonoscopy",
+      "clinical_domain": "procedure",
+      "standard_system": "SNOMED CT",
+      "code": "73761001",
+      "source": "https://browser.ihtsdotools.org/",
+      "aliases": ["colonoscopy", "colonoscopic procedure", "lower endoscopy"],
+      "metadata": {
+        "coding_system_scope": "procedure seed",
+        "review_note": "Use as retrieval grounding only; final procedure coding requires coder or clinician review."
+      }
+    },
+    {
+      "concept_id": "latex_allergy_seed",
+      "display_name": "Latex allergy",
+      "clinical_domain": "allergy",
+      "standard_system": "SNOMED CT",
+      "code": "300916003",
+      "source": "https://browser.ihtsdotools.org/",
+      "aliases": [
+        "latex allergy",
+        "latex reaction",
+        "allergy to latex",
+        "latex sensitivity"
+      ],
+      "metadata": {
+        "coding_system_scope": "clinical finding seed",
+        "review_note": "Use as retrieval grounding only; final allergy status and severity require clinician review."
       }
     },
     {

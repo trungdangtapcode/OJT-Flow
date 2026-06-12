@@ -1,0 +1,72 @@
+{
+  "dashboard_id": "ojtflow_observability_dashboard_v0",
+  "version": "2026-06-11",
+  "intended_audience": "platform operators, data stewards, support engineers, and enterprise evaluators",
+  "panels": [
+    {
+      "panel_id": "api_health",
+      "title": "API Health And Latency",
+      "signals": ["request_count", "error_count", "p50_latency_ms", "p95_latency_ms", "status_code_distribution"],
+      "source": "FastAPI middleware, reverse proxy, or OpenTelemetry HTTP server spans",
+      "alert_thresholds": ["p95 latency above budget for 10 minutes", "5xx error ratio above 1% for 5 minutes"],
+      "notes": ["Request IDs must be available for trace correlation."]
+    },
+    {
+      "panel_id": "workflow_throughput",
+      "title": "Workflow Throughput",
+      "signals": ["workflows_created", "workflows_completed", "workflows_failed", "review_gated_count", "average_step_duration_ms"],
+      "source": "workflow repository, workflow steps, workflow events",
+      "alert_thresholds": ["failed workflow ratio above 2%", "review queue growth exceeds configured threshold"],
+      "notes": ["Step metrics should separate parser, retrieval, validation, transform, and review gates."]
+    },
+    {
+      "panel_id": "assistant_streaming",
+      "title": "Assistant Streaming",
+      "signals": ["chat_requests", "first_event_latency_ms", "tool_call_count", "tool_error_count", "cancelled_streams", "llm_provider_errors"],
+      "source": "assistant stream replay artifacts, tool audit records, LLM adapter diagnostics",
+      "alert_thresholds": ["first event p95 above budget", "tool error ratio above 2%", "LLM provider unavailable"],
+      "notes": ["External LLM cost and first-token latency must be separated from deterministic local mode."]
+    },
+    {
+      "panel_id": "retrieval_quality",
+      "title": "Retrieval Quality And Freshness",
+      "signals": ["recall_at_k", "mrr", "ndcg_at_k", "unsupported_claim_rate", "source_diversity", "stale_source_count"],
+      "source": "retrieval evaluation reports, retrieval traces, source inventory",
+      "alert_thresholds": ["retrieval eval below configured gates", "stale approved sources above threshold"],
+      "notes": ["Quality metrics should be trended by domain and source family."]
+    },
+    {
+      "panel_id": "background_jobs",
+      "title": "Background Jobs",
+      "signals": ["queued_jobs", "running_jobs", "failed_jobs", "cancelled_jobs", "job_duration_p95_ms"],
+      "source": "background job repository",
+      "alert_thresholds": ["queue depth grows for 15 minutes", "job failure ratio above 2%"],
+      "notes": ["Queue-backed mode should add worker heartbeat and retry counters."]
+    },
+    {
+      "panel_id": "governance_security",
+      "title": "Governance And Security",
+      "signals": ["auth_failures", "rate_limited_requests", "external_provider_blocks", "phi_redaction_matches", "audit_hash_chain_failures"],
+      "source": "auth repository, rate limiter, external provider policy, PHI policy, audit records",
+      "alert_thresholds": ["audit hash chain failure", "unexpected PHI external-provider block spike"],
+      "notes": ["Security alerts must avoid raw PHI in labels, logs, and dashboards."]
+    },
+    {
+      "panel_id": "llm_cost",
+      "title": "LLM And OCR Cost",
+      "signals": ["llm_request_count", "vision_ocr_request_count", "embedding_request_count", "estimated_token_count", "cost_control_blocks"],
+      "source": "external provider policy, LLM/OCR/embedding adapters, abuse/cost policy",
+      "alert_thresholds": ["cost-control block spike", "daily estimated cost over budget"],
+      "notes": ["Cost estimates are operational estimates, not billing-system truth."]
+    }
+  ],
+  "missing_instrumentation": [
+    "OpenTelemetry span export is not wired yet.",
+    "Production metrics backend and dashboard renderer are deployment-specific.",
+    "Sustained worker queue metrics require queue-backed job runner mode."
+  ],
+  "warnings": [
+    "This catalog defines the dashboard contract and required signals; it does not create a hosted dashboard.",
+    "Dashboard labels must never include raw PHI."
+  ]
+}

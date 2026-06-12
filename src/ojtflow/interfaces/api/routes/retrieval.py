@@ -4,27 +4,92 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
+from ojtflow.application.governance_service import GovernanceService
+from ojtflow.application.document_intake_service import DocumentIntakeService
+from ojtflow.application.retrieval_reindex_safety import (
+    build_embedding_reindex_safety_report,
+)
+from ojtflow.application.retrieval_active_learning_service import (
+    RetrievalActiveLearningService,
+)
 from ojtflow.application.retrieval_judgment_service import RetrievalJudgmentService
 from ojtflow.application.workflow_service import WorkflowService
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
-from ojtflow.core.contracts.base import NonBlankStr
-from ojtflow.core.contracts.retrieval import RetrievalQuery
+from ojtflow.core.contracts.base import ContractModel, NonBlankStr
+from ojtflow.core.contracts.enums import DataFormat
+from ojtflow.core.contracts.graph import (
+    GraphContextRecord,
+    GraphExport,
+    GraphExportFormat,
+    GraphNeighborhood,
+    GraphNeighborhoodQuery,
+)
+from ojtflow.core.contracts.governance import WorkspaceDetail
+from ojtflow.core.contracts.retrieval import (
+    CorpusAdapterCatalog,
+    CorpusChunkingProfileCatalog,
+    CorpusIngestionLedger,
+    CorpusIngestionManifest,
+    CorpusPartitionCatalog,
+    EmbeddingReindexSafetyReport,
+    PrivateCorpusIngestionResult,
+    RetrievalActiveLearningCandidate,
+    RetrievalActiveLearningCandidateUpdate,
+    RetrievalActiveLearningCandidateWrite,
+    RetrievalActiveLearningPriority,
+    RetrievalActiveLearningSourceKind,
+    RetrievalActiveLearningStatus,
+    RetrievalActiveLearningSummary,
+    RetrievalIndexManifest,
+    RetrievalFreshnessReport,
+    RetrievalJudgmentEvaluationResult,
+    RetrievalIntegrityReport,
+    RetrievalPackage,
+    RetrievalPlan,
+    RetrievalQuery,
+    RetrievalRelevanceJudgment,
+    RetrievalRelevanceJudgmentSummary,
+    RetrievalSearchOptions,
+    RetrievalSearchPreset,
+    RetrievalSource,
+    RetrievalSourceTrustPolicyCatalog,
+    RetrievalStrategyCatalog,
+)
+from ojtflow.core.errors import ToolExecutionError
+from ojtflow.infrastructure.retrieval.catalogs import (
+    load_corpus_adapter_catalog,
+    load_corpus_chunking_profile_catalog,
+    load_corpus_partition_catalog,
+    load_retrieval_strategy_catalog,
+    load_source_trust_policy_catalog,
+)
+from ojtflow.infrastructure.retrieval.corpus import (
+    build_corpus_ingestion_ledger,
+    build_corpus_ingestion_manifest,
+)
+from ojtflow.infrastructure.retrieval.freshness import build_retrieval_freshness_report
 from ojtflow.infrastructure.retrieval.presets import (
     load_retrieval_search_options,
     load_retrieval_search_presets,
 )
 from ojtflow.interfaces.api.deps import (
     get_api_settings,
+    get_document_intake_service,
+    get_governance_service,
+    get_retrieval_active_learning_service,
     get_retrieval_judgment_service,
     get_workflow_service,
     require_authentication,
 )
-from ojtflow.interfaces.api.limits import enforce_inline_json_limit
+from ojtflow.interfaces.api.limits import enforce_inline_json_limit, enforce_inline_text_limit
 from ojtflow.interfaces.api.responses import ok
 from ojtflow.interfaces.api.schemas import (
+    PrivateCorpusIngestRequest,
+    RetrievalActiveLearningCandidateRequest,
+    RetrievalActiveLearningCandidateUpdateRequest,
     RetrievalJudgmentEvaluationRequest,
     RetrievalJudgmentRequest,
     RetrievalReindexRequest,
@@ -34,63 +99,555 @@ from ojtflow.interfaces.api.schemas import (
 router = APIRouter(tags=["retrieval"])
 
 
-@router.post("/retrieval/search")
-async def search_retrieval(
+class RetrievalPlanEnvelope(ContractModel):
+    data: RetrievalPlan
+    error: None = None
+
+
+class RetrievalPackageEnvelope(ContractModel):
+    data: RetrievalPackage
+    error: None = None
+
+
+class PrivateCorpusIngestionEnvelope(ContractModel):
+    data: PrivateCorpusIngestionResult
+    error: None = None
+
+
+class RetrievalPresetsEnvelope(ContractModel):
+    data: list[RetrievalSearchPreset]
+    error: None = None
+
+
+class RetrievalSearchOptionsEnvelope(ContractModel):
+    data: RetrievalSearchOptions
+    error: None = None
+
+
+class RetrievalSourcePoliciesEnvelope(ContractModel):
+    data: RetrievalSourceTrustPolicyCatalog
+    error: None = None
+
+
+class RetrievalCorpusAdaptersEnvelope(ContractModel):
+    data: CorpusAdapterCatalog
+    error: None = None
+
+
+class RetrievalCorpusPartitionsEnvelope(ContractModel):
+    data: CorpusPartitionCatalog
+    error: None = None
+
+
+class RetrievalCorpusManifestEnvelope(ContractModel):
+    data: CorpusIngestionManifest
+    error: None = None
+
+
+class RetrievalCorpusLedgerEnvelope(ContractModel):
+    data: CorpusIngestionLedger
+    error: None = None
+
+
+class RetrievalCorpusChunkingProfilesEnvelope(ContractModel):
+    data: CorpusChunkingProfileCatalog
+    error: None = None
+
+
+class RetrievalStrategiesEnvelope(ContractModel):
+    data: RetrievalStrategyCatalog
+    error: None = None
+
+
+class RetrievalSourcesEnvelope(ContractModel):
+    data: list[RetrievalSource]
+    error: None = None
+
+
+class RetrievalReindexResult(ContractModel):
+    repository: NonBlankStr
+    include_seeded: bool
+    include_corpus: bool
+    chunks_indexed: int
+    embedding: dict[str, Any] | None = None
+    embedding_generation_id: str | None = None
+    framework: dict[str, Any] | None = None
+    corpus: dict[str, Any] | None = None
+
+
+class RetrievalReindexEnvelope(ContractModel):
+    data: RetrievalReindexResult
+    error: None = None
+
+
+class RetrievalIntegrityEnvelope(ContractModel):
+    data: RetrievalIntegrityReport
+    error: None = None
+
+
+class RetrievalIndexManifestEnvelope(ContractModel):
+    data: RetrievalIndexManifest
+    error: None = None
+
+
+class EmbeddingReindexSafetyReportEnvelope(ContractModel):
+    data: EmbeddingReindexSafetyReport
+    error: None = None
+
+
+class RetrievalFreshnessEnvelope(ContractModel):
+    data: RetrievalFreshnessReport
+    error: None = None
+
+
+class RetrievalGraphContextsEnvelope(ContractModel):
+    data: list[GraphContextRecord]
+    error: None = None
+
+
+class RetrievalGraphExportEnvelope(ContractModel):
+    data: GraphExport
+    error: None = None
+
+
+class RetrievalGraphNeighborhoodEnvelope(ContractModel):
+    data: GraphNeighborhood
+    error: None = None
+
+
+class RetrievalJudgmentsEnvelope(ContractModel):
+    data: list[RetrievalRelevanceJudgment]
+    error: None = None
+
+
+class RetrievalJudgmentSummaryEnvelope(ContractModel):
+    data: RetrievalRelevanceJudgmentSummary
+    error: None = None
+
+
+class RetrievalJudgmentEvaluationEnvelope(ContractModel):
+    data: RetrievalJudgmentEvaluationResult
+    error: None = None
+
+
+class RetrievalJudgmentEnvelope(ContractModel):
+    data: RetrievalRelevanceJudgment
+    error: None = None
+
+
+class RetrievalJudgmentDeleteResult(ContractModel):
+    deleted: bool
+    judgment_id: NonBlankStr
+
+
+class RetrievalJudgmentDeleteEnvelope(ContractModel):
+    data: RetrievalJudgmentDeleteResult
+    error: None = None
+
+
+class RetrievalActiveLearningCandidatesEnvelope(ContractModel):
+    data: list[RetrievalActiveLearningCandidate]
+    error: None = None
+
+
+class RetrievalActiveLearningCandidateEnvelope(ContractModel):
+    data: RetrievalActiveLearningCandidate
+    error: None = None
+
+
+class RetrievalActiveLearningSummaryEnvelope(ContractModel):
+    data: RetrievalActiveLearningSummary
+    error: None = None
+
+
+@router.post("/retrieval/plan", response_model=RetrievalPlanEnvelope)
+async def plan_retrieval(
     request: RetrievalSearchRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    enforce_inline_json_limit(request, settings, field_name="retrieval_request")
-    filters = {
-        **request.filters.model_dump(exclude_none=True, mode="json"),
-        **{
-            key: value
-            for key, value in {
-                "clinical_domain": request.clinical_domain,
-                "standard_system": request.standard_system,
-                "trust_level": request.trust_level,
-                "source_type": request.source_type,
-            }.items()
-            if value
-        },
-    }
-    filters = {key: _filter_value(value) for key, value in filters.items()}
-    package = service.search_retrieval(
-        RetrievalQuery(
-            query=request.query,
-            workflow_id=request.workflow_id,
-            fields=request.fields,
-            schema_id=request.schema_id,
-            detected_format=request.detected_format,
-            resource_type=request.resource_type,
-            top_k=request.top_k,
-            filters=filters,
-        ),
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="retrieval:read",
+    )
+    enforce_inline_json_limit(request, settings, field_name="retrieval_plan_request")
+    plan = service.plan_retrieval(
+        _retrieval_query_from_request(request, workspace=workspace),
         owner_user_id=authenticated.user.user_id,
+    )
+    return ok(plan)
+
+
+@router.post("/retrieval/search", response_model=RetrievalPackageEnvelope)
+async def search_retrieval(
+    request: RetrievalSearchRequest,
+    http_request: Request,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="retrieval:read",
+    )
+    enforce_inline_json_limit(request, settings, field_name="retrieval_request")
+    package = service.search_retrieval(
+        _retrieval_query_from_request(request, workspace=workspace),
+        owner_user_id=authenticated.user.user_id,
+        request_id=getattr(http_request.state, "request_id", None),
     )
     return ok(package)
 
 
-@router.get("/retrieval/presets")
-async def list_retrieval_presets(
+@router.post(
+    "/retrieval/private-corpus/ingest",
+    response_model=PrivateCorpusIngestionEnvelope,
+)
+async def ingest_private_corpus(
+    request: PrivateCorpusIngestRequest,
+    http_request: Request,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="data:profile",
+    )
+    payload = _private_corpus_payload(
+        request,
+        intake=intake,
+        owner_user_id=authenticated.user.user_id,
+    )
+    if request.data is not None:
+        enforce_inline_text_limit(
+            payload["text"],
+            settings,
+            field_name="private_corpus_data",
+        )
+    return ok(
+        service.ingest_private_corpus_document(
+            owner_user_id=authenticated.user.user_id,
+            organization_id=(
+                _workspace_organization_id(workspace) or authenticated.user.user_id
+            ),
+            title=str(payload["title"]),
+            text=str(payload["text"]),
+            input_format=payload["input_format"],
+            redaction_action=request.redaction_action,
+            retention_policy=payload["retention_policy"],
+            source_ref=payload["source_ref"],
+            artifact_id=payload["artifact_id"],
+            request_id=getattr(http_request.state, "request_id", None),
+        )
+    )
+
+
+@router.get("/retrieval/graph/contexts", response_model=RetrievalGraphContextsEnvelope)
+async def list_retrieval_graph_contexts(
+    workflow_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        service.list_graph_contexts(
+            owner_user_id=authenticated.user.user_id,
+            workflow_id=_optional_query_value(workflow_id),
+            limit=limit,
+        )
+    )
+
+
+@router.get("/retrieval/graph/export", response_model=RetrievalGraphExportEnvelope)
+async def export_retrieval_graph_contexts(
+    workflow_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    export_format: GraphExportFormat = Query(default="jsonl", alias="format"),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        service.export_graph_contexts(
+            owner_user_id=authenticated.user.user_id,
+            workflow_id=_optional_query_value(workflow_id),
+            limit=limit,
+            export_format=export_format,
+        )
+    )
+
+
+@router.get("/retrieval/graph/neighborhood", response_model=RetrievalGraphNeighborhoodEnvelope)
+async def get_retrieval_graph_neighborhood(
+    workflow_id: str | None = None,
+    q: str | None = None,
+    node_id: str | None = None,
+    evidence_id: str | None = None,
+    source_id: str | None = None,
+    normalized_code: str | None = None,
+    resource_type: str | None = None,
+    field: str | None = None,
+    relation: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    max_depth: int = Query(default=1, ge=0, le=2),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        service.graph_neighborhood(
+            owner_user_id=authenticated.user.user_id,
+            query=GraphNeighborhoodQuery(
+                workflow_id=_optional_query_value(workflow_id),
+                q=_optional_query_value(q),
+                node_id=_optional_query_value(node_id),
+                evidence_id=_optional_query_value(evidence_id),
+                source_id=_optional_query_value(source_id),
+                normalized_code=_optional_query_value(normalized_code),
+                resource_type=_optional_query_value(resource_type),
+                field=_optional_query_value(field),
+                relation=_optional_query_value(relation),
+                limit=limit,
+                max_depth=max_depth,
+            ),
+        )
+    )
+
+
+def _retrieval_query_from_request(
+    request: RetrievalSearchRequest,
+    *,
+    workspace: WorkspaceDetail | None = None,
+) -> RetrievalQuery:
+    filters = request.filters.model_dump(exclude_none=True, mode="json")
+    shortcut_filters = {
+        key: value
+        for key, value in {
+            "clinical_domain": request.clinical_domain,
+            "standard_system": request.standard_system,
+            "source_type": request.source_type,
+        }.items()
+        if value
+    }
+    if request.trust_level and _should_apply_default_trust_level(request, filters):
+        shortcut_filters.setdefault("trust_level", request.trust_level)
+    filters = {**shortcut_filters, **filters}
+    filters = {key: _filter_value(value) for key, value in filters.items()}
+    if workspace is not None:
+        filters["organization_id"] = workspace.organization.organization_id
+    return RetrievalQuery(
+        query=request.query,
+        workflow_id=request.workflow_id,
+        fields=request.fields,
+        schema_id=request.schema_id,
+        detected_format=request.detected_format,
+        resource_type=request.resource_type,
+        top_k=request.top_k,
+        filters=filters,
+    )
+
+
+def _should_apply_default_trust_level(
+    request: RetrievalSearchRequest,
+    filters: dict[str, Any],
+) -> bool:
+    """Keep approved-only default except for explicit private corpus searches."""
+
+    explicit_fields = getattr(request, "model_fields_set", set())
+    if "trust_level" in explicit_fields or "trust_level" in filters:
+        return True
+    return filters.get("corpus_partition") != "private_documents"
+
+
+def _private_corpus_payload(
+    request: PrivateCorpusIngestRequest,
+    *,
+    intake: DocumentIntakeService,
+    owner_user_id: str,
+) -> dict[str, Any]:
+    if request.data is not None and request.artifact_id is not None:
+        raise ToolExecutionError("Provide either data or artifact_id, not both.")
+    if request.data is not None:
+        text = request.data.strip()
+        if not text:
+            raise ToolExecutionError("Private corpus data cannot be blank.")
+        return {
+            "text": text,
+            "title": request.title or "Private corpus document",
+            "source_ref": request.source_ref,
+            "artifact_id": None,
+            "retention_policy": None,
+            "input_format": request.input_format,
+        }
+    if request.artifact_id is None:
+        raise ToolExecutionError("Private corpus ingestion requires data or artifact_id.")
+
+    artifact = intake.get_artifact(
+        owner_user_id=owner_user_id,
+        artifact_id=request.artifact_id,
+    )
+    traces = intake.list_traces(
+        owner_user_id=owner_user_id,
+        artifact_id=artifact.artifact_id,
+    )
+    trace = next(
+        (
+            item
+            for item in sorted(
+                traces,
+                key=lambda value: value.completed_at or value.started_at,
+                reverse=True,
+            )
+            if item.text_storage_ref
+        ),
+        None,
+    )
+    if trace is None:
+        raise ToolExecutionError(
+            "Uploaded artifact has no extracted text trace to ingest.",
+            details={"artifact_id": artifact.artifact_id},
+        )
+    extracted = intake.extracted_document_from_trace(artifact=artifact, trace=trace)
+    text = str((extracted or {}).get("text") or "").strip()
+    if not text:
+        raise ToolExecutionError(
+            "Uploaded artifact extraction produced no indexable text.",
+            details={"artifact_id": artifact.artifact_id, "trace_id": trace.trace_id},
+        )
+    return {
+        "text": text,
+        "title": request.title or artifact.filename,
+        "source_ref": request.source_ref or artifact.storage_ref,
+        "artifact_id": artifact.artifact_id,
+        "retention_policy": artifact.retention_policy,
+        "input_format": request.input_format or _data_format_from_source(trace.source_format),
+    }
+
+
+def _data_format_from_source(value: str) -> DataFormat | None:
+    try:
+        return DataFormat(value)
+    except ValueError:
+        return None
+
+
+@router.get("/retrieval/presets", response_model=RetrievalPresetsEnvelope)
+async def list_retrieval_presets(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_retrieval_search_presets(settings.resolved_knowledge_dir))
 
 
-@router.get("/retrieval/search-options")
+@router.get("/retrieval/search-options", response_model=RetrievalSearchOptionsEnvelope)
 async def get_retrieval_search_options(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_retrieval_search_options(settings.resolved_knowledge_dir))
 
 
-@router.get("/retrieval/judgments")
+@router.get("/retrieval/source-policies", response_model=RetrievalSourcePoliciesEnvelope)
+async def get_retrieval_source_policies(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(load_source_trust_policy_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/corpus/adapters", response_model=RetrievalCorpusAdaptersEnvelope)
+async def get_retrieval_corpus_adapters(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(load_corpus_adapter_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/corpus/partitions", response_model=RetrievalCorpusPartitionsEnvelope)
+async def get_retrieval_corpus_partitions(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(load_corpus_partition_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/corpus/manifest", response_model=RetrievalCorpusManifestEnvelope)
+async def get_retrieval_corpus_manifest(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    knowledge_root = settings.resolved_knowledge_dir
+    return ok(
+        build_corpus_ingestion_manifest(
+            settings.resolved_retrieval_corpus_dirs,
+            knowledge_root=knowledge_root,
+        )
+    )
+
+
+@router.get("/retrieval/corpus/ledger", response_model=RetrievalCorpusLedgerEnvelope)
+async def get_retrieval_corpus_ledger(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(
+        build_corpus_ingestion_ledger(
+            settings.resolved_retrieval_corpus_dirs,
+            knowledge_root=settings.resolved_knowledge_dir,
+            max_chars=settings.retrieval_chunk_max_chars,
+            overlap_chars=settings.retrieval_chunk_overlap_chars,
+        )
+    )
+
+
+@router.get(
+    "/retrieval/corpus/chunking-profiles",
+    response_model=RetrievalCorpusChunkingProfilesEnvelope,
+)
+async def get_retrieval_corpus_chunking_profiles(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(load_corpus_chunking_profile_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/strategies", response_model=RetrievalStrategiesEnvelope)
+async def get_retrieval_strategies(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(load_retrieval_strategy_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/judgments", response_model=RetrievalJudgmentsEnvelope)
 async def list_retrieval_judgments(
     query_text: str | None = Query(default=None, alias="query"),
     run_id: str | None = None,
@@ -110,7 +667,7 @@ async def list_retrieval_judgments(
     )
 
 
-@router.get("/retrieval/judgments/summary")
+@router.get("/retrieval/judgments/summary", response_model=RetrievalJudgmentSummaryEnvelope)
 async def summarize_retrieval_judgments(
     query_text: str | None = Query(default=None, alias="query"),
     limit: int = Query(default=1000, ge=1, le=1000),
@@ -126,25 +683,31 @@ async def summarize_retrieval_judgments(
     )
 
 
-@router.post("/retrieval/judgments/evaluate")
+@router.post("/retrieval/judgments/evaluate", response_model=RetrievalJudgmentEvaluationEnvelope)
 async def evaluate_retrieval_judgments(
     request: RetrievalJudgmentEvaluationRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
     service: RetrievalJudgmentService = Depends(get_retrieval_judgment_service),
+    active_learning: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
     enforce_inline_json_limit(request, settings, field_name="retrieval_judgment_evaluation")
-    return ok(
-        service.evaluate_ranked_results(
-            owner_user_id=authenticated.user.user_id,
-            query=request.query,
-            ranked_evidence_ids=request.ranked_evidence_ids,
-            cutoff=request.cutoff,
-        )
+    evaluation = service.evaluate_ranked_results(
+        owner_user_id=authenticated.user.user_id,
+        query=request.query,
+        ranked_evidence_ids=request.ranked_evidence_ids,
+        cutoff=request.cutoff,
     )
+    active_learning.enqueue_from_evaluation(
+        owner_user_id=authenticated.user.user_id,
+        evaluation=evaluation,
+    )
+    return ok(evaluation)
 
 
-@router.put("/retrieval/judgments")
+@router.put("/retrieval/judgments", response_model=RetrievalJudgmentEnvelope)
 async def upsert_retrieval_judgment(
     request: RetrievalJudgmentRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
@@ -169,7 +732,10 @@ async def upsert_retrieval_judgment(
     )
 
 
-@router.delete("/retrieval/judgments/{judgment_id}")
+@router.delete(
+    "/retrieval/judgments/{judgment_id}",
+    response_model=RetrievalJudgmentDeleteEnvelope,
+)
 async def delete_retrieval_judgment(
     judgment_id: NonBlankStr,
     authenticated: AuthenticatedSession = Depends(require_authentication),
@@ -182,22 +748,142 @@ async def delete_retrieval_judgment(
     return ok({"deleted": True, "judgment_id": judgment_id})
 
 
-@router.get("/retrieval/sources")
+@router.get(
+    "/retrieval/active-learning/candidates",
+    response_model=RetrievalActiveLearningCandidatesEnvelope,
+)
+async def list_retrieval_active_learning_candidates(
+    status: RetrievalActiveLearningStatus | None = None,
+    source_kind: RetrievalActiveLearningSourceKind | None = None,
+    priority: RetrievalActiveLearningPriority | None = None,
+    query_text: str | None = Query(default=None, alias="query"),
+    limit: int = Query(default=500, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+) -> dict:
+    return ok(
+        service.list(
+            owner_user_id=authenticated.user.user_id,
+            status=status,
+            source_kind=source_kind,
+            priority=priority,
+            query=_optional_query_value(query_text),
+            limit=limit,
+        )
+    )
+
+
+@router.get(
+    "/retrieval/active-learning/summary",
+    response_model=RetrievalActiveLearningSummaryEnvelope,
+)
+async def summarize_retrieval_active_learning_candidates(
+    limit: int = Query(default=1000, ge=1, le=1000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+) -> dict:
+    return ok(
+        service.summary(
+            owner_user_id=authenticated.user.user_id,
+            limit=limit,
+        )
+    )
+
+
+@router.post(
+    "/retrieval/active-learning/candidates",
+    response_model=RetrievalActiveLearningCandidateEnvelope,
+)
+async def enqueue_retrieval_active_learning_candidate(
+    request: RetrievalActiveLearningCandidateRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    enforce_inline_json_limit(request, settings, field_name="retrieval_active_learning")
+    return ok(
+        service.enqueue(
+            owner_user_id=authenticated.user.user_id,
+            write=RetrievalActiveLearningCandidateWrite(
+                source_kind=request.source_kind,
+                query=request.query,
+                trigger_reason=request.trigger_reason,
+                priority=request.priority,
+                evidence_id=request.evidence_id,
+                source_id=request.source_id,
+                source_type=request.source_type,
+                source_version=request.source_version,
+                run_id=request.run_id,
+                workflow_id=request.workflow_id,
+                judgment_id=request.judgment_id,
+                claim_id=request.claim_id,
+                support_status=request.support_status,
+                suggested_expected_evidence_ids=request.suggested_expected_evidence_ids,
+                suggested_filters=request.suggested_filters,
+                benchmark_metadata=request.benchmark_metadata,
+                metadata=request.metadata,
+            ),
+        )
+    )
+
+
+@router.patch(
+    "/retrieval/active-learning/candidates/{candidate_id}",
+    response_model=RetrievalActiveLearningCandidateEnvelope,
+)
+async def update_retrieval_active_learning_candidate(
+    candidate_id: NonBlankStr,
+    request: RetrievalActiveLearningCandidateUpdateRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    service: RetrievalActiveLearningService = Depends(
+        get_retrieval_active_learning_service
+    ),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    enforce_inline_json_limit(request, settings, field_name="retrieval_active_learning_update")
+    return ok(
+        service.update(
+            owner_user_id=authenticated.user.user_id,
+            candidate_id=candidate_id,
+            reviewer_user_id=authenticated.user.user_id,
+            update=RetrievalActiveLearningCandidateUpdate(
+                status=request.status,
+                priority=request.priority,
+                reviewer_note=request.reviewer_note,
+                benchmark_metadata=request.benchmark_metadata,
+                metadata=request.metadata,
+            ),
+        )
+    )
+
+
+@router.get("/retrieval/sources", response_model=RetrievalSourcesEnvelope)
 async def list_retrieval_sources(
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    del authenticated
-    return ok(service.list_retrieval_sources())
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="retrieval:read",
+    )
+    return ok(_list_retrieval_sources_for_workspace(service, workspace))
 
 
-@router.post("/retrieval/reindex")
+@router.post("/retrieval/reindex", response_model=RetrievalReindexEnvelope)
 async def reindex_retrieval(
     request: RetrievalReindexRequest,
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="admin:write")
     return ok(
         service.reindex_retrieval(
             include_seeded=request.include_seeded,
@@ -206,14 +892,15 @@ async def reindex_retrieval(
     )
 
 
-@router.get("/retrieval/integrity")
+@router.get("/retrieval/integrity", response_model=RetrievalIntegrityEnvelope)
 async def retrieval_integrity(
     include_seeded: bool = Query(default=True),
     include_corpus: bool = Query(default=False),
     authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    del authenticated
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
     return ok(
         service.retrieval_integrity_report(
             include_seeded=include_seeded,
@@ -222,10 +909,82 @@ async def retrieval_integrity(
     )
 
 
+@router.get("/retrieval/index-manifest", response_model=RetrievalIndexManifestEnvelope)
+async def retrieval_index_manifest(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(
+        service.retrieval_index_manifest(
+            owner_user_id=authenticated.user.user_id,
+        )
+    )
+
+
+@router.get(
+    "/retrieval/embedding-reindex/dry-run",
+    response_model=EmbeddingReindexSafetyReportEnvelope,
+)
+async def embedding_reindex_dry_run(
+    include_seeded: bool = Query(default=True),
+    include_corpus: bool = Query(default=True),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    return ok(
+        build_embedding_reindex_safety_report(
+            current_manifest=service.retrieval_index_manifest(
+                owner_user_id=authenticated.user.user_id,
+            ),
+            include_seeded=include_seeded,
+            include_corpus=include_corpus,
+        )
+    )
+
+
+@router.get("/retrieval/freshness", response_model=RetrievalFreshnessEnvelope)
+async def retrieval_freshness(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="admin:read",
+    )
+    return ok(
+        build_retrieval_freshness_report(
+            settings.resolved_knowledge_dir,
+            indexed_sources=_list_retrieval_sources_for_workspace(service, workspace),
+        )
+    )
+
+
 def _filter_value(value: Any) -> Any:
     if hasattr(value, "value"):
         return value.value
     return value
+
+
+def _workspace_organization_id(workspace: WorkspaceDetail | None) -> str | None:
+    if workspace is None:
+        return None
+    return workspace.organization.organization_id
+
+
+def _list_retrieval_sources_for_workspace(
+    service: WorkflowService,
+    workspace: WorkspaceDetail | None,
+) -> list[RetrievalSource]:
+    organization_id = _workspace_organization_id(workspace)
+    if organization_id:
+        return service.list_retrieval_sources(organization_id=organization_id)
+    return service.list_retrieval_sources()
 
 
 def _optional_query_value(value: str | None) -> str | None:

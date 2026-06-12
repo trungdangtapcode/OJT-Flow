@@ -4,7 +4,7 @@
     {
       "rule_id": "lab_observation_identity",
       "concept": "laboratory_observation_identity",
-      "triggers": ["lab", "laboratory", "lab_name", "test", "observation", "result"],
+      "triggers": ["lab", "laboratory", "lab_name", "test", "result"],
       "expanded_terms": [
         "laboratory test identifier",
         "lab name normalization",
@@ -53,7 +53,6 @@
       "rule_id": "fhir_observation_profile",
       "concept": "fhir_observation_profile",
       "triggers": [
-        "fhir",
         "observation",
         "resourcetype",
         "valuequantity",
@@ -93,6 +92,80 @@
       "variant": "CSV malformed rows extra cells missing cells parse report conversion data quality"
     },
     {
+      "rule_id": "vital_sign_blood_pressure",
+      "concept": "vital_sign_blood_pressure",
+      "triggers": [
+        "blood pressure",
+        "bp",
+        "htn",
+        "sbp",
+        "dbp",
+        "systolic",
+        "diastolic"
+      ],
+      "expanded_terms": [
+        "systolic blood pressure",
+        "diastolic blood pressure",
+        "LOINC blood pressure",
+        "FHIR Observation vital signs",
+        "mmHg"
+      ],
+      "standards": ["LOINC", "FHIR"],
+      "variant": "LOINC blood pressure systolic diastolic vital signs FHIR Observation mmHg"
+    },
+    {
+      "rule_id": "vital_sign_observation",
+      "concept": "vital_sign_observation",
+      "triggers": ["vital sign", "vital signs", "vitals"],
+      "expanded_terms": [
+        "FHIR Observation vital signs",
+        "LOINC vital sign code",
+        "vital-sign valueQuantity",
+        "vital-sign UCUM unit"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "FHIR Observation vital signs LOINC code valueQuantity UCUM unit"
+    },
+    {
+      "rule_id": "vital_sign_heart_rate",
+      "concept": "vital_sign_heart_rate",
+      "triggers": ["heart rate", "pulse", "pulse rate", "hr", "bpm"],
+      "expanded_terms": [
+        "heart rate",
+        "LOINC 8867-4",
+        "pulse rate",
+        "beats per minute"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "LOINC 8867-4 heart rate pulse FHIR Observation beats per minute"
+    },
+    {
+      "rule_id": "vital_sign_oxygen_saturation",
+      "concept": "vital_sign_oxygen_saturation",
+      "triggers": ["oxygen saturation", "spo2", "o2 sat", "pulse ox", "pulse oximetry", "sao2"],
+      "expanded_terms": [
+        "oxygen saturation",
+        "LOINC 59408-5",
+        "pulse oximetry",
+        "SpO2 percent"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "LOINC 59408-5 oxygen saturation SpO2 pulse oximetry FHIR Observation percent"
+    },
+    {
+      "rule_id": "vital_sign_body_temperature",
+      "concept": "vital_sign_body_temperature",
+      "triggers": ["body temperature", "temperature", "temp", "fever"],
+      "expanded_terms": [
+        "body temperature",
+        "LOINC 8310-5",
+        "temperature unit",
+        "Celsius Fahrenheit"
+      ],
+      "standards": ["LOINC", "FHIR", "UCUM"],
+      "variant": "LOINC 8310-5 body temperature FHIR Observation Celsius Fahrenheit"
+    },
+    {
       "rule_id": "phi_review_context",
       "concept": "sensitive_identifier_review",
       "triggers": ["patient_id", "patient identifier", "mrn", "dob", "ssn", "identifier"],
@@ -106,9 +179,76 @@
       "variant": "patient identifiers sensitive fields PHI human review governance"
     },
     {
+      "rule_id": "fhir_condition_profile",
+      "concept": "fhir_condition_profile",
+      "triggers": [
+        "condition",
+        "conditions",
+        "diagnosis",
+        "diagnoses",
+        "problem list",
+        "problem-list"
+      ],
+      "expanded_terms": [
+        "FHIR Condition",
+        "Condition.code",
+        "Condition.subject",
+        "clinicalStatus",
+        "verificationStatus"
+      ],
+      "standards": ["FHIR", "SNOMED CT"],
+      "variant": "FHIR Condition code subject clinicalStatus verificationStatus problem list diagnosis"
+    },
+    {
+      "rule_id": "condition_terminology_coding",
+      "concept": "condition_terminology_coding",
+      "triggers": [
+        "icd",
+        "icd-10",
+        "icd-10-cm",
+        "diagnosis code",
+        "diagnosis coding",
+        "condition code",
+        "problem code"
+      ],
+      "expanded_terms": [
+        "ICD-10-CM diagnosis code",
+        "SNOMED CT clinical finding",
+        "condition terminology",
+        "problem-list coding"
+      ],
+      "standards": ["ICD-10-CM", "SNOMED CT", "FHIR"],
+      "variant": "ICD-10-CM diagnosis code SNOMED CT clinical finding FHIR Condition code"
+    },
+    {
+      "rule_id": "fhir_allergyintolerance_profile",
+      "concept": "fhir_allergyintolerance_profile",
+      "triggers": [
+        "allergy",
+        "allergies",
+        "intolerance",
+        "intolerances",
+        "allergyintolerance",
+        "adverse reaction",
+        "adverse reactions",
+        "reaction substance",
+        "manifestation"
+      ],
+      "expanded_terms": [
+        "FHIR AllergyIntolerance",
+        "AllergyIntolerance.code",
+        "AllergyIntolerance.patient",
+        "clinicalStatus",
+        "verificationStatus",
+        "reaction.manifestation"
+      ],
+      "standards": ["FHIR", "SNOMED CT", "RxNorm"],
+      "variant": "FHIR AllergyIntolerance code patient clinicalStatus verificationStatus reaction manifestation substance"
+    },
+    {
       "rule_id": "medication_normalization",
       "concept": "medication_normalization",
-      "triggers": ["medication", "medications", "drug", "drugs", "rxnorm", "ndc", "dose"],
+      "triggers": ["medication", "medications", "drug", "drugs", "ndc", "dose"],
       "expanded_terms": [
         "RxNorm normalized medication concept",
         "drug code mapping",

@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
+
+
+IdentityType = Literal["user", "service_account"]
+ServiceAccountStatus = Literal["active", "disabled"]
 
 
 @dataclass(frozen=True)
@@ -47,8 +52,27 @@ class SessionRecord:
 
 
 @dataclass(frozen=True)
+class ServiceAccountRecord:
+    """Automation identity owned by an organization workspace."""
+
+    account_id: str
+    user_id: str
+    organization_id: str
+    slug: str
+    display_name: str
+    role_key: str
+    status: ServiceAccountStatus
+    created_by_user_id: str
+    created_at: datetime
+    updated_at: datetime
+    last_used_at: datetime | None
+
+
+@dataclass(frozen=True)
 class AuthenticatedSession:
     """Resolved active session with user details."""
 
     user: UserRecord
     session: SessionRecord
+    identity_type: IdentityType = "user"
+    service_account: ServiceAccountRecord | None = None

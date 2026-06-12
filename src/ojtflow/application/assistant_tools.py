@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
@@ -174,7 +175,74 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
             "additionalProperties": False,
         },
     ),
+    "generate_mapping_draft": AssistantToolSpec(
+        name="generate_mapping_draft",
+        description=(
+            "Create a review-gated mapping and transformation draft without "
+            "executing conversion."
+        ),
+        permission_scope=ToolPermission.DATA_TRANSFORM.value,
+        requires_approval=True,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "instruction": {"type": "string"},
+                "data": {"type": "string"},
+                "input_format": {"type": ["string", "null"]},
+                "target_format": {"type": "string"},
+                "schema_id": {"type": ["string", "null"]},
+                "mapping_goal": {"type": ["string", "null"]},
+                "source_fields": {"type": "array", "items": {"type": "string"}},
+                "target_fields": {"type": "array", "items": {"type": "string"}},
+                "evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["instruction", "data"],
+            "additionalProperties": False,
+        },
+    ),
+    "create_review_task": AssistantToolSpec(
+        name="create_review_task",
+        description=(
+            "Create a durable human-review task for unresolved data quality, "
+            "terminology, evidence, or workflow decisions."
+        ),
+        permission_scope=ToolPermission.REVIEW_WRITE.value,
+        requires_approval=True,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "data": {"type": ["string", "null"]},
+                "input_format": {"type": ["string", "null"]},
+                "schema_id": {"type": ["string", "null"]},
+                "review_focus": {"type": ["string", "null"]},
+                "source_workflow_id": {"type": ["string", "null"]},
+                "source_turn_id": {"type": ["string", "null"]},
+                "issue_kinds": {"type": "array", "items": {"type": "string"}},
+                "evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    ),
 }
+
+
+def _apply_tool_permission_policies(
+    specs: dict[str, AssistantToolSpec],
+    policies: Mapping[str, Mapping[str, Any]],
+) -> dict[str, AssistantToolSpec]:
+    unknown_tools = sorted(set(policies) - set(specs))
+    if unknown_tools:
+        raise ValueError(
+            "Assistant tool permission policy references unknown tool(s): "
+            + ", ".join(unknown_tools)
+        )
+    merged: dict[str, AssistantToolSpec] = {}
+    for name, spec in specs.items():
+        policy = dict(policies.get(name) or {})
+        merged[name] = spec.model_copy(update=policy)
+    return merged
 
 
 class OJTFlowToolExecutor:
@@ -184,10 +252,18 @@ class OJTFlowToolExecutor:
         self,
         workflow_service: WorkflowService,
         medical_evidence_service: MedicalEvidenceService,
+        tool_permission_policies: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         self.workflow_service = workflow_service
         self.medical_evidence_service = medical_evidence_service
-        self._handlers: dict[str, Callable[[dict[str, Any], str | None], dict[str, Any]]] = {
+        self._tool_specs = _apply_tool_permission_policies(
+            ASSISTANT_TOOL_SPECS,
+            tool_permission_policies or {},
+        )
+        self._handlers: dict[
+            str,
+            Callable[[dict[str, Any], str | None, str | None], dict[str, Any]],
+        ] = {
             "retrieval_search": self._retrieval_search,
             "validate_data": self._validate_data,
             "validate_with_evidence": self._validate_with_evidence,
@@ -198,11 +274,13 @@ class OJTFlowToolExecutor:
             "get_workflow": self._get_workflow,
             "workflow_summary": self._workflow_summary,
             "start_workflow": self._start_workflow,
+            "generate_mapping_draft": self._generate_mapping_draft,
+            "create_review_task": self._create_review_task,
         }
 
     @property
     def tool_specs(self) -> list[AssistantToolSpec]:
-        return list(ASSISTANT_TOOL_SPECS.values())
+        return list(self._tool_specs.values())
 
     def execute(
         self,
@@ -210,8 +288,9 @@ class OJTFlowToolExecutor:
         *,
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> AssistantToolResult:
-        spec = ASSISTANT_TOOL_SPECS.get(plan.tool_name)
+        spec = self._tool_specs.get(plan.tool_name)
         if not spec:
             return AssistantToolResult(
                 tool_name=plan.tool_name,
@@ -246,7 +325,11 @@ class OJTFlowToolExecutor:
             )
 
         try:
-            output = self._handlers[plan.tool_name](plan.arguments, owner_user_id)
+            output = self._handlers[plan.tool_name](
+                plan.arguments,
+                owner_user_id,
+                request_id,
+            )
             return AssistantToolResult(
                 tool_name=plan.tool_name,
                 status="completed",
@@ -281,6 +364,7 @@ class OJTFlowToolExecutor:
         *,
         execute_write_actions: bool = False,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute one tool and return a JSON-ready result for MCP wrappers."""
 
@@ -288,10 +372,16 @@ class OJTFlowToolExecutor:
             AssistantToolPlan(tool_name=tool_name, arguments=arguments or {}),
             execute_write_actions=execute_write_actions,
             owner_user_id=owner_user_id,
+            request_id=request_id,
         )
         return result.model_dump(mode="json")
 
-    def _retrieval_search(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _retrieval_search(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         filters = {
             key: value
             for key, value in {
@@ -312,19 +402,31 @@ class OJTFlowToolExecutor:
                 filters=filters,
             ),
             owner_user_id=owner_user_id,
+            request_id=request_id,
         )
         return package.model_dump(mode="json")
 
-    def _validate_data(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _validate_data(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         del owner_user_id
+        del request_id
         return self.workflow_service.validate_data(
             data=_required_str(args, "data"),
             declared_format=_optional_data_format(args.get("input_format")),
             schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
         )
 
-    def _validate_with_evidence(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
-        validation = self._validate_data(args, owner_user_id)
+    def _validate_with_evidence(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        validation = self._validate_data(args, owner_user_id, request_id)
         report = validation.get("validation_report") if isinstance(validation, dict) else {}
         issues = (
             report.get("issues")
@@ -352,6 +454,7 @@ class OJTFlowToolExecutor:
                 "trust_level": "approved",
             },
             owner_user_id,
+            request_id,
         )
         return {
             "validation": validation,
@@ -367,19 +470,37 @@ class OJTFlowToolExecutor:
             },
         }
 
-    def _convert_data(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _convert_data(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         del owner_user_id
+        del request_id
         return self.workflow_service.convert_data(
             data=_required_str(args, "data"),
             declared_format=_optional_data_format(args.get("input_format")),
             target_format=_data_format(args.get("target_format"), default=DataFormat.JSON),
         )
 
-    def _fhir_profile(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _fhir_profile(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         del owner_user_id
+        del request_id
         return self.medical_evidence_service.profile_fhir_like(_required_str(args, "data"))
 
-    def _list_workflows(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _list_workflows(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        del request_id
         status = _optional_workflow_status(args.get("status"))
         workflows = self.workflow_service.list_workflows(
             status=status,
@@ -388,7 +509,13 @@ class OJTFlowToolExecutor:
         )
         return {"items": [workflow.model_dump(mode="json") for workflow in workflows]}
 
-    def _list_reviews(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _list_reviews(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        del request_id
         reviews = self.workflow_service.list_reviews(
             status=_optional_str(args.get("status")) or "pending",
             limit=_bounded_int(args.get("limit"), default=10, minimum=1, maximum=100),
@@ -396,15 +523,26 @@ class OJTFlowToolExecutor:
         )
         return {"items": [workflow.model_dump(mode="json") for workflow in reviews]}
 
-    def _get_workflow(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _get_workflow(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        del request_id
         workflow = self.workflow_service.get_workflow(
             _required_str(args, "workflow_id"),
             owner_user_id=owner_user_id,
         )
         return workflow.model_dump(mode="json")
 
-    def _workflow_summary(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
-        workflow = self._get_workflow(args, owner_user_id)
+    def _workflow_summary(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        workflow = self._get_workflow(args, owner_user_id, request_id)
         steps = workflow.get("steps") if isinstance(workflow.get("steps"), list) else []
         validation_report = (
             workflow.get("validation_report")
@@ -459,7 +597,12 @@ class OJTFlowToolExecutor:
             "workflow": workflow,
         }
 
-    def _start_workflow(self, args: dict[str, Any], owner_user_id: str | None) -> dict:
+    def _start_workflow(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
         workflow = self.workflow_service.start_workflow(
             instruction=_required_str(args, "instruction"),
             data=_required_str(args, "data"),
@@ -468,8 +611,79 @@ class OJTFlowToolExecutor:
             schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
             require_human_review=bool(args.get("require_human_review", True)),
             owner_user_id=owner_user_id,
+            request_id=request_id,
         )
         return workflow.model_dump(mode="json")
+
+    def _create_review_task(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        source_context = {
+            "source_workflow_id": _optional_str(args.get("source_workflow_id")),
+            "source_turn_id": _optional_str(args.get("source_turn_id")),
+            "review_focus": _optional_str(args.get("review_focus")),
+            "issue_kinds": _str_list(args.get("issue_kinds")),
+            "evidence_ids": _str_list(args.get("evidence_ids")),
+        }
+        workflow = self.workflow_service.create_review_task(
+            question=_required_str(args, "question"),
+            proposed_action={
+                key: value
+                for key, value in source_context.items()
+                if value not in (None, "", [])
+            },
+            data=_optional_str(args.get("data")),
+            declared_format=_optional_data_format(args.get("input_format")),
+            schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
+            source_context={
+                key: value
+                for key, value in source_context.items()
+                if value not in (None, "", [])
+            },
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+        )
+        payload = workflow.model_dump(mode="json")
+        payload["review_task"] = {
+            "workflow_id": workflow.workflow_id,
+            "review_id": workflow.review.review_id if workflow.review else None,
+            "question": workflow.review.question if workflow.review else None,
+            "trigger": workflow.review.trigger if workflow.review else None,
+        }
+        return payload
+
+    def _generate_mapping_draft(
+        self,
+        args: dict[str, Any],
+        owner_user_id: str | None,
+        request_id: str | None,
+    ) -> dict:
+        workflow = self.workflow_service.create_mapping_draft(
+            instruction=_required_str(args, "instruction"),
+            data=_required_str(args, "data"),
+            declared_format=_optional_data_format(args.get("input_format")),
+            target_format=_data_format(args.get("target_format"), default=DataFormat.JSON),
+            schema_id=_optional_str(args.get("schema_id")) or "lab_result_v1",
+            mapping_goal=_optional_str(args.get("mapping_goal")),
+            source_fields=_str_list(args.get("source_fields")),
+            target_fields=_str_list(args.get("target_fields")),
+            evidence_ids=_str_list(args.get("evidence_ids")),
+            owner_user_id=owner_user_id,
+            request_id=request_id,
+        )
+        payload = workflow.model_dump(mode="json")
+        plan = workflow.transformation_plan
+        payload["mapping_draft"] = {
+            "workflow_id": workflow.workflow_id,
+            "review_id": workflow.review.review_id if workflow.review else None,
+            "plan_id": plan.plan_id if plan else None,
+            "action_count": len(plan.actions) if plan else 0,
+            "target_format": plan.target_format.value if plan else None,
+        }
+        return payload
 
 
 def _missing_required_arguments(
@@ -522,6 +736,18 @@ def _tool_summary(tool_name: str, output: dict[str, Any]) -> str:
         return (
             f"Created workflow {output.get('workflow_id', '')} "
             f"with status {output.get('status', 'unknown')}."
+        )
+    if tool_name == "generate_mapping_draft":
+        draft = output.get("mapping_draft") if isinstance(output.get("mapping_draft"), dict) else {}
+        return (
+            f"Created mapping draft {draft.get('plan_id') or ''} "
+            f"for workflow {output.get('workflow_id', '')}."
+        )
+    if tool_name == "create_review_task":
+        review = output.get("review_task") if isinstance(output.get("review_task"), dict) else {}
+        return (
+            f"Created review task {review.get('review_id') or ''} "
+            f"for workflow {output.get('workflow_id', '')}."
         )
     return f"{tool_name} completed."
 

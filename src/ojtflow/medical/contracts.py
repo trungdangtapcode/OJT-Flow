@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 
@@ -47,6 +47,44 @@ class FhirProfile(ContractModel):
     issues: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     handoff_context: dict = Field(default_factory=dict)
+    profile_registry_version: str | None = None
+    profiled_resource_types: list[str] = Field(default_factory=list)
+    profile_issues: list[dict[str, Any]] = Field(default_factory=list)
+    search_parameters: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    profile_evidence: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class FhirRequiredAnyGroup(ContractModel):
+    group_id: NonBlankStr
+    fields: list[NonBlankStr]
+    message: NonBlankStr
+
+
+class FhirSearchParameterSeed(ContractModel):
+    name: NonBlankStr
+    type: NonBlankStr
+    target_field: NonBlankStr
+    example: NonBlankStr
+    standard_systems: list[NonBlankStr] = Field(default_factory=list)
+
+
+class FhirResourceProfileSpec(ContractModel):
+    resource_type: NonBlankStr
+    profile_id: NonBlankStr
+    clinical_domain: NonBlankStr
+    source_url: NonBlankStr
+    required_fields: list[NonBlankStr] = Field(default_factory=list)
+    required_any: list[FhirRequiredAnyGroup] = Field(default_factory=list)
+    search_parameters: list[FhirSearchParameterSeed] = Field(default_factory=list)
+    governance_notes: list[NonBlankStr] = Field(default_factory=list)
+
+
+class FhirResourceProfileCatalog(ContractModel):
+    version: NonBlankStr
+    fhir_release: NonBlankStr
+    source: NonBlankStr
+    disclaimer: NonBlankStr
+    profiles: list[FhirResourceProfileSpec] = Field(default_factory=list)
 
 
 class DicomReference(ContractModel):

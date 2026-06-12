@@ -33,7 +33,7 @@
     ]
   },
   {
-    "case_id": "fhir_observation",
+    "case_id": "fhir_observation_mapping",
     "description": "FHIR-like lab observation should retrieve the Observation profile evidence.",
     "query": "FHIR Observation laboratory value unit subject code effective date",
     "resource_type": "Observation",
@@ -65,7 +65,7 @@
     ]
   },
   {
-    "case_id": "hba1c_standard_mapping",
+    "case_id": "hba1c_loinc_grounding",
     "description": "HbA1c terminology lookup should retrieve LOINC grounding evidence.",
     "query": "A1c result needs standard lab test code and lab_name mapping",
     "fields": ["lab_name", "value", "unit"],
@@ -77,6 +77,121 @@
         "source_id": "terminology:loinc",
         "rating": 3,
         "reason": "Canonical terminology evidence for lab test code grounding."
+      }
+    ]
+  },
+  {
+    "case_id": "phi_identifier_review",
+    "description": "Patient identifier and SSN review should retrieve human-review governance evidence.",
+    "query": "SSN patient_id medical record number date of birth sensitive PHI privacy review human review",
+    "fields": ["ssn", "patient_id", "dob"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["governance:human_review_triggers_v1"],
+    "judgments": [
+      {
+        "source_id": "governance:human_review_triggers_v1",
+        "rating": 3,
+        "reason": "Human-review governance is required for PHI-sensitive identifiers."
+      }
+    ]
+  },
+  {
+    "case_id": "prompt_injection_phi_review",
+    "description": "Prompt-injection text with patient context should retrieve safety and review governance evidence.",
+    "query": "prompt injection patient identifier PHI safety validation review",
+    "fields": ["notes", "patient_id"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["governance:human_review_triggers_v1"],
+    "judgments": [
+      {
+        "source_id": "governance:human_review_triggers_v1",
+        "rating": 3,
+        "reason": "Human-review governance covers safety-sensitive and PHI-bearing workflow changes."
+      }
+    ]
+  },
+  {
+    "case_id": "rxnorm_medication_grounding",
+    "description": "Medication terminology lookup should retrieve RxNorm evidence without source-value replacement.",
+    "query": "metformin medication normalization RxNorm RxCUI drug terminology candidate",
+    "fields": ["medication"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved", "standard_system": "RxNorm"},
+    "expected_source_ids": ["terminology:rxnorm"],
+    "judgments": [
+      {
+        "source_id": "terminology:rxnorm",
+        "rating": 3,
+        "reason": "Canonical medication terminology direction for RxNorm candidate generation."
+      }
+    ]
+  },
+  {
+    "case_id": "diagnosis_terminology_review",
+    "description": "Diagnosis coding review should retrieve SNOMED CT and ICD-10-CM evidence.",
+    "query": "diagnosis problem list SNOMED CT ICD-10-CM code review",
+    "fields": ["diagnosis"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved"},
+    "expected_source_ids": ["terminology:snomed_ct", "terminology:icd10cm"],
+    "judgments": [
+      {
+        "source_id": "terminology:snomed_ct",
+        "rating": 3,
+        "reason": "SNOMED CT is the clinical terminology direction for diagnosis/finding concepts."
+      },
+      {
+        "source_id": "terminology:icd10cm",
+        "rating": 2,
+        "reason": "ICD-10-CM is relevant diagnosis classification evidence for review."
+      }
+    ]
+  },
+  {
+    "case_id": "pubmed_mesh_search_routing",
+    "description": "Literature-search routing should retrieve PubMed/MeSH search strategy evidence.",
+    "query": "MeSH PubMed Search Details title abstract publication type filters biomedical literature",
+    "top_k": 5,
+    "filters": {"trust_level": "approved", "standard_system": "MeSH"},
+    "expected_source_ids": ["standard:mesh_pubmed_search"],
+    "judgments": [
+      {
+        "source_id": "standard:mesh_pubmed_search",
+        "rating": 3,
+        "reason": "PubMed/MeSH evidence defines safe literature search routing and query review."
+      }
+    ]
+  },
+  {
+    "case_id": "clinicaltrials_search_routing",
+    "description": "Trial-search routing should retrieve ClinicalTrials.gov API evidence.",
+    "query": "ClinicalTrials.gov API v2 condition intervention recruitment status eligibility NCT dataTimestamp",
+    "top_k": 5,
+    "filters": {"trust_level": "approved", "standard_system": "ClinicalTrials.gov"},
+    "expected_source_ids": ["standard:clinicaltrials_gov_api"],
+    "judgments": [
+      {
+        "source_id": "standard:clinicaltrials_gov_api",
+        "rating": 3,
+        "reason": "ClinicalTrials.gov API evidence defines allowed trial-search routing metadata."
+      }
+    ]
+  },
+  {
+    "case_id": "openfda_search_routing",
+    "description": "Regulatory drug-search routing should retrieve openFDA API evidence.",
+    "query": "openFDA drug API label adverse event recall NDC endpoint product identity",
+    "fields": ["medication"],
+    "top_k": 5,
+    "filters": {"trust_level": "approved", "standard_system": "openFDA"},
+    "expected_source_ids": ["standard:openfda_drug_apis"],
+    "judgments": [
+      {
+        "source_id": "standard:openfda_drug_apis",
+        "rating": 3,
+        "reason": "openFDA evidence defines regulatory source routing for labels, recalls, and adverse event context."
       }
     ]
   }

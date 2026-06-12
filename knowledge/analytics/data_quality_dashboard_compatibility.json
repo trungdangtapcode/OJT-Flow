@@ -1,0 +1,43 @@
+{
+  "compatibility_id": "ohdsi_dqd_compatibility_v0",
+  "version": "2026-06-11",
+  "target_tool": "OHDSI Data Quality Dashboard",
+  "compatible_outputs": [
+    "OMOP export preview table counts",
+    "required field coverage warnings",
+    "standard concept candidate coverage",
+    "source-value preservation warnings"
+  ],
+  "required_inputs": [
+    "production OMOP CDM schema loaded into a database",
+    "OMOP vocabulary release metadata",
+    "source-to-standard concept mapping decisions",
+    "DQD configuration generated for the target CDM version"
+  ],
+  "supported_check_families": [
+    "field requiredness preview",
+    "row count preview by target table",
+    "concept coverage preview",
+    "source provenance completeness preview"
+  ],
+  "unsupported_check_families": [
+    "full plausible value checks",
+    "full conformance checks against a loaded OMOP database",
+    "longitudinal visit/person consistency checks",
+    "database constraint and index checks"
+  ],
+  "future_integration_path": [
+    "Generate production OMOP staging tables only after review approval.",
+    "Run OHDSI DQD against the target OMOP database.",
+    "Import DQD JSON results as an OJTFlow evidence artifact.",
+    "Block downstream analytics export when DQD critical checks fail."
+  ],
+  "warnings": [
+    "OJTFlow Month 7 preview is DQD-compatible metadata, not a replacement for running OHDSI DQD.",
+    "DQD should run after vocabulary resolution and target-database load."
+  ],
+  "standard_refs": [
+    "OHDSI OMOP CDM: https://ohdsi.github.io/CommonDataModel/",
+    "OHDSI Data Quality Dashboard project: https://github.com/OHDSI/DataQualityDashboard"
+  ]
+}

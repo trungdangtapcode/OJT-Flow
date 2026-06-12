@@ -1,0 +1,44 @@
+{
+  "version": "retrieval_answer_synthesis_policy.v1",
+  "synthesis": {
+    "supported_statuses": ["strong", "partial"],
+    "review_statuses": ["partial", "weak", "unsupported"],
+    "claim_source": "retrieval_evidence_support_matrix",
+    "citation_source": "ranked_retrieval_evidence",
+    "graph_source": "graph_ner_handoff.v0"
+  },
+  "freshness": {
+    "stale_version_markers": ["deprecated", "stale", "old", "outdated"],
+    "stale_lifecycle_states": ["deprecated", "blocked", "failed", "needs_review"],
+    "version_mismatch_filter": "source_version"
+  },
+  "claim_triple_guard": {
+    "enabled": true,
+    "required_for_support_statuses": ["strong"],
+    "warning_id": "claim_without_graph_triple_support",
+    "clinical_assertion_terms": [
+      "patient",
+      "diagnosis",
+      "medication",
+      "lab",
+      "observation",
+      "unit",
+      "loinc",
+      "rxnorm",
+      "fhir",
+      "ucum",
+      "condition",
+      "procedure"
+    ]
+  },
+  "refusal_messages": {
+    "no_evidence": "No retrieved evidence was available to support an answer.",
+    "unsupported": "Retrieved evidence did not reach strong or partial support."
+  },
+  "governance_notes": [
+    "Retrieval answers summarize retrieved evidence only; they are not clinical diagnosis, treatment, triage, or medication advice.",
+    "Unsupported or stale evidence must produce refusal, review-required, or partial status instead of a confident answer.",
+    "The answer object is safe for Assistant, UI, MCP, and export consumers because citations and gaps are first-class data."
+  ],
+  "roadmap_refs": ["F083", "F094", "F095"]
+}

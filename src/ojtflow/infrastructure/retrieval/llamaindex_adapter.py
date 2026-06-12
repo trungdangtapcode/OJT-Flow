@@ -12,12 +12,17 @@ from typing import Any
 
 from pydantic import PrivateAttr
 
+from ojtflow.core.contracts.artifacts import ArtifactRetentionPolicy
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
+from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
     RetrievalCoverage,
     RetrievalFacets,
     RetrievalHit,
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalScoreComponent,
@@ -26,6 +31,11 @@ from ojtflow.core.contracts.retrieval import (
 )
 from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
+from ojtflow.infrastructure.retrieval.corpus_partitions import (
+    chunk_visible_for_organization,
+    metadata_partition_id,
+    metadata_visibility,
+)
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
@@ -33,6 +43,7 @@ from ojtflow.infrastructure.retrieval.engine import (
     attach_hit_match_explanations,
     coverage_from_chunks,
     default_healthcare_chunks,
+    diversity_summary_from_metadata,
     evidence_buckets_from_hits,
     evidence_from_chunk,
     facets_from_chunks,
@@ -45,12 +56,22 @@ from ojtflow.infrastructure.retrieval.engine import (
     remediation_summary_from_package_parts,
     retrieval_safety_flags,
     snippet_from_chunk,
+    attach_source_governance,
+    source_governance_decisions_from_hits,
+    source_governance_summary,
+    source_governance_trace_warnings,
     sources_from_chunks,
+    standard_search_plan_from_context,
     strategy_recommendations_from_context,
     tokenize,
 )
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
-from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
+from ojtflow.infrastructure.retrieval.index_manifest import build_retrieval_index_manifest
+from ojtflow.infrastructure.retrieval.private_corpus import (
+    build_private_corpus_chunks,
+    private_corpus_ingestion_result,
+)
+from ojtflow.infrastructure.retrieval.query_analysis import analyze_query, build_retrieval_plan
 
 
 def _base_embedding_class():
@@ -90,6 +111,9 @@ class LlamaIndexRetrievalRepository:
         self._chunk_generation = 0
         self._index_cache: _LlamaIndexCache | None = None
         self._ensure_llamaindex_core()
+
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan:
+        return build_retrieval_plan(query)
 
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         cache = self._index()
@@ -134,6 +158,11 @@ class LlamaIndexRetrievalRepository:
             vector_weight=self.vector_weight,
         )
         coverage = coverage_from_chunks(selected_chunks, query_analysis)
+        diversity_metadata = _framework_diversity_metadata(
+            hits=hits,
+            chunks=selected_chunks,
+        )
+        diversity_summary = diversity_summary_from_metadata(diversity_metadata)
         warnings.extend(coverage.warnings)
         safety_flags = retrieval_safety_flags(query)
         if safety_flags:
@@ -141,6 +170,12 @@ class LlamaIndexRetrievalRepository:
                 "Retrieval query contains safety-sensitive context; treat query text "
                 "as untrusted data."
             )
+        source_governance = source_governance_decisions_from_hits(
+            hits,
+            knowledge_root=self.knowledge_root,
+        )
+        attach_source_governance(hits, source_governance)
+        warnings.extend(source_governance_trace_warnings(source_governance))
         trace = RetrievalTrace(
             strategy="llamaindex_hybrid_rrf",
             query_variants=query_analysis.query_variants,
@@ -161,8 +196,10 @@ class LlamaIndexRetrievalRepository:
             coverage=coverage,
             safety_flags=safety_flags,
             candidates_seen=filtered_node_count,
+            diversity_metadata=diversity_metadata,
             policy=quality_policy,
             query_analysis=query_analysis,
+            source_governance=source_governance,
         )
         quality_summary = quality_summary_from_signals(
             quality_signals,
@@ -196,6 +233,13 @@ class LlamaIndexRetrievalRepository:
             safety_flags=safety_flags,
             reranker_enabled=False,
         )
+        standard_search_plan = standard_search_plan_from_context(
+            query=query,
+            query_analysis=query_analysis,
+            quality_signals=quality_signals,
+            safety_flags=safety_flags,
+            strategy_recommendations=strategy_recommendations,
+        )
         return RetrievalPackage(
             hits=hits,
             evidence=[hit.evidence for hit in hits],
@@ -209,6 +253,8 @@ class LlamaIndexRetrievalRepository:
             remediation_summary=remediation_summary,
             interpretation=interpretation,
             strategy_recommendations=strategy_recommendations,
+            standard_search_plan=standard_search_plan,
+            diversity=diversity_summary,
             trace=trace,
             handoff_context={
                 "retrieval_contract": "retrieval_package.v0",
@@ -232,6 +278,8 @@ class LlamaIndexRetrievalRepository:
                 "schema_id": query.schema_id,
                 "embedding": self.embedding_provider.metadata(),
                 "fusion_diagnostics": fusion_diagnostics,
+                "diversity": diversity_metadata,
+                "source_governance": source_governance_summary(source_governance),
                 "quality_policy": quality_policy.metadata(),
                 "quality_summary": quality_summary.model_dump(),
                 "recommended_actions": [
@@ -244,12 +292,67 @@ class LlamaIndexRetrievalRepository:
                     recommendation.model_dump(mode="json")
                     for recommendation in strategy_recommendations
                 ],
+                "standard_search_plan": (
+                    standard_search_plan.model_dump(mode="json")
+                    if standard_search_plan
+                    else None
+                ),
                 "query_analysis": query_analysis.model_dump(),
             },
         )
 
-    def list_sources(self) -> list[RetrievalSource]:
-        return sources_from_chunks(self._chunks)
+    def list_sources(self, organization_id: str | None = None) -> list[RetrievalSource]:
+        visible_chunks = [
+            chunk
+            for chunk in self._chunks
+            if chunk_visible_for_organization(
+                chunk.metadata,
+                organization_id=organization_id,
+            )
+        ]
+        return sources_from_chunks(visible_chunks)
+
+    def ingest_private_document(
+        self,
+        *,
+        owner_user_id: str,
+        organization_id: str,
+        title: str,
+        text: str,
+        redaction_preview: RedactionPreview,
+        retention_policy: ArtifactRetentionPolicy,
+        source_ref: str | None = None,
+        artifact_id: str | None = None,
+        request_id: str | None = None,
+    ) -> PrivateCorpusIngestionResult:
+        build = build_private_corpus_chunks(
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy,
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+            request_id=request_id,
+            max_chars=self.chunk_max_chars,
+            overlap_chars=self.chunk_overlap_chars,
+        )
+        self._chunks = [
+            chunk for chunk in self._chunks if chunk.source_id != build.source.source_id
+        ] + build.chunks
+        self._invalidate_index()
+        return private_corpus_ingestion_result(
+            build=build,
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            original_text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy,
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+        )
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
         chunks: list[KnowledgeChunk] = []
@@ -280,8 +383,27 @@ class LlamaIndexRetrievalRepository:
                 "vector_weight": self.vector_weight,
                 "bm25_weight": self.bm25_weight,
             },
-            "corpus": result.__dict__ if result else None,
+            "corpus": result.to_dict() if result else None,
         }
+
+    def index_manifest(self) -> RetrievalIndexManifest:
+        return build_retrieval_index_manifest(
+            repository="llamaindex",
+            retrieval_framework="llamaindex",
+            knowledge_root=self.knowledge_root,
+            chunks=self._chunks,
+            embedding_metadata=self.embedding_provider.metadata(),
+            metadata={
+                "chunk_max_chars": self.chunk_max_chars,
+                "chunk_overlap_chars": self.chunk_overlap_chars,
+                "index_generation": self._chunk_generation,
+                "candidate_multiplier": self.candidate_multiplier,
+                "min_candidates": self.min_candidates,
+                "vector_weight": self.vector_weight,
+                "bm25_weight": self.bm25_weight,
+                "vector_persistence": "llamaindex_in_memory_index",
+            },
+        )
 
     def integrity_report(
         self,
@@ -427,7 +549,18 @@ class LlamaIndexRetrievalRepository:
         standard_system = query.filters.get("standard_system")
         source_type = query.filters.get("source_type")
         source_id = query.filters.get("source_id")
+        corpus_partition = query.filters.get("corpus_partition")
+        corpus_visibility = query.filters.get("corpus_visibility")
+        organization_id = query.filters.get("organization_id")
         filtered = chunks
+        filtered = [
+            chunk
+            for chunk in filtered
+            if chunk_visible_for_organization(
+                chunk.metadata,
+                organization_id=str(organization_id) if organization_id else None,
+            )
+        ]
         if trust_level:
             filtered = [chunk for chunk in filtered if chunk.trust_level == TrustLevel(trust_level)]
         if clinical_domain:
@@ -442,6 +575,18 @@ class LlamaIndexRetrievalRepository:
             ]
         if source_id:
             filtered = [chunk for chunk in filtered if chunk.source_id == source_id]
+        if corpus_partition:
+            filtered = [
+                chunk
+                for chunk in filtered
+                if metadata_partition_id(chunk.metadata) == corpus_partition
+            ]
+        if corpus_visibility:
+            filtered = [
+                chunk
+                for chunk in filtered
+                if metadata_visibility(chunk.metadata) == corpus_visibility
+            ]
         return filtered
 
 
@@ -782,6 +927,13 @@ def _empty_package(
         safety_flags=safety_flags,
         reranker_enabled=False,
     )
+    standard_search_plan = standard_search_plan_from_context(
+        query=query,
+        query_analysis=query_analysis,
+        quality_signals=quality_signals,
+        safety_flags=safety_flags,
+        strategy_recommendations=strategy_recommendations,
+    )
     fusion_diagnostics = _framework_fusion_diagnostics(
         bm25_available=False,
         bm25_weight=0.0,
@@ -790,6 +942,8 @@ def _empty_package(
         hits=[],
         vector_weight=1.0,
     )
+    diversity_metadata = _framework_diversity_metadata(hits=[], chunks=[])
+    diversity_summary = diversity_summary_from_metadata(diversity_metadata)
     return RetrievalPackage(
         hits=[],
         evidence=[],
@@ -803,6 +957,8 @@ def _empty_package(
         remediation_summary=remediation_summary,
         interpretation=interpretation,
         strategy_recommendations=strategy_recommendations,
+        standard_search_plan=standard_search_plan,
+        diversity=diversity_summary,
         trace=RetrievalTrace(
             strategy=strategy,
             query_variants=query_analysis.query_variants,
@@ -818,6 +974,7 @@ def _empty_package(
             "retrieval_contract": "retrieval_package.v0",
             "framework": "llamaindex",
             "fusion_diagnostics": fusion_diagnostics,
+            "diversity": diversity_metadata,
             "quality_policy": quality_policy.metadata(),
             "quality_summary": quality_summary.model_dump(),
             "recommended_actions": [
@@ -830,9 +987,43 @@ def _empty_package(
                 recommendation.model_dump(mode="json")
                 for recommendation in strategy_recommendations
             ],
+            "standard_search_plan": (
+                standard_search_plan.model_dump(mode="json")
+                if standard_search_plan
+                else None
+            ),
             "query_analysis": query_analysis.model_dump(),
         },
     )
+
+
+def _framework_diversity_metadata(
+    *,
+    hits: list[RetrievalHit],
+    chunks: list[KnowledgeChunk],
+) -> dict[str, Any]:
+    source_ids = [chunk.source_id for chunk in chunks]
+    return {
+        "enabled": False,
+        "selection_mode": "framework_score_order",
+        "lambda": None,
+        "candidate_source_count": len(set(source_ids)),
+        "selected_source_count": len(set(source_ids)),
+        "duplicate_selected_source_count": len(source_ids) - len(set(source_ids)),
+        "selected_hits": [
+            {
+                "evidence_id": hit.evidence.evidence_id,
+                "source_id": chunk.source_id,
+                "selected_rank": index,
+                "original_rank": index,
+                "relevance_score": round(hit.score, 6),
+                "redundancy_score": 0.0,
+                "selection_score": round(hit.score, 6),
+                "reason": "Selected by framework score order; source-aware MMR was not applied in this adapter.",
+            }
+            for index, (hit, chunk) in enumerate(zip(hits, chunks), start=1)
+        ],
+    }
 
 
 def _optional_metadata(value: Any) -> str | None:

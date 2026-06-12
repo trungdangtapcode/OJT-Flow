@@ -1,0 +1,62 @@
+{
+  "version": "retrieval_query_transformation_rules.v1",
+  "rules": [
+    {
+      "rule_id": "rewrite_laboratory_standardization",
+      "strategy": "rewrite",
+      "reason": "Rewrite laboratory normalization questions into explicit FHIR, LOINC, UCUM, schema, and field terms.",
+      "variant_template": "{query} FHIR Observation LOINC UCUM laboratory standardization schema {schema_id} fields {fields}",
+      "priority": 10,
+      "match": {
+        "any_profile_ids": ["laboratory_standardization"],
+        "any_concepts": ["hba1c_laboratory_test", "unit_normalization"],
+        "any_standards": ["FHIR", "LOINC", "UCUM"]
+      }
+    },
+    {
+      "rule_id": "step_back_healthcare_standard_requirements",
+      "strategy": "step_back_query",
+      "reason": "Create a broader standards-requirements query before evidence lookup.",
+      "variant_template": "healthcare standard requirements {standards} {resource_type} {schema_id} {fields} {profile_label}",
+      "priority": 20,
+      "match": {
+        "any_standards": ["FHIR", "LOINC", "UCUM", "RxNorm", "OMOP", "MeSH", "ClinicalTrials.gov", "openFDA"]
+      }
+    },
+    {
+      "rule_id": "multi_query_aspect_expansion",
+      "strategy": "multi_query_expansion",
+      "reason": "Combine decomposed query aspects and suggested terms into a high-recall variant.",
+      "variant_template": "{query} {aspects} {aspect_terms} {concepts} {standards}",
+      "priority": 30,
+      "match": {
+        "any_profile_routes": [
+          "clinical_data_normalization",
+          "drug_knowledge_grounding",
+          "clinical_problem_list_grounding",
+          "clinical_vitals_grounding",
+          "biomedical_literature_grounding"
+        ]
+      }
+    },
+    {
+      "rule_id": "hyde_optional_healthcare_evidence",
+      "strategy": "hyde",
+      "reason": "Optional deterministic HyDE-style hypothetical evidence document for recall experiments.",
+      "variant_template": "hypothetical trusted healthcare evidence document: query {query}; standards {standards}; fields {fields}; route {profile_route}; expected evidence should cite source requirements and limitations",
+      "priority": 90,
+      "enabled": false,
+      "requires_hyde_enabled": true,
+      "match": {
+        "any_profile_routes": [
+          "clinical_data_normalization",
+          "drug_knowledge_grounding",
+          "clinical_problem_list_grounding",
+          "clinical_vitals_grounding",
+          "biomedical_literature_grounding"
+        ],
+        "any_standards": ["FHIR", "LOINC", "UCUM", "RxNorm", "OMOP", "MeSH"]
+      }
+    }
+  ]
+}

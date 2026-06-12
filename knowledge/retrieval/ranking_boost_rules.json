@@ -3,7 +3,7 @@
   "rules": [
     {
       "rule_id": "boost_schema_source_match",
-      "weight": 0.08,
+      "weight": 0.13,
       "reason": "Prefer evidence whose source ID matches the requested schema.",
       "match": {
         "query_schema_id_in_source_id": true
@@ -36,7 +36,7 @@
     },
     {
       "rule_id": "boost_loinc_hba1c_concept",
-      "weight": 0.08,
+      "weight": 0.115,
       "reason": "Prefer LOINC evidence when HbA1c laboratory concepts are detected.",
       "match": {
         "chunk_standard_systems": ["LOINC"],
@@ -54,11 +54,41 @@
     },
     {
       "rule_id": "boost_fhir_observation_concept",
-      "weight": 0.05,
+      "weight": 0.09,
       "reason": "Prefer FHIR evidence when FHIR Observation profile concepts are detected.",
       "match": {
         "chunk_standard_systems": ["FHIR"],
         "any_concepts": ["fhir_observation_profile"]
+      }
+    },
+    {
+      "rule_id": "boost_loinc_blood_pressure_concept",
+      "weight": 0.105,
+      "reason": "Prefer LOINC evidence when blood-pressure vital-sign concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["LOINC"],
+        "any_concepts": [
+          "vital_sign_blood_pressure",
+          "systolic_blood_pressure",
+          "diastolic_blood_pressure"
+        ]
+      }
+    },
+    {
+      "rule_id": "boost_loinc_vital_sign_concepts",
+      "weight": 0.095,
+      "reason": "Prefer LOINC evidence when non-BP vital-sign concepts are detected.",
+      "match": {
+        "chunk_standard_systems": ["LOINC"],
+        "any_concepts": [
+          "vital_sign_observation",
+          "vital_sign_heart_rate",
+          "vital_sign_oxygen_saturation",
+          "vital_sign_body_temperature",
+          "heart_rate",
+          "oxygen_saturation_pulse_oximetry",
+          "body_temperature"
+        ]
       }
     },
     {
@@ -68,6 +98,35 @@
       "match": {
         "chunk_standard_systems": ["ojtflow_policy"],
         "any_concepts": ["sensitive_identifier_review"]
+      }
+    },
+    {
+      "rule_id": "boost_condition_problem_list_standards",
+      "weight": 0.1,
+      "reason": "Prefer FHIR Condition, ICD-10-CM, and SNOMED CT evidence when diagnosis or problem-list concepts are detected.",
+      "match": {
+        "chunk_clinical_domains": ["problem_list"],
+        "chunk_standard_systems": ["FHIR", "ICD-10-CM", "SNOMED CT"],
+        "any_concepts": [
+          "fhir_condition_profile",
+          "condition_terminology_coding",
+          "type_2_diabetes_icd10cm_seed",
+          "essential_hypertension_icd10cm_seed"
+        ]
+      }
+    },
+    {
+      "rule_id": "boost_allergy_intolerance_standards",
+      "weight": 0.11,
+      "reason": "Prefer FHIR AllergyIntolerance, SNOMED CT, and RxNorm evidence when allergy or adverse-reaction concepts are detected.",
+      "match": {
+        "chunk_clinical_domains": ["allergy"],
+        "chunk_standard_systems": ["FHIR", "SNOMED CT", "RxNorm"],
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed",
+          "latex_allergy_seed"
+        ]
       }
     },
     {

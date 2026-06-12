@@ -1,0 +1,25 @@
+{
+  "version": "graph_rag_policy.v1",
+  "enabled": true,
+  "ranking": {
+    "shared_query_target_weight": 0.055,
+    "evidence_edge_weight": 0.012,
+    "evidence_triple_weight": 0.01,
+    "normalized_code_weight": 0.018,
+    "max_score_boost": 0.12
+  },
+  "support_promotion": {
+    "weak_to_partial_min_boost": 0.04,
+    "partial_to_strong_min_boost": 0.07
+  },
+  "relations": {
+    "query_relations": ["mentions_entity", "mentions_field", "requests_resource"],
+    "evidence_relations": ["supports"]
+  },
+  "governance_notes": [
+    "GraphRAG-lite scores are additive reranking signals, not independent clinical truth.",
+    "Evidence must still be cited and pass source trust, freshness, and PHI governance checks.",
+    "Graph support can promote support status only when evidence links to query graph targets or normalized codes."
+  ],
+  "roadmap_refs": ["F093", "F094"]
+}

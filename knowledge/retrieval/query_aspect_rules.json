@@ -19,12 +19,7 @@
       "match": {
         "any_concepts": [
           "laboratory_observation_identity",
-          "hba1c_laboratory_test",
-          "fhir_observation_profile"
-        ],
-        "any_standards": [
-          "LOINC",
-          "FHIR"
+          "hba1c_laboratory_test"
         ],
         "any_candidate_domains": [
           "laboratory"
@@ -85,6 +80,150 @@
       }
     },
     {
+      "rule_id": "aspect_vital_sign_bp_standardization",
+      "aspect_id": "vital_sign_bp_standardization",
+      "label": "Blood pressure vital-sign grounding",
+      "question": "Which systolic and diastolic blood-pressure concepts should ground the vital-sign observation?",
+      "rationale": "Blood-pressure shorthand such as BP, SBP, DBP, and HTN should resolve to explicit vital-sign concepts before validation or explanation.",
+      "priority": 35,
+      "suggested_terms": [
+        "LOINC 8480-6 systolic blood pressure",
+        "LOINC 8462-4 diastolic blood pressure",
+        "FHIR Observation vital signs",
+        "mm[Hg]"
+      ],
+      "suggested_filters": {
+        "standard_system": "LOINC"
+      },
+      "match": {
+        "any_concepts": [
+          "vital_sign_blood_pressure",
+          "systolic_blood_pressure",
+          "diastolic_blood_pressure"
+        ],
+        "any_tokens": [
+          "bp",
+          "htn",
+          "sbp",
+          "dbp"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_vital_sign_observation_standardization",
+      "aspect_id": "vital_sign_observation_standardization",
+      "label": "Vital-sign observation grounding",
+      "question": "Which LOINC vital-sign concepts, FHIR Observation fields, and UCUM units should ground the measurement?",
+      "rationale": "Generic vitals, heart rate, oxygen saturation, and body-temperature queries need vital-sign evidence without forcing blood-pressure assumptions.",
+      "priority": 36,
+      "suggested_terms": [
+        "FHIR Observation vital signs",
+        "LOINC 8867-4 heart rate",
+        "LOINC 59408-5 oxygen saturation",
+        "LOINC 8310-5 body temperature",
+        "UCUM vital-sign units"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "vital_signs"
+      },
+      "match": {
+        "any_concepts": [
+          "vital_sign_observation",
+          "vital_sign_heart_rate",
+          "vital_sign_oxygen_saturation",
+          "vital_sign_body_temperature",
+          "heart_rate",
+          "oxygen_saturation_pulse_oximetry",
+          "body_temperature"
+        ],
+        "any_candidate_domains": [
+          "vital_signs"
+        ],
+        "any_tokens": [
+          "vitals",
+          "pulse",
+          "spo2",
+          "temperature"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_condition_problem_list_grounding",
+      "aspect_id": "condition_problem_list_grounding",
+      "label": "Condition and diagnosis grounding",
+      "question": "Which FHIR Condition fields and diagnosis terminology systems should ground the problem-list record?",
+      "rationale": "Diagnosis and problem-list data need explicit Condition.code, clinical status, verification status, and terminology evidence before coding or transformation.",
+      "priority": 38,
+      "suggested_terms": [
+        "FHIR Condition",
+        "Condition.code",
+        "Condition.clinicalStatus",
+        "Condition.verificationStatus",
+        "ICD-10-CM diagnosis code",
+        "SNOMED CT clinical finding"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "problem_list"
+      },
+      "match": {
+        "any_concepts": [
+          "fhir_condition_profile",
+          "condition_terminology_coding",
+          "type_2_diabetes_icd10cm_seed",
+          "essential_hypertension_icd10cm_seed"
+        ],
+        "any_standards": [
+          "ICD-10-CM"
+        ],
+        "any_candidate_domains": [
+          "problem_list"
+        ],
+        "any_tokens": [
+          "diagnosis",
+          "diagnoses",
+          "condition",
+          "icd"
+        ]
+      }
+    },
+    {
+      "rule_id": "aspect_allergy_intolerance_grounding",
+      "aspect_id": "allergy_intolerance_grounding",
+      "label": "Allergy and intolerance grounding",
+      "question": "Which FHIR AllergyIntolerance fields, reaction evidence, and substance terminology should ground the allergy record?",
+      "rationale": "Allergy and intolerance records need patient, substance/code, clinical status, verification status, reaction manifestation, and uncertainty preserved before safety use.",
+      "priority": 37,
+      "suggested_terms": [
+        "FHIR AllergyIntolerance",
+        "AllergyIntolerance.code",
+        "AllergyIntolerance.clinicalStatus",
+        "AllergyIntolerance.verificationStatus",
+        "reaction.manifestation",
+        "SNOMED CT allergy finding",
+        "RxNorm ingredient"
+      ],
+      "suggested_filters": {
+        "clinical_domain": "allergy"
+      },
+      "match": {
+        "any_concepts": [
+          "fhir_allergyintolerance_profile",
+          "penicillin_allergy_seed",
+          "latex_allergy_seed"
+        ],
+        "any_candidate_domains": [
+          "allergy"
+        ],
+        "any_tokens": [
+          "allergy",
+          "allergies",
+          "intolerance",
+          "reaction",
+          "manifestation"
+        ]
+      }
+    },
+    {
       "rule_id": "aspect_medication_terminology_safety",
       "aspect_id": "medication_terminology_safety",
       "label": "Medication terminology and safety",
@@ -103,10 +242,6 @@
         "any_concepts": [
           "medication_normalization",
           "regulatory_drug_safety_search"
-        ],
-        "any_standards": [
-          "RxNorm",
-          "openFDA"
         ],
         "any_candidate_domains": [
           "medication"

@@ -1,0 +1,191 @@
+{
+  "version": "citation_locator_rules.v1",
+  "rules": [
+    {
+      "rule_id": "fhir_r4_observation_page",
+      "label": "FHIR R4 Observation page",
+      "locator_kind": "fhir_page",
+      "priority": 10,
+      "match": {
+        "source_ids": ["standard:fhir_observation_r4"]
+      },
+      "display_template": "HL7 FHIR R4 Observation",
+      "canonical_url_template": "https://hl7.org/fhir/R4/observation.html",
+      "required_context_keys": [],
+      "identifier_keys": ["resource_type", "standard"]
+    },
+    {
+      "rule_id": "fhir_r4_condition_page",
+      "label": "FHIR R4 Condition page",
+      "locator_kind": "fhir_page",
+      "priority": 11,
+      "match": {
+        "source_ids": ["standard:fhir_condition_r4"]
+      },
+      "display_template": "HL7 FHIR R4 Condition",
+      "canonical_url_template": "https://hl7.org/fhir/R4/condition.html",
+      "required_context_keys": [],
+      "identifier_keys": ["resource_type", "standard"]
+    },
+    {
+      "rule_id": "fhir_r4_allergyintolerance_page",
+      "label": "FHIR R4 AllergyIntolerance page",
+      "locator_kind": "fhir_page",
+      "priority": 12,
+      "match": {
+        "source_ids": ["standard:fhir_allergyintolerance_r4"]
+      },
+      "display_template": "HL7 FHIR R4 AllergyIntolerance",
+      "canonical_url_template": "https://hl7.org/fhir/R4/allergyintolerance.html",
+      "required_context_keys": [],
+      "identifier_keys": ["resource_type", "standard"]
+    },
+    {
+      "rule_id": "fhir_r4_resource_page",
+      "label": "FHIR R4 resource page",
+      "locator_kind": "fhir_page",
+      "priority": 30,
+      "match": {
+        "standard_systems": ["FHIR"]
+      },
+      "display_template": "HL7 FHIR R4 {resource_type}",
+      "canonical_url_template": "https://hl7.org/fhir/R4/{resource_type_slug}.html",
+      "required_context_keys": ["resource_type_slug"],
+      "identifier_keys": ["resource_type", "standard"],
+      "warnings": ["Generic FHIR locator inferred from resource type; verify exact release when citing."]
+    },
+    {
+      "rule_id": "pubmed_record",
+      "label": "PubMed record",
+      "locator_kind": "pubmed_record",
+      "priority": 20,
+      "match": {
+        "locator_any_keys": ["pmid"]
+      },
+      "display_template": "PubMed PMID {pmid}",
+      "canonical_url_template": "https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+      "required_context_keys": ["pmid"],
+      "identifier_keys": ["pmid"]
+    },
+    {
+      "rule_id": "pubmed_search_context",
+      "label": "PubMed search context",
+      "locator_kind": "pubmed_search",
+      "priority": 60,
+      "match": {
+        "source_ids": ["standard:mesh_pubmed_search"]
+      },
+      "display_template": "NLM PubMed and MeSH search guidance",
+      "canonical_url_template": "https://pubmed.ncbi.nlm.nih.gov/",
+      "required_context_keys": [],
+      "identifier_keys": ["standard"]
+    },
+    {
+      "rule_id": "clinicaltrials_study",
+      "label": "ClinicalTrials.gov study",
+      "locator_kind": "clinicaltrials_study",
+      "priority": 20,
+      "match": {
+        "locator_any_keys": ["nct_id"]
+      },
+      "display_template": "ClinicalTrials.gov study {nct_id}",
+      "canonical_url_template": "https://clinicaltrials.gov/study/{nct_id}",
+      "required_context_keys": ["nct_id"],
+      "identifier_keys": ["nct_id"]
+    },
+    {
+      "rule_id": "clinicaltrials_api_context",
+      "label": "ClinicalTrials.gov API context",
+      "locator_kind": "clinicaltrials_api",
+      "priority": 60,
+      "match": {
+        "source_ids": ["standard:clinicaltrials_gov_api"]
+      },
+      "display_template": "ClinicalTrials.gov API v2",
+      "canonical_url_template": "https://clinicaltrials.gov/data-api/api",
+      "required_context_keys": [],
+      "identifier_keys": ["standard"]
+    },
+    {
+      "rule_id": "openfda_endpoint",
+      "label": "openFDA endpoint",
+      "locator_kind": "openfda_endpoint",
+      "priority": 20,
+      "match": {
+        "standard_systems": ["openFDA"]
+      },
+      "display_template": "openFDA {openfda_endpoint}",
+      "canonical_url_template": "https://open.fda.gov/apis/{openfda_endpoint}/",
+      "required_context_keys": ["openfda_endpoint"],
+      "identifier_keys": ["openfda_endpoint", "standard"],
+      "warnings": ["openFDA records are regulatory signal context and require limitation text."]
+    },
+    {
+      "rule_id": "ucum_unit",
+      "label": "UCUM unit",
+      "locator_kind": "ucum_unit",
+      "priority": 20,
+      "match": {
+        "standard_systems": ["UCUM"]
+      },
+      "display_template": "UCUM unit {unit_code}",
+      "canonical_url_template": "https://ucum.nlm.nih.gov/ucum-service.html?query={unit_code}",
+      "required_context_keys": ["unit_code"],
+      "identifier_keys": ["unit_code", "standard"],
+      "warnings": ["UCUM normalization changes remain review-gated."]
+    },
+    {
+      "rule_id": "rxnorm_concept",
+      "label": "RxNorm concept",
+      "locator_kind": "rxnorm_concept",
+      "priority": 20,
+      "match": {
+        "standard_systems": ["RxNorm"]
+      },
+      "display_template": "RxNorm concept {rxcui}",
+      "canonical_url_template": "https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm={rxcui}",
+      "required_context_keys": ["rxcui"],
+      "identifier_keys": ["rxcui", "standard"],
+      "warnings": ["Medication terminology results require reviewer confirmation before transformation."]
+    },
+    {
+      "rule_id": "rxnorm_source_context",
+      "label": "RxNorm source context",
+      "locator_kind": "rxnorm_source",
+      "priority": 65,
+      "match": {
+        "standard_systems": ["RxNorm"]
+      },
+      "display_template": "RxNorm terminology context",
+      "canonical_url_template": "https://mor.nlm.nih.gov/RxNav/",
+      "required_context_keys": [],
+      "identifier_keys": ["standard"],
+      "warnings": ["Medication terminology results require reviewer confirmation before transformation."]
+    },
+    {
+      "rule_id": "pdf_page",
+      "label": "PDF page",
+      "locator_kind": "pdf_page",
+      "priority": 40,
+      "match": {
+        "locator_all_keys": ["path", "page"]
+      },
+      "display_template": "{path} page {page}",
+      "required_context_keys": ["path", "page"],
+      "identifier_keys": ["path", "page"]
+    },
+    {
+      "rule_id": "internal_policy_section",
+      "label": "Internal policy or knowledge section",
+      "locator_kind": "internal_section",
+      "priority": 80,
+      "match": {
+        "locator_any_keys": ["path", "section_heading"]
+      },
+      "display_template": "{path} {section_heading}",
+      "required_context_keys": [],
+      "identifier_keys": ["path", "section_heading"],
+      "warnings": ["Internal curated knowledge should not be cited as an external medical authority."]
+    }
+  ]
+}

@@ -14,6 +14,7 @@ from ojtflow.core.contracts.data import ParsedData, TransformationOutput, Transf
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.errors import ToolExecutionError
 from ojtflow.data_tools.hashing import sha256_text
+from ojtflow.data_tools.phi import classify_text
 
 
 def convert_data(
@@ -39,6 +40,11 @@ def convert_data(
         output_format=target_format,
         output_hash=sha256_text(output_text),
         preview=output_text[:1000],
+        phi_classification=classify_text(
+            output_text,
+            target_type="generated_output",
+            data_format=target_format,
+        ),
         diff_summary=_diff_summary(parsed, normalized, plan),
         warnings=warnings,
     )

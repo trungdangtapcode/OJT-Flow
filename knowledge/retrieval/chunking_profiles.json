@@ -1,0 +1,83 @@
+{
+  "version": "corpus_chunking_profiles.v1",
+  "profiles": [
+    {
+      "profile_id": "paragraph_window_v0",
+      "label": "Paragraph Window",
+      "description": "Default paragraph-aware text chunking for general curated knowledge files.",
+      "boundary_strategy": "paragraph",
+      "max_chars": 1200,
+      "overlap_chars": 160,
+      "preferred_extensions": [".md", ".txt"],
+      "metadata_fields": ["path", "chunk_index", "field_names"],
+      "intended_sources": ["general local corpus", "data dictionaries"],
+      "lifecycle_state": "approved",
+      "governance_notes": ["Use when document headings are weak or not semantically meaningful."]
+    },
+    {
+      "profile_id": "section_window_v0",
+      "label": "Markdown Section Window",
+      "description": "Preserves markdown section headings in chunk locators for standards and implementation guides.",
+      "boundary_strategy": "markdown_section",
+      "max_chars": 1600,
+      "overlap_chars": 120,
+      "preferred_extensions": [".md"],
+      "metadata_fields": ["path", "chunk_index", "section_heading", "standard_system", "resource_type"],
+      "intended_sources": ["FHIR specification pages", "implementation guides", "internal standards maps"],
+      "lifecycle_state": "approved",
+      "governance_notes": ["Prefer this profile for standards where section provenance matters."]
+    },
+    {
+      "profile_id": "concept_card_v0",
+      "label": "Terminology Concept Card",
+      "description": "Keeps terminology concept records compact so codes, labels, synonyms, and source URLs stay together.",
+      "boundary_strategy": "record_or_section",
+      "max_chars": 900,
+      "overlap_chars": 80,
+      "preferred_extensions": [".json", ".csv", ".md"],
+      "metadata_fields": ["concept_id", "code", "display", "standard_system", "source_locator"],
+      "intended_sources": ["LOINC", "UCUM", "RxNorm", "SNOMED CT", "MeSH"],
+      "lifecycle_state": "approved",
+      "governance_notes": ["Do not split one terminology concept across unrelated chunks."]
+    },
+    {
+      "profile_id": "api_record_summary_v0",
+      "label": "API Record Summary",
+      "description": "Chunks cached API records by record boundary with endpoint, query, fetch time, and response hash metadata.",
+      "boundary_strategy": "json_record",
+      "max_chars": 1800,
+      "overlap_chars": 0,
+      "preferred_extensions": [".json", ".ndjson"],
+      "metadata_fields": ["endpoint", "query", "fetched_at", "content_hash", "record_id"],
+      "intended_sources": ["openFDA", "ClinicalTrials.gov", "RxNav", "NCBI E-utilities"],
+      "lifecycle_state": "candidate",
+      "governance_notes": ["Requires a fetch job to preserve endpoint and query provenance."]
+    },
+    {
+      "profile_id": "pdf_page_window_v0",
+      "label": "PDF Page Window",
+      "description": "Chunks extracted PDF text by page or page window while preserving page references.",
+      "boundary_strategy": "page_window",
+      "max_chars": 1400,
+      "overlap_chars": 120,
+      "preferred_extensions": [".pdf", ".txt", ".md"],
+      "metadata_fields": ["page", "section_heading", "source_locator"],
+      "intended_sources": ["guidelines", "regulatory PDFs", "internal policies"],
+      "lifecycle_state": "candidate",
+      "governance_notes": ["Use after document extraction records page-level provenance."]
+    },
+    {
+      "profile_id": "internal_policy_section_v0",
+      "label": "Internal Policy Section",
+      "description": "Section-aware chunking for internal governance and review policies.",
+      "boundary_strategy": "markdown_section",
+      "max_chars": 1000,
+      "overlap_chars": 80,
+      "preferred_extensions": [".md", ".txt"],
+      "metadata_fields": ["path", "chunk_index", "section_heading", "policy_scope"],
+      "intended_sources": ["human review policies", "governance playbooks"],
+      "lifecycle_state": "approved",
+      "governance_notes": ["Use for policy evidence shown to operators."]
+    }
+  ]
+}

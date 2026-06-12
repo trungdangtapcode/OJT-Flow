@@ -1,0 +1,137 @@
+{
+  "version": "mcp_prompts.v1",
+  "prompts": [
+    {
+      "prompt_id": "validate_lab_csv_with_evidence",
+      "name": "validate_lab_csv_with_evidence",
+      "title": "Validate Lab CSV With Evidence",
+      "description": "Ask OJTFlow to validate lab CSV data, retrieve trusted standards evidence, and explain issues without clinical treatment advice.",
+      "task_type": "validation",
+      "template": "Validate this lab CSV using schema {{schema_id}}. Retrieve trusted evidence for missing fields, units, date format, identifiers, and PHI risk. Return issue summary, evidence support, review needs, and safe next actions.\n\nCSV:\n{{data}}",
+      "arguments": [
+        {
+          "name": "data",
+          "description": "CSV text to validate.",
+          "required": true,
+          "value_hint": "date,patient_id,lab_name,value,unit\\n..."
+        },
+        {
+          "name": "schema_id",
+          "description": "Validation schema identifier.",
+          "required": false,
+          "default": "lab_result_v1"
+        }
+      ],
+      "recommended_tools": ["validate_with_evidence"],
+      "evidence_required": true,
+      "write_actions_allowed": false,
+      "tags": ["validation", "laboratory", "evidence"],
+      "roadmap_refs": ["F114"]
+    },
+    {
+      "prompt_id": "profile_fhir_resource",
+      "name": "profile_fhir_resource",
+      "title": "Profile FHIR-like Resource",
+      "description": "Profile FHIR-like JSON and identify resource type, required shape, schema evidence, and Graph-NER handoff context.",
+      "task_type": "fhir_profile",
+      "template": "Profile this FHIR-like payload. Identify resourceType, minimal required shape gaps, profile evidence, and graph handoff entities. Do not run destructive actions.\n\nFHIR-like JSON:\n{{data}}",
+      "arguments": [
+        {
+          "name": "data",
+          "description": "FHIR-like JSON payload.",
+          "required": true,
+          "value_hint": "{\"resourceType\":\"Observation\",\"status\":\"final\"}"
+        }
+      ],
+      "recommended_tools": ["fhir_profile", "retrieval_search"],
+      "evidence_required": true,
+      "write_actions_allowed": false,
+      "tags": ["fhir", "profile", "graph_ner"],
+      "roadmap_refs": ["F114"]
+    },
+    {
+      "prompt_id": "find_ucum_evidence",
+      "name": "find_ucum_evidence",
+      "title": "Find UCUM Evidence",
+      "description": "Search trusted terminology evidence for a unit or unit-related validation issue.",
+      "task_type": "retrieval",
+      "template": "Find trusted UCUM/unit evidence for {{unit}}. Explain whether the unit is present, missing, or suspicious for healthcare lab validation. Include source IDs, matched terms, support matrix status, and gaps.",
+      "arguments": [
+        {
+          "name": "unit",
+          "description": "Unit text or unit issue to investigate.",
+          "required": true,
+          "value_hint": "mg/dL, %, missing unit"
+        }
+      ],
+      "recommended_tools": ["retrieval_search"],
+      "evidence_required": true,
+      "write_actions_allowed": false,
+      "tags": ["retrieval", "terminology", "ucum"],
+      "roadmap_refs": ["F114"]
+    },
+    {
+      "prompt_id": "inspect_pending_reviews",
+      "name": "inspect_pending_reviews",
+      "title": "Inspect Pending Reviews",
+      "description": "List human review work and summarize what an operator should inspect next.",
+      "task_type": "review_workflow",
+      "template": "List workflows awaiting human review with status {{review_status}}. Summarize IDs, issue counts, evidence availability, and next operator actions. Do not approve or reject reviews.",
+      "arguments": [
+        {
+          "name": "review_status",
+          "description": "Review queue status.",
+          "required": false,
+          "default": "pending"
+        }
+      ],
+      "recommended_tools": ["list_reviews", "workflow_summary"],
+      "evidence_required": false,
+      "write_actions_allowed": false,
+      "tags": ["review", "operations"],
+      "roadmap_refs": ["F114"]
+    },
+    {
+      "prompt_id": "summarize_workflow",
+      "name": "summarize_workflow",
+      "title": "Summarize Workflow",
+      "description": "Summarize one workflow with status, validation issues, evidence, review state, and next actions.",
+      "task_type": "workflow_summary",
+      "template": "Summarize workflow {{workflow_id}} for an operator. Include current status, completed steps, validation issue categories, evidence support, review gate state, output readiness, and next actions.",
+      "arguments": [
+        {
+          "name": "workflow_id",
+          "description": "Workflow ID to inspect.",
+          "required": true,
+          "value_hint": "wf_..."
+        }
+      ],
+      "recommended_tools": ["workflow_summary"],
+      "evidence_required": false,
+      "write_actions_allowed": false,
+      "tags": ["workflow", "operations"],
+      "roadmap_refs": ["F114"]
+    },
+    {
+      "prompt_id": "prepare_export_review",
+      "name": "prepare_export_review",
+      "title": "Prepare Export Review",
+      "description": "Prepare a human-readable export readiness review before downstream handoff.",
+      "task_type": "export_review",
+      "template": "Prepare an export readiness review for workflow {{workflow_id}}. Check validation state, evidence support, review decision, PHI/sensitive data warnings, and limitations. Do not export or mutate data.",
+      "arguments": [
+        {
+          "name": "workflow_id",
+          "description": "Workflow ID to inspect before export.",
+          "required": true,
+          "value_hint": "wf_..."
+        }
+      ],
+      "recommended_tools": ["workflow_summary", "retrieval_search"],
+      "evidence_required": true,
+      "write_actions_allowed": false,
+      "tags": ["export", "review", "governance"],
+      "roadmap_refs": ["F114"]
+    }
+  ]
+}

@@ -23,13 +23,21 @@ dev = [
 parsing = [
   "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
   "markitdown-ocr>=0.1.0,<0.2",
+  "openpyxl>=3.1,<4",
   "openai>=1.0,<3",
+  "pypdf>=4,<6",
 ]
 parsing-full = [
   "markitdown[pdf,docx,xlsx,xls,pptx]>=0.1.0",
   "markitdown-ocr>=0.1.0,<0.2",
   "magic-pdf[full]>=0.11.0",
+  "openpyxl>=3.1,<4",
   "openai>=1.0,<3",
+  "pypdf>=4,<6",
+]
+ocr-local = [
+  "pillow>=10,<12",
+  "pytesseract>=0.3,<0.4",
 ]
 embeddings-local = [
   "sentence-transformers>=3.0,<4",

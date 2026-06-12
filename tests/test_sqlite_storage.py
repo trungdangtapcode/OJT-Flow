@@ -131,3 +131,44 @@ def test_sqlite_auth_repository_persists_and_revokes_sessions(tmp_path: Path) ->
 
     restarted.revoke_session(token_hash)
     assert restarted.get_active_session(token_hash, datetime.now(timezone.utc)) is None
+
+
+def test_sqlite_auth_repository_persists_service_account_sessions(tmp_path: Path) -> None:
+    backbone = SQLiteBackboneStore(tmp_path / "ojtflow.db", tmp_path / "var")
+    repository = SQLiteAuthRepository(backbone)
+    creator = repository.upsert_google_user(
+        GoogleIdentityProfile(
+            google_sub="google-admin",
+            email="admin@example.com",
+            email_verified=True,
+            display_name="Admin User",
+        )
+    )
+    account = repository.create_service_account(
+        account_id="svc_sqlite",
+        organization_id="org_sqlite",
+        slug="nightly-ingestion",
+        display_name="Nightly Ingestion",
+        role_key="operator",
+        created_by_user_id=creator.user_id,
+    )
+    token_hash = "b" * 64
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    repository.create_session(
+        user_id=account.user_id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+
+    restarted = SQLiteAuthRepository(
+        SQLiteBackboneStore(tmp_path / "ojtflow.db", tmp_path / "var")
+    )
+    authenticated = restarted.get_active_session(token_hash, datetime.now(timezone.utc))
+    accounts = restarted.list_service_accounts(organization_id="org_sqlite")
+
+    assert authenticated is not None
+    assert authenticated.identity_type == "service_account"
+    assert authenticated.service_account is not None
+    assert authenticated.service_account.slug == "nightly-ingestion"
+    assert authenticated.user.google_sub == "service-account:svc_sqlite"
+    assert [item.account_id for item in accounts] == ["svc_sqlite"]

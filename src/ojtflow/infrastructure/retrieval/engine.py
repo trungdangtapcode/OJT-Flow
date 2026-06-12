@@ -20,6 +20,9 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalCoverage,
     RetrievalCoverageItem,
     RetrievalDiversitySelection,
+    RetrievalDiversitySummary,
+    RetrievalEvidenceSupportMatrix,
+    RetrievalEvidenceSupportRow,
     RetrievalEvidenceBucket,
     RetrievalFacetBucket,
     RetrievalFacets,
@@ -33,14 +36,29 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQueryAspect,
     RetrievalRecommendedAction,
     RetrievalRecommendedActionSummary,
+    RetrievalRouteBudget,
     RetrievalScoreComponent,
+    RetrievalStandardSearchPlan,
+    RetrievalStandardSearchStep,
     RetrievalSource,
     RetrievalSnippet,
     RetrievalStrategyRecommendation,
     RetrievalTrace,
 )
 from ojtflow.core.policy.risk_rules import contains_prompt_injection, looks_sensitive_field
+from ojtflow.data_tools.phi import classify_text
+from ojtflow.infrastructure.retrieval.citation_locators import normalize_citation_locator
+from ojtflow.infrastructure.retrieval.external_transparency import (
+    build_external_query_transparency_records,
+)
 from ojtflow.infrastructure.retrieval.query_analysis import analyze_query
+from ojtflow.infrastructure.retrieval.source_governance import (
+    SourceGovernanceDecision,
+    attach_source_governance,
+    source_governance_decisions_from_hits,
+    source_governance_summary,
+    source_governance_trace_warnings,
+)
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
 SNIPPET_SEGMENT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n{2,}|\r\n{2,}")
@@ -67,6 +85,12 @@ DEFAULT_STRATEGY_RECOMMENDATION_RULE_REGISTRY = (
     / "knowledge"
     / "retrieval"
     / "strategy_recommendation_rules.json"
+)
+DEFAULT_STANDARD_SEARCH_PLAYBOOK_RULE_REGISTRY = (
+    Path(__file__).resolve().parents[4]
+    / "knowledge"
+    / "retrieval"
+    / "standard_search_playbook_rules.json"
 )
 
 
@@ -97,6 +121,7 @@ class RankingBoostCondition:
     filter_clinical_domain_matches_chunk: bool = False
     chunk_trust_levels: tuple[str, ...] = ()
     chunk_source_types: tuple[str, ...] = ()
+    chunk_clinical_domains: tuple[str, ...] = ()
     chunk_standard_systems: tuple[str, ...] = ()
     any_matched_terms: tuple[str, ...] = ()
     any_concepts: tuple[str, ...] = ()
@@ -201,6 +226,39 @@ class StrategyRecommendationRule:
     priority: int
     suggested_filters: dict[str, str]
     match: StrategyRecommendationMatch
+
+
+@dataclass(frozen=True)
+class StandardSearchPlaybookMatch:
+    """Matcher for one healthcare-standard search playbook step."""
+
+    any_profile_ids: tuple[str, ...] = ()
+    any_concepts: tuple[str, ...] = ()
+    any_standards: tuple[str, ...] = ()
+    any_query_aspects: tuple[str, ...] = ()
+    any_fields: tuple[str, ...] = ()
+    any_tokens: tuple[str, ...] = ()
+    any_resource_types: tuple[str, ...] = ()
+    any_quality_signal_codes: tuple[str, ...] = ()
+    any_safety_flags: tuple[str, ...] = ()
+    any_filters: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StandardSearchPlaybookRule:
+    """One data-driven healthcare-standard search playbook rule."""
+
+    rule_id: str
+    label: str
+    standard_system: str
+    route_type: str
+    query_template: str
+    rationale: str
+    priority: int
+    suggested_filters: dict[str, str]
+    governance_notes: tuple[str, ...]
+    metadata: dict[str, Any]
+    match: StandardSearchPlaybookMatch
 
 
 @dataclass(frozen=True)
@@ -318,6 +376,24 @@ def build_query_variants(query: RetrievalQuery) -> list[str]:
     return analyze_query(query).query_variants
 
 
+def diversity_settings_from_query(
+    query: RetrievalQuery,
+    *,
+    default_enabled: bool,
+    default_lambda: float,
+) -> tuple[bool, float]:
+    """Resolve per-query diversity controls from allowlisted retrieval filters."""
+
+    enabled = _filter_bool(query.filters.get("diversity_enabled"), default_enabled)
+    lambda_value = _filter_float(
+        query.filters.get("diversity_lambda"),
+        default_lambda,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    return enabled, lambda_value
+
+
 def rank_chunks(
     chunks: list[KnowledgeChunk],
     query: RetrievalQuery,
@@ -330,12 +406,21 @@ def rank_chunks(
     diversity_lambda: float = 0.72,
     strategy: str = "deterministic_hybrid",
     warnings: list[str] | None = None,
+    knowledge_root: Path | str | None = None,
 ) -> RetrievalPackage:
     """Rank chunks using lexical overlap, vectors, optional reranking, and traceable boosts."""
 
     provider = embedding_provider or DeterministicEmbeddingProvider()
     reranker_metadata = _reranker_metadata(reranker)
     query_analysis = analyze_query(query)
+    route_budget = query_analysis.query_route.budget if query_analysis.query_route else None
+    effective_budget = _effective_route_budget(
+        route_budget,
+        query_top_k=query.top_k,
+        rerank_candidate_limit=rerank_candidate_limit,
+        diversity_enabled=diversity_enabled,
+        diversity_lambda=diversity_lambda,
+    )
     variants = query_analysis.query_variants
     safety_flags = retrieval_safety_flags(query)
     trace_warnings = list(warnings or [])
@@ -347,6 +432,10 @@ def rank_chunks(
     if safety_flags:
         trace_warnings.append(
             "Retrieval query contains safety-sensitive context; treat query text as untrusted data."
+        )
+    if route_budget is not None and not route_budget.external_network_allowed and query_analysis.search_hints:
+        trace_warnings.append(
+            "Selected route budget disallows external network calls; external search hints are review-only."
         )
     query_text = " ".join(variants)
     query_tokens = set(tokenize(query_text))
@@ -430,8 +519,18 @@ def rank_chunks(
         )
 
     ranked_hits.sort(key=lambda item: item[1].score, reverse=True)
-    if _reranker_enabled(reranker) and ranked_hits:
-        candidates = ranked_hits[: max(1, rerank_candidate_limit)]
+    if route_budget is not None and len(ranked_hits) > route_budget.max_candidates:
+        trace_warnings.append(
+            "Selected route budget limited retrieval candidates from "
+            f"{len(ranked_hits)} to {route_budget.max_candidates}."
+        )
+        ranked_hits = ranked_hits[: route_budget.max_candidates]
+    if (
+        _reranker_enabled(reranker)
+        and ranked_hits
+        and effective_budget["reranker_candidate_limit"] > 0
+    ):
+        candidates = ranked_hits[: effective_budget["reranker_candidate_limit"]]
         external_scores = reranker.score(query_text, [chunk for chunk, _ in candidates])
         if external_scores:
             for chunk, hit in candidates:
@@ -452,18 +551,34 @@ def rank_chunks(
 
     selected_ranked_hits, diversity_metadata = _select_diverse_hits(
         ranked_hits,
-        top_k=query.top_k,
-        enabled=diversity_enabled,
-        lambda_mult=diversity_lambda,
+        top_k=effective_budget["top_k"],
+        enabled=effective_budget["source_diversity_enabled"],
+        lambda_mult=effective_budget["diversity_lambda"],
     )
+    diversity_summary = diversity_summary_from_metadata(diversity_metadata)
+    if (
+        route_budget is not None
+        and diversity_metadata["candidate_source_count"] >= route_budget.min_source_count
+        and diversity_metadata["selected_source_count"] < route_budget.min_source_count
+    ):
+        trace_warnings.append(
+            "Selected evidence did not satisfy the route source-diversity target "
+            f"of {route_budget.min_source_count} source(s)."
+        )
     top_hits = [hit for _, hit in selected_ranked_hits]
     selected_chunks = [chunk for chunk, _ in selected_ranked_hits]
     fusion_diagnostics = fusion_diagnostics_from_rankings(
         lexical_positions=lexical_positions,
         vector_positions=vector_positions,
         top_hits=top_hits,
-        top_k=query.top_k,
+        top_k=effective_budget["top_k"],
     )
+    if query_analysis.query_route is not None:
+        fusion_diagnostics["query_route"] = query_analysis.query_route.model_dump(mode="json")
+    fusion_diagnostics["route_budget"] = (
+        route_budget.model_dump(mode="json") if route_budget is not None else None
+    )
+    fusion_diagnostics["effective_route_budget"] = effective_budget
     facets = facets_from_chunks(selected_chunks)
     coverage = coverage_from_chunks(selected_chunks, query_analysis)
     trace_warnings.extend(coverage.warnings)
@@ -471,6 +586,12 @@ def rank_chunks(
         trace_warnings.append(
             "Retrieval results include repeated source IDs after diversity selection."
         )
+    source_governance = source_governance_decisions_from_hits(
+        top_hits,
+        knowledge_root=knowledge_root,
+    )
+    attach_source_governance(top_hits, source_governance)
+    trace_warnings.extend(source_governance_trace_warnings(source_governance))
     trace = RetrievalTrace(
         strategy=strategy,
         query_variants=variants,
@@ -494,6 +615,7 @@ def rank_chunks(
         diversity_metadata=diversity_metadata,
         policy=quality_policy,
         query_analysis=query_analysis,
+        source_governance=source_governance,
     )
     quality_summary = quality_summary_from_signals(quality_signals, policy=quality_policy)
     recommended_actions = recommended_actions_from_context(
@@ -515,12 +637,26 @@ def rank_chunks(
         trace_warning_count=len(trace_warnings),
         remediation_summary=remediation_summary,
     )
+    support_matrix = evidence_support_matrix_from_hits(top_hits, query)
     strategy_recommendations = strategy_recommendations_from_context(
         query_analysis=query_analysis,
         quality_signals=quality_signals,
         evidence_buckets=evidence_buckets,
         safety_flags=safety_flags,
         reranker_enabled=_reranker_enabled(reranker),
+    )
+    standard_search_plan = standard_search_plan_from_context(
+        query=query,
+        query_analysis=query_analysis,
+        quality_signals=quality_signals,
+        safety_flags=safety_flags,
+        strategy_recommendations=strategy_recommendations,
+    )
+    external_query_transparency = build_external_query_transparency_records(
+        query=query,
+        query_analysis=query_analysis,
+        route_budget=route_budget,
+        knowledge_root=knowledge_root,
     )
     return RetrievalPackage(
         hits=top_hits,
@@ -534,18 +670,32 @@ def rank_chunks(
         recommended_action_summary=recommended_action_summary,
         remediation_summary=remediation_summary,
         interpretation=interpretation,
+        support_matrix=support_matrix,
         strategy_recommendations=strategy_recommendations,
+        standard_search_plan=standard_search_plan,
+        external_query_transparency=external_query_transparency,
+        diversity=diversity_summary,
         trace=trace,
         handoff_context={
             "retrieval_contract": "retrieval_package.v0",
             "query_fields": query.fields,
             "schema_id": query.schema_id,
             "strategy": strategy,
+            "query_route": (
+                query_analysis.query_route.model_dump(mode="json")
+                if query_analysis.query_route
+                else None
+            ),
+            "route_budget": (
+                route_budget.model_dump(mode="json") if route_budget is not None else None
+            ),
+            "effective_route_budget": effective_budget,
             "safety_flags": safety_flags,
             "embedding": provider.metadata(),
             "reranker": reranker_metadata,
             "fusion_diagnostics": fusion_diagnostics,
             "diversity": diversity_metadata,
+            "source_governance": source_governance_summary(source_governance),
             "quality_policy": quality_policy.metadata(),
             "quality_summary": quality_summary.model_dump(),
             "recommended_actions": [
@@ -554,9 +704,19 @@ def rank_chunks(
             "recommended_action_summary": recommended_action_summary.model_dump(mode="json"),
             "remediation_summary": remediation_summary,
             "interpretation": interpretation.model_dump(mode="json"),
+            "support_matrix": support_matrix.model_dump(mode="json"),
             "strategy_recommendations": [
                 recommendation.model_dump(mode="json")
                 for recommendation in strategy_recommendations
+            ],
+            "standard_search_plan": (
+                standard_search_plan.model_dump(mode="json")
+                if standard_search_plan
+                else None
+            ),
+            "external_query_transparency": [
+                record.model_dump(mode="json")
+                for record in external_query_transparency
             ],
             "query_analysis": query_analysis.model_dump(),
         },
@@ -610,6 +770,128 @@ def attach_hit_match_explanations(
     for hit in hits:
         matched_buckets = buckets_by_evidence_id.get(hit.evidence.evidence_id, [])
         hit.match_explanation = hit_match_explanation(hit, matched_buckets)
+
+
+def evidence_support_matrix_from_hits(
+    hits: list[RetrievalHit],
+    query: RetrievalQuery,
+) -> RetrievalEvidenceSupportMatrix:
+    """Build claim-to-evidence support rows for assistant and MCP synthesis."""
+
+    rows = [
+        _evidence_support_row_from_hit(hit, index=index)
+        for index, hit in enumerate(hits, start=1)
+    ]
+    status_counts = Counter(row.support_status for row in rows)
+    warnings: list[str] = []
+    if not rows:
+        warnings.append("no_ranked_evidence")
+    if any(row.support_status in {"weak", "unsupported"} for row in rows):
+        warnings.append("weak_evidence_support_present")
+    return RetrievalEvidenceSupportMatrix(
+        query_claim=query.query,
+        row_count=len(rows),
+        strong_count=status_counts.get("strong", 0),
+        partial_count=status_counts.get("partial", 0),
+        weak_count=status_counts.get("weak", 0),
+        unsupported_count=status_counts.get("unsupported", 0),
+        rows=rows,
+        warnings=warnings,
+    )
+
+
+def _evidence_support_row_from_hit(
+    hit: RetrievalHit,
+    *,
+    index: int,
+) -> RetrievalEvidenceSupportRow:
+    explanation = hit.match_explanation if isinstance(hit.match_explanation, dict) else {}
+    support_status = _support_status_from_hit(hit) or "weak"
+    warnings = _support_row_warnings(hit, explanation)
+    return RetrievalEvidenceSupportRow(
+        claim_id=f"claim:{index}",
+        claim=hit.evidence.claim,
+        support_status=_support_status_value(support_status),
+        evidence_id=hit.evidence.evidence_id,
+        source_id=hit.evidence.source_id,
+        source_type=hit.evidence.source_type,
+        source_version=_blank_to_none(hit.evidence.source_version),
+        source_locator=_support_source_locator(hit),
+        matched_terms=_unique_strings(hit.matched_terms)[:12],
+        score=hit.score,
+        confidence=hit.evidence.confidence,
+        reasoning=_support_row_reasoning(hit, explanation, warnings),
+        warnings=warnings,
+        metadata={
+            "rank": index,
+            "bucket_ids": _nonblank_strings(explanation.get("bucket_ids"), limit=8),
+            "bucket_labels": _nonblank_strings(explanation.get("bucket_labels"), limit=8),
+            "concept_labels": _nonblank_strings(explanation.get("concept_labels"), limit=8),
+            "aspect_labels": _nonblank_strings(explanation.get("aspect_labels"), limit=8),
+            "top_score_driver": _top_score_driver(explanation),
+        },
+    )
+
+
+def _support_source_locator(hit: RetrievalHit) -> dict[str, Any]:
+    locator = dict(hit.evidence.locator)
+    locator.update(hit.source_locator)
+    return locator
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _support_status_value(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"strong", "partial", "weak", "unsupported"}:
+        return normalized
+    return "weak"
+
+
+def _support_row_warnings(
+    hit: RetrievalHit,
+    explanation: dict[str, Any],
+) -> list[str]:
+    warnings: list[str] = []
+    if not hit.matched_terms:
+        warnings.append("no_exact_matched_terms")
+    if int(explanation.get("provenance_count") or 0) == 0:
+        warnings.append("thin_source_provenance")
+    if hit.evidence.confidence is not None and hit.evidence.confidence < 0.7:
+        warnings.append("low_confidence_evidence")
+    if _support_status_from_hit(hit) in {"weak", "unsupported"}:
+        warnings.append("manual_evidence_review_recommended")
+    governance = explanation.get("source_governance")
+    if isinstance(governance, dict):
+        status = str(governance.get("status") or "")
+        if status in {"blocked", "review_required", "unregistered"}:
+            warnings.append(f"source_governance_{status}")
+    return _unique_strings(warnings)
+
+
+def _support_row_reasoning(
+    hit: RetrievalHit,
+    explanation: dict[str, Any],
+    warnings: list[str],
+) -> str:
+    pieces: list[str] = []
+    top_score_driver = _top_score_driver(explanation)
+    if top_score_driver:
+        pieces.append(f"Ranked by {top_score_driver}.")
+    if hit.matched_terms:
+        pieces.append(
+            "Matched query terms: " + ", ".join(_unique_strings(hit.matched_terms)[:6]) + "."
+        )
+    bucket_labels = _nonblank_strings(explanation.get("bucket_labels"), limit=4)
+    if bucket_labels:
+        pieces.append("Evidence bucket coverage: " + ", ".join(bucket_labels) + ".")
+    if warnings:
+        pieces.append("Review warning(s): " + ", ".join(warnings) + ".")
+    return " ".join(pieces) or "Selected as ranked evidence; inspect source locator before use."
 
 
 def hit_match_explanation(
@@ -673,12 +955,18 @@ def hit_match_explanation(
         "provenance_fields": provenance_fields[:12],
         "ranking_signal_count": len(ranking_rule_ids),
         "ranking_signal_rule_ids": ranking_rule_ids[:12],
+        "source_governance": _locator_source_governance(hit.source_locator),
     }
 
 
 def _locator_query_aspect_matches(locator: dict[str, Any]) -> list[dict[str, Any]]:
     matches = locator.get("query_aspect_matches")
     return [match for match in matches if isinstance(match, dict)] if isinstance(matches, list) else []
+
+
+def _locator_source_governance(locator: dict[str, Any]) -> dict[str, Any]:
+    value = locator.get("source_governance")
+    return value if isinstance(value, dict) else {}
 
 
 def _ranking_signal_rule_ids(locator: dict[str, Any]) -> list[str]:
@@ -863,6 +1151,7 @@ def quality_signals_from_results(
     diversity_metadata: dict[str, Any] | None = None,
     policy: RetrievalQualityPolicy | None = None,
     query_analysis: RetrievalQueryAnalysis | None = None,
+    source_governance: dict[str, SourceGovernanceDecision] | None = None,
 ) -> list[RetrievalQualitySignal]:
     """Build deterministic package-level retrieval quality signals."""
 
@@ -1159,6 +1448,11 @@ def quality_signals_from_results(
                     },
                 )
             )
+    signals.extend(
+        source_governance_quality_signals(
+            source_governance or source_governance_decisions_from_hits(hits),
+        )
+    )
     return signals
 
 
@@ -1194,6 +1488,65 @@ def _required_evidence_bucket_gaps(
             }
         )
     return gaps
+
+
+def source_governance_quality_signals(
+    decisions: dict[str, SourceGovernanceDecision],
+) -> list[RetrievalQualitySignal]:
+    """Turn source-governance decisions into package quality signals."""
+
+    if not decisions:
+        return []
+    summary = source_governance_summary(decisions)
+    highest = str(summary.get("severity") or "success")
+    if highest == "success":
+        return [
+            RetrievalQualitySignal(
+                code="source_governance_ok",
+                severity="success",
+                message="Selected evidence sources satisfy configured source-governance checks.",
+                suggested_action=(
+                    "Continue normal evidence review and preserve source governance metadata "
+                    "in downstream exports."
+                ),
+                evidence_ids=_decision_evidence_ids(decisions.values()),
+                metadata=summary,
+            )
+        ]
+
+    code = "source_governance_blocked" if highest == "destructive" else "source_governance_review_required"
+    message = (
+        "Selected evidence includes blocked or failed source-governance state."
+        if highest == "destructive"
+        else "Selected evidence requires source-governance review before downstream use."
+    )
+    suggested_action = (
+        "Remove blocked evidence, replace it with an approved source, or clear the "
+        "source lifecycle state before use."
+        if highest == "destructive"
+        else "Review source policies, license constraints, lifecycle state, and reviewer "
+        "state before using this evidence package."
+    )
+    return [
+        RetrievalQualitySignal(
+            code=code,
+            severity=highest,
+            message=message,
+            suggested_action=suggested_action,
+            evidence_ids=_decision_evidence_ids(decisions.values()),
+            metadata=summary,
+        )
+    ]
+
+
+def _decision_evidence_ids(
+    decisions: Iterable[SourceGovernanceDecision],
+) -> list[str]:
+    return _unique_strings(
+        evidence_id
+        for decision in decisions
+        for evidence_id in decision.evidence_ids
+    )
 
 
 def quality_summary_from_signals(
@@ -1561,6 +1914,224 @@ def strategy_recommendations_from_context(
         )
         for rule in matches
     ]
+
+
+def standard_search_plan_from_context(
+    *,
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+    quality_signals: list[RetrievalQualitySignal],
+    safety_flags: list[str],
+    strategy_recommendations: list[RetrievalStrategyRecommendation],
+) -> RetrievalStandardSearchPlan | None:
+    """Build a healthcare-standard follow-up search plan from trusted rules."""
+
+    rules = active_standard_search_playbook_rules()
+    if not rules:
+        return None
+    signal_codes = {signal.code for signal in quality_signals}
+    matched_rules = [
+        rule
+        for rule in rules
+        if _standard_search_playbook_rule_matches(
+            rule,
+            query=query,
+            query_analysis=query_analysis,
+            signal_codes=signal_codes,
+            safety_flags=set(safety_flags),
+        )
+    ]
+    matched_rules.sort(key=lambda rule: rule.priority)
+    if not matched_rules:
+        return None
+
+    template_context = _standard_search_template_context(
+        query=query,
+        query_analysis=query_analysis,
+        signal_codes=signal_codes,
+        strategy_recommendations=strategy_recommendations,
+    )
+    steps = [
+        RetrievalStandardSearchStep(
+            step_id=f"standard_search:{rule.rule_id}",
+            label=rule.label,
+            standard_system=rule.standard_system,
+            route_type=rule.route_type,
+            query=_render_standard_search_template(rule.query_template, template_context),
+            rationale=rule.rationale,
+            priority=rule.priority,
+            suggested_filters=rule.suggested_filters,
+            governance_notes=list(rule.governance_notes),
+            metadata={
+                **rule.metadata,
+                "rule_id": rule.rule_id,
+                "matched_standards": _matched_values(
+                    query_analysis.standards,
+                    rule.match.any_standards,
+                ),
+                "matched_concepts": _matched_values(
+                    query_analysis.detected_concepts,
+                    rule.match.any_concepts,
+                ),
+                "matched_query_aspects": _matched_values(
+                    (aspect.aspect_id for aspect in query_analysis.query_aspects),
+                    rule.match.any_query_aspects,
+                ),
+                "matched_fields": _matched_values(
+                    query.fields,
+                    rule.match.any_fields,
+                    case_sensitive=False,
+                ),
+                "source_quality_signal_codes": sorted(
+                    signal_codes.intersection(rule.match.any_quality_signal_codes)
+                ),
+            },
+        )
+        for rule in matched_rules
+    ]
+    primary_route = steps[0].route_type
+    governance_notes = _unique_strings(
+        note for step in steps for note in step.governance_notes
+    )
+    missing_routes = _standard_search_missing_routes(steps, query_analysis)
+    return RetrievalStandardSearchPlan(
+        plan_id="standard_search_playbook.v1",
+        summary=(
+            f"Run {len(steps)} governed healthcare-standard search step(s) before "
+            "treating this evidence package as complete."
+        ),
+        primary_route=primary_route,
+        steps=steps[:6],
+        missing_routes=missing_routes,
+        governance_notes=governance_notes[:6],
+        metadata={
+            "query_profile_id": (
+                query_analysis.query_profile.profile_id
+                if query_analysis.query_profile
+                else None
+            ),
+            "detected_standards": list(query_analysis.standards),
+            "detected_concepts": list(query_analysis.detected_concepts),
+            "source_rule_count": len(matched_rules),
+        },
+    )
+
+
+def _standard_search_playbook_rule_matches(
+    rule: StandardSearchPlaybookRule,
+    *,
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+    signal_codes: set[str],
+    safety_flags: set[str],
+) -> bool:
+    match = rule.match
+    profile_id = query_analysis.query_profile.profile_id if query_analysis.query_profile else None
+    resource_type = (query.resource_type or "").lower()
+    query_aspect_ids = {aspect.aspect_id for aspect in query_analysis.query_aspects}
+    query_fields = {field.lower() for field in query.fields}
+    query_tokens = set(tokenize(query.query))
+    for field_name, expected_values in match.any_filters.items():
+        value = query.filters.get(field_name)
+        if value is None:
+            return False
+        if str(value).lower() not in {item.lower() for item in expected_values}:
+            return False
+    trigger_matches: list[bool] = []
+    if match.any_profile_ids:
+        trigger_matches.append(profile_id in match.any_profile_ids)
+    if match.any_concepts:
+        trigger_matches.append(
+            bool(set(query_analysis.detected_concepts).intersection(match.any_concepts))
+        )
+    if match.any_standards:
+        trigger_matches.append(
+            bool(set(query_analysis.standards).intersection(match.any_standards))
+        )
+    if match.any_query_aspects:
+        trigger_matches.append(bool(query_aspect_ids.intersection(match.any_query_aspects)))
+    if match.any_fields:
+        trigger_matches.append(
+            bool(query_fields.intersection({field.lower() for field in match.any_fields}))
+        )
+    if match.any_tokens:
+        trigger_matches.append(
+            bool(query_tokens.intersection({token.lower() for token in match.any_tokens}))
+        )
+    if match.any_resource_types:
+        trigger_matches.append(
+            resource_type in {value.lower() for value in match.any_resource_types}
+        )
+    if match.any_quality_signal_codes:
+        trigger_matches.append(bool(signal_codes.intersection(match.any_quality_signal_codes)))
+    if match.any_safety_flags:
+        trigger_matches.append(bool(safety_flags.intersection(match.any_safety_flags)))
+    return any(trigger_matches) if trigger_matches else True
+
+
+def _standard_search_template_context(
+    *,
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+    signal_codes: set[str],
+    strategy_recommendations: list[RetrievalStrategyRecommendation],
+) -> dict[str, str]:
+    return {
+        "query": query.query,
+        "fields": ", ".join(query.fields) if query.fields else "unspecified fields",
+        "schema_id": query.schema_id or "unspecified schema",
+        "detected_format": query.detected_format or "unspecified format",
+        "resource_type": query.resource_type or "Observation",
+        "standards": ", ".join(query_analysis.standards) if query_analysis.standards else "no detected standards",
+        "concepts": ", ".join(query_analysis.detected_concepts) if query_analysis.detected_concepts else "no detected concepts",
+        "query_aspects": ", ".join(aspect.label for aspect in query_analysis.query_aspects)
+        if query_analysis.query_aspects
+        else "no decomposed query aspects",
+        "quality_signals": ", ".join(sorted(signal_codes)) if signal_codes else "no quality signals",
+        "strategy_titles": ", ".join(
+            recommendation.title for recommendation in strategy_recommendations[:3]
+        )
+        or "no strategy recommendations",
+    }
+
+
+def _render_standard_search_template(template: str, context: dict[str, str]) -> str:
+    try:
+        rendered = template.format(**context)
+    except KeyError as exc:
+        missing_key = str(exc).strip("'")
+        raise ValueError(
+            f"Invalid standard search playbook template: unknown key {missing_key}"
+        ) from exc
+    return " ".join(rendered.split())
+
+
+def _matched_values(
+    values: Iterable[str],
+    candidates: Iterable[str],
+    *,
+    case_sensitive: bool = True,
+) -> list[str]:
+    if case_sensitive:
+        candidate_set = set(candidates)
+        return [value for value in values if value in candidate_set]
+    candidate_set = {candidate.lower() for candidate in candidates}
+    return [value for value in values if value.lower() in candidate_set]
+
+
+def _standard_search_missing_routes(
+    steps: list[RetrievalStandardSearchStep],
+    query_analysis: RetrievalQueryAnalysis,
+) -> list[str]:
+    route_types = {step.route_type for step in steps}
+    missing: list[str] = []
+    if "FHIR" in query_analysis.standards and "fhir_search" not in route_types:
+        missing.append("fhir_search")
+    if "LOINC" in query_analysis.standards and "terminology_lookup" not in route_types:
+        missing.append("loinc_lookup")
+    if "UCUM" in query_analysis.standards and "unit_validation" not in route_types:
+        missing.append("ucum_unit_validation")
+    return missing
 
 
 def _corrective_action_rule_matches(
@@ -2008,6 +2579,15 @@ def active_strategy_recommendation_rules() -> list[StrategyRecommendationRule]:
     )
 
 
+def active_standard_search_playbook_rules() -> list[StandardSearchPlaybookRule]:
+    """Load active healthcare-standard search playbook rules from trusted data."""
+
+    path = os.environ.get("OJT_STANDARD_SEARCH_PLAYBOOK_RULES_PATH")
+    return _load_standard_search_playbook_rules(
+        path or str(DEFAULT_STANDARD_SEARCH_PLAYBOOK_RULE_REGISTRY)
+    )
+
+
 @lru_cache(maxsize=4)
 def _load_strategy_recommendation_rules(path_text: str) -> list[StrategyRecommendationRule]:
     path = Path(path_text)
@@ -2030,6 +2610,176 @@ def _load_strategy_recommendation_rules(path_text: str) -> list[StrategyRecommen
             f"Invalid strategy recommendation registry at {path}: duplicate rule_id"
         )
     return sorted(rules, key=lambda rule: rule.priority)
+
+
+@lru_cache(maxsize=4)
+def _load_standard_search_playbook_rules(path_text: str) -> list[StandardSearchPlaybookRule]:
+    path = Path(path_text)
+    if not path.exists():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid standard search playbook registry at {path}: expected object")
+    records = raw.get("rules")
+    if not isinstance(records, list):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: rules must be a list"
+        )
+    rules = [_standard_search_playbook_rule(record, path=path) for record in records]
+    rule_ids = [rule.rule_id for rule in rules]
+    if len(set(rule_ids)) != len(rule_ids):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: duplicate rule_id"
+        )
+    return sorted(rules, key=lambda rule: rule.priority)
+
+
+def _standard_search_playbook_rule(
+    value: Any,
+    *,
+    path: Path,
+) -> StandardSearchPlaybookRule:
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: rule must be an object"
+        )
+    priority = value.get("priority", 100)
+    if not isinstance(priority, int) or isinstance(priority, bool) or priority < 1:
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: "
+            "priority must be a positive integer"
+        )
+    suggested_filters = value.get("suggested_filters", {})
+    if not isinstance(suggested_filters, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: "
+            "suggested_filters must be an object"
+        )
+    metadata = value.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: metadata must be an object"
+        )
+    match = value.get("match", {})
+    if not isinstance(match, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: match must be an object"
+        )
+    any_filters = match.get("any_filters", {})
+    if not isinstance(any_filters, dict):
+        raise ValueError(
+            f"Invalid standard search playbook registry at {path}: any_filters must be an object"
+        )
+    return StandardSearchPlaybookRule(
+        rule_id=_required_quality_policy_text(value.get("rule_id"), path=path),
+        label=_required_quality_policy_text(value.get("label"), path=path),
+        standard_system=_required_quality_policy_text(value.get("standard_system"), path=path),
+        route_type=_required_quality_policy_text(value.get("route_type"), path=path),
+        query_template=_required_quality_policy_text(value.get("query_template"), path=path),
+        rationale=_required_quality_policy_text(value.get("rationale"), path=path),
+        priority=priority,
+        suggested_filters={
+            _required_quality_policy_text(key, path=path): _required_quality_policy_text(
+                item,
+                path=path,
+            )
+            for key, item in suggested_filters.items()
+        },
+        governance_notes=tuple(
+            _required_quality_policy_text(item, path=path)
+            for item in _quality_policy_text_list(
+                value.get("governance_notes", []),
+                field="governance_notes",
+                path=path,
+            )
+        ),
+        metadata=dict(metadata),
+        match=StandardSearchPlaybookMatch(
+            any_profile_ids=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_profile_ids", []),
+                    field="any_profile_ids",
+                    path=path,
+                )
+            ),
+            any_concepts=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_concepts", []),
+                    field="any_concepts",
+                    path=path,
+                )
+            ),
+            any_standards=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_standards", []),
+                    field="any_standards",
+                    path=path,
+                )
+            ),
+            any_query_aspects=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_query_aspects", []),
+                    field="any_query_aspects",
+                    path=path,
+                )
+            ),
+            any_fields=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_fields", []),
+                    field="any_fields",
+                    path=path,
+                )
+            ),
+            any_tokens=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_tokens", []),
+                    field="any_tokens",
+                    path=path,
+                )
+            ),
+            any_resource_types=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_resource_types", []),
+                    field="any_resource_types",
+                    path=path,
+                )
+            ),
+            any_quality_signal_codes=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_quality_signal_codes", []),
+                    field="any_quality_signal_codes",
+                    path=path,
+                )
+            ),
+            any_safety_flags=tuple(
+                _required_quality_policy_text(item, path=path)
+                for item in _quality_policy_text_list(
+                    match.get("any_safety_flags", []),
+                    field="any_safety_flags",
+                    path=path,
+                )
+            ),
+            any_filters={
+                _required_quality_policy_text(key, path=path): tuple(
+                    _required_quality_policy_text(item, path=path)
+                    for item in _quality_policy_text_list(
+                        values,
+                        field=f"any_filters.{key}",
+                        path=path,
+                    )
+                )
+                for key, values in any_filters.items()
+            },
+        ),
+    )
 
 
 def _strategy_recommendation_rule(
@@ -2865,6 +3615,11 @@ def retrieval_safety_flags(query: RetrievalQuery) -> list[str]:
 def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence:
     """Convert an internal chunk to the public evidence contract."""
 
+    phi_classification = classify_text(
+        chunk.content,
+        source_ref=chunk.source_id,
+        target_type="chunk",
+    )
     locator = {
         **chunk.locator,
         "chunk_id": chunk.chunk_id,
@@ -2872,7 +3627,9 @@ def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence
         "clinical_domain": chunk.clinical_domain,
         "standard_system": chunk.standard_system,
         "metadata": chunk.metadata,
+        "phi_classification": phi_classification.model_dump(mode="json"),
     }
+    _attach_normalized_citation_locator(chunk, locator)
     return Evidence(
         source_type=chunk.source_type,
         source_id=chunk.source_id,
@@ -2942,6 +3699,7 @@ def sources_from_chunks(chunks: list[KnowledgeChunk]) -> list[RetrievalSource]:
     sources: list[RetrievalSource] = []
     for source_id, source_chunks in sorted(grouped.items()):
         first = source_chunks[0]
+        source_metadata = _source_inventory_metadata(first.metadata)
         sources.append(
             RetrievalSource(
                 source_id=source_id,
@@ -2952,9 +3710,64 @@ def sources_from_chunks(chunks: list[KnowledgeChunk]) -> list[RetrievalSource]:
                 clinical_domain=first.clinical_domain,
                 standard_system=first.standard_system,
                 chunk_count=len(source_chunks),
+                authority=source_metadata.get("authority"),
+                access_mode=source_metadata.get("access_mode"),
+                ingestion_mode=source_metadata.get("ingestion_mode"),
+                license_id=source_metadata.get("license_id"),
+                license_name=source_metadata.get("license_name"),
+                reviewer_state=source_metadata.get("reviewer_state"),
+                lifecycle_state=source_metadata.get("lifecycle_state"),
+                content_hash=source_metadata.get("content_hash"),
+                canonical_source_id=source_metadata.get("canonical_source_id"),
+                chunk_profile=source_metadata.get("chunk_profile"),
+                resource_type=source_metadata.get("resource_type"),
+                corpus_partition_id=source_metadata.get("corpus_partition_id"),
+                corpus_partition_label=source_metadata.get("corpus_partition_label"),
+                corpus_partition_purpose=source_metadata.get("corpus_partition_purpose"),
+                corpus_visibility=source_metadata.get("corpus_visibility"),
+                organization_id=source_metadata.get("organization_id"),
+                external_provider_allowed=_metadata_bool_or_none(
+                    source_metadata.get("external_provider_allowed")
+                ),
+                phi_allowed=_metadata_bool_or_none(source_metadata.get("phi_allowed")),
+                retention_policy_id=source_metadata.get("retention_policy_id"),
             )
         )
     return sources
+
+
+def _source_inventory_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: metadata.get(key)
+        for key in (
+            "authority",
+            "access_mode",
+            "ingestion_mode",
+            "license_id",
+            "license_name",
+            "reviewer_state",
+            "lifecycle_state",
+            "content_hash",
+            "canonical_source_id",
+            "chunk_profile",
+            "resource_type",
+            "corpus_partition_id",
+            "corpus_partition_label",
+            "corpus_partition_purpose",
+            "corpus_visibility",
+            "organization_id",
+            "external_provider_allowed",
+            "phi_allowed",
+            "retention_policy_id",
+        )
+        if metadata.get(key) is not None
+    }
+
+
+def _metadata_bool_or_none(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
 
 
 def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
@@ -2990,6 +3803,40 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             clinical_domain="laboratory",
             standard_system="FHIR",
             locator={"standard": "HL7 FHIR R4 Observation"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_fhir_condition_v0",
+            source_id="standard:fhir_condition_r4",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="FHIR Condition R4",
+            source_version="R4",
+            content=(
+                "FHIR Condition represents detailed information about conditions, "
+                "problems, and diagnoses. A FHIR-like Condition profile should "
+                "preserve resourceType, code, subject, clinicalStatus, "
+                "verificationStatus, onset or recorded date, source evidence, and "
+                "review limitations."
+            ),
+            clinical_domain="problem_list",
+            standard_system="FHIR",
+            locator={"standard": "HL7 FHIR R4 Condition"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_standard_fhir_allergyintolerance_v0",
+            source_id="standard:fhir_allergyintolerance_r4",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            title="FHIR AllergyIntolerance R4",
+            source_version="R4",
+            content=(
+                "FHIR AllergyIntolerance represents allergy, intolerance, and risk "
+                "of adverse reaction to a substance. A FHIR-like AllergyIntolerance "
+                "profile should preserve resourceType, code, patient, clinicalStatus, "
+                "verificationStatus, reaction manifestation, reaction substance, "
+                "recorder/source, and uncertainty before safety use."
+            ),
+            clinical_domain="allergy",
+            standard_system="FHIR",
+            locator={"standard": "HL7 FHIR R4 AllergyIntolerance"},
         ),
         KnowledgeChunk(
             chunk_id="chunk_terminology_loinc_lab_codes_v0",
@@ -3032,6 +3879,66 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
             clinical_domain="medication",
             standard_system="RxNorm",
             locator={"standard": "RxNorm"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_terminology_rxnorm_allergy_substances_v0",
+            source_id="terminology:rxnorm_allergy_substances",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="RxNorm Allergy Substance Grounding",
+            content=(
+                "RxNorm can ground medication ingredient or product identity in "
+                "allergy and intolerance records. OJTFlow should preserve the "
+                "original substance text, mapping confidence, and verification "
+                "status before using ingredient-level evidence in safety workflows."
+            ),
+            clinical_domain="allergy",
+            standard_system="RxNorm",
+            locator={"standard": "RxNorm"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_terminology_snomed_ct_conditions_v0",
+            source_id="terminology:snomed_ct",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="SNOMED CT Clinical Findings",
+            content=(
+                "SNOMED CT is a clinical terminology direction for problem-list "
+                "and diagnosis concepts. OJTFlow should use SNOMED CT lookup as "
+                "grounding evidence only and preserve uncertainty before any "
+                "FHIR Condition or analytics mapping."
+            ),
+            clinical_domain="problem_list",
+            standard_system="SNOMED CT",
+            locator={"standard": "SNOMED CT"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_terminology_snomed_ct_allergy_findings_v0",
+            source_id="terminology:snomed_ct_allergy",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="SNOMED CT Allergy Findings",
+            content=(
+                "SNOMED CT can ground allergy, sensitivity, intolerance, and reaction "
+                "manifestation concepts. Retrieval should treat SNOMED CT allergy "
+                "matches as review evidence and keep clinicalStatus, verificationStatus, "
+                "severity, and source provenance explicit."
+            ),
+            clinical_domain="allergy",
+            standard_system="SNOMED CT",
+            locator={"standard": "SNOMED CT"},
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_terminology_icd10cm_diagnoses_v0",
+            source_id="terminology:icd10cm",
+            source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+            title="ICD-10-CM Diagnosis Coding",
+            content=(
+                "ICD-10-CM is the U.S. clinical modification used to code and "
+                "classify medical diagnoses. OJTFlow retrieval can surface "
+                "ICD-10-CM evidence for review, but final diagnosis-code "
+                "assignment must remain coder or clinician reviewed."
+            ),
+            clinical_domain="problem_list",
+            standard_system="ICD-10-CM",
+            locator={"standard": "CDC/NCHS ICD-10-CM"},
         ),
         KnowledgeChunk(
             chunk_id="chunk_standard_omop_analytics_v0",
@@ -3317,7 +4224,7 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
                 locator={"path": str(path.relative_to(knowledge_root.parent))},
             )
         )
-    return chunks
+    return [_with_global_partition_metadata(chunk) for chunk in chunks]
 
 
 def chunk_metadata_json(chunk: KnowledgeChunk) -> str:
@@ -3331,6 +4238,31 @@ def chunk_metadata_json(chunk: KnowledgeChunk) -> str:
             "standard_system": chunk.standard_system,
         },
         sort_keys=True,
+    )
+
+
+def _with_global_partition_metadata(chunk: KnowledgeChunk) -> KnowledgeChunk:
+    return KnowledgeChunk(
+        chunk_id=chunk.chunk_id,
+        source_id=chunk.source_id,
+        source_type=chunk.source_type,
+        title=chunk.title,
+        content=chunk.content,
+        source_version=chunk.source_version,
+        trust_level=chunk.trust_level,
+        clinical_domain=chunk.clinical_domain,
+        standard_system=chunk.standard_system,
+        locator=chunk.locator,
+        metadata={
+            "corpus_partition_id": "global_standards",
+            "corpus_partition_label": "Global Standards",
+            "corpus_partition_purpose": "global_standard",
+            "corpus_visibility": "global",
+            "external_provider_allowed": True,
+            "phi_allowed": False,
+            "requires_reviewer_approval": False,
+            **chunk.metadata,
+        },
     )
 
 
@@ -3826,6 +4758,8 @@ def _ranking_boost_condition_matches(
         return False
     if condition.chunk_source_types and chunk.source_type.value not in condition.chunk_source_types:
         return False
+    if condition.chunk_clinical_domains and chunk.clinical_domain not in condition.chunk_clinical_domains:
+        return False
     if condition.chunk_standard_systems and chunk.standard_system not in condition.chunk_standard_systems:
         return False
     if condition.any_matched_terms and not _has_intersection(matched_terms, condition.any_matched_terms):
@@ -3913,6 +4847,11 @@ def _ranking_boost_condition(record: Any, *, path: Path) -> RankingBoostConditio
             field="chunk_source_types",
             path=path,
             enum_type=EvidenceSourceType,
+        ),
+        chunk_clinical_domains=_optional_text_tuple(
+            record.get("chunk_clinical_domains"),
+            field="chunk_clinical_domains",
+            path=path,
         ),
         chunk_standard_systems=_optional_text_tuple(
             record.get("chunk_standard_systems"),
@@ -4048,7 +4987,23 @@ def hit_source_locator_from_chunk(
     )
     if concept_matches:
         locator["concept_matches"] = concept_matches
+    _attach_normalized_citation_locator(chunk, locator)
     return locator
+
+
+def _attach_normalized_citation_locator(
+    chunk: KnowledgeChunk,
+    locator: dict[str, Any],
+) -> None:
+    normalized = normalize_citation_locator(
+        source_id=chunk.source_id,
+        source_type=chunk.source_type,
+        source_version=chunk.source_version,
+        title=chunk.title,
+        locator=locator,
+    )
+    if normalized is not None:
+        locator["normalized_citation_locator"] = normalized.model_dump(mode="json")
 
 
 def _concept_matches_for_chunk(
@@ -4240,6 +5195,76 @@ def _reranker_metadata(reranker: Any | None) -> dict[str, Any]:
     }
 
 
+def _filter_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return default
+
+
+def _filter_float(
+    value: Any,
+    default: float,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < minimum or parsed > maximum:
+        return default
+    return parsed
+
+
+def _effective_route_budget(
+    budget: RetrievalRouteBudget | None,
+    *,
+    query_top_k: int,
+    rerank_candidate_limit: int,
+    diversity_enabled: bool,
+    diversity_lambda: float,
+) -> dict[str, Any]:
+    if budget is None:
+        return {
+            "applied": False,
+            "top_k": query_top_k,
+            "reranker_candidate_limit": max(0, rerank_candidate_limit),
+            "source_diversity_enabled": diversity_enabled,
+            "diversity_lambda": round(max(0.0, min(1.0, diversity_lambda)), 4),
+            "external_network_allowed": False,
+            "latency_target_ms": None,
+            "max_candidates": None,
+            "max_returned_hits": query_top_k,
+            "min_source_count": None,
+        }
+    return {
+        "applied": True,
+        "top_k": min(query_top_k, budget.max_returned_hits),
+        "reranker_candidate_limit": min(
+            max(0, rerank_candidate_limit),
+            budget.reranker_candidate_limit,
+        ),
+        "source_diversity_enabled": diversity_enabled and budget.source_diversity_enabled,
+        "diversity_lambda": round(max(0.0, min(1.0, diversity_lambda)), 4),
+        "external_network_allowed": budget.external_network_allowed,
+        "latency_target_ms": budget.latency_target_ms,
+        "max_candidates": budget.max_candidates,
+        "max_returned_hits": budget.max_returned_hits,
+        "min_source_count": budget.min_source_count,
+    }
+
+
 def _select_diverse_hits(
     ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]],
     *,
@@ -4427,3 +5452,30 @@ def _diversity_metadata(
             for detail in selection_details
         ],
     }
+
+
+def diversity_summary_from_metadata(metadata: dict[str, Any]) -> RetrievalDiversitySummary:
+    """Build the first-class diversity contract from legacy handoff metadata."""
+
+    selected_hits = [
+        item
+        if isinstance(item, RetrievalDiversitySelection)
+        else RetrievalDiversitySelection.model_validate(item)
+        for item in metadata.get("selected_hits", [])
+    ]
+    lambda_value = metadata.get("lambda")
+    return RetrievalDiversitySummary(
+        enabled=bool(metadata.get("enabled")),
+        selection_mode=str(metadata.get("selection_mode") or "score_order"),
+        lambda_value=(
+            float(lambda_value)
+            if isinstance(lambda_value, (int, float)) and not isinstance(lambda_value, bool)
+            else None
+        ),
+        candidate_source_count=int(metadata.get("candidate_source_count") or 0),
+        selected_source_count=int(metadata.get("selected_source_count") or 0),
+        duplicate_selected_source_count=int(
+            metadata.get("duplicate_selected_source_count") or 0
+        ),
+        selected_hits=selected_hits,
+    )

@@ -1,0 +1,308 @@
+{
+  "version": "source_trust_policies.v1",
+  "policies": [
+    {
+      "source_id": "hl7_fhir_r4",
+      "source_name": "HL7 FHIR R4 Core Specification",
+      "authority": "HL7 International",
+      "domain": "interoperability",
+      "standard_system": "FHIR",
+      "clinical_scope": ["FHIR-like profiling", "Observation mapping", "search parameter hints"],
+      "intended_use": [
+        "Ground FHIR-like resource shape checks",
+        "Explain profile and search-parameter requirements",
+        "Provide interoperability evidence for review-gated mappings"
+      ],
+      "prohibited_use": [
+        "Do not claim full FHIR compliance without a real FHIR validator",
+        "Do not infer clinical meaning beyond source fields"
+      ],
+      "refresh_cadence": "quarterly_or_before_demo_freeze",
+      "license_constraints": ["Respect HL7 publication terms and cite exact release/version"],
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_spec_chunks_and_profile_json",
+      "evidence_tier": "authoritative_standard",
+      "requires_reviewer_approval": false,
+      "source_urls": {
+        "observation": "https://hl7.org/fhir/r4/observation.html",
+        "search_parameters": "https://www.hl7.org/fhir/R4/searchparameter-registry.html"
+      },
+      "policy_notes": ["Use source version in evidence when possible."]
+    },
+    {
+      "source_id": "ucum",
+      "source_name": "Unified Code for Units of Measure",
+      "authority": "Regenstrief Institute / UCUM maintainers",
+      "domain": "units",
+      "standard_system": "UCUM",
+      "clinical_scope": ["unit validation", "FHIR Quantity hints", "missing-unit review"],
+      "intended_use": [
+        "Ground missing or ambiguous unit warnings",
+        "Support review-gated unit normalization candidates"
+      ],
+      "prohibited_use": ["Do not silently convert units without preserving original value and review state"],
+      "refresh_cadence": "quarterly",
+      "license_constraints": ["Use UCUM terms as published; keep validation adapters versioned"],
+      "access_mode": "public_web_or_nlm_service",
+      "ingestion_mode": "selected_unit_seed_plus_validator_adapter",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://ucum.org/",
+        "nlm_service": "https://ucum.nlm.nih.gov/"
+      },
+      "policy_notes": ["Unit normalization changes must stay review-gated."]
+    },
+    {
+      "source_id": "loinc_core",
+      "source_name": "LOINC",
+      "authority": "Regenstrief Institute",
+      "domain": "laboratory",
+      "standard_system": "LOINC",
+      "clinical_scope": ["lab observation identity", "Observation.code candidates"],
+      "intended_use": [
+        "Generate candidate lab-code evidence",
+        "Support reviewer decisions for lab-name normalization"
+      ],
+      "prohibited_use": ["Do not bulk-ingest licensed files into git", "Do not auto-code lab names without review"],
+      "refresh_cadence": "per_release_or_quarterly",
+      "license_constraints": ["Full downloads and terminology service access may require account/license terms"],
+      "access_mode": "licensed_bulk_or_public_pages",
+      "ingestion_mode": "licensed_bulk_or_selected_public_pages",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://loinc.org/",
+        "example": "https://loinc.org/4548-4"
+      },
+      "policy_notes": ["Keep selected public pages separate from licensed bulk assets."]
+    },
+    {
+      "source_id": "nlm_rxnorm",
+      "source_name": "RxNorm and RxNav API",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "medication",
+      "standard_system": "RxNorm",
+      "clinical_scope": ["drug name lookup", "RxCUI candidates", "medication retrieval routing"],
+      "intended_use": ["Support medication terminology lookup and source-linked reviewer candidates"],
+      "prohibited_use": ["Do not make medication safety recommendations without clinical review"],
+      "refresh_cadence": "monthly_or_api_release",
+      "license_constraints": ["Cache API results with source release metadata"],
+      "access_mode": "public_api",
+      "ingestion_mode": "api_lookup_cache",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "overview": "https://www.nlm.nih.gov/research/umls/rxnorm/",
+        "api_docs": "https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html"
+      },
+      "policy_notes": ["Drug normalization remains a reviewer decision."]
+    },
+    {
+      "source_id": "snomed_ct",
+      "source_name": "SNOMED CT",
+      "authority": "SNOMED International",
+      "domain": "clinical_terminology",
+      "standard_system": "SNOMED CT",
+      "clinical_scope": ["diagnosis concepts", "clinical findings", "allergy findings", "problem-list terminology"],
+      "intended_use": [
+        "Support review-gated clinical concept candidates",
+        "Ground Graph-NER entities and FHIR-like Condition or AllergyIntolerance mappings"
+      ],
+      "prohibited_use": [
+        "Do not store or distribute licensed SNOMED CT release content without verifying deployment rights",
+        "Do not auto-code diagnoses or findings without licensed lookup and clinical review"
+      ],
+      "refresh_cadence": "per_release_or_before_terminology_demo",
+      "license_constraints": [
+        "SNOMED CT access and use depend on national member/license terms",
+        "Preserve source URL, version, and reviewer decision for any terminology candidate"
+      ],
+      "access_mode": "licensed_release_or_public_browser_metadata",
+      "ingestion_mode": "license_aware_lookup_or_placeholder_contract",
+      "evidence_tier": "authoritative_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "browser": "https://browser.ihtsdotools.org/",
+        "license": "https://www.snomed.org/snomed-ct/get-snomed"
+      },
+      "policy_notes": [
+        "The current implementation may emit placeholder candidates only; production coding requires licensed terminology services."
+      ]
+    },
+    {
+      "source_id": "cdc_icd10cm",
+      "source_name": "ICD-10-CM",
+      "authority": "CDC National Center for Health Statistics",
+      "domain": "diagnosis_classification",
+      "standard_system": "ICD-10-CM",
+      "clinical_scope": ["diagnosis classification", "analytics and billing context", "problem-list review"],
+      "intended_use": [
+        "Route diagnosis-code evidence to human coders or reviewers",
+        "Ground analytics export warnings for diagnosis classification"
+      ],
+      "prohibited_use": [
+        "Do not use retrieval evidence as automatic billing code assignment",
+        "Do not infer clinical diagnosis from code candidates alone"
+      ],
+      "refresh_cadence": "annual_release_or_before_coding_demo",
+      "license_constraints": ["Use official CDC/NCHS release metadata and preserve version year"],
+      "access_mode": "public_web_or_release_download",
+      "ingestion_mode": "selected_public_guidance_or_runtime_release_snapshot",
+      "evidence_tier": "authoritative_classification",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://www.cdc.gov/nchs/icd/icd-10-cm/",
+        "guidelines": "https://www.cdc.gov/nchs/icd/icd-10-cm-guidelines.html"
+      },
+      "policy_notes": ["Final code assignment remains a coder or clinician decision."]
+    },
+    {
+      "source_id": "ohdsi_omop_cdm",
+      "source_name": "OMOP Common Data Model",
+      "authority": "OHDSI",
+      "domain": "analytics",
+      "standard_system": "OMOP",
+      "clinical_scope": ["observational analytics export", "CDM table mapping", "vocabulary coverage review"],
+      "intended_use": [
+        "Ground analytics export previews and unmapped-field warnings",
+        "Explain why source provenance and terminology coverage are required before OMOP export"
+      ],
+      "prohibited_use": [
+        "Do not represent preview exports as production CDM loads without validation",
+        "Do not drop source provenance or review metadata during analytics mapping"
+      ],
+      "refresh_cadence": "per_cdm_release_or_before_analytics_demo",
+      "license_constraints": ["Preserve OMOP CDM version and vocabulary release context"],
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_spec_pages_or_runtime_snapshot",
+      "evidence_tier": "analytics_standard",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "cdm": "https://ohdsi.github.io/CommonDataModel/",
+        "vocabulary": "https://www.ohdsi.org/data-standardization/"
+      },
+      "policy_notes": ["OMOP is analytics context, not clinical decision support."]
+    },
+    {
+      "source_id": "nlm_mesh",
+      "source_name": "Medical Subject Headings",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "biomedical_literature",
+      "standard_system": "MeSH",
+      "clinical_scope": ["literature subject headings", "query expansion", "PubMed search review"],
+      "intended_use": [
+        "Support transparent literature-search query expansion",
+        "Explain MeSH/text-word search boundaries before external PubMed handoff"
+      ],
+      "prohibited_use": [
+        "Do not treat literature-search routing as clinical recommendation",
+        "Do not export PHI or patient identifiers into public literature search queries"
+      ],
+      "refresh_cadence": "annual_release_or_before_literature_demo",
+      "license_constraints": ["Preserve MeSH release year and NLM source URL when cached"],
+      "access_mode": "public_web",
+      "ingestion_mode": "selected_public_guidance_or_runtime_lookup_cache",
+      "evidence_tier": "literature_terminology",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://www.nlm.nih.gov/mesh/meshhome.html",
+        "browser": "https://meshb.nlm.nih.gov/"
+      },
+      "policy_notes": ["Use MeSH to improve search transparency, not to make clinical claims."]
+    },
+    {
+      "source_id": "ncbi_pubmed_eutilities",
+      "source_name": "PubMed and NCBI E-utilities",
+      "authority": "U.S. National Library of Medicine / NCBI",
+      "domain": "biomedical_literature",
+      "standard_system": "MeSH/PubMed",
+      "clinical_scope": ["citation retrieval", "MeSH subject headings", "abstract metadata", "literature search routing"],
+      "intended_use": [
+        "Generate transparent PubMed follow-up searches",
+        "Cache article metadata and abstracts where allowed",
+        "Support evidence-grounded explanations with citation provenance"
+      ],
+      "prohibited_use": [
+        "Do not export PHI or patient identifiers to PubMed queries",
+        "Do not treat literature retrieval as diagnosis, treatment, or clinical recommendation",
+        "Do not bypass publisher full-text license boundaries"
+      ],
+      "refresh_cadence": "daily_for_query_cache_or_release_based_for_baseline",
+      "license_constraints": [
+        "Respect NCBI usage guidelines and publisher source terms",
+        "Preserve PMID, DOI/source URL, query hash, fetch time, and abstract availability"
+      ],
+      "access_mode": "public_api_with_optional_api_key",
+      "ingestion_mode": "api_lookup_cache_and_optional_baseline_snapshot",
+      "evidence_tier": "literature_context",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://pubmed.ncbi.nlm.nih.gov/",
+        "eutilities_docs": "https://www.ncbi.nlm.nih.gov/books/NBK25501/",
+        "usage_guidelines": "https://eutils.ncbi.nlm.nih.gov/"
+      },
+      "policy_notes": [
+        "Search details, MeSH translations, and query strings must remain visible to reviewers.",
+        "Literature context can support review, but cannot replace clinical judgment."
+      ]
+    },
+    {
+      "source_id": "clinicaltrials_gov",
+      "source_name": "ClinicalTrials.gov API v2",
+      "authority": "U.S. National Library of Medicine",
+      "domain": "clinical_trials",
+      "standard_system": "ClinicalTrials.gov",
+      "clinical_scope": ["trial registry metadata", "conditions", "interventions", "eligibility criteria", "study status"],
+      "intended_use": [
+        "Route transparent trial registry searches",
+        "Cache NCT-linked study summaries and eligibility text",
+        "Support research-context retrieval with source timestamps"
+      ],
+      "prohibited_use": [
+        "Do not present trial search as patient-specific enrollment guidance",
+        "Do not infer treatment suitability from registry metadata alone"
+      ],
+      "refresh_cadence": "daily_for_active_queries_or_before_trial_demo",
+      "license_constraints": [
+        "Preserve NCT ID, API endpoint, query, fetch time, and data timestamp when available"
+      ],
+      "access_mode": "public_api",
+      "ingestion_mode": "api_v2_lookup_cache",
+      "evidence_tier": "registry_context",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "home": "https://clinicaltrials.gov/",
+        "api_docs": "https://clinicaltrials.gov/data-api/about-api",
+        "studies_endpoint": "https://clinicaltrials.gov/api/v2/studies"
+      },
+      "policy_notes": [
+        "Trial status and eligibility text can change; use fresh source timestamps in evidence.",
+        "Trial records are research context, not clinical decision support."
+      ]
+    },
+    {
+      "source_id": "openfda",
+      "source_name": "openFDA",
+      "authority": "U.S. Food and Drug Administration",
+      "domain": "drug_safety_regulatory",
+      "standard_system": "openFDA",
+      "clinical_scope": ["drug label search", "public adverse event context", "regulatory retrieval"],
+      "intended_use": ["Route regulatory searches and cite public FDA datasets as context"],
+      "prohibited_use": ["Do not treat adverse event counts as causal clinical conclusions"],
+      "refresh_cadence": "weekly_or_before_regulatory_demo",
+      "license_constraints": ["Public data; preserve endpoint, query, and fetch time"],
+      "access_mode": "public_api_or_download",
+      "ingestion_mode": "api_or_endpoint_downloads_out_of_repo",
+      "evidence_tier": "regulatory_context",
+      "requires_reviewer_approval": true,
+      "source_urls": {
+        "api_docs": "https://open.fda.gov/apis/",
+        "downloads": "https://open.fda.gov/apis/downloads/",
+        "drug_label": "https://open.fda.gov/apis/drug/label/",
+        "drug_event": "https://open.fda.gov/apis/drug/event/"
+      },
+      "policy_notes": ["Regulatory context is not clinical decision support."]
+    }
+  ]
+}

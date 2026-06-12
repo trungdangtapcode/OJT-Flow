@@ -60,6 +60,18 @@ def main() -> int:
         help="Minimum mean NDCG@k required to pass.",
     )
     parser.add_argument(
+        "--min-source-diversity",
+        default=0.6,
+        type=float,
+        help="Minimum mean unique-source diversity@k required to pass.",
+    )
+    parser.add_argument(
+        "--max-unsupported-claim-rate",
+        default=0.2,
+        type=float,
+        help="Maximum unsupported evidence-support row rate allowed to pass.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON instead of a compact text report.",
@@ -76,6 +88,8 @@ def main() -> int:
         min_mean_recall_at_k=args.min_mean_recall,
         min_mean_reciprocal_rank=args.min_mrr,
         min_mean_ndcg_at_k=args.min_ndcg,
+        min_mean_source_diversity_at_k=args.min_source_diversity,
+        max_unsupported_claim_rate=args.max_unsupported_claim_rate,
     )
 
     if args.json:
@@ -101,7 +115,9 @@ def _format_summary(summary: dict) -> str:
         f"  MAP@k: {summary['mean_average_precision_at_k']:.3f}",
         f"  NDCG@k: {summary['mean_ndcg_at_k']:.3f}",
         f"  MRR: {summary['mean_reciprocal_rank']:.3f}",
+        f"  mean source diversity@k: {summary['mean_source_diversity_at_k']:.3f}",
         f"  mean selected sources: {summary['mean_selected_source_count']:.3f}",
+        f"  unsupported-claim rate: {summary['unsupported_claim_rate']:.3f}",
         f"  missing expected sources: {summary['total_missing_source_ids']}",
         f"  passed: {summary['passed']}",
         "",
@@ -115,6 +131,8 @@ def _format_summary(summary: dict) -> str:
             f"RR={result['reciprocal_rank']:.3f}, "
             f"recall={result['recall_at_k']:.3f}, "
             f"NDCG={result['ndcg_at_k']:.3f}, "
+            f"diversity={result['source_diversity_at_k']:.3f}, "
+            f"unsupported={result['unsupported_claim_rate']:.3f}, "
             f"retrieved={', '.join(result['retrieved_source_ids'])}"
         )
     return "\n".join(lines)

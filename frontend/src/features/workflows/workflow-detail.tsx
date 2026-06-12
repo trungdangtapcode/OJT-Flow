@@ -1,4 +1,4 @@
-import { FileSearch } from "lucide-react";
+import { Bot, FileSearch } from "lucide-react";
 
 import {
   Card,
@@ -7,8 +7,10 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
 import { StatusBadge } from "../../components/domain/workflow-badges";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { useHashTargetScroll } from "../../lib/use-hash-target-scroll";
 import {
   useReviewDecisionMutation,
   useWorkflowEventsQuery,
@@ -22,6 +24,7 @@ import {
   WorkflowFailureNotice,
 } from "./workflow-detail-chrome";
 import { ReviewTab } from "./workflow-detail-review";
+import { ClinicalPackagePanel } from "./workflow-detail-clinical-package";
 import {
   Audit,
   Evidence,
@@ -29,6 +32,7 @@ import {
   Output,
   Overview,
 } from "./workflow-detail-sections";
+import { buildAssistantWorkflowContextHref } from "../../lib/assistant-context-links";
 
 export function WorkflowDetail({
   focused = false,
@@ -40,6 +44,11 @@ export function WorkflowDetail({
   const workflowQuery = useWorkflowQuery(workflowId);
   const eventsQuery = useWorkflowEventsQuery(workflowId);
   const reviewMutation = useReviewDecisionMutation(workflowId);
+  useHashTargetScroll([
+    workflowId,
+    workflowQuery.data?.updated_at ?? "",
+    eventsQuery.data?.length ?? 0,
+  ]);
 
   if (!workflowId) {
     return (
@@ -95,10 +104,18 @@ export function WorkflowDetail({
         <CardHeader className={cn("gap-3", !focused && "gap-2 p-3 sm:p-4")}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardDescription className="font-bold uppercase">Workflow</CardDescription>
-            <StatusBadge
-              className="max-w-full shrink-0 justify-center whitespace-normal text-center leading-tight"
-              status={workflow.status}
-            />
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              <Button asChild size="sm" variant="outline">
+                <a href={buildAssistantWorkflowContextHref(workflow.workflow_id)}>
+                  <Bot className="h-4 w-4" />
+                  Ask Assistant
+                </a>
+              </Button>
+              <StatusBadge
+                className="max-w-full shrink-0 justify-center whitespace-normal text-center leading-tight"
+                status={workflow.status}
+              />
+            </div>
           </div>
           <div className="min-w-0">
             <CardTitle
@@ -135,6 +152,7 @@ export function WorkflowDetail({
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="issues">Issues</TabsTrigger>
           <TabsTrigger value="evidence">Evidence</TabsTrigger>
+          <TabsTrigger value="clinical">Clinical package</TabsTrigger>
           <TabsTrigger value="review">Review</TabsTrigger>
           <TabsTrigger value="output">Output</TabsTrigger>
           <TabsTrigger value="audit">Audit</TabsTrigger>
@@ -156,6 +174,9 @@ export function WorkflowDetail({
         <TabsContent value="evidence">
           <Evidence workflow={workflow} />
         </TabsContent>
+        <TabsContent value="clinical">
+          <ClinicalPackagePanel workflow={workflow} />
+        </TabsContent>
         <TabsContent value="review">
           <ReviewTab
             error={reviewError}
@@ -169,7 +190,7 @@ export function WorkflowDetail({
           <Output workflow={workflow} />
         </TabsContent>
         <TabsContent value="audit">
-          <Audit events={events} />
+          <Audit events={events} workflow={workflow} />
         </TabsContent>
       </Tabs>
     </div>

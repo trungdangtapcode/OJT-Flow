@@ -1,0 +1,321 @@
+{
+  "version": "owasp_llm_threat_model.v1",
+  "standard_ref": "OWASP Top 10 for LLM Applications 2025",
+  "source_url": "https://genai.owasp.org/llm-top-10/",
+  "categories": [
+    {
+      "category_id": "LLM01",
+      "category_name": "Prompt Injection",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm01-prompt-injection/",
+      "risk_statement": "Uploaded data, retrieved chunks, user messages, or tool metadata can try to override system instructions or trigger unauthorized tool use.",
+      "applicable_surfaces": ["assistant_planner", "assistant_synthesis", "retrieval_chunks", "uploaded_documents", "tool_metadata"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM01-M1",
+          "title": "Wrap untrusted content and scan prompt-injection patterns before LLM-bound use",
+          "status": "implemented",
+          "owner_role": "security owner",
+          "implementation_refs": [
+            "src/ojtflow/core/policy/prompt_injection_policy.py",
+            "src/ojtflow/application/assistant_service.py",
+            "knowledge/assistant/prompt_injection_policy.json"
+          ],
+          "test_refs": ["tests/test_assistant_safety.py"],
+          "notes": "User data and retrieved evidence are marked as untrusted content; tool metadata is scanned before planner exposure."
+        }
+      ],
+      "monitoring_signals": ["prompt_injection_assessment", "tool_metadata_rejected", "assistant_plan_validation_failed"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Instruction separation reduces but cannot eliminate adversarial text risk, so write actions remain gated.",
+      "roadmap_refs": ["F118", "F127"],
+      "evidence_refs": ["docs/assistant_safety_cases_v0.md"]
+    },
+    {
+      "category_id": "LLM02",
+      "category_name": "Sensitive Information Disclosure",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm02-sensitive-information-disclosure/",
+      "risk_statement": "Healthcare inputs may contain PHI, identifiers, secrets, or operational metadata that must not be exposed to unauthorized users, logs, or external providers.",
+      "applicable_surfaces": ["external_llm", "vision_ocr", "embeddings", "external_search", "logs", "runtime_config"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM02-M1",
+          "title": "Classify and redact PHI before external provider handoff",
+          "status": "implemented",
+          "owner_role": "privacy officer",
+          "implementation_refs": [
+            "src/ojtflow/core/policy/phi_policy.py",
+            "src/ojtflow/core/policy/redaction_policy.py",
+            "src/ojtflow/core/policy/external_provider_policy.py"
+          ],
+          "test_refs": [
+            "tests/test_phi_classification.py",
+            "tests/test_redaction.py",
+            "tests/test_external_provider_policy.py"
+          ],
+          "notes": "External provider decisions are policy-backed and PHI allowance is explicit per surface."
+        },
+        {
+          "mitigation_id": "LLM02-M2",
+          "title": "Block raw PHI in structured logs and secret health responses",
+          "status": "implemented",
+          "owner_role": "platform owner",
+          "implementation_refs": [
+            "src/ojtflow/core/policy/phi_policy.py",
+            "src/ojtflow/interfaces/api/routes/runtime.py"
+          ],
+          "test_refs": ["tests/test_logging_guard.py", "tests/test_runtime_secret_health.py"],
+          "notes": "Runtime diagnostics expose configured/missing status only, not secret values."
+        }
+      ],
+      "monitoring_signals": ["external_provider_block", "phi_classification", "redaction_preview", "secret_health_failed"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Residual risk depends on administrator provider policy and user-provided content sensitivity.",
+      "roadmap_refs": ["F123", "F124", "F125", "F126", "F133"],
+      "evidence_refs": ["docs/phi_classification_v0.md", "docs/external_provider_policy_v0.md"]
+    },
+    {
+      "category_id": "LLM03",
+      "category_name": "Supply Chain",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm03-supply-chain/",
+      "risk_statement": "Models, tool catalogs, remote MCP exposure, retrieval sources, and dependency updates can introduce untrusted behavior or stale unsafe assumptions.",
+      "applicable_surfaces": ["tool_registry", "remote_mcp", "retrieval_sources", "corpus_ingestion", "deployment_dependencies"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM03-M1",
+          "title": "Keep tool permissions and remote MCP exposure data-driven and reviewable",
+          "status": "implemented",
+          "owner_role": "security owner",
+          "implementation_refs": [
+            "src/ojtflow/application/tool_registry.py",
+            "knowledge/assistant/tool_permission_policies.json",
+            "knowledge/assistant/remote_mcp_deployment_policy.json"
+          ],
+          "test_refs": ["tests/test_mcp_remote_policy.py", "tests/test_assistant_service.py"],
+          "notes": "Remote MCP remains blocked unless deployment preconditions are satisfied."
+        },
+        {
+          "mitigation_id": "LLM03-M2",
+          "title": "Represent healthcare retrieval sources with trust and license metadata",
+          "status": "partial",
+          "owner_role": "data steward",
+          "implementation_refs": [
+            "knowledge/source_catalog/source_trust_policies.json",
+            "src/ojtflow/infrastructure/retrieval/corpus.py"
+          ],
+          "test_refs": ["tests/test_source_provenance_contracts.py", "tests/test_retrieval.py"],
+          "notes": "Source governance exists; full dependency SBOM and model provenance checks remain release-hardening work."
+        }
+      ],
+      "monitoring_signals": ["remote_mcp_policy_block", "source_state_needs_review", "source_license_constraint", "dependency_review_required"],
+      "residual_risk": "medium",
+      "residual_risk_note": "The project has source/tool governance but still needs full release SBOM and model provenance automation.",
+      "roadmap_refs": ["F070", "F105", "F115", "F162", "F172"],
+      "evidence_refs": ["docs/assistant_tool_permissions_v0.md", "docs/remote_mcp_deployment_v0.md"]
+    },
+    {
+      "category_id": "LLM04",
+      "category_name": "Data and Model Poisoning",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm04-data-and-model-poisoning/",
+      "risk_statement": "Unreviewed corpus material or poisoned retrieval chunks can bias validation, evidence, or assistant answers.",
+      "applicable_surfaces": ["retrieval_corpus", "source_ingestion", "knowledge_chunks", "evaluation_fixtures"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM04-M1",
+          "title": "Require source trust policies, source lifecycle states, and retrieval integrity checks",
+          "status": "implemented",
+          "owner_role": "data steward",
+          "implementation_refs": [
+            "knowledge/source_catalog/source_trust_policies.json",
+            "src/ojtflow/infrastructure/retrieval/integrity.py",
+            "src/ojtflow/infrastructure/retrieval/corpus.py"
+          ],
+          "test_refs": ["tests/test_retrieval.py", "tests/test_source_provenance_contracts.py"],
+          "notes": "Source inventory distinguishes candidate, approved, deprecated, blocked, failed, and review-needed states."
+        }
+      ],
+      "monitoring_signals": ["retrieval_integrity_warning", "source_state_candidate", "source_hash_changed", "weak_evidence_provenance"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Source governance is present, but large-corpus ingestion should remain review-gated until evaluation coverage matures.",
+      "roadmap_refs": ["F061", "F069", "F070", "F086"],
+      "evidence_refs": ["docs/retrieval_governance_catalogs_v0.md"]
+    },
+    {
+      "category_id": "LLM05",
+      "category_name": "Improper Output Handling",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm05-improper-output-handling/",
+      "risk_statement": "LLM-generated plans, summaries, export descriptions, or UI text can contain unsafe instructions, unsupported claims, or malformed tool arguments.",
+      "applicable_surfaces": ["assistant_plan", "assistant_answer", "export_description", "frontend_rendering", "tool_arguments"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM05-M1",
+          "title": "Validate generated plans and summaries before execution, storage, or display",
+          "status": "implemented",
+          "owner_role": "security owner",
+          "implementation_refs": [
+            "src/ojtflow/core/policy/generated_output_policy.py",
+            "src/ojtflow/application/assistant_service.py"
+          ],
+          "test_refs": ["tests/test_assistant_safety.py", "tests/test_assistant_service.py"],
+          "notes": "Unsafe generated plans fall back to deterministic behavior instead of executing model output."
+        }
+      ],
+      "monitoring_signals": ["generated_output_validation_failed", "assistant_plan_validation_failed", "unsupported_claims"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Output validation is deterministic, but unsupported clinical claims still require evidence checks and human review.",
+      "roadmap_refs": ["F103", "F128", "F083", "F094"],
+      "evidence_refs": ["docs/generated_output_validation_v0.md"]
+    },
+    {
+      "category_id": "LLM06",
+      "category_name": "Excessive Agency",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm06-excessive-agency/",
+      "risk_statement": "The assistant could be given too much authority to execute writes, approvals, exports, reindexing, or other operations without user consent.",
+      "applicable_surfaces": ["assistant_tools", "mcp_tools", "review_actions", "export_actions", "reindex_jobs"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM06-M1",
+          "title": "Allowlist tools and require explicit approval for write-gated actions",
+          "status": "implemented",
+          "owner_role": "platform owner",
+          "implementation_refs": [
+            "src/ojtflow/application/assistant_tools.py",
+            "src/ojtflow/application/tool_registry.py",
+            "knowledge/assistant/tool_permission_policies.json"
+          ],
+          "test_refs": ["tests/test_assistant_service.py", "tests/test_api.py"],
+          "notes": "The model chooses among backend-declared tools; backend code owns actual execution and write gating."
+        }
+      ],
+      "monitoring_signals": ["write_tool_requires_approval", "tool_permission_denied", "assistant_recovery_retry_tool"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Write gates protect high-impact actions; future remote MCP must preserve per-user scope and consent.",
+      "roadmap_refs": ["F105", "F106", "F115", "F121"],
+      "evidence_refs": ["docs/assistant_tool_permissions_v0.md", "docs/assistant_mcp_agent.md"]
+    },
+    {
+      "category_id": "LLM07",
+      "category_name": "System Prompt Leakage",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm07-system-prompt-leakage/",
+      "risk_statement": "System prompts, private tool policy, secrets, runtime configuration, or hidden governance rules can leak through assistant responses or diagnostics.",
+      "applicable_surfaces": ["system_prompt", "runtime_config", "secret_health", "assistant_answer", "tool_catalog"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM07-M1",
+          "title": "Keep secrets out of runtime diagnostics and use deterministic secret health checks",
+          "status": "implemented",
+          "owner_role": "platform owner",
+          "implementation_refs": ["src/ojtflow/interfaces/api/routes/runtime.py"],
+          "test_refs": ["tests/test_runtime_secret_health.py", "tests/test_api.py"],
+          "notes": "Secret health returns configured/required/remediation facts without secret values, token prefixes, or DSNs."
+        },
+        {
+          "mitigation_id": "LLM07-M2",
+          "title": "Separate planner system instructions from untrusted user and tool content",
+          "status": "implemented",
+          "owner_role": "security owner",
+          "implementation_refs": [
+            "src/ojtflow/infrastructure/llm/openai.py",
+            "src/ojtflow/core/policy/prompt_injection_policy.py"
+          ],
+          "test_refs": ["tests/test_assistant_safety.py", "tests/test_assistant_service.py"],
+          "notes": "Planner-visible payloads label untrusted data and expose only backend-approved tool schemas."
+        }
+      ],
+      "monitoring_signals": ["secret_health_failed", "prompt_injection_assessment", "runtime_config_sanitized"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Prompts are not treated as security boundaries; protected state must remain enforced by backend policies.",
+      "roadmap_refs": ["F127", "F133"],
+      "evidence_refs": ["docs/secret_configuration_guide_v0.md", "docs/assistant_safety_cases_v0.md"]
+    },
+    {
+      "category_id": "LLM08",
+      "category_name": "Vector and Embedding Weaknesses",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm08-vector-and-embedding-weaknesses/",
+      "risk_statement": "Embedding mismatch, stale vector indexes, PHI-bearing embedding text, or weak retrieval filtering can produce unsafe evidence or leak sensitive context.",
+      "applicable_surfaces": ["embedding_provider", "pgvector_index", "retrieval_search", "knowledge_chunks", "support_matrix"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM08-M1",
+          "title": "Track embedding provider dimensions and require reindex alignment",
+          "status": "implemented",
+          "owner_role": "data steward",
+          "implementation_refs": [
+            "src/ojtflow/infrastructure/retrieval/embeddings.py",
+            "src/ojtflow/infrastructure/retrieval/postgres.py",
+            "src/ojtflow/infrastructure/retrieval/engine.py"
+          ],
+          "test_refs": ["tests/test_retrieval.py", "tests/test_external_provider_policy.py"],
+          "notes": "Runtime settings expose embedding provider/model/dimensions and retrieval warns on incompatible vector dimensions."
+        }
+      ],
+      "monitoring_signals": ["embedding_dimension_mismatch", "retrieval_used_fallback_scoring", "weak_evidence_provenance", "external_provider_block"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Embedding configuration is observable; production corpora still need scheduled retrieval evaluation and stale-index alerts.",
+      "roadmap_refs": ["F077", "F078", "F079", "F086"],
+      "evidence_refs": ["docs/retrieval_module_v0.md", "docs/pgvector_index_management.md"]
+    },
+    {
+      "category_id": "LLM09",
+      "category_name": "Misinformation",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm09-misinformation/",
+      "risk_statement": "The assistant can produce unsupported, stale, or overconfident statements about healthcare data, standards, or validation results.",
+      "applicable_surfaces": ["assistant_answer", "retrieval_answer", "validation_explanation", "clinical_package_summary"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM09-M1",
+          "title": "Attach evidence support matrices and retrieval quality warnings to answers",
+          "status": "implemented",
+          "owner_role": "data steward",
+          "implementation_refs": [
+            "src/ojtflow/infrastructure/retrieval/engine.py",
+            "src/ojtflow/application/assistant_service.py",
+            "knowledge/assistant/evaluation_cases.json"
+          ],
+          "test_refs": [
+            "tests/test_retrieval.py",
+            "tests/test_assistant_evaluations.py",
+            "tests/test_assistant_service.py"
+          ],
+          "notes": "Answers carry evidence summaries, support status, and warnings when evidence is weak or missing."
+        }
+      ],
+      "monitoring_signals": ["unsupported_claims", "weak_evidence_provenance", "retrieval_quality_warning", "answer_evaluation_failed"],
+      "residual_risk": "high",
+      "residual_risk_note": "Healthcare explanations still require human review and cannot be used as diagnosis or treatment guidance.",
+      "roadmap_refs": ["F084", "F117", "F083", "F094"],
+      "evidence_refs": ["docs/retrieval_support_matrix_v0.md", "docs/assistant_evaluation_v0.md"]
+    },
+    {
+      "category_id": "LLM10",
+      "category_name": "Unbounded Consumption",
+      "owasp_ref": "https://genai.owasp.org/llmrisk/llm10-unbounded-consumption/",
+      "risk_statement": "Large uploads, repeated assistant requests, OCR jobs, embedding batches, and reindex operations can create cost spikes or denial-of-service pressure.",
+      "applicable_surfaces": ["assistant_chat", "file_upload", "ocr", "embeddings", "retrieval_reindex", "batch_ingestion"],
+      "mitigations": [
+        {
+          "mitigation_id": "LLM10-M1",
+          "title": "Apply route rate limits and expensive-operation cost ceilings before provider calls",
+          "status": "implemented",
+          "owner_role": "platform owner",
+          "implementation_refs": [
+            "src/ojtflow/interfaces/api/rate_limit.py",
+            "src/ojtflow/core/policy/abuse_cost_policy.py",
+            "src/ojtflow/infrastructure/llm/openai.py",
+            "src/ojtflow/infrastructure/retrieval/embeddings.py"
+          ],
+          "test_refs": [
+            "tests/test_rate_limit.py",
+            "tests/test_abuse_cost_policy.py",
+            "tests/test_assistant_service.py"
+          ],
+          "notes": "Limits are enforced before external LLM, vision OCR, embedding, and batch artifact creation paths."
+        }
+      ],
+      "monitoring_signals": ["rate_limited", "cost_control_block", "assistant_stream_cancelled", "batch_upload_rejected"],
+      "residual_risk": "medium",
+      "residual_risk_note": "Configured limits reduce cost spikes; production still needs metrics dashboards and customer-specific quotas.",
+      "roadmap_refs": ["F101", "F134", "F135", "F158"],
+      "evidence_refs": ["docs/rate_limiting_v0.md", "docs/abuse_cost_controls_v0.md"]
+    }
+  ]
+}

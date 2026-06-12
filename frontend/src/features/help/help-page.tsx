@@ -246,6 +246,19 @@ const issueGuide = [
 
 const retrievalManual = [
   {
+    title: "Search plan",
+    meaning:
+      "Shows the backend route, query aspects, rewrites, medical search hints, and suggested filters that shaped the latest search.",
+    action: "Read this before individual hits when you need to understand what the system actually searched for.",
+  },
+  {
+    title: "Execution summary",
+    meaning:
+      "Separates local OJTFlow searches from external medical follow-ups so you can see what can run now and what must be copied or opened manually.",
+    action:
+      "Use Run first local task for the first trusted-corpus step, then Copy external follow-ups when you need to check FHIR, LOINC, UCUM, PubMed, or other external indexes.",
+  },
+  {
     title: "Hybrid search",
     meaning:
       "Combines keyword search with vector similarity. Use it when field names, standards, and clinical wording may not match exactly.",

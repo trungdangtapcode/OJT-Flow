@@ -33,6 +33,9 @@ contract remains `RetrievalPackage`, so workflow state, UI rendering, assistant
 tools, and audit/explanation paths do not depend on LlamaIndex types.
 Framework retrieval also populates package readiness metadata and per-hit
 aspect/concept locator signals through the same OJTFlow retrieval contracts.
+It emits the same `standard_search_plan` contract as the native retrieval
+engine, so UI, assistant, and future MCP tool behavior do not diverge by
+retrieval framework.
 The LlamaIndex adapter builds a reusable in-process index for the current
 trusted chunk generation and invalidates it on `reindex()`. Retrieval still
 applies OJTFlow metadata filters before returning evidence. For framework
@@ -75,15 +78,285 @@ The retrieval pipeline is auditable in v0:
 9. Each ranked hit gets a deterministic extractive snippet: the most
    query-relevant sentence/window from the source chunk, with matched terms and
    normalized source offsets.
-10. Final selected hits are summarized into result facets by source type,
+10. Final selected hits use source-aware diversity selection before packaging,
+   so repeated high-scoring chunks from one source do not hide independent
+   standard, policy, or terminology evidence. The trace exposes selected-hit
+   rationale under the first-class `diversity.selected_hits` contract and also
+   mirrors it to `handoff_context.diversity.selected_hits` for agent handoff.
+11. Final selected hits are summarized into result facets by source type,
    clinical domain, standard system, and trust level.
-11. Trace safety flags mark prompt-injection-like query text and sensitive field
+12. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
 
 The retrieval package now includes a `graph_context` handoff that extracts
 entities and evidence triples from the retrieved claims. This is a
 GraphRAG-lite context for validation/explanation workflows, not diagnosis,
 treatment, triage, or medication advice.
+When the backend has a graph repository configured, every retrieval package
+with a graph handoff also stores an owner-scoped `GraphContextRecord`. The
+package returns `handoff_context.graph_record` with the persisted graph ID,
+workflow/search metadata, counts, and creation time. Operators can list these
+records through `GET /api/v1/retrieval/graph/contexts` and export the graph
+neighborhood as newline-delimited JSON through
+`GET /api/v1/retrieval/graph/export?format=jsonl` or RDF-like triples through
+`format=rdf_jsonl`. The export is operational graph/RAG metadata only; it is
+not a clinical decision-support artifact.
+Operators can also call `GET /api/v1/retrieval/graph/neighborhood` to expand a
+bounded subgraph by text, node ID, evidence ID, source ID, normalized code,
+FHIR-like resource type, data field, relation, owner, and workflow scope.
+The Retrieval page exposes the same capability in the `Graph query` panel:
+operators can query persisted graph neighborhoods by text, node, evidence,
+source, normalized code, workflow, or relation; seed the query from the current
+run's top evidence/node/source; inspect recent persisted graph records; and
+review bounded node, edge, and triple results without leaving the retrieval
+workspace.
+
+GraphRAG-lite reranking is configured by
+`knowledge/retrieval/graph_rag_policy.json` and included in the sanitized
+retrieval rule-pack fingerprint list. After Graph-NER builds the package graph,
+the backend computes a bounded `graph_support` score component for evidence that
+shares query graph targets, evidence triples, or normalized-code paths. The
+score is additive and auditable:
+
+- `hits[].score_components[]` may include `component="graph_support"`.
+- `hits[].source_locator.graph_rag_lite` and
+  `hits[].evidence.locator.graph_rag_lite` show shared query targets, graph
+  edge counts, triple counts, normalized-code targets, and score boost.
+- `handoff_context.graph_rag_lite` and
+  `trace.fusion_diagnostics.graph_rag_lite` show whether graph support changed
+  the final hit order and which evidence had graph support.
+- `support_matrix.rows[].metadata.graph_rag_lite` carries the same support data
+  into answer synthesis and assistant/MCP handoff.
+
+Graph support can promote a weak support row to partial or a partial support row
+to strong only when the configured policy threshold is met. It cannot override
+source trust, freshness, PHI, policy, or human-review gates.
+
+The package also includes a guarded `answer` object. This is deterministic
+retrieval synthesis, not open-ended clinical generation. It is built only from
+the `support_matrix`, ranked evidence, source metadata, and Graph-NER handoff:
+
+- `answer.status` is `supported`, `partial`, `review_required`, or `refused`.
+- `answer.answer_text` summarizes only retrieved evidence claims and cites
+  evidence IDs.
+- `answer.claims[]` links each answer claim to evidence IDs, citation IDs, and
+  graph path refs when Graph-NER produced matching evidence triples.
+- `answer.claims[].graph_guard` records the claim-to-triple guard status:
+  `supported`, `review_required`, or `not_required`.
+- `answer.unsupported_claims[]` carries weak or unsupported support rows
+  instead of allowing them into confident answer text.
+- `answer.missing_evidence_gaps[]` explains why a package cannot support a
+  complete answer.
+- `answer.freshness_warnings[]` flags stale, deprecated, blocked,
+  review-needed, unapproved, or version-mismatched sources.
+- `answer.metadata.claim_triple_guard` summarizes how many clinical claims were
+  graph-supported versus review-required.
+
+If no row reaches strong or partial evidence support, the answer is refused and
+the trace receives `retrieval_answer_refused_unsupported`. This keeps Assistant,
+MCP, UI, and export consumers from inventing conclusions outside the retrieved
+evidence package. If a strong clinical claim lacks graph-triple support, the
+answer is marked review-required instead of silently presenting it as fully
+supported.
+
+The package also includes a `standard_search_plan`. This is a typed,
+healthcare-standard playbook selected from
+`knowledge/retrieval/standard_search_playbook_rules.json`. It tells operators
+which governed search route should be run next, such as FHIR resource search
+with Provenance/AuditEvent follow-up, LOINC terminology lookup, UCUM unit
+validation, RxNorm medication normalization, PHI review, or literature/trial
+search hints. The plan is returned as first-class API data instead of hidden UI
+copy, so the assistant, retrieval console, exports, and future MCP tools can
+all use the same route guidance.
+
+The governed external medical-source scope now includes LOINC, UCUM, RxNav,
+SNOMED CT placeholder/lookup boundaries, ICD-10-CM, OMOP CDM, MeSH,
+PubMed/NCBI E-utilities, ClinicalTrials.gov API v2, and openFDA. These sources
+are declared as adapters and trust policies first. Live fetch jobs must preserve
+endpoint, query, source release or fetch timestamp, cache hash, and approval
+state before fetched records become searchable.
+
+Corpus search is partitioned by tenant-aware policy from
+`knowledge/source_catalog/corpus_partitions.json`. `GET
+/api/v1/retrieval/corpus/partitions` exposes the active catalog. The default
+partitions are:
+
+- `global_standards`: shared approved standards, terminology metadata, schemas,
+  and curated public guidance. Visibility is global and external-provider use is
+  allowed when the broader PHI/external-provider policy also allows it.
+- `tenant_policies`: organization-scoped policies, implementation guides, and
+  tenant data dictionaries. Visibility requires the active workspace
+  `organization_id`; external-provider use is blocked by default.
+- `private_documents`: user or workspace uploaded private artifacts. Visibility
+  requires the active organization scope, PHI is allowed only under private
+  retention policy, and external-provider use is blocked by default.
+
+Corpus manifest items, indexed chunks, retrieval source inventory rows, and
+Postgres/static/LlamaIndex retrieval filters all carry the same partition
+metadata: `corpus_partition_id`, `corpus_partition_label`,
+`corpus_partition_purpose`, `corpus_visibility`, `organization_id`,
+`external_provider_allowed`, `phi_allowed`, and `retention_policy_id`.
+Authenticated retrieval routes add the caller's active workspace organization to
+search filters and overwrite any caller-supplied `organization_id`. Global
+chunks remain visible to every workspace; tenant and private chunks are returned
+only for matching organization scope. Operators can narrow search explicitly
+with `filters.corpus_partition` and `filters.corpus_visibility`. The Retrieval
+source inventory surfaces these fields as badges and filter chips so users can
+see whether a result came from global standards, tenant policy, or private
+documents before using it.
+
+Private corpus ingestion is available through `POST
+/api/v1/retrieval/private-corpus/ingest`. It accepts inline text or the latest
+extracted trace for an uploaded artifact. The ingestion path is deliberately
+PHI-safe:
+
+- redaction preview runs before indexing;
+- only redacted text is written into retrieval chunks;
+- chunks are stamped into `private_documents` with the active workspace
+  organization ID;
+- `external_provider_allowed=false` is stored on every source/chunk;
+- uploaded artifact retention policy is preserved, while inline text receives a
+  private-corpus retention policy requiring review;
+- source inventory and search filters hide private chunks outside the matching
+  organization scope.
+
+This is private retrieval grounding, not external semantic enrichment. If an
+embedding provider is external, the indexed text is already redacted and the
+source metadata still tells downstream tools not to send private corpus content
+to external providers.
+
+External medical search transparency is exposed on each `RetrievalPackage` as
+`external_query_transparency`. These records are generated for PubMed,
+ClinicalTrials.gov, and openFDA search hints. They show the exact external query
+or URL that would be used, parsed request parameters, retrieval filters, result
+IDs when a future connector supplies them, cache key metadata, cache state,
+source release placeholder, rate-limit/auth policy, and execution status.
+
+The current backend does not execute those external searches automatically.
+Records use `cache_state=not_executed` and either `execution_status=not_executed`
+or `blocked_by_route_budget` depending on the selected route budget. This keeps
+operators from seeing a black-box "external RAG" claim: every possible external
+handoff is visible, reproducible, and policy-gated before source ingestion.
+
+Source freshness is now a first-class readiness gate. `GET
+/api/v1/retrieval/freshness` compares the governed corpus adapter catalog,
+source trust policy catalog, generated local corpus manifest, and active source
+inventory. Each source receives a deterministic status:
+
+- `ready`: approved, policy-covered, indexed when expected, and within its
+  freshness window.
+- `watch`: usable but operationally weak, such as configured-but-unindexed
+  local snapshots, missing governed external snapshots, or stale local files.
+- `needs_review`: source lifecycle, reviewer state, or trust policy coverage
+  blocks production confidence.
+- `blocked`: disabled, blocked, or failed sources should not be used for
+  retrieval evidence.
+
+The Retrieval page renders the same report as the `Source freshness gate`
+panel. Operators can use it before tuning RAG or judging answers, because a
+high-ranking chunk from stale or unreviewed medical evidence is still unsafe to
+treat as trusted grounding.
+
+Ranked packages now also carry package-time source governance. Every selected
+hit is matched against `knowledge/source_catalog/source_trust_policies.json`
+and `knowledge/source_catalog/corpus_adapters.json` by source ID, canonical
+source ID, adapter policy mapping, or standard/domain. The resulting
+`source_governance` payload is copied into:
+
+- `hits[].source_locator.source_governance`
+- `hits[].evidence.locator.source_governance`
+- `hits[].match_explanation.source_governance`
+- `handoff_context.source_governance`
+
+The same decisions emit `source_governance_ok`,
+`source_governance_review_required`, or `source_governance_blocked` quality
+signals. This keeps corrective RAG honest: a highly ranked chunk can still be
+review-gated when its source policy requires reviewer approval, its adapter is
+candidate/deprecated, or its governed healthcare source has no trust policy.
+
+Playbook rules are data-driven and can trigger from query profile, detected
+standards, detected concepts, decomposed query-aspect IDs, uploaded dataset
+field names, query tokens, FHIR resource type, quality signals, safety flags,
+or required metadata filters. This lets a CSV field such as `unit` select a
+UCUM validation route even when the user never names UCUM explicitly.
+
+## Query Transformations
+
+Query transformations live in
+`knowledge/retrieval/query_transformation_rules.json` and are included in the
+sanitized `handoff_context.retrieval_rule_packs` fingerprint list. The current
+registry emits deterministic `query_transformation_rule` variants for:
+
+- `rewrite`: makes clinical standard, schema, resource, and field context
+  explicit.
+- `step_back_query`: asks the broader healthcare-standard requirements
+  question before evidence lookup.
+- `multi_query_expansion`: combines decomposed query aspects, suggested terms,
+  detected concepts, and standards for high-recall search.
+- `hyde`: optional deterministic HyDE-style hypothetical evidence text for
+  recall experiments. This rule is disabled unless
+  `OJT_RETRIEVAL_ENABLE_HYDE=true`.
+
+The transformations are data-driven and rendered as first-class
+`query_variant_details[]` rows with rule ID, strategy, priority, and reason.
+They do not call an LLM and do not bypass source filters, evidence support
+checks, or human review gates.
+
+## Query Router
+
+The selected query route lives in `query_analysis.query_route` and is copied to
+`handoff_context.query_route`; the same object is also mirrored into
+`trace.fusion_diagnostics.query_route` for package-level observability.
+Routes are loaded from `knowledge/retrieval/query_route_rules.json` and are
+included in the sanitized `handoff_context.retrieval_rule_packs` fingerprint
+list.
+
+The router selects a strategy recommendation from trusted rule data using:
+
+- query profile ID, profile route, and retrieval mode
+- detected input format and FHIR-like resource type
+- active metadata filter keys and values
+- query diagnostic codes and safety-sensitive concepts
+- detected concepts, standards, tokens, and whether fields are present
+
+Current route outputs include `exact_source_lookup`, `metadata_filtered`,
+`hybrid_rrf`, and `high_recall_review` strategy IDs. The route object includes
+the selected rule ID, route ID, strategy ID, retrieval mode, rationale,
+confidence, matched criteria, suggested filters, risk controls, and an optional
+`budget`. Built-in routes include budgets for max candidates, max returned
+hits, reranker candidate limit, source-diversity behavior, external-network
+permission, and latency target. `rank_chunks` enforces the candidate, returned
+hit, reranker, and diversity parts of that budget, then writes the selected
+budget and effective runtime budget to `handoff_context` and
+`trace.fusion_diagnostics`. External-network permission is advisory in v0
+because the local search path does not execute live external queries; if a route
+does not allow external network use, external search hints remain review-only.
+The router is an auditable selection contract; it does not silently switch
+storage adapters or bypass the existing evidence-quality, source-filter,
+review, and support-matrix checks.
+
+## Citation Locator Normalization
+
+Retrieval preserves raw source locator dictionaries, but ranked hits, evidence,
+support-matrix rows, and answer citations can now include
+`normalized_citation_locator`. The normalizer is driven by
+`knowledge/retrieval/citation_locator_rules.json`, so new locator families can
+be added without changing ranking code.
+
+The normalized locator shape includes:
+
+- `locator_kind`: for example `fhir_page`, `pubmed_record`,
+  `clinicaltrials_study`, `openfda_endpoint`, `ucum_unit`, `rxnorm_concept`,
+  `pdf_page`, or `internal_section`
+- `display` and `canonical_url` when a canonical URL can be built safely
+- source ID/type/version, standard system, identifier, path, page, section,
+  raw locator keys, warnings, and rule metadata
+
+The current rule set covers FHIR R4 resource pages, PubMed PMID records and
+search context, ClinicalTrials.gov study/API context, openFDA endpoint context,
+UCUM units, RxNorm concepts/source context, PDF pages, and internal policy or
+knowledge sections. If required template fields are missing, the normalizer
+falls through to lower-priority rules instead of inventing a misleading URL.
 
 ## Search Presets
 
@@ -174,9 +447,29 @@ not a bulk data dump. It now contains:
   severities, review severities, and the score threshold below which a package
   requires review.
 - `knowledge/retrieval/search_hint_targets.json`: target metadata for
-  external medical search hints, including operator rationale and warnings.
+  external and terminology search hints, including operator rationale and
+  warnings for PubMed, FHIR, LOINC, UCUM, ClinicalTrials.gov, and openFDA.
+- `knowledge/retrieval/standard_search_playbook_rules.json`: deterministic
+  healthcare-standard search playbook rules that turn query profiles,
+  standards, query aspects, dataset fields, query tokens, resource types,
+  safety flags, and quality signals into operator-facing FHIR, terminology,
+  privacy, and external-search route steps.
 - `knowledge/terminologies/fhir_search_parameters.json`: FHIR R4 search
-  parameter templates for resource-level search hints.
+  parameter templates for resource-level search hints. FHIR search hints expose
+  `metadata.parameter_examples`, `metadata.lineage_followup`, and a capability
+  warning so the UI can show concrete `code`, `patient`, `date`, and
+  `value-quantity` syntax plus Provenance/AuditEvent follow-up without
+  hardcoding FHIR in React.
+  LOINC hints expose the authenticated Search API scope endpoints and
+  query/rows/offset parameter examples. UCUM hints expose the NLM FHIR
+  CodeSystem `$validate-code` operation parameters and selected candidate unit
+  strings. UCUM hints are launchable only when the analyzer has a concrete unit
+  candidate; placeholder unit-code hints remain copy-only to avoid sending
+  meaningless requests.
+Assistant synthesis receives compact `medical_search_hints` and `diversity`
+from retrieval tool results, so the model can mention governed FHIR, LOINC,
+UCUM, PubMed, ClinicalTrials.gov, openFDA follow-up routes, and selected-source
+spread without inspecting raw retrieval JSON.
 - `knowledge/corpus/clinical_data_standards_map.md`: project-scope map from
   workflow use cases to FHIR, LOINC, UCUM, RxNorm, MeSH/PubMed,
   ClinicalTrials.gov, openFDA, and OMOP.
@@ -386,6 +679,57 @@ expanded terms, ranking stack, reranker state, diversity/source spread,
 `quality_summary`, `evidence_buckets[]`, coverage gaps, concept grounding, and
 `recommended_actions[]`. It is intentionally presentation-only; remediation
 buttons are shown only when the backend provides a supported `suggested_filter`.
+The left rail also renders a compact search-plan preview before and after full
+retrieval. Before search, the UI calls `POST /api/v1/retrieval/plan`, which
+returns a `RetrievalPlan` from the same adapter-owned query analysis used by
+ranked retrieval. After search, the preview switches to the completed
+`RetrievalPackage`. In both states it shows the selected route, matched query
+profile, decomposed search aspects, query rewrites, external medical-search
+hints, execution tasks, and filter suggestions before an operator opens the full
+trace. `query_analysis.retrieval_tasks[]` is the ordered task plan that bridges
+planning to tool execution: local corpus searches are required coverage tasks,
+while external medical-index tasks remain optional follow-ups with explicit
+target/action/rationale/warnings. Operators can run local corpus tasks directly
+from the preview when `action_type="run_local_search"`; the UI applies supported
+task filters to the query builder and uses the same retrieval mutation/history
+path as a normal evidence search. External medical-index tasks open
+backend-provided follow-up URLs when `action_type="open_external_url"` and fall
+back to copying syntax when `action_type="copy_query"`. Every task row can copy
+its exact planned query so syntax-only follow-ups remain usable outside the app. The preview also
+lets operators apply supported query-analysis filter suggestions before full
+search through the same typed filter path used by trace remediation. In
+plan-only mode this updates the query builder without running retrieval; after a
+completed package it can refresh ranked evidence with the new filter. Plan-only
+filter application shows an inline confirmation so the operator knows the query
+builder changed and search still needs to run. The preview
+also shows plan coverage before task details: required local tasks, optional external
+follow-ups, inferred standards, suggested filter count, and plan warnings. Its
+source of truth is backend `RetrievalPlan.coverage_summary`; the frontend may
+derive the same shape only as a compatibility fallback for older plan payloads.
+`coverage_summary.next_action` is the backend-owned operator instruction for the
+next search step.
+`task_summary` is the backend-owned execution summary that separates local
+OJTFlow-runnable search tasks from external medical index follow-ups. The UI
+uses it to show which work can run immediately, which tasks are required first,
+and which follow-ups require opening or copying external search syntax. The
+summary panel should expose direct actions for the first runnable local task and
+for copying external follow-up syntax so operators do not need to hunt through
+every task row before starting.
+The summary panel also presents a stable run order for end users: execute
+required local corpus tasks first, apply supported filters when the plan narrows
+source/standard/trust scope, then review external medical-index follow-ups as
+manual context. Each execution-task row includes a "What happens" explanation
+derived from the backend task `target` and `action_type`: local tasks refresh
+the governed OJTFlow evidence package, external URL tasks open a source outside
+the app, and copy-query tasks prepare syntax for manual review. This keeps the
+planning UI usable for operators who do not already know the retrieval
+architecture.
+The backend also returns `RetrievalPlan.risk_signals[]` so the preview can show
+prioritized pre-search risks before task execution; these signals are derived
+from backend coverage and query diagnostics, not from frontend heuristics.
+Its copy action exports a
+`retrieval_search_plan_preview` report so review notes and demos can preserve
+the exact plan that produced the ranked evidence.
 
 This is separate from `evaluation_policy.json`: quality gates assess the current
 retrieval package before downstream use, while evaluation policy turns durable
@@ -492,7 +836,11 @@ requested fields in matched terms, detected format presence, applied
 clinical-domain filter match, chunk trust level, source type, standard system,
 matched query terms, detected concepts, and query-expansion rule IDs.
 `OJT_RANKING_BOOST_RULES_PATH` can point the runtime to a deployment-specific
-ranking policy. Applied boosts are copied into each hit's
+ranking policy. The default policy intentionally gives stronger boosts to
+direct schema-source matches, HbA1c/LOINC concept grounding, and FHIR
+Observation profile grounding so broad unit evidence does not crowd out the
+canonical schema, terminology, or profile source for those query intents.
+Applied boosts are copied into each hit's
 `source_locator.ranking_boosts` as rule ID, weight, and reason objects so
 ranking influence is visible in API payloads and the Retrieval console. The
 legacy `source_locator.ranking_boost_rules` ID list is preserved for compact
@@ -524,7 +872,8 @@ vocabulary concept. The trace copies those details to
 `trace.query_variant_details` so operator review can inspect query rewrites
 without guessing why a variant was used.
 
-Source-aware diversity metadata includes `selected_hits`, one row per final hit.
+`RetrievalPackage.diversity` contains source-aware diversity metadata,
+including `selected_hits`, one row per final hit.
 Each row records evidence ID, source ID, selected rank, original rank,
 normalized relevance, redundancy penalty, final MMR selection score, and a short
 reason. This makes source diversity auditable per result card instead of only
@@ -928,24 +1277,99 @@ Workflow output includes:
 `graph_context` uses contract `graph_ner_handoff.v0` and includes:
 
 - `nodes`: query, evidence, healthcare standard, clinical concept, standard
-  code, and data-field nodes. `clinical_concept` nodes whose label matches an
-  alias in `knowledge/terminologies/medical_concepts.json` (the same seed
-  registry deterministic query analysis uses, overridable with
-  `OJT_MEDICAL_CONCEPT_REGISTRY_PATH`) carry deterministic dictionary
-  normalization: `normalized_code` (e.g. `LOINC:4548-4`), `normalized_system`,
-  and `normalized_display`. The matching `standard_code` node carries
-  `standard_system` and `display_name`.
+  code, data-field, FHIR resource, and FHIR search-parameter nodes.
+  Standards, data fields, and fallback clinical concepts are recognized from
+  `knowledge/terminologies/graph_ner_rules.json`, overridable with
+  `OJT_GRAPH_NER_RULES_PATH`. Nodes include deterministic `confidence` and
+  `rule_source` metadata when available. Every node also carries `provenance`
+  with the extractor name/version, extraction source, confidence when known,
+  review state, and source evidence/chunk metadata when the node came from a
+  retrieved claim. Reused nodes can carry `additional_provenance` entries when
+  the same concept appears in both query text and retrieved evidence.
+- `clinical_concept` nodes whose label matches an alias in
+  `knowledge/terminologies/medical_concepts.json` (the same seed registry
+  deterministic query analysis uses, overridable with
+  `OJT_MEDICAL_CONCEPT_REGISTRY_PATH`) carry dictionary normalization:
+  `normalized_code` (e.g. `LOINC:4548-4`), `normalized_system`,
+  `normalized_display`, `clinical_domain`, and `concept_registry_id`. The
+  matching `standard_code` node carries `standard_system` and `display_name`.
+- FHIR resource nodes expand into search-parameter nodes from
+  `knowledge/terminologies/fhir_search_parameters.json`, overridable with
+  `OJT_FHIR_SEARCH_PARAMETERS_PATH`. These nodes expose `target_field`,
+  `search_type`, and example query syntax for downstream retrieval/MCP tools.
 - `edges`: auditable relationships such as `supports`, `mentions_field`,
-  `requests_resource`, and `normalizes_to` (clinical concept to its canonical
-  standard code).
+  `mentions_entity`, `requests_resource`, `has_search_parameter`,
+  `uses_standard`, and `normalizes_to` (clinical concept to its canonical
+  standard code). Edges carry the same `provenance` envelope; `normalizes_to`
+  edges use `review_state="candidate_requires_review"` because deterministic
+  code candidates are reviewable evidence, not an automatic clinical coding
+  decision.
 - `triples`: source/evidence triples, including `normalizes_to` triples that
   pair a recognized concept label with its canonical code (for example
   `HbA1c / normalizes_to / LOINC:4548-4`), for downstream Graph-NER/RAG
-  handoff.
+  handoff. Triples include provenance with the source evidence ID and chunk
+  locator when available.
+- `summary`: extractor version, node, edge, triple, provenance, candidate
+  review, Graph-NER rule, and concept-registry counts so UIs and operators can
+  tell whether a graph package is thin, review-heavy, or well grounded.
 
-Concept normalization is dictionary lookup against a seed registry, not a
-clinical coding decision; unmapped terms keep their plain `clinical_concept`
-node without a `normalizes_to` edge.
+Concept normalization is deterministic dictionary lookup against seed
+registries, not a clinical coding decision; unmapped terms keep their plain
+`clinical_concept` node without a `normalizes_to` edge.
+
+`handoff_context.graph_conflict_report` uses contract
+`graph_conflict_report.v1`. It is produced after Graph-NER and before answer
+synthesis so final answers can be review-gated when evidence disagrees. The
+policy is loaded from `knowledge/retrieval/graph_conflict_rules.json`,
+overridable with `OJT_GRAPH_CONFLICT_RULES_PATH`. The report currently detects:
+
+- `contradictory_source_claim`: evidence claims that match opposing
+  data-driven guidance patterns, such as required versus not-required fields.
+- `deprecated_terminology_mapping`: normalized terminology evidence from a
+  deprecated, blocked, failed, or review-required source/version.
+- `conflicting_units`: the same normalized concept linked to multiple UCUM unit
+  candidates across retrieved evidence.
+- `version_mismatched_standard_guidance`: retrieved guidance for the same
+  standard/resource/domain spanning multiple source versions.
+
+Each conflict includes `conflict_id`, `kind`, `severity`, `rule_id`,
+`message`, `suggested_action`, evidence refs, graph node/edge refs when
+available, normalized-code candidates when relevant, and metadata such as unit
+codes, preferred units, source lifecycle state, or version groups. Any
+review-required conflict is copied into retrieval trace warnings and forces the
+guarded retrieval answer to `review_required` when it would otherwise be fully
+supported.
+
+Persisted graph records are stored in the backend spine:
+
+- Memory mode keeps graph records for tests and local demos only.
+- SQLite mode stores `graph_contexts` beside workflow, event, dataset,
+  retrieval, assistant, and audit tables.
+- Postgres mode stores `ojtflow.graph_contexts` through migration
+  `019_graph_contexts.sql`.
+- `GET /api/v1/retrieval/graph/contexts` lists authenticated-owner records,
+  optionally filtered by `workflow_id`.
+- `GET /api/v1/retrieval/graph/export` exports the same authenticated-owner
+  scope as `jsonl` node/edge/triple records or `rdf_jsonl`
+  subject/predicate/object triples.
+- `GET /api/v1/retrieval/graph/neighborhood` reads persisted contexts and
+  returns a bounded owner-scoped subgraph around matching nodes/triples for
+  GraphRAG/evidence exploration.
+
+Graph-NER has a deterministic evaluation gate:
+
+```bash
+python scripts/evaluate-graph-ner.py
+python scripts/evaluate-graph-ner.py --json
+```
+
+Cases live in `tests/fixtures/graph_ner_eval_cases.json`. The fixture set
+covers lab-name concepts, UCUM unit mentions, patient identifier fields,
+RxNorm-grounded medication concepts, diagnosis coding concepts, procedure
+concepts, and FHIR resource/search-parameter nodes. The runner reports expected
+node recall, expected edge recall, and normalized-code recall. CI, deploy, and
+`scripts/release-check.sh` run the same gate so Graph-NER extraction regressions
+are caught before release.
 
 `retrieval_trace.safety_flags` is deterministic and auditable. Current flags are:
 
@@ -970,9 +1394,10 @@ Retrieval is a two-stage architecture with deterministic defaults:
 3. Source-aware MMR selection chooses the final `top_k` hits from the ranked
    candidate list. It keeps relevance as the primary signal while penalizing
    redundant chunks from sources already selected, which reduces repeated
-   same-document evidence in operator review. The diversity handoff context
+   same-document evidence in operator review. `RetrievalPackage.diversity`
    records `selected_hits` so operators can inspect the relevance/redundancy
-   tradeoff for each selected item.
+   tradeoff for each selected item; the same payload is mirrored into
+   `handoff_context.diversity` for assistant and agent compatibility.
 4. The final package preserves `lexical_score`, `vector_score`, `rerank_score`,
    `score_components`, `source_locator.ranking_boosts`, and
    `source_locator.ranking_boost_rules` per hit so workflow explanations can
@@ -1074,7 +1499,24 @@ higher values favor relevance, lower values favor novelty. The default `0.72`
 keeps relevance dominant while reducing duplicate-source evidence in the final
 operator-visible list. Retrieval packages report the selection mode, lambda,
 candidate source count, selected source count, and duplicate selected source
-count under `handoff_context.diversity`.
+count under the first-class `diversity` field and mirror that data to
+`handoff_context.diversity`.
+
+Direct retrieval requests can override diversity for a specific query through
+allowlisted filters:
+
+```json
+{
+  "filters": {
+    "diversity_enabled": true,
+    "diversity_lambda": 0.35
+  }
+}
+```
+
+Use lower lambda values for broad review routes where source spread matters
+more, and higher values for exact-source lookups where rank confidence matters
+more.
 
 `OJT_RETRIEVAL_HNSW_EF_SEARCH` controls the per-query pgvector HNSW search
 candidate depth for the Postgres vector candidate pool. pgvector defaults this
@@ -1084,6 +1526,13 @@ adapter sets it transaction-locally before vector candidate retrieval, so the
 setting affects only the current search query and does not leak into other
 database sessions. Increase it when recall is weak; lower it when latency is the
 stricter constraint.
+
+Postgres reindexing stamps each chunk with an `embedding_generation_id` derived
+from the configured embedding provider, model, and dimension count. Retrieval
+checks candidate chunk metadata against the current generation ID and warns the
+operator to reindex when stored vectors were produced by an older provider/model
+configuration. This prevents silent use of stale vectors after switching between
+deterministic, OpenAI, and local Hugging Face embedding modes.
 
 Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
 to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,
@@ -1129,18 +1578,41 @@ persists those labels through `PUT /api/v1/retrieval/judgments`, lists them with
 authenticated `owner_user_id` and keyed by `(owner_user_id, query_hash,
 evidence_id)`, so rerunning the same query can hydrate prior labels for the
 same evidence even when browser-local run IDs change.
+Supported labels are `relevant`, `partial`, `irrelevant`, `unsafe`, `stale`,
+and `source_policy_blocked`; legacy `not_relevant` remains accepted for old
+records and API clients. `relevant` maps to rating `3`, `partial` maps to
+rating `1`, and all non-positive labels map to rating `0`. `unsafe`, `stale`,
+and `source_policy_blocked` are reviewer workflow labels: they are not positive
+relevance signals and should be used when evidence is risky, outdated, or
+blocked by source governance even if it textually matches the query.
 `GET /api/v1/retrieval/judgments/summary` returns the same stored label
 inventory as aggregate counts, average rating, latest update time, and sample
 limit for the active user/query.
 `POST /api/v1/retrieval/judgments/evaluate` accepts the active query, ranked
 evidence IDs, and optional cutoff, then scores that ranked list against stored
 judgments. It returns Coverage@k, HitRate@k, Precision@k, judged precision,
-MAP@k, MRR@k, nDCG@k, per-value counts, contributing judgment IDs, unjudged
-evidence IDs, `evaluation_readiness`, and policy-driven `recommendations[]`. The recommendation rules
+MAP@k, MRR@k, nDCG@k, per-value counts including unsafe/stale/policy-blocked
+labels, contributing judgment IDs, unjudged evidence IDs,
+`evaluation_readiness`, and policy-driven `recommendations[]`. The recommendation rules
 are loaded from `knowledge/retrieval/evaluation_policy.json` by default and can
 be overridden with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime
 counterpart to the offline evaluation harness: it makes current operator
 searches measurable and actionable without copying labels into fixture files.
+Postgres deployments use migration `020_retrieval_judgment_policy_labels.sql`
+to expand the durable value constraint. SQLite local stores rebuild the
+judgment table in place during startup when they detect the older constraint.
+Reviewer labels and weak evaluation results also feed an active-learning queue.
+`PUT /api/v1/retrieval/judgments` enqueues non-relevant and partial labels as
+benchmark candidates, while `POST /api/v1/retrieval/judgments/evaluate`
+enqueues low-confidence ranked results when coverage or positive-hit metrics are
+weak. Queue items are deduped by `(owner_user_id, candidate_key)` so repeated
+searches update the same candidate instead of inflating the backlog.
+`GET /api/v1/retrieval/active-learning/candidates` lists the queue,
+`GET /api/v1/retrieval/active-learning/summary` returns backlog counts, and
+`PATCH /api/v1/retrieval/active-learning/candidates/{candidate_id}` lets a
+reviewer accept, reject, promote, or archive a candidate. Postgres deployments
+use migration `021_retrieval_active_learning_candidates.sql`; SQLite creates the
+same table during local startup.
 `evaluation_readiness` states whether the current labels are unlabeled, low
 confidence, usable with gaps, or ready for tuning so sparse label sets do not
 look like reliable ranking quality measurements.
@@ -1148,6 +1620,15 @@ The Retrieval UI can copy a `retrieval_judgment_evaluation` JSON report with
 server metrics, local in-session metrics, stored-label summary,
 recommendations, ranked evidence IDs, unjudged IDs, and contributing judgment
 IDs for offline relevance-tuning notes.
+The Retrieval cockpit also renders and exports a top-level
+`readiness_checklist` that consolidates query health, required evidence-class
+coverage, source spread, and governance/readiness action state. It is designed
+as the first operator scan before deeper ranking, trace, or evidence-card
+inspection.
+Individual evidence-hit cards also export a `usability_summary` in copied
+`retrieval_evidence_hit` reports. It is derived from matched terms, provenance,
+concept/aspect grounding, evidence-bucket membership, and persisted judgment
+state; it is an operator evidence-review aid, not a clinical conclusion.
 The copied evaluation report also includes the active `query_profile`, and the
 copied run-comparison report includes active/baseline query-profile summaries
 so route or retrieval-mode changes remain visible during tuning.
@@ -1182,6 +1663,17 @@ with score delta, highest action priority, evidence overlap, result churn, and
 top-source stability before detailed comparison sections. The
 Retrieval UI renders the same recommended actions in the comparison panel so
 operators do not need to copy JSON before seeing the next review steps.
+Before the dense comparison tables, the UI also renders an operator summary
+derived from the same typed comparison object: headline, evidence/quality/source
+spread bullets, and review-focus chips. Copied comparison reports include this
+as `operator_summary` so offline tuning notes remain readable without opening
+the detailed metrics tree first.
+The at-a-glance row and copied comparison report also include source-diversity
+comparison: selected-source delta, duplicate selected-source delta,
+candidate-source delta, selected-source overlap, added/removed/retained source
+IDs, selection mode, and lambda. Duplicate-source regressions and diversity
+policy changes are surfaced as recommended actions because healthcare evidence
+review should not silently collapse to one source family after relevance tuning.
 The copied run-comparison report also includes a compact `diagnosis[]` list
 that names likely change drivers such as query-profile changes, rule-pack
 changes, query-aspect plan changes, quality-signal changes, facet drift,
@@ -1263,6 +1755,22 @@ and reports:
 - NDCG@k: graded ranking quality against the ideal judged-source order.
 - reciprocal rank: rank-aware score for the first expected source.
 - selected source count: source diversity after final selection.
+- source diversity@k: unique selected source ratio across the returned hits.
+- unsupported-claim rate: unsupported rows in the evidence support matrix divided
+  by all support rows.
+
+The eval runner reads selected-source metrics from the first-class
+`RetrievalPackage.diversity` contract and falls back to
+`handoff_context.diversity` only for older packages. Unsupported-claim metrics
+come from `RetrievalPackage.support_matrix`, which keeps evaluation aligned
+with guarded answer synthesis.
+
+The current fixture covers lab validation, FHIR Observation mapping, UCUM unit
+checks, LOINC grounding, PHI review, prompt-injection review, RxNorm grounding,
+diagnosis terminology, PubMed/MeSH routing, ClinicalTrials.gov routing, and
+openFDA routing. The scheduled GitHub Actions workflow
+`.github/workflows/retrieval-evaluation.yml` runs the same evaluator nightly and
+uploads `retrieval-evaluation-summary.json` for trend review.
 
 The release check runs this eval before Docker/E2E. The fixture set is small on
 purpose: it is a smoke benchmark for healthcare grounding regressions, not a

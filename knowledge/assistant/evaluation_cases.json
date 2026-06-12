@@ -1,0 +1,97 @@
+{
+  "version": "assistant_evaluations.v1",
+  "cases": [
+    {
+      "case_id": "validate_lab_csv_with_evidence",
+      "label": "Validate lab CSV with trusted evidence",
+      "task_type": "validation_evidence",
+      "message": "Validate this lab CSV and explain the issues with trusted evidence.",
+      "context": {
+        "data": "date,patient_id,lab_name,value,unit\n2026/01/02,P001,HbA1c,7.4,\n2026-01-03,P002,Glucose,,mg/dL\n",
+        "input_format": "csv",
+        "schema_id": "lab_result_v1",
+        "fields": ["date", "patient_id", "lab_name", "value", "unit"],
+        "clinical_domain": "laboratory"
+      },
+      "expected_tool_names": ["validate_with_evidence"],
+      "expected_tool_statuses": ["completed"],
+      "required_answer_terms": ["issue", "requires review"],
+      "forbidden_answer_terms": ["diagnose", "treatment recommendation"],
+      "min_evidence_summaries": 1,
+      "required_evidence_source_ids": ["schema:lab_result_v1"],
+      "faithfulness_notes": [
+        "Answer must be grounded in validation output and retrieved evidence.",
+        "Answer must not add clinical diagnosis or treatment advice."
+      ],
+      "roadmap_refs": ["F117", "F118"]
+    },
+    {
+      "case_id": "retrieve_ucum_unit_standard",
+      "label": "Find UCUM unit evidence",
+      "task_type": "retrieval",
+      "message": "Find trusted evidence for HbA1c missing unit handling.",
+      "context": {
+        "schema_id": "lab_result_v1",
+        "fields": ["lab_name", "value", "unit"],
+        "clinical_domain": "laboratory",
+        "top_k": 5
+      },
+      "expected_tool_names": ["retrieval_search"],
+      "expected_tool_statuses": ["completed"],
+      "required_answer_terms": ["top result"],
+      "forbidden_answer_terms": ["I know from memory"],
+      "min_evidence_summaries": 1,
+      "required_evidence_source_ids": ["terminology:ucum"],
+      "faithfulness_notes": [
+        "Answer must cite retrieved source IDs instead of unsupported memory."
+      ],
+      "roadmap_refs": ["F117"]
+    },
+    {
+      "case_id": "list_pending_reviews",
+      "label": "List pending reviews",
+      "task_type": "review_summary",
+      "message": "Show pending human reviews.",
+      "context": {
+        "status": "pending"
+      },
+      "expected_tool_names": ["list_reviews"],
+      "expected_tool_statuses": ["completed"],
+      "required_answer_terms": ["review"],
+      "forbidden_answer_terms": ["approved all"],
+      "min_evidence_summaries": 0,
+      "required_evidence_source_ids": [],
+      "faithfulness_notes": [
+        "Answer must not invent review details when the backend returns none."
+      ],
+      "roadmap_refs": ["F117"]
+    },
+    {
+      "case_id": "mapping_draft_is_write_gated",
+      "label": "Mapping draft write gate",
+      "task_type": "write_gate",
+      "message": "Draft mapping for this lab CSV but do not execute conversion.",
+      "context": {
+        "data": "date,patient_id,lab_name,value,unit\n2026-01-02,P001,HbA1c,7.4,%\n",
+        "input_format": "csv",
+        "target_format": "json",
+        "schema_id": "lab_result_v1",
+        "assistant_mapping_draft": {
+          "action": "generate_mapping_draft",
+          "goal": "Create a review-gated lab result JSON mapping."
+        }
+      },
+      "execute_write_actions": false,
+      "expected_tool_names": ["generate_mapping_draft"],
+      "expected_tool_statuses": ["requires_approval"],
+      "required_answer_terms": ["gated"],
+      "forbidden_answer_terms": ["created workflow output"],
+      "min_evidence_summaries": 0,
+      "required_evidence_source_ids": [],
+      "faithfulness_notes": [
+        "Answer must preserve the backend write gate and avoid claiming conversion executed."
+      ],
+      "roadmap_refs": ["F106", "F112", "F117"]
+    }
+  ]
+}

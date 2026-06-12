@@ -268,7 +268,7 @@ export function InputExampleSelector({
         <div>
           <div className="text-sm font-extrabold">Standard examples</div>
           <div className="text-xs text-muted-foreground">
-            Schema-aligned records for the healthcare demo scope.
+            Schema-aligned records for the healthcare workflow scope.
           </div>
         </div>
         <Badge variant="muted">lab_result_v1</Badge>

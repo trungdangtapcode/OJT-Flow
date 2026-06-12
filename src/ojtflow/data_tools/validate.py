@@ -143,6 +143,7 @@ def validate_against_schema(
         schema_confidence=schema_confidence,
         severity_summary=severity_summary,
         issues=issues,
+        phi_classification=profile.phi_classification,
         requires_review=requires_review,
     )
 

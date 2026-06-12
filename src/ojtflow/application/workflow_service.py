@@ -14,12 +14,24 @@ from ojtflow.agents.validation_agent import ValidationAgent
 from ojtflow.application.ports import (
     DatasetStore,
     EventRepository,
+    GraphRepository,
     KnowledgeRepository,
     RetrievalRepository,
     WorkflowRepository,
 )
+from ojtflow.application.graph_service import GraphService
 from ojtflow.application.retrieval_service import RetrievalService
+from ojtflow.application.retrieval_index_manifest import attach_graph_index_metadata
 from ojtflow.application.tool_registry import tool_specs_json
+from ojtflow.clinical.package_io import (
+    export_clinical_package as build_clinical_package_export,
+    validate_clinical_package_export,
+)
+from ojtflow.clinical.package_builder import build_clinical_package
+from ojtflow.core.contracts.clinical import (
+    ClinicalPackageExport,
+    ClinicalPackageImportValidation,
+)
 from ojtflow.core.contracts.data import (
     ParsedData,
     TransformationAction,
@@ -37,8 +49,19 @@ from ojtflow.core.contracts.enums import (
     WorkflowStatus,
 )
 from ojtflow.core.contracts.events import WorkflowEvent
+from ojtflow.core.contracts.external_provider import ExternalProviderPolicy
+from ojtflow.core.contracts.graph import (
+    GraphContextRecord,
+    GraphExport,
+    GraphExportFormat,
+    GraphNeighborhood,
+    GraphNeighborhoodQuery,
+)
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalSource,
@@ -51,6 +74,7 @@ from ojtflow.core.contracts.workflow import (
     WorkflowIntent,
     WorkflowOutput,
     WorkflowOutputArtifact,
+    WorkflowProvenanceRecord,
     WorkflowState,
     WorkflowStep,
 )
@@ -87,15 +111,19 @@ class WorkflowService:
         events: EventRepository,
         knowledge: KnowledgeRepository,
         retrieval: RetrievalRepository,
+        graph_repository: GraphRepository | None = None,
         retrieval_rule_packs: Sequence[dict[str, Any]] | None = None,
+        external_provider_policy: ExternalProviderPolicy | None = None,
     ) -> None:
         self.datasets = datasets
         self.workflows = workflows
         self.events = events
         self.knowledge = knowledge
+        self.graph_service = GraphService(graph_repository) if graph_repository else None
         self.retrieval_service = RetrievalService(
             retrieval,
             rule_packs=retrieval_rule_packs,
+            external_provider_policy=external_provider_policy,
         )
         self.parser_agent = ParserAgent()
         self.validation_agent = ValidationAgent()
@@ -112,6 +140,7 @@ class WorkflowService:
         schema_id: str | None = "lab_result_v1",
         require_human_review: bool = True,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> WorkflowState:
         """Start and run a workflow until completion or review pause."""
 
@@ -128,6 +157,8 @@ class WorkflowService:
             ),
             status=WorkflowStatus.RUNNING,
         )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
         workflow.handoff_context["tool_specs"] = tool_specs_json()
         self.workflows.save(workflow)
         dataset = self.datasets.put_text(
@@ -184,6 +215,113 @@ class WorkflowService:
             self.workflows.save(workflow)
             return workflow
 
+    def create_mapping_draft(
+        self,
+        *,
+        instruction: str,
+        data: str,
+        declared_format: DataFormat | None = None,
+        target_format: DataFormat = DataFormat.JSON,
+        schema_id: str | None = "lab_result_v1",
+        mapping_goal: str | None = None,
+        source_fields: list[str] | None = None,
+        target_fields: list[str] | None = None,
+        evidence_ids: list[str] | None = None,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+    ) -> WorkflowState:
+        """Create a review-gated transform plan without executing conversion."""
+
+        clean_instruction = instruction.strip()
+        if not clean_instruction:
+            raise PolicyBlockedError("Mapping draft instruction is required.")
+        workflow = WorkflowState(
+            owner_user_id=owner_user_id,
+            user_instruction=clean_instruction,
+            intent=WorkflowIntent(
+                task_type="mapping_draft",
+                target_format=target_format,
+                requires_explanation=False,
+                options={
+                    "schema_id": schema_id,
+                    "source": "assistant",
+                    "draft_only": True,
+                    "mapping_goal": mapping_goal,
+                    "source_fields": source_fields or [],
+                    "target_fields": target_fields or [],
+                },
+            ),
+            status=WorkflowStatus.RUNNING,
+            risk_flags=["mapping_draft", "review_gated_transformation"],
+        )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
+        workflow.handoff_context["tool_specs"] = tool_specs_json()
+        self.workflows.save(workflow)
+        dataset = self.datasets.put_text(
+            data,
+            workflow_id=workflow.workflow_id,
+            declared_format=declared_format.value if declared_format else None,
+        )
+        workflow.input = WorkflowInput(
+            dataset_ref=dataset.storage_ref,
+            input_hash=dataset.sha256,
+            declared_format=declared_format,
+        )
+        self._event(
+            workflow,
+            ActorType.SYSTEM,
+            "workflow_service",
+            EventType.WORKFLOW_CREATED,
+            "Mapping draft workflow created",
+            output_refs=[dataset.storage_ref],
+        )
+        self._step(
+            workflow,
+            "workflow_created",
+            StepStatus.COMPLETED,
+            "Mapping draft workflow created",
+            output_ref=dataset.storage_ref,
+        )
+        try:
+            parser_result = self.parser_agent.run(data, declared_format, dataset.storage_ref)
+            parsed: ParsedData = parser_result.data["parsed"]
+            workflow.input.detected_format = parsed.format
+            workflow.profile = parser_result.data["profile"]
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                self.parser_agent.agent_id,
+                EventType.AGENT_COMPLETED,
+                parser_result.summary,
+                metadata={"confidence": parser_result.confidence},
+            )
+            self._step(
+                workflow,
+                "parser",
+                StepStatus.COMPLETED,
+                parser_result.summary,
+                issue_count=len(parser_result.issues),
+            )
+            return self._run_after_parse(
+                workflow,
+                parsed,
+                instruction=clean_instruction,
+                target_format=target_format,
+                schema_id=schema_id,
+                require_human_review=True,
+                draft_review={
+                    "mapping_goal": mapping_goal,
+                    "source_fields": source_fields or [],
+                    "target_fields": target_fields or [],
+                    "evidence_ids": evidence_ids or [],
+                },
+            )
+        except Exception as exc:
+            self._fail_workflow(workflow, exc)
+            self.workflows.save(workflow)
+            return workflow
+
     def start_workflow_from_file(
         self,
         instruction: str,
@@ -194,6 +332,7 @@ class WorkflowService:
         require_human_review: bool = True,
         prefer_extractor: str = "auto",
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> WorkflowState:
         """Start a workflow from a raw document file (PDF, DOCX, image, …).
 
@@ -229,6 +368,8 @@ class WorkflowService:
             ),
             status=WorkflowStatus.RUNNING,
         )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
         workflow.handoff_context["tool_specs"] = tool_specs_json()
         self.workflows.save(workflow)
 
@@ -447,6 +588,7 @@ class WorkflowService:
         target_format: DataFormat,
         schema_id: str | None,
         require_human_review: bool,
+        draft_review: dict[str, Any] | None = None,
     ) -> WorkflowState:
         """Run retrieval, validation, review gating, and transformation."""
 
@@ -467,6 +609,12 @@ class WorkflowService:
             resource_type=fhir_context["resource_type"],
             query_terms=fhir_context["query_terms"],
             top_k=5,
+        )
+        retrieval_package.trace.request_id = _workflow_request_id(workflow)
+        retrieval_package = self._persist_graph_context(
+            retrieval_package,
+            owner_user_id=workflow.owner_user_id,
+            workflow_id=workflow.workflow_id,
         )
         evidence = retrieval_package.evidence
         workflow.retrieved_context = [*fhir_context["evidence"], *evidence]
@@ -515,8 +663,15 @@ class WorkflowService:
             validation_result.summary,
             issue_count=len(workflow.validation_report.issues),
         )
+        self._refresh_clinical_package(
+            workflow,
+            parsed,
+            schema_id=schema_id,
+        )
 
         plan = build_transformation_plan(workflow.validation_report, target_format)
+        if draft_review is not None:
+            plan.requires_review = True
         workflow.transformation_plan = plan
         safety_result = self.safety_agent.run(workflow.validation_report, plan)
         self._event(
@@ -535,7 +690,11 @@ class WorkflowService:
             issue_count=len(safety_result.issues),
         )
 
-        if require_human_review and safety_result.data["requires_review"]:
+        if (
+            draft_review is None
+            and require_human_review
+            and safety_result.data["requires_review"]
+        ):
             workflow.review = self._make_review(workflow, plan)
             workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
             self._event(
@@ -554,11 +713,152 @@ class WorkflowService:
                 workflow.review.question,
                 issue_count=len(workflow.validation_report.issues),
             )
+            self._refresh_clinical_package(
+                workflow,
+                parsed,
+                schema_id=schema_id,
+            )
+            workflow.touch()
+            self.workflows.save(workflow)
+            return workflow
+
+        if draft_review is not None:
+            workflow.review = self._make_mapping_draft_review(
+                workflow,
+                plan,
+                draft_review,
+            )
+            workflow.status = WorkflowStatus.NEEDS_HUMAN_REVIEW
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                "review_agent",
+                EventType.REVIEW_REQUESTED,
+                workflow.review.question,
+                severity=Severity.WARNING,
+                metadata={
+                    "review_id": workflow.review.review_id,
+                    "trigger": workflow.review.trigger,
+                },
+            )
+            self._step(
+                workflow,
+                "human_review",
+                StepStatus.PENDING,
+                workflow.review.question,
+                issue_count=len(workflow.validation_report.issues),
+            )
+            self._refresh_clinical_package(
+                workflow,
+                parsed,
+                schema_id=schema_id,
+            )
             workflow.touch()
             self.workflows.save(workflow)
             return workflow
 
         self._complete_transformation(workflow, parsed, target_format, plan)
+        self.workflows.save(workflow)
+        return workflow
+
+    def create_review_task(
+        self,
+        *,
+        question: str,
+        proposed_action: dict[str, Any] | None = None,
+        data: str | None = None,
+        declared_format: DataFormat | None = None,
+        schema_id: str | None = "lab_result_v1",
+        source_context: dict[str, Any] | None = None,
+        owner_user_id: str | None = None,
+        request_id: str | None = None,
+    ) -> WorkflowState:
+        """Create a durable human-review task without executing a transformation."""
+
+        clean_question = question.strip()
+        if not clean_question:
+            raise PolicyBlockedError("Review task question is required.")
+        workflow = WorkflowState(
+            owner_user_id=owner_user_id,
+            user_instruction=f"Review task: {clean_question}",
+            intent=WorkflowIntent(
+                task_type="manual_review_task",
+                target_format=DataFormat.JSON,
+                requires_explanation=False,
+                options={
+                    "schema_id": schema_id,
+                    "source": "assistant",
+                    "review_task": True,
+                },
+            ),
+            status=WorkflowStatus.NEEDS_HUMAN_REVIEW,
+            handoff_context={
+                "source_context": dict(source_context or {}),
+                "tool_specs": tool_specs_json(),
+            },
+            risk_flags=["manual_review_task"],
+        )
+        if request_id:
+            workflow.handoff_context["request_id"] = request_id
+        self.workflows.save(workflow)
+        output_refs: list[str] = []
+        if data and data.strip():
+            dataset = self.datasets.put_text(
+                data,
+                workflow_id=workflow.workflow_id,
+                declared_format=declared_format.value if declared_format else None,
+            )
+            workflow.input = WorkflowInput(
+                dataset_ref=dataset.storage_ref,
+                input_hash=dataset.sha256,
+                declared_format=declared_format,
+            )
+            output_refs.append(dataset.storage_ref)
+        self._event(
+            workflow,
+            ActorType.SYSTEM,
+            "workflow_service",
+            EventType.WORKFLOW_CREATED,
+            "Manual review task workflow created",
+            output_refs=output_refs,
+        )
+        self._step(
+            workflow,
+            "workflow_created",
+            StepStatus.COMPLETED,
+            "Manual review task workflow created",
+            output_ref=output_refs[0] if output_refs else None,
+        )
+        workflow.review = HumanReview(
+            workflow_id=workflow.workflow_id,
+            trigger="manual_assistant_review_task",
+            question=clean_question,
+            proposed_action={
+                "review_task_type": "assistant_escalation",
+                "schema_id": schema_id,
+                **(proposed_action or {}),
+            },
+            allowed_decisions=[
+                ReviewDecision.APPROVE,
+                ReviewDecision.REJECT,
+                ReviewDecision.CLARIFY,
+                ReviewDecision.CANCEL,
+            ],
+        )
+        self._event(
+            workflow,
+            ActorType.AGENT,
+            "assistant",
+            EventType.REVIEW_REQUESTED,
+            clean_question,
+            severity=Severity.WARNING,
+            metadata={
+                "review_id": workflow.review.review_id,
+                "trigger": workflow.review.trigger,
+            },
+        )
+        self._step(workflow, "human_review", StepStatus.PENDING, clean_question)
+        workflow.touch()
         self.workflows.save(workflow)
         return workflow
 
@@ -745,6 +1045,7 @@ class WorkflowService:
         self,
         query: RetrievalQuery,
         owner_user_id: str | None = None,
+        request_id: str | None = None,
     ) -> RetrievalPackage:
         """Run direct retrieval search."""
 
@@ -752,12 +1053,106 @@ class WorkflowService:
             workflow = self.workflows.get(query.workflow_id)
             self._assert_workflow_owner(workflow, owner_user_id)
         self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
-        return self.retrieval_service.search(query)
+        package = self.retrieval_service.search(query)
+        package.trace.request_id = request_id
+        package = self._persist_graph_context(
+            package,
+            owner_user_id=owner_user_id,
+            workflow_id=query.workflow_id,
+        )
+        return package
 
-    def list_retrieval_sources(self) -> list[RetrievalSource]:
+    def plan_retrieval(
+        self,
+        query: RetrievalQuery,
+        owner_user_id: str | None = None,
+    ) -> RetrievalPlan:
+        """Build direct retrieval plan without ranking evidence."""
+
+        if query.workflow_id:
+            workflow = self.workflows.get(query.workflow_id)
+            self._assert_workflow_owner(workflow, owner_user_id)
+        self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
+        return self.retrieval_service.plan(query)
+
+    def list_retrieval_sources(
+        self,
+        organization_id: str | None = None,
+    ) -> list[RetrievalSource]:
         """List available retrieval source inventory."""
 
-        return self.retrieval_service.list_sources()
+        return self.retrieval_service.list_sources(organization_id=organization_id)
+
+    def ingest_private_corpus_document(self, **kwargs) -> PrivateCorpusIngestionResult:
+        """Ingest redacted private corpus text into the retrieval index."""
+
+        return self.retrieval_service.ingest_private_document(**kwargs)
+
+    def list_graph_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+    ) -> list[GraphContextRecord]:
+        if self.graph_service is None:
+            return []
+        return self.graph_service.list_contexts(
+            owner_user_id=owner_user_id,
+            workflow_id=workflow_id,
+            limit=limit,
+        )
+
+    def export_graph_contexts(
+        self,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None = None,
+        limit: int = 100,
+        export_format: GraphExportFormat = "jsonl",
+    ) -> GraphExport:
+        if self.graph_service is None:
+            from ojtflow.core.time import utc_now
+
+            return GraphExport(
+                format=export_format,
+                content_type="application/x-ndjson",
+                graph_count=0,
+                node_count=0,
+                edge_count=0,
+                triple_count=0,
+                generated_at=utc_now().isoformat(),
+                content="",
+            )
+        return self.graph_service.export_contexts(
+            owner_user_id=owner_user_id,
+            workflow_id=workflow_id,
+            limit=limit,
+            export_format=export_format,
+        )
+
+    def graph_neighborhood(
+        self,
+        *,
+        owner_user_id: str | None,
+        query: GraphNeighborhoodQuery,
+    ) -> GraphNeighborhood:
+        if self.graph_service is None:
+            from ojtflow.core.time import utc_now
+
+            return GraphNeighborhood(
+                query=query,
+                graph_count=0,
+                node_count=0,
+                edge_count=0,
+                triple_count=0,
+                warnings=["Graph persistence is not configured."],
+                generated_at=utc_now().isoformat(),
+            )
+        return self.graph_service.neighborhood(
+            owner_user_id=owner_user_id,
+            query=query,
+        )
 
     def reindex_retrieval(
         self,
@@ -772,6 +1167,24 @@ class WorkflowService:
             include_corpus=include_corpus,
         )
 
+    def retrieval_index_manifest(
+        self,
+        *,
+        owner_user_id: str | None = None,
+    ) -> RetrievalIndexManifest:
+        """Return active retrieval index metadata with owner-scoped graph counts."""
+
+        manifest = self.retrieval_service.index_manifest()
+        if self.graph_service is None:
+            return manifest
+        return attach_graph_index_metadata(
+            manifest,
+            self.graph_service.list_contexts(
+                owner_user_id=owner_user_id,
+                limit=1000,
+            ),
+        )
+
     def retrieval_integrity_report(
         self,
         *,
@@ -783,6 +1196,29 @@ class WorkflowService:
         return self.retrieval_service.integrity_report(
             include_seeded=include_seeded,
             include_corpus=include_corpus,
+        )
+
+    def _persist_graph_context(
+        self,
+        package: RetrievalPackage,
+        *,
+        owner_user_id: str | None,
+        workflow_id: str | None,
+    ) -> RetrievalPackage:
+        if self.graph_service is None:
+            return package
+        request = package.handoff_context.get("search_request")
+        if not isinstance(request, dict):
+            return package
+        query_payload = {**request, "workflow_id": workflow_id or request.get("workflow_id")}
+        try:
+            query = RetrievalQuery.model_validate(query_payload)
+        except Exception:
+            return package
+        return self.graph_service.persist_retrieval_package(
+            package,
+            query,
+            owner_user_id=owner_user_id,
         )
 
     def _load_requested_schema(
@@ -857,6 +1293,56 @@ class WorkflowService:
             content=content,
             warnings=output.warnings,
             diff_summary=output.diff_summary,
+        )
+
+    def export_workflow_clinical_package(
+        self,
+        workflow_id: str,
+        *,
+        owner_user_id: str | None = None,
+        require_approval: bool = True,
+    ) -> ClinicalPackageExport:
+        """Export a completed workflow ClinicalPackage with reload metadata."""
+
+        workflow = self.workflows.get(workflow_id)
+        self._assert_workflow_owner(workflow, owner_user_id)
+        if workflow.status != WorkflowStatus.COMPLETED:
+            raise PolicyBlockedError(
+                "Clinical package export requires a completed workflow.",
+                workflow_id=workflow.workflow_id,
+                details={"workflow_status": workflow.status.value},
+            )
+        if not workflow.output or not workflow.output.transformation:
+            raise NotFoundError(
+                f"Workflow output not generated: {workflow_id}",
+                workflow_id=workflow.workflow_id,
+            )
+        if workflow.clinical_package is None:
+            raise NotFoundError(
+                f"Clinical package not generated: {workflow_id}",
+                workflow_id=workflow.workflow_id,
+            )
+        return build_clinical_package_export(
+            workflow.clinical_package,
+            require_approval=require_approval,
+            metadata={
+                "workflow_status": workflow.status.value,
+                "output_refs": list(workflow.clinical_package.output_refs),
+                "audit_event_refs": list(workflow.clinical_package.audit_event_refs),
+            },
+        )
+
+    def validate_clinical_package_import(
+        self,
+        payload: dict[str, Any] | str,
+        *,
+        require_hash_match: bool = True,
+    ) -> ClinicalPackageImportValidation:
+        """Validate that an exported ClinicalPackage can be reloaded."""
+
+        return validate_clinical_package_export(
+            payload,
+            require_hash_match=require_hash_match,
         )
 
     def submit_review(
@@ -968,6 +1454,16 @@ class WorkflowService:
                 workflow.input.dataset_ref,
             )
             parsed: ParsedData = parser_result.data["parsed"]
+            workflow.input.detected_format = parsed.format
+            workflow.profile = parser_result.data["profile"]
+            self._event(
+                workflow,
+                ActorType.AGENT,
+                self.parser_agent.agent_id,
+                EventType.AGENT_COMPLETED,
+                "Re-parsed approved workflow input before transformation.",
+                metadata={"confidence": parser_result.confidence, "resume_after_review": True},
+            )
             target_format = workflow.intent.target_format or DataFormat.JSON
             self._complete_transformation(workflow, parsed, target_format, plan_for_execution)
         except ArtifactIntegrityError as exc:
@@ -1077,6 +1573,41 @@ class WorkflowService:
             "Workflow completed",
             output_ref=output_record.storage_ref,
         )
+        self._refresh_clinical_package(
+            workflow,
+            parsed,
+            schema_id=workflow.intent.options.get("schema_id"),
+            output_ref=output_record.storage_ref,
+        )
+
+    def _refresh_clinical_package(
+        self,
+        workflow: WorkflowState,
+        parsed: ParsedData,
+        *,
+        schema_id: str | None,
+        output_ref: str | None = None,
+    ) -> None:
+        package = build_clinical_package(
+            workflow=workflow,
+            parsed=parsed,
+            schema_id=schema_id,
+            output_ref=output_ref,
+        )
+        if package is None:
+            return
+        workflow.clinical_package = package
+        workflow.handoff_context["clinical_package"] = {
+            "package_id": package.package_id,
+            "schema_version": package.schema_version,
+            "resource_types": package.handoff_context.get("resource_types", []),
+            "resource_count": package.handoff_context.get("resource_count", 0),
+            "operation_outcome_issue_count": package.handoff_context.get(
+                "operation_outcome_issue_count",
+                0,
+            ),
+            "fhir_compliance": package.handoff_context.get("fhir_compliance"),
+        }
 
     def _make_review(self, workflow: WorkflowState, plan: TransformationPlan) -> HumanReview:
         actions = [action.model_dump(mode="json") for action in plan.actions]
@@ -1085,6 +1616,29 @@ class WorkflowService:
             trigger="reviewable_transformation_plan",
             question="Approve the proposed data cleaning and conversion actions before execution?",
             proposed_action={"plan_id": plan.plan_id, "actions": actions},
+        )
+
+    def _make_mapping_draft_review(
+        self,
+        workflow: WorkflowState,
+        plan: TransformationPlan,
+        draft_review: dict[str, Any],
+    ) -> HumanReview:
+        actions = [action.model_dump(mode="json") for action in plan.actions]
+        return HumanReview(
+            workflow_id=workflow.workflow_id,
+            trigger="mapping_draft_transform_plan",
+            question="Review the drafted mapping and transformation plan before execution.",
+            proposed_action={
+                "draft_type": "assistant_mapping_draft",
+                "plan_id": plan.plan_id,
+                "target_format": plan.target_format.value,
+                "actions": actions,
+                "mapping_goal": draft_review.get("mapping_goal"),
+                "source_fields": draft_review.get("source_fields") or [],
+                "target_fields": draft_review.get("target_fields") or [],
+                "evidence_ids": draft_review.get("evidence_ids") or [],
+            },
         )
 
     def _event(
@@ -1098,9 +1652,14 @@ class WorkflowService:
         input_refs: list[str] | None = None,
         output_refs: list[str] | None = None,
         metadata: dict | None = None,
-    ) -> None:
+    ) -> WorkflowEvent:
+        event_metadata = dict(metadata or {})
+        request_id = _workflow_request_id(workflow)
+        if request_id:
+            event_metadata.setdefault("request_id", request_id)
         event = WorkflowEvent(
             workflow_id=workflow.workflow_id,
+            request_id=request_id,
             actor_type=actor_type,
             actor_id=actor_id,
             event_type=event_type,
@@ -1108,10 +1667,25 @@ class WorkflowService:
             summary=summary,
             input_refs=input_refs or [],
             output_refs=output_refs or [],
-            metadata=metadata or {},
+            metadata=event_metadata,
         )
         self.events.append(event)
         workflow.audit_event_refs.append(event.event_id)
+        self._append_provenance_for_event(workflow, event)
+        return event
+
+    def _append_provenance_for_event(
+        self,
+        workflow: WorkflowState,
+        event: WorkflowEvent,
+    ) -> None:
+        records = _workflow_provenance_records(workflow, event)
+        if not records:
+            return
+        workflow.provenance.extend(records)
+        workflow.handoff_context["provenance_summary"] = _workflow_provenance_summary(
+            workflow.provenance
+        )
 
     def _step(
         self,
@@ -1201,6 +1775,225 @@ def _failure_code(exc: Exception) -> str:
     if isinstance(exc, OJTFlowError):
         return "ojtflow_error"
     return "workflow_failed"
+
+
+def _workflow_provenance_records(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+) -> list[WorkflowProvenanceRecord]:
+    records: list[WorkflowProvenanceRecord] = []
+    for activity in _workflow_provenance_activities(workflow, event):
+        records.append(
+            WorkflowProvenanceRecord(
+                activity=activity,
+                agent=event.actor_id,
+                event_refs=[event.event_id],
+                source_refs=_workflow_provenance_source_refs(workflow, event, activity),
+                target_refs=_workflow_provenance_target_refs(workflow, event, activity),
+                evidence_ids=_workflow_provenance_evidence_ids(workflow, event, activity),
+                issue_ids=_workflow_provenance_issue_ids(workflow, event, activity),
+                review_ids=_workflow_provenance_review_ids(workflow, event, activity),
+                request_id=event.request_id,
+                occurred_at=event.timestamp,
+                summary=event.summary,
+                metadata={
+                    "event_type": event.event_type.value,
+                    "actor_type": event.actor_type.value,
+                    "severity": event.severity.value,
+                    "workflow_status": workflow.status.value,
+                    **_workflow_provenance_metadata(workflow, event, activity),
+                },
+            )
+        )
+    return records
+
+
+def _workflow_provenance_activities(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+) -> list[str]:
+    activities: list[str] = []
+    if event.event_type == EventType.WORKFLOW_CREATED:
+        activities.append("workflow")
+        if workflow.intent.options.get("source") == "assistant":
+            activities.append("assistant")
+        if workflow.input and workflow.input.dataset_ref in event.output_refs:
+            activities.append("upload")
+    elif event.event_type == EventType.TOOL_COMPLETED:
+        activities.append("extract" if event.actor_id == "document_extractor" else "workflow")
+    elif event.event_type == EventType.AGENT_COMPLETED:
+        activities.append(_agent_completed_provenance_activity(event.actor_id))
+    elif event.event_type == EventType.RETRIEVAL_COMPLETED:
+        activities.append("retrieve_evidence")
+    elif event.event_type == EventType.VALIDATION_COMPLETED:
+        activities.append("validate")
+    elif event.event_type == EventType.REVIEW_REQUESTED:
+        if event.actor_id == "assistant":
+            activities.append("assistant")
+        activities.append("review")
+    elif event.event_type == EventType.REVIEW_DECIDED:
+        activities.append("review")
+    elif event.event_type == EventType.TRANSFORMATION_COMPLETED:
+        activities.append("convert")
+        if workflow.retrieved_context:
+            activities.append("retrieval_derived_transform")
+    elif event.event_type == EventType.EXPLANATION_COMPLETED:
+        activities.append("explain")
+    elif event.event_type == EventType.WORKFLOW_COMPLETED:
+        activities.append("workflow")
+    elif event.event_type == EventType.WORKFLOW_FAILED:
+        activities.append("failure")
+    elif event.event_type in {EventType.TOOL_FAILED, EventType.AGENT_FAILED}:
+        activities.append("failure")
+    return list(dict.fromkeys(activities))
+
+
+def _agent_completed_provenance_activity(actor_id: str) -> str:
+    return {
+        "parser_agent": "parse",
+        "validation_agent": "validate",
+        "safety_agent": "policy_review",
+        "fhir_agent": "profile",
+        "explanation_agent": "explain",
+        "assistant": "assistant",
+    }.get(actor_id, "workflow")
+
+
+def _workflow_provenance_source_refs(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    refs = list(event.input_refs)
+    if activity in {
+        "parse",
+        "validate",
+        "retrieve_evidence",
+        "policy_review",
+        "review",
+        "convert",
+        "retrieval_derived_transform",
+        "explain",
+    } and workflow.input:
+        refs.append(workflow.input.dataset_ref)
+    if activity == "extract":
+        raw_upload = workflow.handoff_context.get("raw_upload")
+        if isinstance(raw_upload, dict) and isinstance(raw_upload.get("dataset_ref"), str):
+            refs.append(raw_upload["dataset_ref"])
+    return _unique_nonblank(refs)
+
+
+def _workflow_provenance_target_refs(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    refs = list(event.output_refs)
+    if activity in {"convert", "retrieval_derived_transform", "workflow"}:
+        output = workflow.output.transformation if workflow.output else None
+        if output and output.output_ref:
+            refs.append(output.output_ref)
+    if activity == "extract":
+        extracted_ref = workflow.handoff_context.get("extracted_dataset_ref")
+        if isinstance(extracted_ref, str):
+            refs.append(extracted_ref)
+    return _unique_nonblank(refs)
+
+
+def _workflow_provenance_evidence_ids(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    if activity in {"retrieve_evidence", "retrieval_derived_transform", "explain"}:
+        return _unique_nonblank([item.evidence_id for item in workflow.retrieved_context])
+    evidence_ids = event.metadata.get("evidence_ids")
+    if isinstance(evidence_ids, list):
+        return _unique_nonblank([item for item in evidence_ids if isinstance(item, str)])
+    return []
+
+
+def _workflow_provenance_issue_ids(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    if activity in {"validate", "policy_review", "review", "convert"}:
+        report = workflow.validation_report
+        if report:
+            return _unique_nonblank([issue.issue_id for issue in report.issues])
+    return []
+
+
+def _workflow_provenance_review_ids(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> list[str]:
+    review_ids = []
+    if activity == "review" and workflow.review:
+        review_ids.append(workflow.review.review_id)
+    metadata_review_id = event.metadata.get("review_id")
+    if isinstance(metadata_review_id, str):
+        review_ids.append(metadata_review_id)
+    return _unique_nonblank(review_ids)
+
+
+def _workflow_provenance_metadata(
+    workflow: WorkflowState,
+    event: WorkflowEvent,
+    activity: str,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "event_metadata": event.metadata,
+    }
+    if activity in {"parse", "validate"} and workflow.profile:
+        metadata["profile"] = {
+            "row_count": workflow.profile.row_count,
+            "column_count": workflow.profile.column_count,
+        }
+    if activity in {"convert", "retrieval_derived_transform"}:
+        plan = workflow.transformation_plan
+        output = workflow.output.transformation if workflow.output else None
+        metadata["plan_id"] = plan.plan_id if plan else None
+        metadata["action_ids"] = [action.action_id for action in plan.actions] if plan else []
+        metadata["target_format"] = (
+            output.output_format.value
+            if output
+            else (workflow.intent.target_format.value if workflow.intent.target_format else None)
+        )
+        metadata["review_status"] = workflow.review.status.value if workflow.review else None
+    if activity == "retrieval_derived_transform":
+        metadata["retrieval_trace"] = workflow.handoff_context.get("retrieval_trace", {})
+        metadata["evidence_count"] = len(workflow.retrieved_context)
+    if activity == "assistant":
+        metadata["assistant_source"] = workflow.intent.options.get("source")
+        metadata["task_type"] = workflow.intent.task_type
+    if activity == "failure" and workflow.failure:
+        metadata["failure"] = workflow.failure.model_dump(mode="json")
+    return metadata
+
+
+def _workflow_provenance_summary(
+    provenance: list[WorkflowProvenanceRecord],
+) -> dict[str, Any]:
+    activity_counts: dict[str, int] = {}
+    for record in provenance:
+        activity_counts[record.activity] = activity_counts.get(record.activity, 0) + 1
+    return {
+        "record_count": len(provenance),
+        "activity_counts": dict(sorted(activity_counts.items())),
+        "latest_provenance_id": provenance[-1].provenance_id if provenance else None,
+    }
+
+
+def _unique_nonblank(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))
+
+
+def _workflow_request_id(workflow: WorkflowState) -> str | None:
+    value = workflow.handoff_context.get("request_id")
+    return value if isinstance(value, str) and value else None
 
 
 def _direct_upload_data_format(source_format: str) -> DataFormat | None:

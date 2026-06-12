@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "e2e:install": "playwright install chromium",
     "e2e": "playwright test",
+    "e2e:smoke": "playwright test e2e/smoke.spec.ts",
     "e2e:cleanup": "node scripts/cleanup-e2e-artifacts.mjs",
     "e2e:cleanup:local": "node scripts/cleanup-e2e-local-artifacts.mjs",
     "e2e:headed": "playwright test --headed",

@@ -20,6 +20,51 @@
       ]
     },
     {
+      "target": "loinc",
+      "label": "LOINC Search API",
+      "rationale": "Use LOINC terminology search to resolve lab identity before normalization, mapping, or FHIR Observation coding.",
+      "warnings": [
+        "LOINC Search API authentication is required; do not send PHI or patient identifiers in terminology search strings.",
+        "There is no single all-area LOINC search endpoint; select the LOINC, answer list, part, or group scope that matches the task."
+      ]
+    },
+    {
+      "target": "ucum",
+      "label": "UCUM validation",
+      "rationale": "Use UCUM validation for unit strings before unit conversion, canonical mapping, or downstream clinical data transformation.",
+      "warnings": [
+        "Validate the original unit string before conversion and preserve it for audit.",
+        "UCUM validation says whether a code is valid; it does not determine clinical appropriateness for a specific lab result."
+      ]
+    },
+    {
+      "target": "icd10cm",
+      "label": "CDC ICD-10-CM",
+      "rationale": "Use CDC/NCHS ICD-10-CM as the official U.S. diagnosis-coding reference before treating diagnosis codes as workflow evidence.",
+      "warnings": [
+        "Do not assign final ICD-10-CM codes from retrieval alone; coder or clinician review is required.",
+        "Preserve source diagnosis text and coding confidence when mapping problem-list data."
+      ]
+    },
+    {
+      "target": "snomed_ct",
+      "label": "SNOMED CT browser",
+      "rationale": "Use SNOMED CT clinical-finding terminology to ground problem-list concepts before mapping or FHIR Condition coding.",
+      "warnings": [
+        "SNOMED CT access and licensing can vary by jurisdiction; verify permitted use for the deployment.",
+        "Terminology lookup evidence is not a diagnosis or treatment recommendation."
+      ]
+    },
+    {
+      "target": "allergyintolerance",
+      "label": "FHIR AllergyIntolerance",
+      "rationale": "Use FHIR AllergyIntolerance search patterns when grounding allergy, intolerance, adverse-reaction, reaction substance, or manifestation records.",
+      "warnings": [
+        "Do not infer active allergies from text alone; preserve clinicalStatus, verificationStatus, recorder/source, and reaction details.",
+        "Allergy evidence can affect safety workflows, so destructive transformations require human review."
+      ]
+    },
+    {
       "target": "clinicaltrials_gov",
       "label": "ClinicalTrials.gov API v2",
       "rationale": "Use ClinicalTrials.gov API v2 for trial-context retrieval by condition, intervention, recruitment status, and eligibility fields.",

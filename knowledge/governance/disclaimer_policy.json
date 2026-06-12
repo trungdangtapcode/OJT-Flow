@@ -1,0 +1,159 @@
+{
+  "version": "disclaimer_policy.v1",
+  "intended_use": "OJTFlow supports healthcare data operations: parsing, validation, evidence retrieval, workflow review, and governed export preparation.",
+  "non_diagnostic_statement": "OJTFlow is not a diagnostic, treatment, triage, or patient-specific medical advice system.",
+  "human_review_requirement": "Meaning-changing transformations, sensitive-field decisions, weak evidence, terminology choices, and workflow outputs require qualified human review before operational use.",
+  "prohibited_uses": [
+    "Do not use OJTFlow to diagnose, treat, triage, or recommend patient care.",
+    "Do not use OJTFlow as a substitute for clinician, privacy, compliance, or data-steward review.",
+    "Do not bypass review gates for meaning-changing transformations or sensitive data handling.",
+    "Do not claim FHIR compliance unless output has passed an appropriate validator."
+  ],
+  "surfaces": [
+    {
+      "surface_id": "global",
+      "title": "Clinical Use Boundary",
+      "message": "Use OJTFlow for governed healthcare data operations only. It is not a diagnostic, treatment, triage, or patient-specific medical advice system.",
+      "severity": "caution",
+      "review_required": true,
+      "prohibited_uses": [
+        "Diagnosis or treatment decisions",
+        "Autonomous clinical approval",
+        "Bypassing human review"
+      ],
+      "human_review_text": "Human review is required before relying on workflow outputs operationally.",
+      "evidence_text": "Evidence is provided to support data quality and standards review, not clinical decision-making."
+    },
+    {
+      "surface_id": "assistant",
+      "title": "Assistant Boundary",
+      "message": "The Assistant can explain data quality issues, find trusted evidence, and run governed tools. It must not diagnose, recommend treatment, or approve clinical actions.",
+      "severity": "caution",
+      "review_required": true,
+      "prohibited_uses": [
+        "Clinical advice",
+        "Autonomous review approval",
+        "Unreviewed PHI handoff"
+      ],
+      "human_review_text": "Write actions and meaning-changing outputs stay review-gated.",
+      "evidence_text": "Assistant answers should cite evidence or clearly state missing evidence."
+    },
+    {
+      "surface_id": "workbench",
+      "title": "Data Intake Boundary",
+      "message": "Workbench parsing and extraction profile files, images, tables, and OCR text for data operations. Extracted content can be incomplete and is not clinical interpretation.",
+      "severity": "caution",
+      "review_required": true,
+      "prohibited_uses": [
+        "Clinical interpretation of extracted text",
+        "Unverified OCR-based decisions"
+      ],
+      "human_review_text": "Low-confidence extraction and sensitive fields require review.",
+      "evidence_text": "Extraction traces show what was read, skipped, and warned."
+    },
+    {
+      "surface_id": "workflows",
+      "title": "Workflow Output Boundary",
+      "message": "Workflow runs prepare validated, reviewable data outputs. They do not create autonomous clinical orders, diagnoses, or treatment recommendations.",
+      "severity": "caution",
+      "review_required": true,
+      "prohibited_uses": [
+        "Autonomous operational deployment",
+        "Clinical decision automation"
+      ],
+      "human_review_text": "Review status and audit events determine whether output can move forward.",
+      "evidence_text": "Validation issues and retrieval evidence must remain attached to workflow decisions."
+    },
+    {
+      "surface_id": "workflow_detail",
+      "title": "Workflow Detail Boundary",
+      "message": "Inspect workflow state, validation, evidence, and output with the assumption that generated clinical packages are FHIR-like until validated externally.",
+      "severity": "caution",
+      "review_required": true,
+      "prohibited_uses": [
+        "Claiming FHIR compliance without validation",
+        "Ignoring unresolved validation issues"
+      ],
+      "human_review_text": "Reviewer approvals are required for gated changes and unresolved sensitive decisions.",
+      "evidence_text": "Use source-linked issues, evidence anchors, and audit events to justify decisions."
+    },
+    {
+      "surface_id": "reviews",
+      "title": "Review Decision Boundary",
+      "message": "Review actions are data quality and governance decisions. They are not clinical diagnosis, treatment, or patient-care approvals.",
+      "severity": "critical",
+      "review_required": true,
+      "prohibited_uses": [
+        "Approving clinical care decisions",
+        "Approving unsupported semantic normalization"
+      ],
+      "human_review_text": "Reviewer identity and decision reason are audit-relevant.",
+      "evidence_text": "Approve only when source data, evidence, and limitations are clear."
+    },
+    {
+      "surface_id": "retrieval",
+      "title": "Evidence Retrieval Boundary",
+      "message": "Retrieval grounds standards and data quality explanations. It does not prove clinical correctness or replace professional judgment.",
+      "severity": "caution",
+      "review_required": true,
+      "prohibited_uses": [
+        "Treating search hits as clinical proof",
+        "Ignoring weak or stale evidence warnings"
+      ],
+      "human_review_text": "Weak, stale, or unsupported evidence should block downstream reliance.",
+      "evidence_text": "Use support matrices, source trust policy, and freshness warnings during review."
+    },
+    {
+      "surface_id": "audit",
+      "title": "Audit Boundary",
+      "message": "Audit records support operational traceability. They are not proof of legal compliance by themselves.",
+      "severity": "info",
+      "review_required": true,
+      "prohibited_uses": [
+        "Treating logs as legal certification",
+        "Ignoring missing audit coverage"
+      ],
+      "human_review_text": "Audit exports should be reviewed with policy, retention, and access-control context.",
+      "evidence_text": "Use request IDs, workflow IDs, tool records, and hash-chain status together."
+    },
+    {
+      "surface_id": "schemas",
+      "title": "Schema Boundary",
+      "message": "Schemas define supported data quality and exchange profiles. They do not guarantee medical accuracy or complete interoperability.",
+      "severity": "info",
+      "review_required": true,
+      "prohibited_uses": [
+        "Equating schema pass with clinical correctness",
+        "Equating FHIR-like output with certified FHIR compliance"
+      ],
+      "human_review_text": "Profile changes and semantic mappings need data-steward review.",
+      "evidence_text": "Schema evidence should identify required fields, source profile, and version."
+    },
+    {
+      "surface_id": "settings",
+      "title": "Administration Boundary",
+      "message": "Runtime settings control provider use, PHI handling, rate limits, retention, and governance posture. Changes can affect safety boundaries.",
+      "severity": "critical",
+      "review_required": true,
+      "prohibited_uses": [
+        "Enabling PHI handoff without policy approval",
+        "Disabling required review gates in production-like modes"
+      ],
+      "human_review_text": "Setting changes should include a reason and be reviewed by the appropriate owner.",
+      "evidence_text": "Use settings history, secret health, risk register, and threat model panels during admin review."
+    },
+    {
+      "surface_id": "help",
+      "title": "Product Limitation Boundary",
+      "message": "Tutorials and manuals explain workflow operation. They are not medical, legal, privacy, or compliance advice.",
+      "severity": "info",
+      "review_required": true,
+      "prohibited_uses": [
+        "Using examples as patient-care guidance",
+        "Treating tutorials as compliance certification"
+      ],
+      "human_review_text": "Review tutorials with non-PHI training data unless your deployment policy explicitly allows otherwise.",
+      "evidence_text": "Examples are for learning the product workflow, not validating real patient care."
+    }
+  ]
+}

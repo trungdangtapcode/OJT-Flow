@@ -66,6 +66,22 @@
       "metadata_keys": ["concept_id", "standard_system"]
     },
     {
+      "rule_id": "source_governance_blocked_recovery",
+      "signal_code": "source_governance_blocked",
+      "priority": 12,
+      "action_type": "add_source",
+      "title": "Replace blocked evidence source",
+      "description": "Remove blocked or failed source evidence from the package and retrieve an approved source before downstream use."
+    },
+    {
+      "rule_id": "source_governance_review_gate",
+      "signal_code": "source_governance_review_required",
+      "priority": 24,
+      "action_type": "require_review",
+      "title": "Review source governance",
+      "description": "Check source policy, license constraints, lifecycle state, and reviewer state before using this evidence package."
+    },
+    {
       "rule_id": "missing_query_aspect_filter_recovery",
       "signal_code": "missing_query_aspect_coverage",
       "priority": 38,

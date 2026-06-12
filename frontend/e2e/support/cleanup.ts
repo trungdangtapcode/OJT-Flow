@@ -149,6 +149,7 @@ if not user_ids and not session_ids:
     raise SystemExit(0)
 
 repo = PostgresAuthRepository(get_settings().postgres_dsn)
+deleted_organizations = 0
 with repo.connect() as connection:
     with connection.cursor() as cursor:
         if session_ids:
@@ -162,6 +163,14 @@ with repo.connect() as connection:
         if user_ids:
             cursor.execute(
                 """
+                delete from ojtflow.organizations
+                where created_by_user_id = any(%s::text[])
+                """,
+                (user_ids,),
+            )
+            deleted_organizations = cursor.rowcount
+            cursor.execute(
+                """
                 delete from ojtflow.users
                 where user_id = any(%s::text[])
                   and google_sub like 'playwright-e2e-%%'
@@ -173,7 +182,11 @@ with repo.connect() as connection:
             deleted_users = 0
     connection.commit()
 
-print(f"cleaned {deleted_users} e2e auth user(s), {deleted_sessions} session(s)")
+print(
+    f"cleaned {deleted_users} e2e auth user(s), "
+    f"{deleted_sessions} session(s), "
+    f"{deleted_organizations} organization(s)"
+)
 `;
 
 export function cleanupWorkflowArtifacts(workflowIds: string[]): void {
@@ -239,9 +252,6 @@ function runCleanupScript(script: string, env: Record<string, string>): void {
 function localPythonExecutable(): string {
   const configuredPython = process.env.OJT_E2E_PYTHON?.trim();
   if (configuredPython) return configuredPython;
-
-  const workspaceVenvPython = path.resolve(repoRoot, "../.ostwin/.venv/bin/python");
-  if (fs.existsSync(workspaceVenvPython)) return workspaceVenvPython;
 
   return "python";
 }

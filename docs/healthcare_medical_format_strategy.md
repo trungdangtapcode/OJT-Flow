@@ -63,6 +63,7 @@ This means the project already has the right backbone shape. The weak point is n
 | Validation | `ValidationReport` and `Issue` | Store data-quality findings, schema mismatch, malformed rows, missing units, PHI risk, prompt injection, and review requirement. |
 | Clinical canonical model | FHIR-like JSON | Represent clinical meaning as resources such as Patient, Encounter, Observation, DiagnosticReport, Condition, Procedure, MedicationRequest, DocumentReference, ImagingStudy. |
 | Evidence model | `Evidence`, OCR boxes, DICOM references, visual artifacts | Link every claim or transformation to source rows, pages, boxes, studies, masks, events, or human decisions. |
+| Retrieval search plan | `RetrievalStandardSearchPlan` | Explain which governed healthcare-standard search route applies next: FHIR, Provenance/AuditEvent, LOINC, UCUM, RxNorm, PHI review, or external medical-search hints. |
 | Workflow model | `WorkflowState`, `WorkflowStep`, audit events, review state | Preserve progress, approval, failures, output refs, and restart-safe traceability. |
 | Terminology model | LOINC, UCUM, SNOMED CT, later local code aliases | Normalize clinical names, units, findings, procedures, and concepts. |
 | Analytics target | OMOP CDM, Parquet/lakehouse, BigQuery later | Support research, cohorts, population analysis, and model evaluation. |
@@ -90,7 +91,7 @@ V0 should not implement every resource. V0 should define profiles and mapping co
 
 ## Internal Canonical Package
 
-The internal output should be a project envelope around FHIR-like resources, not raw FHIR alone:
+The internal output is now a project envelope around FHIR-like resources, not raw FHIR alone:
 
 ```json
 {
@@ -123,18 +124,58 @@ The internal output should be a project envelope around FHIR-like resources, not
 
 This is the right shape because OJTFlow is not only an exchange converter. It is a governed workflow system. The workflow, validation, evidence, and review state are first-class outputs.
 
+Implemented v0 contract: `WorkflowState.clinical_package`, documented in
+`docs/clinical_package_v0.md`.
+
 ## V0 Lab Mapping
 
-Current `lab_result_v1` should map into FHIR-like `Observation` resources.
+Current `lab_result_v1` maps into a FHIR-like resource set in
+`ClinicalPackage.clinical_bundle`: `Patient`, `Observation`,
+`DiagnosticReport`, and `DocumentReference`.
 
 | `lab_result_v1` field | FHIR-like target | Notes |
 | --- | --- | --- |
-| `patient_id` | `Observation.subject.reference` plus optional `Patient.identifier` | Treat as sensitive. Use synthetic IDs in demos. |
+| `patient_id` | `Patient.id`, `Patient.identifier`, `Observation.subject.reference`, `DiagnosticReport.subject` | Treat as sensitive. Use synthetic IDs in demos. |
 | `date` | `Observation.effectiveDateTime` | Validate ISO `YYYY-MM-DD`; normalize only after review. |
-| `lab_name` | `Observation.code.text`; later `Observation.code.coding` with LOINC | Keep text in v0, add LOINC candidates later. |
+| `lab_name` | `Observation.code.text`; review-gated LOINC candidate | Keep source text in the resource; candidate code stays separate until review. |
 | `value` | `Observation.valueQuantity.value` | Must be numeric when represented as a Quantity. |
-| `unit` | `Observation.valueQuantity.unit`; later `Observation.valueQuantity.system/code` with UCUM | Missing unit requires review. |
-| source row | `Evidence.locator.row` and future `Provenance` | Do not lose row-level traceability. |
+| `unit` | `Observation.valueQuantity.unit`; UCUM-like validation result | Missing or unknown units require review. |
+| source artifact | `DocumentReference.content[0].attachment.url` | Points to governed artifact storage; raw bytes stay outside the resource. |
+| source row | `ClinicalFieldProvenance.location.row` and OperationOutcome issue locations | Do not lose row-level traceability. |
+
+Supported lightweight profiles and FHIR search hints are data-driven from
+`knowledge/fhir/resource_profiles.json`. They cover OJTFlow-required fields,
+required-any groups, source URLs, governance notes, and search parameters for
+the supported resource families. This is still FHIR-like scaffolding, not full
+HL7 validation.
+
+Current v0 also emits review-gated terminology scaffolding:
+
+- `ClinicalPackage.terminology_candidates` for LOINC candidates from the
+  configured medical concept registry.
+- `ClinicalPackage.unit_validations` for UCUM-like seed validation from the
+  configured unit registry.
+
+These outputs do not replace source text automatically.
+
+The retrieval layer now returns a standard-search playbook for the same mapping
+problem. For a lab CSV with FHIR, LOINC, and UCUM signals, the plan should
+recommend:
+
+- FHIR `Observation` search and, where supported by the concrete server,
+  `_revinclude` follow-up for `Provenance:target` and `AuditEvent:entity`.
+- LOINC lookup for lab identity before semantic normalization.
+- UCUM validation for units and source unit preservation.
+- PHI review when patient identifiers or sensitive fields are present.
+
+The playbook can be selected from data shape, not only from explicit user text.
+For example, a CSV field named `unit` can trigger the UCUM validation route,
+`lab_name` can trigger LOINC lookup, and `patient_id` or `ssn` can trigger PHI
+review even when the user asks only to "validate this dataset."
+
+This keeps the workflow enterprise-safe: evidence retrieval, canonical mapping,
+and audit/provenance requirements are visible before the app transforms or
+exports healthcare data.
 
 Example target:
 

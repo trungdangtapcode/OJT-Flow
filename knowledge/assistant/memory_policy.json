@@ -1,0 +1,92 @@
+{
+  "version": "assistant_memory.v1",
+  "preferences": [
+    {
+      "key": "preferred_output_format",
+      "label": "Preferred output format",
+      "description": "Default response/export format for non-destructive assistant tasks.",
+      "category": "output",
+      "value_type": "enum",
+      "allowed_values": ["json", "yaml", "csv", "clinical_package", "fhir_like"],
+      "default_value": "clinical_package",
+      "safety_tags": ["operational_only", "no_phi", "no_raw_uploaded_content"]
+    },
+    {
+      "key": "evidence_detail_level",
+      "label": "Evidence detail",
+      "description": "How much retrieved evidence detail the assistant should include by default.",
+      "category": "evidence",
+      "value_type": "enum",
+      "allowed_values": ["concise", "standard", "detailed"],
+      "default_value": "standard",
+      "safety_tags": ["operational_only", "no_phi", "no_raw_uploaded_content"]
+    },
+    {
+      "key": "explanation_style",
+      "label": "Explanation style",
+      "description": "Preferred style for assistant explanations.",
+      "category": "output",
+      "value_type": "enum",
+      "allowed_values": ["plain_language", "technical", "reviewer_focused"],
+      "default_value": "plain_language",
+      "safety_tags": ["operational_only", "no_phi", "no_raw_uploaded_content"]
+    },
+    {
+      "key": "default_retrieval_strategy",
+      "label": "Retrieval strategy",
+      "description": "Preferred evidence retrieval route when the user does not specify one.",
+      "category": "retrieval",
+      "value_type": "enum",
+      "allowed_values": [
+        "postgres_fts_vector_rrf",
+        "metadata_filtered",
+        "high_recall_review",
+        "exact_source_lookup"
+      ],
+      "default_value": "postgres_fts_vector_rrf",
+      "safety_tags": ["operational_only", "no_phi", "no_raw_uploaded_content"]
+    },
+    {
+      "key": "require_review_before_export",
+      "label": "Require review before export",
+      "description": "Whether export-oriented assistant actions should prefer human review first.",
+      "category": "governance",
+      "value_type": "boolean",
+      "default_value": true,
+      "safety_tags": ["operational_only", "no_phi", "no_raw_uploaded_content"]
+    },
+    {
+      "key": "date_display_format",
+      "label": "Date display format",
+      "description": "Preferred date display format for generated explanations.",
+      "category": "output",
+      "value_type": "enum",
+      "allowed_values": ["iso_yyyy_mm_dd", "us_mm_dd_yyyy"],
+      "default_value": "iso_yyyy_mm_dd",
+      "safety_tags": ["operational_only", "no_phi", "no_raw_uploaded_content"]
+    }
+  ],
+  "rejected_key_terms": [
+    "patient",
+    "mrn",
+    "ssn",
+    "dob",
+    "email",
+    "phone",
+    "address",
+    "diagnosis",
+    "medication",
+    "lab_value",
+    "raw_data",
+    "upload",
+    "document_text"
+  ],
+  "rejected_value_patterns": [
+    "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+    "\\bP\\d{2,}\\b",
+    "\\b[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}\\b",
+    "\\b(?:patient|mrn|ssn|dob|diagnosis|medication|address|phone)\\b",
+    "\\n",
+    ","
+  ]
+}

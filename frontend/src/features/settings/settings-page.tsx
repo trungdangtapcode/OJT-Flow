@@ -27,8 +27,11 @@ import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-stri
 import {
   runtimeConfig,
   useExtractorInventoryQuery,
+  useRuntimeAiRiskRegisterQuery,
   useRuntimeConfigQuery,
   useRuntimeHealthQuery,
+  useRuntimeMigrationsQuery,
+  useRuntimeOwaspLlmThreatModelQuery,
   useRuntimeReadinessQuery,
   useRuntimeAssistantSettingsMutation,
   useRuntimeRetrievalSettingsMutation,
@@ -36,10 +39,15 @@ import {
   workflowErrorMessage,
 } from "../../lib/server-state";
 import type {
+  AiRiskLevel,
+  AiRiskRegister,
+  OwaspLlmThreatModel,
+  ThreatRiskLevel,
   ReadinessCheck,
   RuntimeAssistantSettings,
   RuntimeAssistantSettingsPayload,
   RuntimeConfig,
+  MigrationDiagnostics,
   RuntimeReadiness,
   RuntimeRetrievalRulePack,
   RuntimeRetrievalSettings,
@@ -50,7 +58,10 @@ export function SettingsPage() {
   const { user } = useAuth();
   const healthQuery = useRuntimeHealthQuery();
   const runtimeConfigQuery = useRuntimeConfigQuery();
+  const migrationsQuery = useRuntimeMigrationsQuery();
   const readinessQuery = useRuntimeReadinessQuery();
+  const aiRiskQuery = useRuntimeAiRiskRegisterQuery();
+  const owaspQuery = useRuntimeOwaspLlmThreatModelQuery();
   const schemasQuery = useSchemasQuery();
   const extractorsQuery = useExtractorInventoryQuery();
   const schemaCount = schemasQuery.data?.length ?? 0;
@@ -134,6 +145,17 @@ export function SettingsPage() {
 
               <RuntimeFactGroup icon={HardDrive} title="Persistence">
                 <SettingRow
+                  label="Product mode"
+                  value={runtime?.product_mode ?? runtimeConfigLabel(runtimeConfigQuery)}
+                  badge={
+                    runtime?.product_mode === "production" || runtime?.product_mode === "pilot"
+                      ? "controlled"
+                      : runtimeConfigQuery.isLoading
+                        ? undefined
+                        : "local"
+                  }
+                />
+                <SettingRow
                   label="Storage backend"
                   value={runtime?.storage_backend ?? runtimeConfigLabel(runtimeConfigQuery)}
                   badge={
@@ -206,7 +228,7 @@ export function SettingsPage() {
                   badge={user ? "verified" : "missing"}
                 />
                 <SettingRow
-                  label="Provider"
+                  label="Embedding"
                   value={runtime?.embedding.provider ?? runtimeConfigLabel(runtimeConfigQuery)}
                 />
                 <SettingRow
@@ -352,6 +374,36 @@ export function SettingsPage() {
                 Workflow, review, retrieval, and output reads are scoped to the authenticated owner.
               </ControlStatus>
               <ControlStatus
+                title="No-mock runtime policy"
+                status={
+                  runtimeConfigQuery.isLoading
+                    ? "planned"
+                    : runtime?.policy.effective_no_mock_data
+                      ? "active"
+                      : "attention"
+                }
+              >
+                Effective no-mock mode is{" "}
+                {runtimeConfigQuery.isLoading
+                  ? "checking"
+                  : runtime?.policy.effective_no_mock_data
+                    ? "on"
+                    : "off"}{" "}
+                for {runtime?.product_mode ?? "unknown"} mode.
+              </ControlStatus>
+              <ControlStatus
+                title="Real assistant AI requirement"
+                status={
+                  runtimeConfigQuery.isLoading
+                    ? "planned"
+                    : runtime?.policy.requires_real_llm
+                      ? "active"
+                      : "planned"
+                }
+              >
+                Pilot and production modes reject disabled LLM configuration during settings load.
+              </ControlStatus>
+              <ControlStatus
                 title="Cookie policy"
                 status={
                   runtimeConfigQuery.isLoading
@@ -405,6 +457,12 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          <MigrationAdminPanel
+            diagnostics={migrationsQuery.data}
+            error={migrationsQuery.isError ? workflowErrorMessage(migrationsQuery.error) : null}
+            isLoading={migrationsQuery.isLoading}
+          />
+
           <AssistantSettingsForm
             isLoading={runtimeConfigQuery.isLoading}
             runtime={runtime}
@@ -416,32 +474,629 @@ export function SettingsPage() {
           />
         </div>
 
-        <Card className="min-w-0 overflow-hidden xl:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              Operational policy
-            </CardTitle>
-            <CardDescription>How this backend should be operated before production expansion.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-0 text-sm text-muted-foreground">
-            <PolicyItem title="Reviewer accountability">
-              Review decisions use the authenticated session user, not client-supplied identity.
-            </PolicyItem>
-            <PolicyItem title="Audit durability">
-              Workflow events and step state are persisted before a user-facing transition is returned.
-            </PolicyItem>
-            <PolicyItem title="FHIR/OCR scope">
-              FHIR-like profiling and OCR evidence are contract stubs until dedicated validators are added.
-            </PolicyItem>
-          </CardContent>
-        </Card>
+        <AdminPolicyPanel isLoading={runtimeConfigQuery.isLoading} runtime={runtime} />
+        <AiRiskRegisterPanel
+          error={aiRiskQuery.isError ? workflowErrorMessage(aiRiskQuery.error) : null}
+          isLoading={aiRiskQuery.isLoading}
+          register={aiRiskQuery.data}
+        />
+        <OwaspLlmThreatModelPanel
+          error={owaspQuery.isError ? workflowErrorMessage(owaspQuery.error) : null}
+          isLoading={owaspQuery.isLoading}
+          model={owaspQuery.data}
+        />
       </div>
     </div>
   );
 }
 
+function AiRiskRegisterPanel({
+  error,
+  isLoading,
+  register,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  register: AiRiskRegister | undefined;
+}) {
+  const criticalCount = register?.risks.filter((risk) => risk.severity === "critical").length ?? 0;
+  const highCount = register?.risks.filter((risk) => risk.severity === "high").length ?? 0;
+  const implementedControlCount =
+    register?.risks.reduce(
+      (count, risk) =>
+        count + risk.controls.filter((control) => control.status === "implemented").length,
+      0,
+    ) ?? 0;
+  const nistFunctions = Array.from(
+    new Set(register?.risks.flatMap((risk) => risk.nist_ai_rmf_functions) ?? []),
+  );
+
+  return (
+    <Card className="min-w-0 overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              AI risk register
+            </CardTitle>
+            <CardDescription>
+              NIST AI RMF-aligned intended use, limitations, monitoring, and human oversight.
+            </CardDescription>
+          </div>
+          {register ? <Badge variant="success">{register.version}</Badge> : null}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading AI governance register.</div>
+        ) : null}
+        {error ? (
+          <Notice title="AI risk register unavailable" tone="danger">
+            {error}
+          </Notice>
+        ) : null}
+        {register ? (
+          <>
+            <div className="grid gap-2 text-sm sm:grid-cols-4">
+              <ReadinessCounter
+                label="Risks"
+                tone={register.risks.length ? "warning" : "success"}
+                value={register.risks.length}
+              />
+              <ReadinessCounter
+                label="Critical"
+                tone={criticalCount ? "danger" : "success"}
+                value={criticalCount}
+              />
+              <ReadinessCounter
+                label="High"
+                tone={highCount ? "warning" : "success"}
+                value={highCount}
+              />
+              <ReadinessCounter
+                label="Controls"
+                tone={implementedControlCount ? "success" : "warning"}
+                value={implementedControlCount}
+              />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+              <div className="grid gap-3">
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <div className="text-sm font-bold text-foreground">Intended system use</div>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {register.intended_system_use}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-sm font-bold text-foreground">Prohibited uses</div>
+                  <ul className="mt-2 grid gap-2 text-sm leading-6 text-muted-foreground">
+                    {register.prohibited_uses.map((use) => (
+                      <li className="border-l-2 border-amber-300 pl-3" key={use}>
+                        {use}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  {nistFunctions.map((functionName) => (
+                    <Badge key={functionName} variant="muted">
+                      {functionName}
+                    </Badge>
+                  ))}
+                  {register.standard_refs.map((reference) => (
+                    <Badge className="max-w-full" key={reference} variant="default">
+                      {reference}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid max-h-[540px] gap-3 overflow-y-auto pr-1">
+                {register.risks.map((risk) => (
+                  <details
+                    className="group rounded-md border border-border bg-card p-3 text-sm"
+                    key={risk.risk_id}
+                    open={risk.severity === "critical"}
+                  >
+                    <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block break-words font-black">
+                          {risk.risk_id}: {risk.title}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Owner: {risk.owner_role}
+                        </span>
+                      </span>
+                      <span className="flex flex-wrap gap-2">
+                        <Badge variant={riskLevelVariant(risk.severity)}>
+                          severity {risk.severity}
+                        </Badge>
+                        <Badge variant={riskLevelVariant(risk.residual_risk)}>
+                          residual {risk.residual_risk}
+                        </Badge>
+                      </span>
+                    </summary>
+                    <div className="mt-3 grid gap-3 border-t border-border pt-3">
+                      <PolicyItem title="Intended use">{risk.intended_use}</PolicyItem>
+                      <PolicyItem title="Limitation">{risk.limitation}</PolicyItem>
+                      <PolicyItem title="Human oversight">{risk.human_oversight}</PolicyItem>
+                      <div className="grid gap-2">
+                        <div className="text-xs font-bold uppercase text-muted-foreground">
+                          Monitoring signals
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {risk.monitoring_signals.map((signal) => (
+                            <Badge key={signal} variant="muted">
+                              {signal}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="grid gap-2">
+                        <div className="text-xs font-bold uppercase text-muted-foreground">
+                          Controls
+                        </div>
+                        <div className="grid gap-2">
+                          {risk.controls.map((control) => (
+                            <div
+                              className="rounded-md border border-border bg-muted/20 p-2"
+                              key={control.control_id}
+                            >
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="font-bold">{control.title}</span>
+                                <Badge
+                                  variant={
+                                    control.status === "implemented"
+                                      ? "success"
+                                      : control.status === "partial"
+                                        ? "warning"
+                                        : "muted"
+                                  }
+                                >
+                                  {control.status}
+                                </Badge>
+                              </div>
+                              <code className="mt-1 block break-all font-mono text-[11px] text-muted-foreground">
+                                {control.implementation_ref}
+                              </code>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OwaspLlmThreatModelPanel({
+  error,
+  isLoading,
+  model,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  model: OwaspLlmThreatModel | undefined;
+}) {
+  const highOrCriticalCount =
+    model?.categories.filter(
+      (category) =>
+        category.residual_risk === "high" || category.residual_risk === "critical",
+    ).length ?? 0;
+  const mitigationCounts = model?.categories.reduce(
+    (counts, category) => {
+      for (const mitigation of category.mitigations) {
+        counts[mitigation.status] += 1;
+      }
+      return counts;
+    },
+    { implemented: 0, partial: 0, planned: 0 },
+  ) ?? { implemented: 0, partial: 0, planned: 0 };
+
+  return (
+    <Card className="min-w-0 overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              OWASP LLM threat model
+            </CardTitle>
+            <CardDescription>
+              Concrete mitigations mapped to code, tests, monitoring signals, and residual risk.
+            </CardDescription>
+          </div>
+          {model ? <Badge variant="success">{model.standard_ref}</Badge> : null}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading OWASP LLM threat model.</div>
+        ) : null}
+        {error ? (
+          <Notice title="OWASP threat model unavailable" tone="danger">
+            {error}
+          </Notice>
+        ) : null}
+        {model ? (
+          <>
+            <div className="grid gap-2 text-sm sm:grid-cols-4">
+              <ReadinessCounter
+                label="Categories"
+                tone={model.categories.length === 10 ? "success" : "warning"}
+                value={model.categories.length}
+              />
+              <ReadinessCounter
+                label="High residual"
+                tone={highOrCriticalCount ? "warning" : "success"}
+                value={highOrCriticalCount}
+              />
+              <ReadinessCounter
+                label="Implemented"
+                tone={mitigationCounts.implemented ? "success" : "warning"}
+                value={mitigationCounts.implemented}
+              />
+              <ReadinessCounter
+                label="Partial"
+                tone={mitigationCounts.partial ? "warning" : "success"}
+                value={mitigationCounts.partial + mitigationCounts.planned}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              {model.categories.map((category) => (
+                <details
+                  className="rounded-md border border-border bg-card p-3 text-sm"
+                  key={category.category_id}
+                  open={category.residual_risk === "high" || category.category_id === "LLM01"}
+                >
+                  <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block break-words font-black">
+                        {category.category_id}: {category.category_name}
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {category.applicable_surfaces.slice(0, 5).join(" / ")}
+                      </span>
+                    </span>
+                    <span className="flex flex-wrap gap-2">
+                      <Badge variant={riskLevelVariant(category.residual_risk)}>
+                        residual {category.residual_risk}
+                      </Badge>
+                      <Badge variant="muted">{category.mitigations.length} mitigation(s)</Badge>
+                    </span>
+                  </summary>
+                  <div className="mt-3 grid gap-3 border-t border-border pt-3">
+                    <p className="leading-6 text-muted-foreground">{category.risk_statement}</p>
+                    <div className="grid gap-2">
+                      <div className="text-xs font-bold uppercase text-muted-foreground">
+                        Monitoring signals
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {category.monitoring_signals.map((signal) => (
+                          <Badge key={signal} variant="muted">
+                            {signal}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-2 lg:grid-cols-2">
+                      {category.mitigations.map((mitigation) => (
+                        <div
+                          className="grid gap-2 rounded-md border border-border bg-muted/20 p-3"
+                          key={mitigation.mitigation_id}
+                        >
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <span className="font-bold">{mitigation.title}</span>
+                            <Badge
+                              variant={
+                                mitigation.status === "implemented"
+                                  ? "success"
+                                  : mitigation.status === "partial"
+                                    ? "warning"
+                                    : "muted"
+                              }
+                            >
+                              {mitigation.status}
+                            </Badge>
+                          </div>
+                          <p className="leading-6 text-muted-foreground">{mitigation.notes}</p>
+                          <div className="grid gap-1">
+                            <div className="text-[11px] font-bold uppercase text-muted-foreground">
+                              Code refs
+                            </div>
+                            {mitigation.implementation_refs.slice(0, 3).map((ref) => (
+                              <code
+                                className="break-all rounded bg-card px-1.5 py-1 font-mono text-[10px] text-muted-foreground"
+                                key={ref}
+                              >
+                                {ref}
+                              </code>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {mitigation.test_refs.map((ref) => (
+                              <Badge className="max-w-full" key={ref} variant="default">
+                                {ref}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Residual risk: {category.residual_risk_note}
+                    </p>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MigrationAdminPanel({
+  diagnostics,
+  error,
+  isLoading,
+}: {
+  diagnostics: MigrationDiagnostics | undefined;
+  error: string | null;
+  isLoading: boolean;
+}) {
+  const statusVariant: React.ComponentProps<typeof Badge>["variant"] =
+    diagnostics?.status === "ok" || diagnostics?.status === "not_required"
+      ? "success"
+      : diagnostics?.status === "warning"
+        ? "warning"
+        : "destructive";
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-primary" />
+              Schema migrations
+            </CardTitle>
+            <CardDescription>
+              Applied, pending, and drift diagnostics for the Postgres schema ledger.
+            </CardDescription>
+          </div>
+          {diagnostics ? (
+            <Badge variant={statusVariant}>{diagnostics.status}</Badge>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Checking migration state.</div>
+        ) : null}
+        {error ? (
+          <Notice title="Migration diagnostics unavailable" tone="danger">
+            {error}
+          </Notice>
+        ) : null}
+        {diagnostics ? (
+          <>
+            <div className="grid gap-2 text-sm sm:grid-cols-4">
+              <ReadinessCounter
+                label="Applied"
+                tone="success"
+                value={diagnostics.applied_count}
+              />
+              <ReadinessCounter
+                label="Pending"
+                tone={diagnostics.pending_count ? "danger" : "success"}
+                value={diagnostics.pending_count}
+              />
+              <ReadinessCounter
+                label="Mismatch"
+                tone={diagnostics.checksum_mismatch_count ? "danger" : "success"}
+                value={diagnostics.checksum_mismatch_count}
+              />
+              <ReadinessCounter
+                label="Unknown"
+                tone={diagnostics.unknown_applied_count ? "danger" : "success"}
+                value={diagnostics.unknown_applied_count}
+              />
+            </div>
+            <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Badge variant={diagnostics.connection_ok === false ? "warning" : "muted"}>
+                  {diagnostics.bootstrap_code ?? "unknown"}
+                </Badge>
+                <span className="font-semibold">{diagnostics.bootstrap_summary}</span>
+              </div>
+              <div className="flex min-w-0 flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>backend: {diagnostics.storage_backend}</span>
+                <span>latest available: {diagnostics.latest_available_version ?? "none"}</span>
+                <span>latest applied: {diagnostics.latest_applied_version ?? "none"}</span>
+                <span>table: {diagnostics.table_exists ? "present" : "missing"}</span>
+              </div>
+            </div>
+            <div className="grid max-h-80 gap-2 overflow-y-auto pr-1">
+              {diagnostics.migrations.map((migration) => (
+                <div
+                  className="grid gap-2 rounded-md border border-border bg-card p-3"
+                  key={`${migration.status}-${migration.version}`}
+                >
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="break-words text-sm font-black">
+                        {migration.version} / {migration.name}
+                      </div>
+                      <div className="mt-0.5 break-all font-mono text-[11px] text-muted-foreground">
+                        {migration.checksum ?? "checksum unavailable"}
+                      </div>
+                    </div>
+                    <Badge variant={migrationStatusVariant(migration.status)}>
+                      {migration.status}
+                    </Badge>
+                  </div>
+                  <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
+                    <span>applied: {migration.applied_at ?? "not applied"}</span>
+                    <span>
+                      duration:{" "}
+                      {typeof migration.duration_ms === "number"
+                        ? `${migration.duration_ms}ms`
+                        : "not recorded"}
+                    </span>
+                    <span>failure: {migration.failure_reason ?? "none"}</span>
+                  </div>
+                </div>
+              ))}
+              {!diagnostics.migrations.length ? (
+                <Badge variant="warning">No migration manifest entries</Badge>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AdminPolicyPanel({
+  isLoading,
+  runtime,
+}: {
+  isLoading: boolean;
+  runtime: RuntimeConfig | undefined;
+}) {
+  const assistantPolicy = runtimeAssistantSettingsFromRuntime(runtime);
+  const providerPolicies = assistantPolicy
+    ? [
+        {
+          label: "LLM planning",
+          enabled: assistantPolicy.external_openai_llm_enabled,
+          phiAllowed: assistantPolicy.external_openai_llm_allow_phi,
+        },
+        {
+          label: "Vision OCR",
+          enabled: assistantPolicy.external_openai_ocr_enabled,
+          phiAllowed: assistantPolicy.external_openai_ocr_allow_phi,
+        },
+        {
+          label: "Embeddings",
+          enabled: assistantPolicy.external_openai_embeddings_enabled,
+          phiAllowed: assistantPolicy.external_openai_embeddings_allow_phi,
+        },
+        {
+          label: "External medical search",
+          enabled: assistantPolicy.external_medical_search_enabled,
+          phiAllowed: assistantPolicy.external_medical_search_allow_phi,
+        },
+      ]
+    : [];
+  const phiAllowedCount = providerPolicies.filter((policy) => policy.phiAllowed).length;
+  const ocrThreshold = runtime?.review_policy?.ocr_low_confidence_threshold;
+
+  return (
+    <Card className="min-w-0 overflow-hidden xl:col-span-2">
+      <CardHeader className="border-b border-border bg-card/70">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Admin policy controls
+            </CardTitle>
+            <CardDescription>
+              Review gates, PHI handling, provider boundaries, retention, and tool approvals.
+            </CardDescription>
+          </div>
+          <Badge variant={phiAllowedCount ? "warning" : "success"}>
+            {phiAllowedCount ? `${phiAllowedCount} PHI exceptions` : "PHI blocked externally"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 pt-4 sm:pt-5 xl:grid-cols-2">
+        <div className="grid gap-0 text-sm text-muted-foreground">
+          <PolicyItem title="Review threshold">
+            {isLoading
+              ? "Loading review policy"
+              : `Human review is required by default; OCR evidence below ${
+                  typeof ocrThreshold === "number"
+                    ? `${Math.round(ocrThreshold * 100)}% confidence`
+                    : "the configured threshold"
+                } is routed for review.`}
+          </PolicyItem>
+          <PolicyItem title="Reviewer accountability">
+            Review decisions use the authenticated session user, not client-supplied identity.
+          </PolicyItem>
+          <PolicyItem title="Audit chain">
+            {runtime?.audit?.hash_chain_written
+              ? `Hash-chain fields are written${
+                  runtime.audit.hash_chain_required ? " and required" : ""
+                } for this deployment.`
+              : "Audit hash-chain status is unavailable from runtime config."}
+          </PolicyItem>
+          <PolicyItem title="Retention">
+            {runtime?.retention?.artifact_policy_configured
+              ? `${runtime.retention.artifact_rule_count} artifact retention rule(s) configured.`
+              : "No artifact retention override is configured; backend defaults apply."}
+          </PolicyItem>
+          <PolicyItem title="Tool gates">
+            {runtime?.tools
+              ? `${runtime.tools.approval_required_count} of ${
+                  runtime.tools.registered_count
+                } registered tool(s) require explicit approval.`
+              : "Tool registry facts are unavailable from runtime config."}
+          </PolicyItem>
+        </div>
+
+        <div className="grid gap-3">
+          <div>
+            <div className="text-sm font-bold text-foreground">External provider PHI policy</div>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              These switches are persisted in Assistant runtime settings and enforced
+              before outbound provider calls.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            {providerPolicies.map((policy) => (
+              <div
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
+                key={policy.label}
+              >
+                <span className="font-semibold">{policy.label}</span>
+                <span className="flex flex-wrap gap-2">
+                  <Badge variant={policy.enabled ? "success" : "muted"}>
+                    {policy.enabled ? "enabled" : "disabled"}
+                  </Badge>
+                  <Badge variant={policy.phiAllowed ? "warning" : "success"}>
+                    {policy.phiAllowed ? "PHI allowed" : "PHI blocked"}
+                  </Badge>
+                </span>
+              </div>
+            ))}
+            {!providerPolicies.length ? (
+              <Notice title="Policy loading">
+                Runtime Assistant policy has not been returned by the backend yet.
+              </Notice>
+            ) : null}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 type RetrievalSettingsFormState = {
+  embeddingProvider: "deterministic" | "openai" | "huggingface";
+  embeddingModel: string;
+  embeddingDimensions: string;
   framework: "custom" | "llamaindex";
   candidateMultiplier: string;
   minCandidates: string;
@@ -455,8 +1110,22 @@ type RetrievalSettingsFormState = {
 type AssistantSettingsFormState = {
   provider: "disabled" | "openai";
   model: string;
+  planningModel: string;
+  synthesisModel: string;
+  visionModel: string;
+  baseUrl: string;
   timeoutSeconds: string;
   maxToolCalls: string;
+  planningProgressIntervalSeconds: string;
+  externalOpenAiLlmEnabled: boolean;
+  externalOpenAiLlmAllowPhi: boolean;
+  externalOpenAiOcrEnabled: boolean;
+  externalOpenAiOcrAllowPhi: boolean;
+  externalOpenAiOcrAllowUnknown: boolean;
+  externalOpenAiEmbeddingsEnabled: boolean;
+  externalOpenAiEmbeddingsAllowPhi: boolean;
+  externalMedicalSearchEnabled: boolean;
+  externalMedicalSearchAllowPhi: boolean;
 };
 
 function AssistantSettingsForm({
@@ -476,8 +1145,24 @@ function AssistantSettingsForm({
     setForm({
       provider: settings.llm_provider,
       model: settings.llm_model,
+      planningModel: settings.llm_planning_model,
+      synthesisModel: settings.llm_synthesis_model,
+      visionModel: settings.llm_vision_model,
+      baseUrl: settings.llm_base_url,
       timeoutSeconds: String(settings.llm_timeout_seconds),
       maxToolCalls: String(settings.llm_max_tool_calls),
+      planningProgressIntervalSeconds: String(
+        settings.llm_planning_progress_interval_seconds,
+      ),
+      externalOpenAiLlmEnabled: settings.external_openai_llm_enabled,
+      externalOpenAiLlmAllowPhi: settings.external_openai_llm_allow_phi,
+      externalOpenAiOcrEnabled: settings.external_openai_ocr_enabled,
+      externalOpenAiOcrAllowPhi: settings.external_openai_ocr_allow_phi,
+      externalOpenAiOcrAllowUnknown: settings.external_openai_ocr_allow_unknown,
+      externalOpenAiEmbeddingsEnabled: settings.external_openai_embeddings_enabled,
+      externalOpenAiEmbeddingsAllowPhi: settings.external_openai_embeddings_allow_phi,
+      externalMedicalSearchEnabled: settings.external_medical_search_enabled,
+      externalMedicalSearchAllowPhi: settings.external_medical_search_allow_phi,
     });
   }, [runtime]);
 
@@ -548,7 +1233,7 @@ function AssistantSettingsForm({
               </Notice>
             ) : null}
 
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <Label>
                 Planner
                 <Select
@@ -565,12 +1250,48 @@ function AssistantSettingsForm({
                 </Select>
               </Label>
               <Label>
-                Model
+                Default model
                 <Input
                   onChange={(event) => updateField("model", event.target.value)}
-                  placeholder="gpt-4.1-mini"
+                  placeholder="chat-latest"
                   type="text"
                   value={form.model}
+                />
+              </Label>
+              <Label>
+                Planning model
+                <Input
+                  onChange={(event) => updateField("planningModel", event.target.value)}
+                  placeholder="chat-latest"
+                  type="text"
+                  value={form.planningModel}
+                />
+              </Label>
+              <Label>
+                Synthesis model
+                <Input
+                  onChange={(event) => updateField("synthesisModel", event.target.value)}
+                  placeholder="chat-latest"
+                  type="text"
+                  value={form.synthesisModel}
+                />
+              </Label>
+              <Label>
+                Vision model
+                <Input
+                  onChange={(event) => updateField("visionModel", event.target.value)}
+                  placeholder="gpt-4.1-mini"
+                  type="text"
+                  value={form.visionModel}
+                />
+              </Label>
+              <Label>
+                OpenAI-compatible endpoint
+                <Input
+                  onChange={(event) => updateField("baseUrl", event.target.value)}
+                  placeholder="https://api.openai.com/v1"
+                  type="url"
+                  value={form.baseUrl}
                 />
               </Label>
               <Label>
@@ -594,6 +1315,86 @@ function AssistantSettingsForm({
                   value={form.maxToolCalls}
                 />
               </Label>
+              <Label>
+                Planning heartbeat seconds
+                <Input
+                  min={0.25}
+                  max={30}
+                  onChange={(event) =>
+                    updateField("planningProgressIntervalSeconds", event.target.value)
+                  }
+                  step={0.25}
+                  type="number"
+                  value={form.planningProgressIntervalSeconds}
+                />
+              </Label>
+            </div>
+
+            <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-3">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-foreground">
+                  External provider policy
+                </div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Controls what backend surfaces may send data to OpenAI-compatible
+                  services or external medical search.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <PolicyToggle
+                  checked={form.externalOpenAiLlmEnabled}
+                  label="OpenAI LLM calls"
+                  onChange={(checked) => updateField("externalOpenAiLlmEnabled", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiLlmAllowPhi}
+                  label="Allow PHI to OpenAI LLM"
+                  onChange={(checked) => updateField("externalOpenAiLlmAllowPhi", checked)}
+                  tone={form.externalOpenAiLlmAllowPhi ? "danger" : "default"}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiOcrEnabled}
+                  label="OpenAI vision OCR"
+                  onChange={(checked) => updateField("externalOpenAiOcrEnabled", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiOcrAllowPhi}
+                  label="Allow PHI to vision OCR"
+                  onChange={(checked) => updateField("externalOpenAiOcrAllowPhi", checked)}
+                  tone={form.externalOpenAiOcrAllowPhi ? "danger" : "default"}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiOcrAllowUnknown}
+                  label="Allow unknown image text to OCR"
+                  onChange={(checked) => updateField("externalOpenAiOcrAllowUnknown", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiEmbeddingsEnabled}
+                  label="OpenAI embeddings"
+                  onChange={(checked) =>
+                    updateField("externalOpenAiEmbeddingsEnabled", checked)
+                  }
+                />
+                <PolicyToggle
+                  checked={form.externalOpenAiEmbeddingsAllowPhi}
+                  label="Allow PHI to embeddings"
+                  onChange={(checked) =>
+                    updateField("externalOpenAiEmbeddingsAllowPhi", checked)
+                  }
+                  tone={form.externalOpenAiEmbeddingsAllowPhi ? "danger" : "default"}
+                />
+                <PolicyToggle
+                  checked={form.externalMedicalSearchEnabled}
+                  label="External medical search"
+                  onChange={(checked) => updateField("externalMedicalSearchEnabled", checked)}
+                />
+                <PolicyToggle
+                  checked={form.externalMedicalSearchAllowPhi}
+                  label="Allow PHI to external search"
+                  onChange={(checked) => updateField("externalMedicalSearchAllowPhi", checked)}
+                  tone={form.externalMedicalSearchAllowPhi ? "danger" : "default"}
+                />
+              </div>
             </div>
 
             <div className="flex min-w-0 flex-wrap gap-2">
@@ -636,6 +1437,9 @@ function RetrievalSettingsForm({
     const settings = runtimeRetrievalSettingsFromRuntime(runtime);
     if (!settings) return;
     setForm({
+      embeddingProvider: settings.embedding_provider,
+      embeddingModel: settings.embedding_model,
+      embeddingDimensions: String(settings.embedding_dimensions),
       framework: settings.retrieval_framework,
       candidateMultiplier: String(settings.retrieval_candidate_multiplier),
       minCandidates: String(settings.retrieval_min_candidates),
@@ -706,7 +1510,40 @@ function RetrievalSettingsForm({
               </Notice>
             ) : null}
 
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <Label>
+                Embedding provider
+                <Select
+                  onChange={(event) => {
+                    const provider = retrievalEmbeddingProvider(event.target.value);
+                    updateField("embeddingProvider", provider);
+                  }}
+                  value={form.embeddingProvider}
+                >
+                  <option value="deterministic">Deterministic</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="huggingface">Hugging Face</option>
+                </Select>
+              </Label>
+              <Label>
+                Embedding model
+                <Input
+                  onChange={(event) => updateField("embeddingModel", event.target.value)}
+                  placeholder="text-embedding-3-small"
+                  type="text"
+                  value={form.embeddingModel}
+                />
+              </Label>
+              <Label>
+                Embedding dimensions
+                <Input
+                  min={1}
+                  max={4096}
+                  onChange={(event) => updateField("embeddingDimensions", event.target.value)}
+                  type="number"
+                  value={form.embeddingDimensions}
+                />
+              </Label>
               <Label>
                 Framework
                 <Select
@@ -777,6 +1614,7 @@ function RetrievalSettingsForm({
               <Label>
                 Diversity lambda
                 <Input
+                  disabled={!form.diversityEnabled}
                   min={0}
                   max={1}
                   onChange={(event) => updateField("diversityLambda", event.target.value)}
@@ -784,6 +1622,9 @@ function RetrievalSettingsForm({
                   type="number"
                   value={form.diversityLambda}
                 />
+                <span className="mt-1 block text-xs font-semibold leading-5 text-muted-foreground">
+                  0 favors source novelty; 1 favors raw relevance. Default 0.72 keeps relevance primary while reducing repeated-source evidence.
+                </span>
               </Label>
               <label className="flex min-h-9 items-center gap-2 rounded-md border border-border bg-muted/20 px-3 text-sm font-semibold">
                 <input
@@ -794,6 +1635,9 @@ function RetrievalSettingsForm({
                 />
                 Source diversity
               </label>
+              <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground sm:col-span-2 xl:col-span-3">
+                Embedding changes require retrieval reindexing before vector search is fully aligned. Source diversity changes final evidence selection after hybrid retrieval and reranking. Disable it only when strict score order is required.
+              </div>
             </div>
 
             <RetrievalRulePackInventory packs={runtime?.retrieval?.rule_packs ?? []} />
@@ -880,6 +1724,9 @@ function runtimeRetrievalSettingsFromRuntime(
   if (!retrieval) return null;
   const framework = retrieval.framework === "llamaindex" ? "llamaindex" : "custom";
   if (
+    typeof runtime?.embedding?.provider !== "string" ||
+    typeof runtime.embedding.model !== "string" ||
+    !isFiniteNumber(runtime.embedding.dimensions) ||
     !isFiniteNumber(retrieval.candidate_multiplier) ||
     !isFiniteNumber(retrieval.min_candidates) ||
     !isFiniteNumber(retrieval.vector_weight) ||
@@ -891,6 +1738,9 @@ function runtimeRetrievalSettingsFromRuntime(
     return null;
   }
   return {
+    embedding_provider: retrievalEmbeddingProvider(runtime.embedding.provider),
+    embedding_model: runtime.embedding.model,
+    embedding_dimensions: runtime.embedding.dimensions,
     retrieval_framework: framework,
     retrieval_candidate_multiplier: retrieval.candidate_multiplier,
     retrieval_min_candidates: retrieval.min_candidates,
@@ -902,12 +1752,19 @@ function runtimeRetrievalSettingsFromRuntime(
   };
 }
 
+function retrievalEmbeddingProvider(
+  value: string,
+): "deterministic" | "openai" | "huggingface" {
+  if (value === "openai" || value === "huggingface") return value;
+  return "deterministic";
+}
+
 function runtimeAssistantSettingsFromRuntime(
   runtime: RuntimeConfig | undefined,
 ): RuntimeAssistantSettings | null {
   const llm = runtime?.llm;
   const settings = llm?.runtime_settings;
-  if (settings) return settings;
+  if (settings) return runtimeAssistantSettingsWithPolicyDefaults(settings);
   if (!llm) return null;
   const provider = llm.provider === "openai" ? "openai" : "disabled";
   if (
@@ -918,38 +1775,119 @@ function runtimeAssistantSettingsFromRuntime(
   ) {
     return null;
   }
-  return {
+  return runtimeAssistantSettingsWithPolicyDefaults({
     llm_provider: provider,
     llm_model: llm.model,
+    llm_planning_model:
+      typeof llm.planning_model === "string" && llm.planning_model.trim()
+        ? llm.planning_model
+        : llm.model,
+    llm_synthesis_model:
+      typeof llm.synthesis_model === "string" && llm.synthesis_model.trim()
+        ? llm.synthesis_model
+        : llm.model,
+    llm_vision_model:
+      typeof llm.vision_model === "string" && llm.vision_model.trim()
+        ? llm.vision_model
+        : llm.model === "chat-latest"
+          ? "gpt-4.1-mini"
+          : llm.model,
+    llm_base_url:
+      typeof llm.base_url === "string" && llm.base_url.trim()
+        ? llm.base_url
+        : "https://api.openai.com/v1",
     llm_timeout_seconds: llm.timeout_seconds,
     llm_max_tool_calls: llm.max_tool_calls,
+    llm_planning_progress_interval_seconds: isFiniteNumber(
+      llm.planning_progress_interval_seconds,
+    )
+      ? llm.planning_progress_interval_seconds
+      : 2,
+  } as RuntimeAssistantSettings);
+}
+
+function runtimeAssistantSettingsWithPolicyDefaults(
+  settings: RuntimeAssistantSettings,
+): RuntimeAssistantSettings {
+  const defaults = {
+    external_openai_llm_enabled: true,
+    external_openai_llm_allow_phi: false,
+    external_openai_ocr_enabled: true,
+    external_openai_ocr_allow_phi: false,
+    external_openai_ocr_allow_unknown: true,
+    external_openai_embeddings_enabled: true,
+    external_openai_embeddings_allow_phi: false,
+    external_medical_search_enabled: true,
+    external_medical_search_allow_phi: false,
   };
+  return { ...defaults, ...settings };
 }
 
 function runtimeAssistantPayloadFromForm(
   form: AssistantSettingsFormState,
 ): RuntimeAssistantSettingsPayload {
   const llm_model = form.model.trim();
+  const llm_planning_model = form.planningModel.trim();
+  const llm_synthesis_model = form.synthesisModel.trim();
+  const llm_vision_model = form.visionModel.trim();
+  const llm_base_url = form.baseUrl.trim();
   if (!llm_model) {
-    throw new Error("Model must not be blank.");
+    throw new Error("Default model must not be blank.");
+  }
+  if (!llm_planning_model || !llm_synthesis_model || !llm_vision_model) {
+    throw new Error("Planning, synthesis, and vision models must not be blank.");
+  }
+  if (!llm_base_url) {
+    throw new Error("OpenAI-compatible endpoint must not be blank.");
   }
   return {
     llm_provider: form.provider,
     llm_model,
+    llm_planning_model,
+    llm_synthesis_model,
+    llm_vision_model,
+    llm_base_url,
     llm_timeout_seconds: numberField(form.timeoutSeconds, "Timeout seconds", 1, 300),
     llm_max_tool_calls: integerField(form.maxToolCalls, "Max tool calls", 1, 12),
+    llm_planning_progress_interval_seconds: numberField(
+      form.planningProgressIntervalSeconds,
+      "Planning heartbeat seconds",
+      0.25,
+      30,
+    ),
+    external_openai_llm_enabled: form.externalOpenAiLlmEnabled,
+    external_openai_llm_allow_phi: form.externalOpenAiLlmAllowPhi,
+    external_openai_ocr_enabled: form.externalOpenAiOcrEnabled,
+    external_openai_ocr_allow_phi: form.externalOpenAiOcrAllowPhi,
+    external_openai_ocr_allow_unknown: form.externalOpenAiOcrAllowUnknown,
+    external_openai_embeddings_enabled: form.externalOpenAiEmbeddingsEnabled,
+    external_openai_embeddings_allow_phi: form.externalOpenAiEmbeddingsAllowPhi,
+    external_medical_search_enabled: form.externalMedicalSearchEnabled,
+    external_medical_search_allow_phi: form.externalMedicalSearchAllowPhi,
   };
 }
 
 function runtimeRetrievalPayloadFromForm(
   form: RetrievalSettingsFormState,
 ): RuntimeRetrievalSettingsPayload {
+  const embedding_model = form.embeddingModel.trim();
+  if (!embedding_model) {
+    throw new Error("Embedding model must not be blank.");
+  }
   const retrieval_vector_weight = numberField(form.vectorWeight, "Vector weight", 0, 1);
   const retrieval_bm25_weight = numberField(form.bm25Weight, "BM25 weight", 0, 1);
   if (retrieval_vector_weight + retrieval_bm25_weight <= 0) {
     throw new Error("Vector and BM25 weights cannot both be zero.");
   }
   return {
+    embedding_provider: form.embeddingProvider,
+    embedding_model,
+    embedding_dimensions: integerField(
+      form.embeddingDimensions,
+      "Embedding dimensions",
+      1,
+      4096,
+    ),
     retrieval_framework: form.framework,
     retrieval_candidate_multiplier: integerField(
       form.candidateMultiplier,
@@ -1236,6 +2174,22 @@ function SettingRow({ badge, label, value }: { badge?: string; label: string; va
   );
 }
 
+function migrationStatusVariant(
+  status: MigrationDiagnostics["migrations"][number]["status"],
+): React.ComponentProps<typeof Badge>["variant"] {
+  if (status === "applied") return "success";
+  if (status === "pending") return "warning";
+  return "destructive";
+}
+
+function riskLevelVariant(
+  level: AiRiskLevel | ThreatRiskLevel,
+): React.ComponentProps<typeof Badge>["variant"] {
+  if (level === "critical") return "destructive";
+  if (level === "high" || level === "medium") return "warning";
+  return "success";
+}
+
 function ReadinessChecks({
   checks,
   isError,
@@ -1422,6 +2376,36 @@ function ControlStatus({
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{children}</p>
       </div>
     </div>
+  );
+}
+
+function PolicyToggle({
+  checked,
+  label,
+  onChange,
+  tone = "default",
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+  tone?: "default" | "danger";
+}) {
+  return (
+    <label
+      className={
+        tone === "danger"
+          ? "flex min-w-0 items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950"
+          : "flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground"
+      }
+    >
+      <input
+        checked={checked}
+        className="h-4 w-4 rounded border-input accent-primary"
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span className="min-w-0 truncate">{label}</span>
+    </label>
   );
 }
 

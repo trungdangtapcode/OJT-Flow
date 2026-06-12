@@ -133,6 +133,8 @@ def test_compose_runtime_uses_postgres_redis_and_persistent_app_data() -> None:
     api_section = compose.split("  api:", 1)[1].split("  frontend:", 1)[0]
 
     assert "OJT_STORAGE_BACKEND: postgres" in api_section
+    assert "OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}" in api_section
+    assert "OJT_NO_MOCK_DATA: ${OJT_NO_MOCK_DATA:-false}" in api_section
     assert (
         "OJT_DATABASE_URL: "
         "postgresql://${OJT_POSTGRES_USER:-ojtflow}:"

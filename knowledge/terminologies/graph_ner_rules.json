@@ -1,0 +1,111 @@
+{
+  "version": "2026-06-08",
+  "source_note": "Deterministic Graph-NER seed rules for evidence/query graph handoff. These rules are for retrieval grounding and audit, not clinical coding or diagnosis.",
+  "entity_rules": [
+    {
+      "entity_id": "standard:fhir",
+      "label": "FHIR",
+      "type": "standard",
+      "aliases": ["fhir", "hl7 fhir"],
+      "confidence": 0.95
+    },
+    {
+      "entity_id": "standard:loinc",
+      "label": "LOINC",
+      "type": "standard",
+      "aliases": ["loinc"],
+      "confidence": 0.95
+    },
+    {
+      "entity_id": "standard:ucum",
+      "label": "UCUM",
+      "type": "standard",
+      "aliases": ["ucum", "unit", "units", "unitsofmeasure"],
+      "confidence": 0.9
+    },
+    {
+      "entity_id": "standard:rxnorm",
+      "label": "RxNorm",
+      "type": "standard",
+      "aliases": ["rxnorm", "rxnorm rxcui"],
+      "confidence": 0.95
+    },
+    {
+      "entity_id": "standard:omop",
+      "label": "OMOP",
+      "type": "standard",
+      "aliases": ["omop", "common data model", "omop cdm"],
+      "confidence": 0.95
+    },
+    {
+      "entity_id": "standard:snomed_ct",
+      "label": "SNOMED CT",
+      "type": "standard",
+      "aliases": ["snomed", "snomed ct"],
+      "confidence": 0.95
+    },
+    {
+      "entity_id": "field:patient_id",
+      "label": "patient_id",
+      "type": "data_field",
+      "aliases": ["patient_id", "patient id", "patient identifier", "patient"],
+      "confidence": 0.9
+    },
+    {
+      "entity_id": "field:date",
+      "label": "date",
+      "type": "data_field",
+      "aliases": ["date", "effective date", "observation date", "collected date"],
+      "confidence": 0.88
+    },
+    {
+      "entity_id": "field:lab_name",
+      "label": "lab_name",
+      "type": "data_field",
+      "aliases": ["lab_name", "lab name", "test name", "observation name"],
+      "confidence": 0.88
+    },
+    {
+      "entity_id": "field:value",
+      "label": "value",
+      "type": "data_field",
+      "aliases": ["value", "result value", "numeric value", "valuequantity"],
+      "confidence": 0.86
+    },
+    {
+      "entity_id": "field:unit",
+      "label": "unit",
+      "type": "data_field",
+      "aliases": ["unit", "units", "result unit", "ucum unit"],
+      "confidence": 0.86
+    },
+    {
+      "entity_id": "field:status",
+      "label": "status",
+      "type": "data_field",
+      "aliases": ["status", "clinical status", "verification status"],
+      "confidence": 0.82
+    },
+    {
+      "entity_id": "field:code",
+      "label": "code",
+      "type": "data_field",
+      "aliases": ["code", "coded value", "concept code", "terminology code"],
+      "confidence": 0.82
+    },
+    {
+      "entity_id": "field:subject",
+      "label": "subject",
+      "type": "data_field",
+      "aliases": ["subject", "fhir subject", "resource subject"],
+      "confidence": 0.82
+    },
+    {
+      "entity_id": "clinical_concept:laboratory",
+      "label": "laboratory",
+      "type": "clinical_concept",
+      "aliases": ["laboratory", "lab result", "lab results", "laboratory result", "laboratory results"],
+      "confidence": 0.78
+    }
+  ]
+}

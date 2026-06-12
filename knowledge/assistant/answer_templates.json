@@ -1,0 +1,111 @@
+{
+  "version": "assistant_answer_templates.v1",
+  "templates": [
+    {
+      "template_id": "validation_report",
+      "label": "Validation report",
+      "description": "Explain validation issues, affected fields, required review, and next operational action.",
+      "tool_names": ["validate_data", "validate_with_evidence"],
+      "evidence_required": false,
+      "review_required_when": ["critical_issue", "phi_detected", "meaning_changing_fix"],
+      "output_constraints": [
+        "Do not diagnose or recommend treatment",
+        "Separate source-data findings from suggested operational actions",
+        "Mention review requirement when validation_report.requires_review is true"
+      ],
+      "sections": [
+        {"section_id": "summary", "title": "Summary", "purpose": "One-paragraph result summary.", "required": true},
+        {"section_id": "issues", "title": "Issues", "purpose": "List issue kind, severity, field, row, and why it matters.", "required": true},
+        {"section_id": "evidence", "title": "Evidence", "purpose": "Cite schema, terminology, or policy evidence when available.", "required": false},
+        {"section_id": "next_action", "title": "Next Action", "purpose": "Tell the operator what to inspect or approve next.", "required": true}
+      ]
+    },
+    {
+      "template_id": "retrieval_answer",
+      "label": "Retrieval answer",
+      "description": "Summarize trusted evidence search without making unsupported claims.",
+      "tool_names": ["retrieval_search", "validate_with_evidence"],
+      "evidence_required": true,
+      "review_required_when": ["missing_required_bucket", "weak_support", "stale_source"],
+      "output_constraints": [
+        "Use only retrieved evidence",
+        "State gaps when evidence is weak or missing",
+        "Prefer source IDs and evidence IDs over vague source names"
+      ],
+      "sections": [
+        {"section_id": "answer", "title": "Answer", "purpose": "Direct evidence-grounded answer.", "required": true},
+        {"section_id": "support", "title": "Support", "purpose": "Evidence IDs, source IDs, and confidence summary.", "required": true},
+        {"section_id": "gaps", "title": "Gaps", "purpose": "Missing evidence or unsupported claim warnings.", "required": true},
+        {"section_id": "next_search", "title": "Next Search", "purpose": "Follow-up filters, source scope, or reindex suggestion.", "required": false}
+      ]
+    },
+    {
+      "template_id": "standards_explanation",
+      "label": "Standards explanation",
+      "description": "Explain healthcare standard implications such as FHIR, UCUM, LOINC, RxNorm, or MeSH.",
+      "tool_names": ["retrieval_search", "fhir_profile"],
+      "evidence_required": true,
+      "review_required_when": ["normalization_candidate", "licensed_source_needed"],
+      "output_constraints": [
+        "Do not claim conformance unless validator evidence exists",
+        "Keep terminology normalization as a candidate unless reviewed"
+      ],
+      "sections": [
+        {"section_id": "standard", "title": "Standard", "purpose": "Name the relevant standard and scope.", "required": true},
+        {"section_id": "source_fields", "title": "Source Fields", "purpose": "Connect source fields to the standard concept.", "required": true},
+        {"section_id": "review", "title": "Review", "purpose": "State what requires human confirmation.", "required": true}
+      ]
+    },
+    {
+      "template_id": "workflow_status",
+      "label": "Workflow status",
+      "description": "Summarize workflow progress, issues, review state, output, and audit direction.",
+      "tool_names": ["get_workflow", "workflow_summary", "list_workflows"],
+      "evidence_required": false,
+      "review_required_when": ["needs_human_review", "failed_workflow"],
+      "output_constraints": [
+        "Include workflow ID when available",
+        "Separate current status from recommended operator action"
+      ],
+      "sections": [
+        {"section_id": "status", "title": "Status", "purpose": "Current workflow state and important IDs.", "required": true},
+        {"section_id": "progress", "title": "Progress", "purpose": "Step, issue, evidence, and output summary.", "required": true},
+        {"section_id": "operator_action", "title": "Operator Action", "purpose": "Review, retry, inspect, or export guidance.", "required": true}
+      ]
+    },
+    {
+      "template_id": "review_summary",
+      "label": "Review summary",
+      "description": "Summarize pending human reviews and how to decide safely.",
+      "tool_names": ["list_reviews", "workflow_summary"],
+      "evidence_required": false,
+      "review_required_when": ["pending_review"],
+      "output_constraints": [
+        "Do not approve on behalf of user",
+        "Call out evidence or issue gaps before decision"
+      ],
+      "sections": [
+        {"section_id": "queue", "title": "Queue", "purpose": "Pending reviews and priorities.", "required": true},
+        {"section_id": "decision_basis", "title": "Decision Basis", "purpose": "What to inspect before approval/rejection.", "required": true},
+        {"section_id": "next_action", "title": "Next Action", "purpose": "Specific review action to take.", "required": true}
+      ]
+    },
+    {
+      "template_id": "export_summary",
+      "label": "Export summary",
+      "description": "Explain generated or planned exports with provenance and review limits.",
+      "tool_names": ["convert_data", "start_workflow"],
+      "evidence_required": false,
+      "review_required_when": ["meaning_changing_transform", "external_export"],
+      "output_constraints": [
+        "Mention output format and review gate",
+        "Do not imply downstream clinical readiness without validation"
+      ],
+      "sections": [
+        {"section_id": "output", "title": "Output", "purpose": "Generated or planned artifact summary.", "required": true},
+        {"section_id": "provenance", "title": "Provenance", "purpose": "Input, transformation, and review references.", "required": true},
+        {"section_id": "limits", "title": "Limits", "purpose": "Warnings, unsupported claims, and required review.", "required": true}
+      ]
+    }
+  ]
+}

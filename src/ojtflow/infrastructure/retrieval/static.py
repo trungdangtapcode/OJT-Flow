@@ -8,21 +8,38 @@ from typing import Any
 
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
+from ojtflow.core.contracts.artifacts import ArtifactRetentionPolicy
+from ojtflow.core.contracts.redaction import RedactionPreview
 from ojtflow.core.contracts.retrieval import (
+    PrivateCorpusIngestionResult,
+    RetrievalIndexManifest,
     RetrievalIntegrityReport,
+    RetrievalPlan,
     RetrievalPackage,
     RetrievalQuery,
     RetrievalSource,
 )
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
+from ojtflow.infrastructure.retrieval.corpus_partitions import (
+    chunk_visible_for_organization,
+    metadata_partition_id,
+    metadata_visibility,
+)
 from ojtflow.infrastructure.retrieval.engine import (
     DeterministicEmbeddingProvider,
     KnowledgeChunk,
     default_healthcare_chunks,
+    diversity_settings_from_query,
     rank_chunks,
     sources_from_chunks,
 )
+from ojtflow.infrastructure.retrieval.index_manifest import build_retrieval_index_manifest
 from ojtflow.infrastructure.retrieval.integrity import build_integrity_report
+from ojtflow.infrastructure.retrieval.private_corpus import (
+    build_private_corpus_chunks,
+    private_corpus_ingestion_result,
+)
+from ojtflow.infrastructure.retrieval.query_analysis import build_retrieval_plan
 
 
 class StaticKnowledgeRepository:
@@ -104,8 +121,16 @@ class StaticRetrievalRepository:
         self.chunk_overlap_chars = chunk_overlap_chars
         self._chunks = default_healthcare_chunks(self.root)
 
+    def plan(self, query: RetrievalQuery) -> RetrievalPlan:
+        return build_retrieval_plan(query)
+
     def search(self, query: RetrievalQuery) -> RetrievalPackage:
         chunks = self._filter_chunks(self._chunks, query)
+        diversity_enabled, diversity_lambda = diversity_settings_from_query(
+            query,
+            default_enabled=self.diversity_enabled,
+            default_lambda=self.diversity_lambda,
+        )
         warnings = (
             []
             if chunks
@@ -118,14 +143,66 @@ class StaticRetrievalRepository:
             reranker=self.reranker,
             rerank_candidate_limit=self.rerank_candidate_limit,
             rerank_score_weight=self.rerank_score_weight,
-            diversity_enabled=self.diversity_enabled,
-            diversity_lambda=self.diversity_lambda,
+            diversity_enabled=diversity_enabled,
+            diversity_lambda=diversity_lambda,
             strategy="static_hybrid_rrf",
             warnings=warnings,
+            knowledge_root=self.root,
         )
 
-    def list_sources(self) -> list[RetrievalSource]:
-        return sources_from_chunks(self._chunks)
+    def list_sources(self, organization_id: str | None = None) -> list[RetrievalSource]:
+        visible_chunks = [
+            chunk
+            for chunk in self._chunks
+            if chunk_visible_for_organization(
+                chunk.metadata,
+                organization_id=organization_id,
+            )
+        ]
+        return sources_from_chunks(visible_chunks)
+
+    def ingest_private_document(
+        self,
+        *,
+        owner_user_id: str,
+        organization_id: str,
+        title: str,
+        text: str,
+        redaction_preview: RedactionPreview,
+        retention_policy: ArtifactRetentionPolicy,
+        source_ref: str | None = None,
+        artifact_id: str | None = None,
+        request_id: str | None = None,
+    ) -> PrivateCorpusIngestionResult:
+        build = build_private_corpus_chunks(
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy,
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+            request_id=request_id,
+            max_chars=self.chunk_max_chars,
+            overlap_chars=self.chunk_overlap_chars,
+        )
+        self._chunks = [
+            chunk
+            for chunk in self._chunks
+            if chunk.source_id != build.source.source_id
+        ] + build.chunks
+        return private_corpus_ingestion_result(
+            build=build,
+            owner_user_id=owner_user_id,
+            organization_id=organization_id,
+            title=title,
+            original_text=text,
+            redaction_preview=redaction_preview,
+            retention_policy=retention_policy,
+            source_ref=source_ref,
+            artifact_id=artifact_id,
+        )
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
         chunks: list[KnowledgeChunk] = []
@@ -146,8 +223,22 @@ class StaticRetrievalRepository:
             "include_seeded": include_seeded,
             "include_corpus": include_corpus,
             "chunks_indexed": len(chunks),
-            "corpus": result.__dict__ if result else None,
+            "corpus": result.to_dict() if result else None,
         }
+
+    def index_manifest(self) -> RetrievalIndexManifest:
+        return build_retrieval_index_manifest(
+            repository="static",
+            retrieval_framework="custom",
+            knowledge_root=self.root,
+            chunks=self._chunks,
+            embedding_metadata=self.embedding_provider.metadata(),
+            metadata={
+                "chunk_max_chars": self.chunk_max_chars,
+                "chunk_overlap_chars": self.chunk_overlap_chars,
+                "vector_persistence": "computed_at_query_time",
+            },
+        )
 
     def integrity_report(
         self,
@@ -183,7 +274,18 @@ class StaticRetrievalRepository:
         standard_system = query.filters.get("standard_system")
         source_type = query.filters.get("source_type")
         source_id = query.filters.get("source_id")
+        corpus_partition = query.filters.get("corpus_partition")
+        corpus_visibility = query.filters.get("corpus_visibility")
+        organization_id = query.filters.get("organization_id")
         filtered = chunks
+        filtered = [
+            chunk
+            for chunk in filtered
+            if chunk_visible_for_organization(
+                chunk.metadata,
+                organization_id=str(organization_id) if organization_id else None,
+            )
+        ]
         if trust_level:
             filtered = [chunk for chunk in filtered if chunk.trust_level == TrustLevel(trust_level)]
         if clinical_domain:
@@ -198,6 +300,18 @@ class StaticRetrievalRepository:
             ]
         if source_id:
             filtered = [chunk for chunk in filtered if chunk.source_id == source_id]
+        if corpus_partition:
+            filtered = [
+                chunk
+                for chunk in filtered
+                if metadata_partition_id(chunk.metadata) == corpus_partition
+            ]
+        if corpus_visibility:
+            filtered = [
+                chunk
+                for chunk in filtered
+                if metadata_visibility(chunk.metadata) == corpus_visibility
+            ]
         return filtered
 
 
