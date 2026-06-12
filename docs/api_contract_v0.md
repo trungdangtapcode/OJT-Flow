@@ -3071,6 +3071,15 @@ normalization comes from `knowledge/terminologies/medical_concepts.json`; FHIR
 search-parameter expansion comes from
 `knowledge/terminologies/fhir_search_parameters.json`. This is retrieval
 grounding and audit metadata, not an autonomous clinical coding decision.
+`handoff_context.graph_conflict_report` uses contract
+`graph_conflict_report.v1` and is produced from the graph/evidence handoff
+before answer synthesis. It reports deterministic conflict records for
+contradictory source claims, deprecated terminology mappings, conflicting UCUM
+unit candidates, and version-mismatched standard guidance. Each record includes
+`conflict_id`, `kind`, `severity`, `rule_id`, `message`, `suggested_action`,
+evidence refs, graph node/edge refs when available, normalized-code candidates
+when relevant, and conflict metadata. Non-empty review-required conflicts are
+mirrored to `trace.warnings` and cause guarded answers to require human review.
 When graph persistence is enabled, the backend stores this graph context after
 the search and returns `handoff_context.graph_record` with `graph_id`, workflow
 and search metadata, node/edge/triple counts, and creation time. Graph records

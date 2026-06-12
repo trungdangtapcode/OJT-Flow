@@ -16,7 +16,8 @@ backend-owned answer contract that says:
 - what claims are cited;
 - which weak or unsupported claims were excluded;
 - what evidence gaps remain;
-- whether source freshness or source lifecycle requires review.
+- whether source freshness, source lifecycle, or Graph-NER conflict detection
+  requires review.
 
 This prevents a downstream assistant or UI from treating a weak retrieval result
 as a confident medical answer.
@@ -38,6 +39,9 @@ as a confident medical answer.
 - `graph_path_summary`: Graph-NER path coverage for the answer.
 - `metadata.claim_triple_guard`: summary counts for graph-supported,
   review-required, and not-required claims.
+- `metadata.graph_conflict_summary`: summary counts for deterministic
+  contradictory-claim, deprecated-mapping, unit-conflict, and version-mismatch
+  graph conflicts.
 
 The same payload is mirrored to `handoff_context.answer` for Assistant and MCP
 clients.
@@ -66,10 +70,12 @@ OJT_STORAGE_BACKEND=memory PYTHONPATH=src pytest -q \
   tests/test_retrieval.py::test_retrieval_service_attaches_guarded_answer_with_citations \
   tests/test_retrieval.py::test_retrieval_answer_flags_clinical_claim_without_graph_triple_support \
   tests/test_retrieval.py::test_retrieval_answer_refuses_when_no_evidence_supports_query \
-  tests/test_retrieval.py::test_retrieval_answer_warns_on_deprecated_source_version
+  tests/test_retrieval.py::test_retrieval_answer_warns_on_deprecated_source_version \
+  tests/test_retrieval.py::test_retrieval_service_attaches_graph_conflict_report_and_review_answer
 ```
 
 The first test checks cited answer synthesis through the application service.
 The second checks the claim-to-triple guard for strong clinical claims without
 graph support. The third checks refusal when no evidence supports the query. The
-fourth checks source freshness warnings.
+fourth checks source freshness warnings. The fifth checks that graph conflicts
+force human review.

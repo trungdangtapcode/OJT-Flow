@@ -1255,6 +1255,29 @@ Concept normalization is deterministic dictionary lookup against seed
 registries, not a clinical coding decision; unmapped terms keep their plain
 `clinical_concept` node without a `normalizes_to` edge.
 
+`handoff_context.graph_conflict_report` uses contract
+`graph_conflict_report.v1`. It is produced after Graph-NER and before answer
+synthesis so final answers can be review-gated when evidence disagrees. The
+policy is loaded from `knowledge/retrieval/graph_conflict_rules.json`,
+overridable with `OJT_GRAPH_CONFLICT_RULES_PATH`. The report currently detects:
+
+- `contradictory_source_claim`: evidence claims that match opposing
+  data-driven guidance patterns, such as required versus not-required fields.
+- `deprecated_terminology_mapping`: normalized terminology evidence from a
+  deprecated, blocked, failed, or review-required source/version.
+- `conflicting_units`: the same normalized concept linked to multiple UCUM unit
+  candidates across retrieved evidence.
+- `version_mismatched_standard_guidance`: retrieved guidance for the same
+  standard/resource/domain spanning multiple source versions.
+
+Each conflict includes `conflict_id`, `kind`, `severity`, `rule_id`,
+`message`, `suggested_action`, evidence refs, graph node/edge refs when
+available, normalized-code candidates when relevant, and metadata such as unit
+codes, preferred units, source lifecycle state, or version groups. Any
+review-required conflict is copied into retrieval trace warnings and forces the
+guarded retrieval answer to `review_required` when it would otherwise be fully
+supported.
+
 Persisted graph records are stored in the backend spine:
 
 - Memory mode keeps graph records for tests and local demos only.

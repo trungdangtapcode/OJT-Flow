@@ -1202,6 +1202,66 @@ class RetrievalAnswer(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+GraphConflictKind = Literal[
+    "contradictory_source_claim",
+    "deprecated_terminology_mapping",
+    "conflicting_units",
+    "version_mismatched_standard_guidance",
+]
+
+
+class GraphConflictEvidenceRef(ContractModel):
+    """Evidence reference involved in a Graph-NER conflict signal."""
+
+    evidence_id: NonBlankStr
+    source_id: NonBlankStr
+    source_type: EvidenceSourceType
+    source_version: NonBlankStr | None = None
+    claim: NonBlankStr | None = None
+    source_locator: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphConflictRecord(ContractModel):
+    """One deterministic conflict detected across graph/evidence context."""
+
+    conflict_id: NonBlankStr
+    kind: GraphConflictKind
+    severity: NonBlankStr
+    rule_id: NonBlankStr
+    message: NonBlankStr
+    suggested_action: NonBlankStr
+    requires_review: bool = True
+    evidence_refs: list[GraphConflictEvidenceRef] = Field(default_factory=list)
+    node_refs: list[NonBlankStr] = Field(default_factory=list)
+    edge_refs: list[NonBlankStr] = Field(default_factory=list)
+    normalized_code_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphConflictSummary(ContractModel):
+    """Aggregate conflict counts for retrieval handoff and UI triage."""
+
+    conflict_count: int = Field(ge=0)
+    requires_review_count: int = Field(ge=0)
+    warning_count: int = Field(ge=0)
+    destructive_count: int = Field(ge=0)
+    contradictory_claim_count: int = Field(ge=0)
+    deprecated_mapping_count: int = Field(ge=0)
+    conflicting_unit_count: int = Field(ge=0)
+    version_mismatch_count: int = Field(ge=0)
+
+
+class GraphConflictReport(ContractModel):
+    """Deterministic graph/evidence conflict report for RAG guardrails."""
+
+    version: NonBlankStr = "graph_conflict_report.v1"
+    policy_version: NonBlankStr
+    generated_at: NonBlankStr
+    summary: GraphConflictSummary
+    conflicts: list[GraphConflictRecord] = Field(default_factory=list)
+    warnings: list[NonBlankStr] = Field(default_factory=list)
+
+
 class RetrievalPackage(ContractModel):
     """Evidence package returned to workflow state and API callers."""
 

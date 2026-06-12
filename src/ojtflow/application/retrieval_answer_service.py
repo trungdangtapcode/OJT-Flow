@@ -112,6 +112,8 @@ def build_retrieval_answer(
     rows = list(support_matrix.rows if support_matrix else [])
     evidence_by_id = {item.evidence_id: item for item in package.evidence}
     graph_context = _graph_context(package)
+    graph_conflict_report = _graph_conflict_report(package)
+    graph_conflict_summary = _graph_conflict_summary(graph_conflict_report)
     supported_rows = [
         row
         for row in rows
@@ -152,6 +154,8 @@ def build_retrieval_answer(
         unsupported_rows=unsupported_rows,
         package=package,
     )
+    if graph_conflict_summary["requires_review_count"]:
+        gaps = _unique([*gaps, *_graph_conflict_gaps(graph_conflict_report)])
 
     status = _answer_status(
         rows=rows,
@@ -161,6 +165,8 @@ def build_retrieval_answer(
     )
     graph_guard_summary = _claim_triple_guard_summary(claims, unsupported_claims)
     if graph_guard_summary["review_required_count"] and status == "supported":
+        status = "review_required"
+    if graph_conflict_summary["requires_review_count"] and status == "supported":
         status = "review_required"
     if graph_guard_summary["review_required_count"]:
         gaps = _unique(
@@ -179,6 +185,7 @@ def build_retrieval_answer(
         unsupported_rows=unsupported_rows,
         freshness_warnings=freshness_warnings,
         graph_guard_review_count=int(graph_guard_summary["review_required_count"]),
+        graph_conflict_review_count=int(graph_conflict_summary["requires_review_count"]),
     )
     return RetrievalAnswer(
         status=status,
@@ -195,6 +202,7 @@ def build_retrieval_answer(
             status != "supported"
             or bool(freshness_warnings)
             or bool(graph_guard_summary["review_required_count"])
+            or bool(graph_conflict_summary["requires_review_count"])
             or any(row.support_status in active_policy.review_statuses for row in rows)
         ),
         confidence=confidence,
@@ -210,6 +218,7 @@ def build_retrieval_answer(
             "supported_row_count": len(supported_rows),
             "unsupported_row_count": len(unsupported_rows),
             "claim_triple_guard": graph_guard_summary,
+            "graph_conflict_summary": graph_conflict_summary,
             "query": query.query,
         },
     )
@@ -545,6 +554,7 @@ def _answer_confidence(
     unsupported_rows: list[RetrievalEvidenceSupportRow],
     freshness_warnings: list[RetrievalAnswerFreshnessWarning],
     graph_guard_review_count: int = 0,
+    graph_conflict_review_count: int = 0,
 ) -> float:
     if not supported_rows:
         return 0.0
@@ -553,6 +563,7 @@ def _answer_confidence(
         0.08 * len(unsupported_rows)
         + 0.05 * len(freshness_warnings)
         + 0.06 * graph_guard_review_count
+        + 0.07 * graph_conflict_review_count
     )
     return round(max(0.0, min(1.0, base - penalty)), 3)
 
@@ -599,6 +610,42 @@ def _answer_text(
 def _graph_context(package: RetrievalPackage) -> dict[str, Any]:
     value = package.handoff_context.get("graph_context")
     return value if isinstance(value, dict) else {}
+
+
+def _graph_conflict_report(package: RetrievalPackage) -> dict[str, Any]:
+    value = package.handoff_context.get("graph_conflict_report")
+    return value if isinstance(value, dict) else {}
+
+
+def _graph_conflict_summary(report: dict[str, Any]) -> dict[str, int]:
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        return {
+            "conflict_count": 0,
+            "requires_review_count": 0,
+        }
+    return {
+        "conflict_count": _int_value(summary.get("conflict_count")),
+        "requires_review_count": _int_value(summary.get("requires_review_count")),
+        "warning_count": _int_value(summary.get("warning_count")),
+        "destructive_count": _int_value(summary.get("destructive_count")),
+    }
+
+
+def _graph_conflict_gaps(report: dict[str, Any]) -> list[str]:
+    conflicts = report.get("conflicts")
+    if not isinstance(conflicts, list):
+        return []
+    gaps: list[str] = []
+    for conflict in conflicts[:3]:
+        if not isinstance(conflict, dict):
+            continue
+        message = _optional_str(conflict.get("message"))
+        if message:
+            gaps.append(f"Graph conflict requires review: {message}")
+    if len(conflicts) > 3:
+        gaps.append(f"{len(conflicts) - 3} additional graph conflict(s) require review.")
+    return gaps
 
 
 def _graph_refs_for_evidence(graph_context: dict[str, Any], evidence_id: str) -> list[str]:
@@ -710,6 +757,14 @@ def _optional_str(value: Any) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _int_value(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
 
 
 def _string_tuple(value: Any, *, default: tuple[str, ...]) -> tuple[str, ...]:

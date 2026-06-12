@@ -7,6 +7,7 @@ import json
 from hashlib import sha256
 from typing import Any
 
+from ojtflow.application.graph_conflict_service import GraphConflictService
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.ports import RetrievalRepository
 from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
@@ -37,12 +38,14 @@ class RetrievalService:
         self,
         repository: RetrievalRepository,
         graph_ner: GraphNERService | None = None,
+        graph_conflicts: GraphConflictService | None = None,
         answer_synthesizer: RetrievalAnswerSynthesizer | None = None,
         rule_packs: Sequence[dict[str, Any]] | None = None,
         external_provider_policy: ExternalProviderPolicy | None = None,
     ) -> None:
         self.repository = repository
         self.graph_ner = graph_ner or GraphNERService()
+        self.graph_conflicts = graph_conflicts or GraphConflictService()
         self.answer_synthesizer = answer_synthesizer or RetrievalAnswerSynthesizer()
         self.rule_packs = [dict(pack) for pack in rule_packs or ()]
         self.external_provider_policy = external_provider_policy
@@ -55,6 +58,7 @@ class RetrievalService:
         package = self._attach_rule_pack_metadata(package)
         package = self._apply_external_search_policy(package, query)
         package = self.graph_ner.augment_package(package, query)
+        package = self.graph_conflicts.augment_package(package, query)
         return self.answer_synthesizer.augment_package(package, query)
 
     def plan(self, query: RetrievalQuery) -> RetrievalPlan:

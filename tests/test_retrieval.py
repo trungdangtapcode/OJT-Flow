@@ -17,6 +17,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQuery,
     RetrievalTrace,
 )
+from ojtflow.application.graph_conflict_service import GraphConflictService
 from ojtflow.application.graph_ner_service import GraphNERService
 from ojtflow.application.retrieval_answer_service import RetrievalAnswerSynthesizer
 from ojtflow.application.retrieval_evaluation_policy import RetrievalEvaluationPolicyRule
@@ -3628,6 +3629,84 @@ def test_graph_ner_extracts_query_entities_and_fhir_search_parameters() -> None:
     )
 
 
+def test_graph_conflict_service_detects_medical_conflict_types() -> None:
+    evidence = _graph_conflict_evidence(include_deprecated=True)
+    graph_context = GraphNERService().build_graph_context(
+        evidence,
+        RetrievalQuery(query="FHIR Observation HbA1c unit conflicts"),
+    )
+    package = RetrievalPackage(
+        evidence=evidence,
+        trace=RetrievalTrace(strategy="test_graph_conflicts"),
+        handoff_context={"graph_context": graph_context},
+    )
+
+    report = GraphConflictService().build_report(
+        package,
+        RetrievalQuery(query="FHIR Observation HbA1c unit conflicts"),
+    )
+    conflicts_by_kind = {conflict.kind: conflict for conflict in report.conflicts}
+
+    assert report.policy_version == "graph_conflict_rules.v1"
+    assert report.summary.conflict_count >= 4
+    assert report.summary.requires_review_count == report.summary.conflict_count
+    assert "contradictory_source_claim" in conflicts_by_kind
+    assert "conflicting_units" in conflicts_by_kind
+    assert "deprecated_terminology_mapping" in conflicts_by_kind
+    assert "version_mismatched_standard_guidance" in conflicts_by_kind
+
+    unit_conflict = conflicts_by_kind["conflicting_units"]
+    assert unit_conflict.metadata["concept"] == "LOINC:4548-4"
+    assert {"%", "mg/dL"}.issubset(set(unit_conflict.metadata["unit_codes"]))
+    assert "mg/dL" in unit_conflict.metadata["unexpected_units"]
+
+    deprecated = conflicts_by_kind["deprecated_terminology_mapping"]
+    assert deprecated.normalized_code_candidates[0]["code"] == "LOINC:4548-4"
+    assert deprecated.evidence_refs[0].source_version == "deprecated-2020"
+
+
+def test_retrieval_service_attaches_graph_conflict_report_and_review_answer() -> None:
+    evidence = _graph_conflict_evidence(include_deprecated=False)
+
+    class FakeRepository:
+        def search(self, query):
+            return RetrievalPackage(
+                evidence=evidence,
+                support_matrix=RetrievalEvidenceSupportMatrix(
+                    query_claim="Validate conflicting FHIR Observation guidance.",
+                    row_count=2,
+                    strong_count=2,
+                    partial_count=0,
+                    weak_count=0,
+                    unsupported_count=0,
+                    rows=[
+                        _support_row(evidence[0], "FHIR Observation lab guidance requires a unit."),
+                        _support_row(evidence[1], "FHIR Observation lab guidance does not require a unit."),
+                    ],
+                ),
+                trace=RetrievalTrace(strategy="test_graph_conflicts"),
+            )
+
+        def list_sources(self):
+            return []
+
+        def reindex(self, *, include_seeded=True, include_corpus=True):
+            return {}
+
+    package = RetrievalService(FakeRepository()).search(
+        RetrievalQuery(query="FHIR Observation HbA1c unit conflicts")
+    )
+
+    conflict_report = package.handoff_context["graph_conflict_report"]
+    assert conflict_report["summary"]["requires_review_count"] >= 1
+    assert package.answer is not None
+    assert package.answer.status == "review_required"
+    assert package.answer.requires_human_review is True
+    assert package.answer.metadata["graph_conflict_summary"]["requires_review_count"] >= 1
+    assert "graph_conflicts_detected" in package.trace.safety_flags
+    assert any(warning.startswith("graph_conflict:") for warning in package.trace.warnings)
+
+
 def test_graph_ner_entity_rules_are_data_driven(tmp_path, monkeypatch) -> None:
     rules_path = tmp_path / "graph_ner_rules.json"
     rules_path.write_text(
@@ -4114,3 +4193,77 @@ def test_retrieval_eval_cli_outputs_json_summary() -> None:
 
 def _bucket_counts(buckets) -> dict[str, int]:
     return {bucket.value: bucket.count for bucket in buckets}
+
+
+def _graph_conflict_evidence(*, include_deprecated: bool) -> list[Evidence]:
+    evidence = [
+        Evidence(
+            evidence_id="ev_req_unit",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            source_id="standard:fhir_observation_r4",
+            source_version="R4",
+            claim=(
+                "FHIR Observation lab result guidance requires a unit for HbA1c "
+                "values reported in percent %."
+            ),
+            locator={
+                "standard_system": "FHIR",
+                "resource": "Observation",
+                "clinical_domain": "laboratory",
+            },
+            confidence=0.91,
+        ),
+        Evidence(
+            evidence_id="ev_no_unit",
+            source_type=EvidenceSourceType.HEALTHCARE_STANDARD,
+            source_id="standard:fhir_observation_r5",
+            source_version="R5",
+            claim=(
+                "FHIR Observation lab result guidance does not require a unit for "
+                "HbA1c values reported in mg/dL."
+            ),
+            locator={
+                "standard_system": "FHIR",
+                "resource": "Observation",
+                "clinical_domain": "laboratory",
+            },
+            confidence=0.88,
+        ),
+    ]
+    if include_deprecated:
+        evidence.append(
+            Evidence(
+                evidence_id="ev_deprecated_loinc",
+                source_type=EvidenceSourceType.TERMINOLOGY_SYSTEM,
+                source_id="terminology:loinc_old",
+                source_version="deprecated-2020",
+                claim="Deprecated LOINC guidance maps HbA1c to LOINC 4548-4 with unit %.",
+                locator={
+                    "standard_system": "LOINC",
+                    "clinical_domain": "laboratory",
+                    "source_governance": {
+                        "lifecycle_state": "deprecated",
+                        "reviewer_state": "deprecated",
+                    },
+                },
+                confidence=0.72,
+            )
+        )
+    return evidence
+
+
+def _support_row(evidence: Evidence, claim: str) -> RetrievalEvidenceSupportRow:
+    return RetrievalEvidenceSupportRow(
+        claim_id=f"claim:{evidence.evidence_id}",
+        claim=claim,
+        support_status="strong",
+        evidence_id=evidence.evidence_id,
+        source_id=evidence.source_id,
+        source_type=evidence.source_type,
+        source_version=evidence.source_version,
+        source_locator=dict(evidence.locator),
+        matched_terms=["FHIR", "Observation", "HbA1c", "unit"],
+        score=0.93,
+        confidence=0.9,
+        reasoning="Synthetic conflict fixture for graph conflict detection.",
+    )
