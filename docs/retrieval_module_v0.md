@@ -176,6 +176,35 @@ are declared as adapters and trust policies first. Live fetch jobs must preserve
 endpoint, query, source release or fetch timestamp, cache hash, and approval
 state before fetched records become searchable.
 
+Corpus search is partitioned by tenant-aware policy from
+`knowledge/source_catalog/corpus_partitions.json`. `GET
+/api/v1/retrieval/corpus/partitions` exposes the active catalog. The default
+partitions are:
+
+- `global_standards`: shared approved standards, terminology metadata, schemas,
+  and curated public guidance. Visibility is global and external-provider use is
+  allowed when the broader PHI/external-provider policy also allows it.
+- `tenant_policies`: organization-scoped policies, implementation guides, and
+  tenant data dictionaries. Visibility requires the active workspace
+  `organization_id`; external-provider use is blocked by default.
+- `private_documents`: user or workspace uploaded private artifacts. Visibility
+  requires the active organization scope, PHI is allowed only under private
+  retention policy, and external-provider use is blocked by default.
+
+Corpus manifest items, indexed chunks, retrieval source inventory rows, and
+Postgres/static/LlamaIndex retrieval filters all carry the same partition
+metadata: `corpus_partition_id`, `corpus_partition_label`,
+`corpus_partition_purpose`, `corpus_visibility`, `organization_id`,
+`external_provider_allowed`, `phi_allowed`, and `retention_policy_id`.
+Authenticated retrieval routes add the caller's active workspace organization to
+search filters and overwrite any caller-supplied `organization_id`. Global
+chunks remain visible to every workspace; tenant and private chunks are returned
+only for matching organization scope. Operators can narrow search explicitly
+with `filters.corpus_partition` and `filters.corpus_visibility`. The Retrieval
+source inventory surfaces these fields as badges and filter chips so users can
+see whether a result came from global standards, tenant policy, or private
+documents before using it.
+
 Source freshness is now a first-class readiness gate. `GET
 /api/v1/retrieval/freshness` compares the governed corpus adapter catalog,
 source trust policy catalog, generated local corpus manifest, and active source

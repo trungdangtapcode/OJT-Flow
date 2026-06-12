@@ -10,6 +10,8 @@ from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
     CorpusChunkingProfile,
     CorpusChunkingProfileCatalog,
+    CorpusPartitionCatalog,
+    CorpusPartitionPolicy,
     CorpusSourceAdapter,
     MedicalSourceQualityPolicyCatalog,
     MedicalSourceQualityRule,
@@ -22,6 +24,7 @@ from ojtflow.core.contracts.retrieval import (
 
 DEFAULT_CORPUS_ADAPTER_CATALOG_PATH = Path("source_catalog/corpus_adapters.json")
 DEFAULT_CORPUS_CHUNKING_PROFILE_CATALOG_PATH = Path("retrieval/chunking_profiles.json")
+DEFAULT_CORPUS_PARTITION_CATALOG_PATH = Path("source_catalog/corpus_partitions.json")
 DEFAULT_SOURCE_POLICY_PATH = Path("source_catalog/source_trust_policies.json")
 DEFAULT_SOURCE_QUALITY_POLICY_PATH = Path("retrieval/source_quality_policy.json")
 DEFAULT_STRATEGY_CATALOG_PATH = Path("retrieval/strategy_catalog.json")
@@ -102,6 +105,33 @@ def load_corpus_adapter_catalog(knowledge_root: Path) -> CorpusAdapterCatalog:
     return catalog
 
 
+def load_corpus_partition_catalog(knowledge_root: Path) -> CorpusPartitionCatalog:
+    """Load tenant-aware corpus partition policy from trusted knowledge data."""
+
+    path = knowledge_root / DEFAULT_CORPUS_PARTITION_CATALOG_PATH
+    if not path.exists():
+        return CorpusPartitionCatalog(
+            version="corpus_partitions.empty",
+            default_partition_id="global_standards",
+            partitions=[],
+        )
+    raw = _read_json_object(path)
+    catalog = CorpusPartitionCatalog.model_validate(raw)
+    _ensure_unique(
+        [_PartitionKey(partition) for partition in catalog.partitions],
+        path=path,
+        field="partition_id",
+    )
+    if catalog.partitions and catalog.default_partition_id not in {
+        partition.partition_id for partition in catalog.partitions
+    }:
+        raise ValueError(
+            f"Invalid corpus partition catalog at {path}: default_partition_id "
+            f"{catalog.default_partition_id!r} is not defined"
+        )
+    return catalog
+
+
 def load_corpus_chunking_profile_catalog(knowledge_root: Path) -> CorpusChunkingProfileCatalog:
     """Load data-driven corpus chunking profiles from trusted knowledge data."""
 
@@ -179,6 +209,11 @@ class _AdapterKey:
 class _AdapterSourceKey:
     def __init__(self, adapter: CorpusSourceAdapter) -> None:
         self.key = adapter.source_id
+
+
+class _PartitionKey:
+    def __init__(self, partition: CorpusPartitionPolicy) -> None:
+        self.key = partition.partition_id
 
 
 class _ChunkingProfileKey:

@@ -35,6 +35,7 @@ from ojtflow.application.retrieval_service import RetrievalService
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
     load_corpus_chunking_profile_catalog,
+    load_corpus_partition_catalog,
     load_medical_source_quality_policy_catalog,
     load_source_trust_policy_catalog,
 )
@@ -3928,6 +3929,7 @@ def test_static_retrieval_reindex_adds_local_corpus(tmp_path: Path) -> None:
 def test_corpus_adapter_catalog_and_manifest_are_governed() -> None:
     catalog = load_corpus_adapter_catalog(ROOT / "knowledge")
     profiles = load_corpus_chunking_profile_catalog(ROOT / "knowledge")
+    partitions = load_corpus_partition_catalog(ROOT / "knowledge")
     manifest = build_corpus_ingestion_manifest(
         (ROOT / "knowledge" / "corpus",),
         knowledge_root=ROOT / "knowledge",
@@ -3958,6 +3960,17 @@ def test_corpus_adapter_catalog_and_manifest_are_governed() -> None:
     assert items["local_medical_search_playbook_v1"].content_hash.startswith("sha256:")
     assert items["local_medical_search_playbook_v1"].reviewer_state == "approved"
     assert items["local_medical_search_playbook_v1"].fetch_time_source == "filesystem_mtime"
+    partition_map = {partition.partition_id: partition for partition in partitions.partitions}
+    assert partitions.version == "corpus_partitions.v1"
+    assert partitions.default_partition_id == "global_standards"
+    assert partition_map["global_standards"].visibility == "global"
+    assert partition_map["tenant_policies"].visibility == "organization"
+    assert partition_map["private_documents"].phi_allowed is True
+    assert partition_map["private_documents"].external_provider_allowed is False
+    playbook_item = items["local_medical_search_playbook_v1"]
+    assert playbook_item.metadata["corpus_partition_id"] == "global_standards"
+    assert playbook_item.metadata["corpus_visibility"] == "global"
+    assert playbook_item.metadata["external_provider_allowed"] is True
 
     policies = {
         policy.source_id: policy
@@ -4098,6 +4111,12 @@ def test_static_retrieval_source_inventory_includes_corpus_governance_metadata()
     assert corpus_sources[0].license_id == "project_internal"
     assert corpus_sources[0].content_hash.startswith("sha256:")
     assert corpus_sources[0].chunk_profile == "section_window_v0"
+    assert corpus_sources[0].corpus_partition_id == "global_standards"
+    assert corpus_sources[0].corpus_partition_label == "Global Standards"
+    assert corpus_sources[0].corpus_visibility == "global"
+    assert corpus_sources[0].external_provider_allowed is True
+    assert corpus_sources[0].phi_allowed is False
+    assert corpus_sources[0].retention_policy_id == "standards_snapshot_retained_until_replaced"
 
 
 def test_static_retrieval_corpus_chunks_include_section_and_field_metadata() -> None:
@@ -4120,6 +4139,110 @@ def test_static_retrieval_corpus_chunks_include_section_and_field_metadata() -> 
     assert chunk.locator["section_heading"]
     assert "section_heading" in chunk.metadata
     assert "field_names" in chunk.metadata
+    assert chunk.metadata["corpus_partition_id"] == "global_standards"
+    assert chunk.metadata["corpus_partition_label"] == "Global Standards"
+    assert chunk.metadata["corpus_partition_purpose"] == "global_standard"
+    assert chunk.metadata["corpus_visibility"] == "global"
+    assert chunk.metadata["external_provider_allowed"] is True
+    assert chunk.metadata["phi_allowed"] is False
+    assert chunk.metadata["retention_policy_id"] == "standards_snapshot_retained_until_replaced"
+
+
+def test_static_retrieval_filters_corpus_partitions_by_organization_scope() -> None:
+    repository = StaticRetrievalRepository(ROOT / "knowledge")
+    repository._chunks = [
+        KnowledgeChunk(
+            chunk_id="chunk_global",
+            source_id="schema:global_lab",
+            source_type=EvidenceSourceType.SCHEMA,
+            title="Global Lab Standard",
+            content="HbA1c global standard unit evidence.",
+            metadata={
+                "corpus_partition_id": "global_standards",
+                "corpus_partition_label": "Global Standards",
+                "corpus_partition_purpose": "global_standard",
+                "corpus_visibility": "global",
+            },
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_tenant",
+            source_id="tenant_policy:org_a_lab",
+            source_type=EvidenceSourceType.DATA_DICTIONARY,
+            title="Tenant Lab Policy",
+            content="HbA1c tenant policy unit evidence.",
+            metadata={
+                "corpus_partition_id": "tenant_policies",
+                "corpus_partition_label": "Tenant Policies",
+                "corpus_partition_purpose": "tenant_policy",
+                "corpus_visibility": "organization",
+                "organization_id": "org_a",
+                "external_provider_allowed": False,
+            },
+        ),
+        KnowledgeChunk(
+            chunk_id="chunk_private",
+            source_id="private_document:org_a_lab",
+            source_type=EvidenceSourceType.INPUT_DATA,
+            title="Private Lab Upload",
+            content="HbA1c private document unit evidence.",
+            metadata={
+                "corpus_partition_id": "private_documents",
+                "corpus_partition_label": "Private Documents",
+                "corpus_partition_purpose": "private_document",
+                "corpus_visibility": "private",
+                "organization_id": "org_a",
+                "external_provider_allowed": False,
+                "phi_allowed": True,
+            },
+        ),
+    ]
+
+    public_package = repository.search(RetrievalQuery(query="HbA1c unit evidence", top_k=10))
+    public_sources = {item.source_id for item in public_package.evidence}
+    assert public_sources == {"schema:global_lab"}
+    assert {item.source_id for item in repository.list_sources()} == {"schema:global_lab"}
+
+    org_package = repository.search(
+        RetrievalQuery(
+            query="HbA1c unit evidence",
+            top_k=10,
+            filters={"organization_id": "org_a"},
+        )
+    )
+    org_sources = {item.source_id for item in org_package.evidence}
+    assert org_sources == {
+        "schema:global_lab",
+        "tenant_policy:org_a_lab",
+        "private_document:org_a_lab",
+    }
+    assert {item.source_id for item in repository.list_sources(organization_id="org_a")} == {
+        "schema:global_lab",
+        "tenant_policy:org_a_lab",
+        "private_document:org_a_lab",
+    }
+    assert {item.source_id for item in repository.list_sources(organization_id="org_b")} == {
+        "schema:global_lab"
+    }
+
+    tenant_only_package = repository.search(
+        RetrievalQuery(
+            query="HbA1c unit evidence",
+            top_k=10,
+            filters={"organization_id": "org_a", "corpus_partition": "tenant_policies"},
+        )
+    )
+    assert {item.source_id for item in tenant_only_package.evidence} == {
+        "tenant_policy:org_a_lab"
+    }
+
+    wrong_org_package = repository.search(
+        RetrievalQuery(
+            query="HbA1c unit evidence",
+            top_k=10,
+            filters={"organization_id": "org_b", "corpus_partition": "tenant_policies"},
+        )
+    )
+    assert wrong_org_package.evidence == []
 
 
 def test_retrieval_eval_fixture_passes_static_repository() -> None:

@@ -14,6 +14,18 @@ export function SourceMetadataBadges({ source }: { source: RetrievalSource }) {
         <Badge variant="muted">{source.standard_system}</Badge>
       ) : null}
       <Badge variant="muted">{formatSourceCount(source.chunk_count, "chunk")}</Badge>
+      {source.corpus_partition_label || source.corpus_partition_id ? (
+        <Badge variant="muted">
+          {source.corpus_partition_label ?? humanize(source.corpus_partition_id ?? "")}
+        </Badge>
+      ) : null}
+      {source.corpus_visibility ? (
+        <Badge variant="muted">{humanize(source.corpus_visibility)}</Badge>
+      ) : null}
+      {source.external_provider_allowed === false ? (
+        <Badge variant="warning">No external provider</Badge>
+      ) : null}
+      {source.phi_allowed ? <Badge variant="destructive">PHI allowed</Badge> : null}
     </span>
   );
 }

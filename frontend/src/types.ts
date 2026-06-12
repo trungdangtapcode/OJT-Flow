@@ -1194,6 +1194,9 @@ export type RetrievalSearchFilters = {
   standard_system?: string | null;
   source_type?: string | null;
   source_id?: string | null;
+  corpus_partition?: string | null;
+  corpus_visibility?: "global" | "organization" | "private" | null;
+  organization_id?: string | null;
   diversity_enabled?: boolean | null;
   diversity_lambda?: number | null;
 };
@@ -1218,6 +1221,46 @@ export type RetrievalSource = {
   canonical_source_id?: string | null;
   chunk_profile?: string | null;
   resource_type?: string | null;
+  corpus_partition_id?: string | null;
+  corpus_partition_label?: string | null;
+  corpus_partition_purpose?: string | null;
+  corpus_visibility?: string | null;
+  organization_id?: string | null;
+  external_provider_allowed?: boolean | null;
+  phi_allowed?: boolean | null;
+  retention_policy_id?: string | null;
+};
+
+export type CorpusPartitionPurpose =
+  | "global_standard"
+  | "tenant_policy"
+  | "private_document"
+  | "shared_reference";
+
+export type CorpusPartitionVisibility = "global" | "organization" | "private";
+
+export type CorpusPartitionPolicy = {
+  partition_id: string;
+  label: string;
+  purpose: CorpusPartitionPurpose;
+  visibility: CorpusPartitionVisibility;
+  description: string;
+  source_id_prefixes: string[];
+  local_path_prefixes: string[];
+  allowed_source_types: string[];
+  default_for_uncataloged: boolean;
+  required_permission_scopes: string[];
+  external_provider_allowed: boolean;
+  phi_allowed: boolean;
+  requires_reviewer_approval: boolean;
+  retention_policy_id?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type CorpusPartitionCatalog = {
+  version: string;
+  default_partition_id: string;
+  partitions: CorpusPartitionPolicy[];
 };
 
 export type RetrievalIntegrityItem = {

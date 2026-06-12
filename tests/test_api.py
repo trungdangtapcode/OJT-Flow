@@ -15,6 +15,12 @@ from ojtflow.core.contracts.auth import (
 )
 from ojtflow.core.contracts.data import TransformationOutput
 from ojtflow.core.contracts.enums import DataFormat, ReviewDecision
+from ojtflow.core.contracts.governance import (
+    OrganizationMembershipRecord,
+    OrganizationRecord,
+    WorkspaceDetail,
+    WorkspaceSettingsRecord,
+)
 from ojtflow.core.contracts.retrieval import (
     RetrievalIntegrityItem,
     RetrievalIntegrityReport,
@@ -37,6 +43,8 @@ from ojtflow.interfaces.api.deps import (
     require_authentication,
 )
 from ojtflow.interfaces.api.routes import runtime as runtime_routes
+from ojtflow.interfaces.api.routes.retrieval import _retrieval_query_from_request
+from ojtflow.interfaces.api.schemas import RetrievalSearchRequest
 from ojtflow.infrastructure.storage.consistency import (
     build_storage_repair_plan,
     write_storage_repair_marker,
@@ -77,6 +85,42 @@ def _authenticated_session(
 
 async def _authenticated_dependency() -> AuthenticatedSession:
     return _authenticated_session()
+
+
+def test_retrieval_api_request_overrides_caller_organization_filter() -> None:
+    timestamp = "2026-06-12T00:00:00+00:00"
+    workspace = WorkspaceDetail(
+        organization=OrganizationRecord(
+            organization_id="org_a",
+            slug="org-a",
+            display_name="Org A",
+            created_by_user_id="usr_api_test",
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+        membership=OrganizationMembershipRecord(
+            membership_id="mem_a",
+            organization_id="org_a",
+            user_id="usr_api_test",
+            role_key="operator",
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+        settings=WorkspaceSettingsRecord(
+            organization_id="org_a",
+            settings={},
+            updated_at=timestamp,
+        ),
+    )
+    request = RetrievalSearchRequest(
+        query="HbA1c unit evidence",
+        filters={"organization_id": "org_b", "corpus_partition": "tenant_policies"},
+    )
+
+    query = _retrieval_query_from_request(request, workspace=workspace)
+
+    assert query.filters["organization_id"] == "org_a"
+    assert query.filters["corpus_partition"] == "tenant_policies"
 
 
 class FakeAuthService:
@@ -264,6 +308,7 @@ def test_openapi_exposes_core_request_examples() -> None:
         ("/api/v1/retrieval/search-options", "get", "RetrievalSearchOptionsEnvelope"),
         ("/api/v1/retrieval/source-policies", "get", "RetrievalSourcePoliciesEnvelope"),
         ("/api/v1/retrieval/corpus/adapters", "get", "RetrievalCorpusAdaptersEnvelope"),
+        ("/api/v1/retrieval/corpus/partitions", "get", "RetrievalCorpusPartitionsEnvelope"),
         ("/api/v1/retrieval/corpus/manifest", "get", "RetrievalCorpusManifestEnvelope"),
         (
             "/api/v1/retrieval/corpus/chunking-profiles",
@@ -1987,6 +2032,7 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
         retrieval_search_options = await client.get("/api/v1/retrieval/search-options")
         retrieval_source_policies = await client.get("/api/v1/retrieval/source-policies")
         retrieval_corpus_adapters = await client.get("/api/v1/retrieval/corpus/adapters")
+        retrieval_corpus_partitions = await client.get("/api/v1/retrieval/corpus/partitions")
         retrieval_corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
         retrieval_corpus_ledger = await client.get("/api/v1/retrieval/corpus/ledger")
         retrieval_corpus_chunking_profiles = await client.get(
@@ -2090,6 +2136,8 @@ async def test_api_routes_require_session_envelope(monkeypatch) -> None:
     _assert_error_envelope(retrieval_source_policies, expected_code="unauthorized")
     assert retrieval_corpus_adapters.status_code == 401
     _assert_error_envelope(retrieval_corpus_adapters, expected_code="unauthorized")
+    assert retrieval_corpus_partitions.status_code == 401
+    _assert_error_envelope(retrieval_corpus_partitions, expected_code="unauthorized")
     assert retrieval_corpus_manifest.status_code == 401
     _assert_error_envelope(retrieval_corpus_manifest, expected_code="unauthorized")
     assert retrieval_corpus_ledger.status_code == 401
@@ -4687,9 +4735,7 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
         assert retrieval.status_code == 200
         retrieval_data = retrieval.json()["data"]
         assert retrieval_data["trace"]["strategy"] == "static_hybrid_rrf"
-        assert retrieval_data["trace"]["safety_flags"] == [
-            "sensitive_field_context"
-        ]
+        assert "sensitive_field_context" in retrieval_data["trace"]["safety_flags"]
         assert retrieval_data["evidence"]
         assert retrieval_data["recommended_actions"]
         assert retrieval_data["recommended_action_summary"]["count"] == len(
@@ -4789,6 +4835,17 @@ async def test_api_direct_convert_validate_fhir_ocr_and_error(monkeypatch) -> No
             and adapter["source_urls"]["primary"].endswith("/patient.html")
             for adapter in adapter_data["adapters"]
         )
+
+        corpus_partitions = await client.get("/api/v1/retrieval/corpus/partitions")
+        assert corpus_partitions.status_code == 200
+        partition_data = corpus_partitions.json()["data"]
+        partitions = {item["partition_id"]: item for item in partition_data["partitions"]}
+        assert partition_data["version"] == "corpus_partitions.v1"
+        assert partition_data["default_partition_id"] == "global_standards"
+        assert partitions["global_standards"]["visibility"] == "global"
+        assert partitions["tenant_policies"]["visibility"] == "organization"
+        assert partitions["private_documents"]["phi_allowed"] is True
+        assert partitions["private_documents"]["external_provider_allowed"] is False
 
         corpus_manifest = await client.get("/api/v1/retrieval/corpus/manifest")
         assert corpus_manifest.status_code == 200

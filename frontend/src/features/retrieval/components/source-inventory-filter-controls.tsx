@@ -52,6 +52,20 @@ export function SourceInventoryFilterControls({
         onSelect={(standard) => updateFilters({ ...filters, standard })}
         values={options.standards}
       />
+      <SourceFilterChipGroup
+        activeValue={filters.partition}
+        formatter={humanize}
+        label="Corpus partition"
+        onSelect={(partition) => updateFilters({ ...filters, partition })}
+        values={options.partitions}
+      />
+      <SourceFilterChipGroup
+        activeValue={filters.visibility}
+        formatter={humanize}
+        label="Visibility"
+        onSelect={(visibility) => updateFilters({ ...filters, visibility })}
+        values={options.visibilities}
+      />
     </div>
   );
 }

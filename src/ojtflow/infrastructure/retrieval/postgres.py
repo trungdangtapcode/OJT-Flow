@@ -253,7 +253,24 @@ class PostgresRetrievalRepository:
             knowledge_root=self.knowledge_root,
         )
 
-    def list_sources(self) -> list[RetrievalSource]:
+    def list_sources(self, organization_id: str | None = None) -> list[RetrievalSource]:
+        visibility_clause = """
+                    where (
+                        coalesce(
+                            document.metadata #>> '{metadata,corpus_visibility}',
+                            document.metadata->>'corpus_visibility',
+                            'global'
+                        ) = 'global'
+                        or (
+                            %s <> ''
+                            and coalesce(
+                                document.metadata #>> '{metadata,organization_id}',
+                                document.metadata->>'organization_id'
+                            ) = %s
+                        )
+                    )
+        """
+        params = [str(organization_id or ""), str(organization_id or "")]
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -271,6 +288,9 @@ class PostgresRetrievalRepository:
                     from ojtflow.knowledge_documents document
                     left join ojtflow.knowledge_chunks chunk
                         on chunk.source_id = document.source_id
+                    """
+                    + visibility_clause
+                    + """
                     group by
                         document.source_id,
                         document.source_type,
@@ -281,7 +301,8 @@ class PostgresRetrievalRepository:
                         document.standard_system,
                         document.metadata
                     order by document.source_id
-                    """
+                    """,
+                    params,
                 )
                 rows = cursor.fetchall()
         sources: list[RetrievalSource] = []
@@ -308,6 +329,16 @@ class PostgresRetrievalRepository:
                     canonical_source_id=source_metadata.get("canonical_source_id"),
                     chunk_profile=source_metadata.get("chunk_profile"),
                     resource_type=source_metadata.get("resource_type"),
+                    corpus_partition_id=source_metadata.get("corpus_partition_id"),
+                    corpus_partition_label=source_metadata.get("corpus_partition_label"),
+                    corpus_partition_purpose=source_metadata.get("corpus_partition_purpose"),
+                    corpus_visibility=source_metadata.get("corpus_visibility"),
+                    organization_id=source_metadata.get("organization_id"),
+                    external_provider_allowed=_metadata_bool_or_none(
+                        source_metadata.get("external_provider_allowed")
+                    ),
+                    phi_allowed=_metadata_bool_or_none(source_metadata.get("phi_allowed")),
+                    retention_policy_id=source_metadata.get("retention_policy_id"),
                 )
             )
         return sources
@@ -460,15 +491,25 @@ class PostgresRetrievalRepository:
 
 
 def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
-    clauses: list[str] = []
-    params: list[Any] = []
+    clauses: list[str] = [
+        "(coalesce(metadata->>'corpus_visibility', 'global') = 'global' "
+        "or (%s <> '' and metadata->>'organization_id' = %s))"
+    ]
+    organization_id = str(filters.get("organization_id") or "")
+    params: list[Any] = [organization_id, organization_id]
     for key in ("trust_level", "clinical_domain", "standard_system", "source_type", "source_id"):
         value = filters.get(key)
         if value:
             clauses.append(f"{key} = %s")
             params.append(value)
-    if not clauses:
-        return "", params
+    corpus_partition = filters.get("corpus_partition")
+    if corpus_partition:
+        clauses.append("coalesce(metadata->>'corpus_partition_id', 'global_standards') = %s")
+        params.append(corpus_partition)
+    corpus_visibility = filters.get("corpus_visibility")
+    if corpus_visibility:
+        clauses.append("coalesce(metadata->>'corpus_visibility', 'global') = %s")
+        params.append(corpus_visibility)
     return "where " + " and ".join(clauses), params
 
 
@@ -693,9 +734,23 @@ def _source_metadata_from_document_metadata(value: Any) -> dict[str, Any]:
             "canonical_source_id",
             "chunk_profile",
             "resource_type",
+            "corpus_partition_id",
+            "corpus_partition_label",
+            "corpus_partition_purpose",
+            "corpus_visibility",
+            "organization_id",
+            "external_provider_allowed",
+            "phi_allowed",
+            "retention_policy_id",
         )
         if metadata.get(key) is not None
     }
+
+
+def _metadata_bool_or_none(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
 
 
 def _checked_scope(*, include_seeded: bool, include_corpus: bool) -> str:

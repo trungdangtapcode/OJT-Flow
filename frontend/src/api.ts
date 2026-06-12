@@ -23,6 +23,7 @@ import type {
   BackgroundJob,
   CorpusAdapterCatalog,
   CorpusChunkingProfileCatalog,
+  CorpusPartitionCatalog,
   CorpusIngestionManifest,
   DisclaimerPolicy,
   ExtractedDocument,
@@ -541,6 +542,10 @@ export function getRetrievalSourcePolicies(): Promise<RetrievalSourceTrustPolicy
 
 export function getRetrievalCorpusAdapters(): Promise<CorpusAdapterCatalog> {
   return request<CorpusAdapterCatalog>("/retrieval/corpus/adapters");
+}
+
+export function getRetrievalCorpusPartitions(): Promise<CorpusPartitionCatalog> {
+  return request<CorpusPartitionCatalog>("/retrieval/corpus/partitions");
 }
 
 export function getRetrievalCorpusManifest(): Promise<CorpusIngestionManifest> {

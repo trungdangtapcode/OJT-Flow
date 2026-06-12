@@ -1704,8 +1704,12 @@ report containing server metrics, local in-session metrics, stored-label
 summary, recommendations, relevant evidence IDs, active query-profile context,
 and active retrieval rule-pack fingerprints for offline relevance tuning notes.
 The trusted source inventory should be searchable and filterable by
-data-derived source type, clinical domain, and standard system so large corpora
-remain inspectable.
+data-derived source type, clinical domain, standard system, corpus partition,
+and visibility so large corpora remain inspectable across global standards,
+tenant policies, and private documents. Source rows should render partition,
+visibility, PHI allowance, external-provider allowance, and retention policy
+from backend source metadata; React must not infer tenant policy from source ID
+strings.
 The source inventory panel must also show source readiness before filters and
 source rows: visible/total source count, indexed chunk count, domain coverage,
 standard coverage, source-type coverage, empty-source warnings, and whether the

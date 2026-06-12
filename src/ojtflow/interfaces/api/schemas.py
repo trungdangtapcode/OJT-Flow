@@ -495,6 +495,9 @@ class RetrievalSearchFilters(ContractModel):
     standard_system: NonBlankStr | None = None
     source_type: EvidenceSourceType | None = None
     source_id: NonBlankStr | None = None
+    corpus_partition: NonBlankStr | None = None
+    corpus_visibility: Literal["global", "organization", "private"] | None = None
+    organization_id: NonBlankStr | None = None
     diversity_enabled: bool | None = None
     diversity_lambda: float | None = Field(default=None, ge=0.0, le=1.0)
 
@@ -507,6 +510,8 @@ class RetrievalSearchFilters(ContractModel):
                     "standard_system": "UCUM",
                     "source_type": "terminology_system",
                     "source_id": "terminology:ucum",
+                    "corpus_partition": "global_standards",
+                    "corpus_visibility": "global",
                     "diversity_enabled": True,
                     "diversity_lambda": 0.72,
                 }

@@ -3707,6 +3707,16 @@ def sources_from_chunks(chunks: list[KnowledgeChunk]) -> list[RetrievalSource]:
                 canonical_source_id=source_metadata.get("canonical_source_id"),
                 chunk_profile=source_metadata.get("chunk_profile"),
                 resource_type=source_metadata.get("resource_type"),
+                corpus_partition_id=source_metadata.get("corpus_partition_id"),
+                corpus_partition_label=source_metadata.get("corpus_partition_label"),
+                corpus_partition_purpose=source_metadata.get("corpus_partition_purpose"),
+                corpus_visibility=source_metadata.get("corpus_visibility"),
+                organization_id=source_metadata.get("organization_id"),
+                external_provider_allowed=_metadata_bool_or_none(
+                    source_metadata.get("external_provider_allowed")
+                ),
+                phi_allowed=_metadata_bool_or_none(source_metadata.get("phi_allowed")),
+                retention_policy_id=source_metadata.get("retention_policy_id"),
             )
         )
     return sources
@@ -3727,9 +3737,23 @@ def _source_inventory_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
             "canonical_source_id",
             "chunk_profile",
             "resource_type",
+            "corpus_partition_id",
+            "corpus_partition_label",
+            "corpus_partition_purpose",
+            "corpus_visibility",
+            "organization_id",
+            "external_provider_allowed",
+            "phi_allowed",
+            "retention_policy_id",
         )
         if metadata.get(key) is not None
     }
+
+
+def _metadata_bool_or_none(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
 
 
 def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
@@ -4186,7 +4210,7 @@ def default_healthcare_chunks(knowledge_root: Path) -> list[KnowledgeChunk]:
                 locator={"path": str(path.relative_to(knowledge_root.parent))},
             )
         )
-    return chunks
+    return [_with_global_partition_metadata(chunk) for chunk in chunks]
 
 
 def chunk_metadata_json(chunk: KnowledgeChunk) -> str:
@@ -4200,6 +4224,31 @@ def chunk_metadata_json(chunk: KnowledgeChunk) -> str:
             "standard_system": chunk.standard_system,
         },
         sort_keys=True,
+    )
+
+
+def _with_global_partition_metadata(chunk: KnowledgeChunk) -> KnowledgeChunk:
+    return KnowledgeChunk(
+        chunk_id=chunk.chunk_id,
+        source_id=chunk.source_id,
+        source_type=chunk.source_type,
+        title=chunk.title,
+        content=chunk.content,
+        source_version=chunk.source_version,
+        trust_level=chunk.trust_level,
+        clinical_domain=chunk.clinical_domain,
+        standard_system=chunk.standard_system,
+        locator=chunk.locator,
+        metadata={
+            "corpus_partition_id": "global_standards",
+            "corpus_partition_label": "Global Standards",
+            "corpus_partition_purpose": "global_standard",
+            "corpus_visibility": "global",
+            "external_provider_allowed": True,
+            "phi_allowed": False,
+            "requires_reviewer_approval": False,
+            **chunk.metadata,
+        },
     )
 
 

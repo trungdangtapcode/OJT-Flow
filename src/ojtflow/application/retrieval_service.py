@@ -73,10 +73,10 @@ class RetrievalService:
             }
         )
 
-    def list_sources(self) -> list[RetrievalSource]:
+    def list_sources(self, organization_id: str | None = None) -> list[RetrievalSource]:
         """List configured retrieval sources."""
 
-        return self.repository.list_sources()
+        return self.repository.list_sources(organization_id=organization_id)
 
     def reindex(self, *, include_seeded: bool = True, include_corpus: bool = True) -> dict:
         """Refresh retrieval index from configured trusted sources."""

@@ -1,8 +1,10 @@
 export type SourceInventoryFilters = {
   domain: string | null;
+  partition: string | null;
   search: string;
   standard: string | null;
   type: string | null;
+  visibility: string | null;
 };
 
 export type SourceInventoryReadiness = {
@@ -18,6 +20,8 @@ export type SourceInventoryReadiness = {
 
 export type SourceInventoryFilterOptions = {
   domains: string[];
+  partitions: string[];
   standards: string[];
   types: string[];
+  visibilities: string[];
 };

@@ -25,11 +25,13 @@ from ojtflow.core.contracts.graph import (
     GraphNeighborhood,
     GraphNeighborhoodQuery,
 )
+from ojtflow.core.contracts.governance import WorkspaceDetail
 from ojtflow.core.contracts.retrieval import (
     CorpusAdapterCatalog,
     CorpusChunkingProfileCatalog,
     CorpusIngestionLedger,
     CorpusIngestionManifest,
+    CorpusPartitionCatalog,
     EmbeddingReindexSafetyReport,
     RetrievalActiveLearningCandidate,
     RetrievalActiveLearningCandidateUpdate,
@@ -56,6 +58,7 @@ from ojtflow.core.contracts.retrieval import (
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
     load_corpus_chunking_profile_catalog,
+    load_corpus_partition_catalog,
     load_retrieval_strategy_catalog,
     load_source_trust_policy_catalog,
 )
@@ -117,6 +120,11 @@ class RetrievalSourcePoliciesEnvelope(ContractModel):
 
 class RetrievalCorpusAdaptersEnvelope(ContractModel):
     data: CorpusAdapterCatalog
+    error: None = None
+
+
+class RetrievalCorpusPartitionsEnvelope(ContractModel):
+    data: CorpusPartitionCatalog
     error: None = None
 
 
@@ -249,10 +257,13 @@ async def plan_retrieval(
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="retrieval:read",
+    )
     enforce_inline_json_limit(request, settings, field_name="retrieval_plan_request")
     plan = service.plan_retrieval(
-        _retrieval_query_from_request(request),
+        _retrieval_query_from_request(request, workspace=workspace),
         owner_user_id=authenticated.user.user_id,
     )
     return ok(plan)
@@ -267,10 +278,13 @@ async def search_retrieval(
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="retrieval:read",
+    )
     enforce_inline_json_limit(request, settings, field_name="retrieval_request")
     package = service.search_retrieval(
-        _retrieval_query_from_request(request),
+        _retrieval_query_from_request(request, workspace=workspace),
         owner_user_id=authenticated.user.user_id,
         request_id=getattr(http_request.state, "request_id", None),
     )
@@ -353,7 +367,11 @@ async def get_retrieval_graph_neighborhood(
     )
 
 
-def _retrieval_query_from_request(request: RetrievalSearchRequest) -> RetrievalQuery:
+def _retrieval_query_from_request(
+    request: RetrievalSearchRequest,
+    *,
+    workspace: WorkspaceDetail | None = None,
+) -> RetrievalQuery:
     filters = {
         **request.filters.model_dump(exclude_none=True, mode="json"),
         **{
@@ -368,6 +386,8 @@ def _retrieval_query_from_request(request: RetrievalSearchRequest) -> RetrievalQ
         },
     }
     filters = {key: _filter_value(value) for key, value in filters.items()}
+    if workspace is not None:
+        filters["organization_id"] = workspace.organization.organization_id
     return RetrievalQuery(
         query=request.query,
         workflow_id=request.workflow_id,
@@ -418,6 +438,16 @@ async def get_retrieval_corpus_adapters(
 ) -> dict:
     governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
     return ok(load_corpus_adapter_catalog(settings.resolved_knowledge_dir))
+
+
+@router.get("/retrieval/corpus/partitions", response_model=RetrievalCorpusPartitionsEnvelope)
+async def get_retrieval_corpus_partitions(
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    settings: Settings = Depends(get_api_settings),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
+    return ok(load_corpus_partition_catalog(settings.resolved_knowledge_dir))
 
 
 @router.get("/retrieval/corpus/manifest", response_model=RetrievalCorpusManifestEnvelope)
@@ -698,8 +728,11 @@ async def list_retrieval_sources(
     governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> dict:
-    governance.require_permission(user=authenticated.user, permission_scope="retrieval:read")
-    return ok(service.list_retrieval_sources())
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="retrieval:read",
+    )
+    return ok(_list_retrieval_sources_for_workspace(service, workspace))
 
 
 @router.post("/retrieval/reindex", response_model=RetrievalReindexEnvelope)
@@ -779,11 +812,14 @@ async def retrieval_freshness(
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    governance.require_permission(user=authenticated.user, permission_scope="admin:read")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="admin:read",
+    )
     return ok(
         build_retrieval_freshness_report(
             settings.resolved_knowledge_dir,
-            indexed_sources=service.list_retrieval_sources(),
+            indexed_sources=_list_retrieval_sources_for_workspace(service, workspace),
         )
     )
 
@@ -792,6 +828,22 @@ def _filter_value(value: Any) -> Any:
     if hasattr(value, "value"):
         return value.value
     return value
+
+
+def _workspace_organization_id(workspace: WorkspaceDetail | None) -> str | None:
+    if workspace is None:
+        return None
+    return workspace.organization.organization_id
+
+
+def _list_retrieval_sources_for_workspace(
+    service: WorkflowService,
+    workspace: WorkspaceDetail | None,
+) -> list[RetrievalSource]:
+    organization_id = _workspace_organization_id(workspace)
+    if organization_id:
+        return service.list_retrieval_sources(organization_id=organization_id)
+    return service.list_retrieval_sources()
 
 
 def _optional_query_value(value: str | None) -> str | None:

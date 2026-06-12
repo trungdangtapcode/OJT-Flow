@@ -7,14 +7,21 @@ import { uniqueSourceInventoryValues } from "./retrieval-source-inventory-values
 
 export const emptySourceInventoryFilters: SourceInventoryFilters = {
   domain: null,
+  partition: null,
   search: "",
   standard: null,
   type: null,
+  visibility: null,
 };
 
 export function hasSourceInventoryFilters(filters: SourceInventoryFilters): boolean {
   return Boolean(
-    filters.search.trim() || filters.type || filters.domain || filters.standard,
+    filters.search.trim() ||
+      filters.type ||
+      filters.domain ||
+      filters.standard ||
+      filters.partition ||
+      filters.visibility,
   );
 }
 
@@ -23,8 +30,14 @@ export function sourceInventoryFilterOptions(
 ): SourceInventoryFilterOptions {
   return {
     domains: uniqueSourceInventoryValues(sources.map((source) => source.clinical_domain)),
+    partitions: uniqueSourceInventoryValues(
+      sources.map((source) => source.corpus_partition_id),
+    ),
     standards: uniqueSourceInventoryValues(sources.map((source) => source.standard_system)),
     types: uniqueSourceInventoryValues(sources.map((source) => source.source_type)),
+    visibilities: uniqueSourceInventoryValues(
+      sources.map((source) => source.corpus_visibility),
+    ),
   };
 }
 
@@ -42,6 +55,8 @@ export function sourceMatchesInventoryFilters(
   if (filters.type && source.source_type !== filters.type) return false;
   if (filters.domain && source.clinical_domain !== filters.domain) return false;
   if (filters.standard && source.standard_system !== filters.standard) return false;
+  if (filters.partition && source.corpus_partition_id !== filters.partition) return false;
+  if (filters.visibility && source.corpus_visibility !== filters.visibility) return false;
 
   const normalizedSearch = filters.search.trim().toLowerCase();
   if (!normalizedSearch) return true;
@@ -53,5 +68,10 @@ export function sourceMatchesInventoryFilters(
     source.standard_system,
     source.source_version,
     source.trust_level,
+    source.corpus_partition_id,
+    source.corpus_partition_label,
+    source.corpus_partition_purpose,
+    source.corpus_visibility,
+    source.retention_policy_id,
   ].some((value) => value?.toLowerCase().includes(normalizedSearch));
 }

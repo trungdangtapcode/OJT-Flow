@@ -1,0 +1,111 @@
+{
+  "version": "corpus_partitions.v1",
+  "default_partition_id": "global_standards",
+  "partitions": [
+    {
+      "partition_id": "global_standards",
+      "label": "Global Standards",
+      "purpose": "global_standard",
+      "visibility": "global",
+      "description": "Shared standards, terminology metadata, and project-curated public guidance available to all workspaces.",
+      "source_id_prefixes": [
+        "schema:",
+        "standard:",
+        "terminology:",
+        "dictionary:",
+        "catalog:"
+      ],
+      "local_path_prefixes": [
+        "knowledge/corpus/",
+        "knowledge/schemas/",
+        "knowledge/source_catalog/"
+      ],
+      "allowed_source_types": [
+        "schema",
+        "healthcare_standard",
+        "terminology_system",
+        "data_dictionary"
+      ],
+      "default_for_uncataloged": true,
+      "required_permission_scopes": [
+        "retrieval:read"
+      ],
+      "external_provider_allowed": true,
+      "phi_allowed": false,
+      "requires_reviewer_approval": false,
+      "retention_policy_id": "standards_snapshot_retained_until_replaced",
+      "metadata": {
+        "roadmap_refs": ["F186"],
+        "search_default": true
+      }
+    },
+    {
+      "partition_id": "tenant_policies",
+      "label": "Tenant Policies",
+      "purpose": "tenant_policy",
+      "visibility": "organization",
+      "description": "Organization-controlled policies, local data dictionaries, and customer implementation guidance scoped to one tenant workspace.",
+      "source_id_prefixes": [
+        "tenant_policy:",
+        "tenant_dictionary:",
+        "tenant_standard:"
+      ],
+      "local_path_prefixes": [
+        "var/tenants/",
+        "knowledge/tenants/"
+      ],
+      "allowed_source_types": [
+        "data_dictionary",
+        "healthcare_standard",
+        "schema"
+      ],
+      "required_permission_scopes": [
+        "retrieval:read",
+        "governance:read"
+      ],
+      "external_provider_allowed": false,
+      "phi_allowed": false,
+      "requires_reviewer_approval": true,
+      "retention_policy_id": "tenant_policy_workspace_controlled",
+      "metadata": {
+        "requires_organization_id": true,
+        "roadmap_refs": ["F186", "F187"]
+      }
+    },
+    {
+      "partition_id": "private_documents",
+      "label": "Private Documents",
+      "purpose": "private_document",
+      "visibility": "private",
+      "description": "User or workspace uploaded private files. These are excluded from external providers by default and require PHI-safe ingestion before indexing.",
+      "source_id_prefixes": [
+        "private_document:",
+        "artifact:",
+        "upload:"
+      ],
+      "local_path_prefixes": [
+        "var/uploads/",
+        "var/private-corpus/"
+      ],
+      "allowed_source_types": [
+        "input_data",
+        "data_dictionary",
+        "ocr_box",
+        "dicom_metadata"
+      ],
+      "required_permission_scopes": [
+        "retrieval:read",
+        "artifact:read"
+      ],
+      "external_provider_allowed": false,
+      "phi_allowed": true,
+      "requires_reviewer_approval": true,
+      "retention_policy_id": "private_artifact_retention_policy",
+      "metadata": {
+        "requires_redaction_preview": true,
+        "requires_external_provider_block": true,
+        "roadmap_refs": ["F186", "F187"]
+      }
+    }
+  ]
+}

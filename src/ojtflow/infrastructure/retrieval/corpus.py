@@ -19,11 +19,17 @@ from ojtflow.core.contracts.retrieval import (
     CorpusIngestionItem,
     CorpusIngestionManifest,
     CorpusLicenseMetadata,
+    CorpusPartitionCatalog,
     CorpusSourceAdapter,
 )
 from ojtflow.infrastructure.retrieval.catalogs import (
     load_corpus_adapter_catalog,
     load_corpus_chunking_profile_catalog,
+    load_corpus_partition_catalog,
+)
+from ojtflow.infrastructure.retrieval.corpus_partitions import (
+    partition_metadata,
+    resolve_corpus_partition,
 )
 from ojtflow.infrastructure.retrieval.engine import KnowledgeChunk
 
@@ -74,6 +80,7 @@ def build_corpus_ingestion_manifest(
     """Build a governed manifest for local corpus files available to ingestion."""
 
     catalog = load_corpus_adapter_catalog(knowledge_root)
+    partition_catalog = load_corpus_partition_catalog(knowledge_root)
     adapters_by_path = _adapters_by_local_path(catalog, knowledge_root=knowledge_root)
     generated_at_value = _isoformat(generated_at or datetime.now(UTC))
     items: list[CorpusIngestionItem] = []
@@ -88,6 +95,7 @@ def build_corpus_ingestion_manifest(
                 knowledge_root=knowledge_root,
                 adapter=adapter,
                 adapter_catalog_version=catalog.version,
+                partition_catalog=partition_catalog,
             )
         )
     return CorpusIngestionManifest(
@@ -325,6 +333,7 @@ def _manifest_item_for_file(
     knowledge_root: Path,
     adapter: CorpusSourceAdapter | None,
     adapter_catalog_version: str,
+    partition_catalog: CorpusPartitionCatalog,
 ) -> CorpusIngestionItem:
     relative = _display_path(path, knowledge_root)
     stat = path.stat()
@@ -342,6 +351,21 @@ def _manifest_item_for_file(
         warnings.append("uncataloged_local_corpus_file")
     elif not adapter.enabled:
         warnings.append("adapter_disabled")
+    partition = resolve_corpus_partition(
+        partition_catalog,
+        source_id=adapter.source_id if adapter else source_id,
+        source_type=adapter.source_type if adapter else _source_type_for(path, text),
+        local_path=relative,
+        metadata=adapter.metadata if adapter else None,
+    )
+    resolved_partition_metadata = partition_metadata(
+        partition,
+        organization_id=(
+            str(adapter.metadata.get("organization_id"))
+            if adapter and adapter.metadata.get("organization_id")
+            else None
+        ),
+    )
     return CorpusIngestionItem(
         item_id=f"corpus_item:{_stable_slug(relative)}",
         source_id=source_id,
@@ -377,6 +401,7 @@ def _manifest_item_for_file(
             "resource_type": adapter.metadata.get("resource_type") if adapter else None,
             "origin": "local_corpus",
             "extension": path.suffix.lower(),
+            **resolved_partition_metadata,
         },
     )
 
@@ -393,6 +418,18 @@ def _metadata_from_manifest_item(item: CorpusIngestionItem) -> dict:
         "chunk_profile": item.metadata.get("chunk_profile"),
         "parser": item.metadata.get("parser"),
         "resource_type": item.metadata.get("resource_type"),
+        "corpus_partition_id": item.metadata.get("corpus_partition_id"),
+        "corpus_partition_label": item.metadata.get("corpus_partition_label"),
+        "corpus_partition_purpose": item.metadata.get("corpus_partition_purpose"),
+        "corpus_visibility": item.metadata.get("corpus_visibility"),
+        "corpus_required_permission_scopes": item.metadata.get(
+            "corpus_required_permission_scopes"
+        ),
+        "organization_id": item.metadata.get("organization_id"),
+        "external_provider_allowed": item.metadata.get("external_provider_allowed"),
+        "phi_allowed": item.metadata.get("phi_allowed"),
+        "requires_reviewer_approval": item.metadata.get("requires_reviewer_approval"),
+        "retention_policy_id": item.metadata.get("retention_policy_id"),
         "release_version": item.release_version,
         "fetched_at": item.fetched_at,
         "fetch_time_source": item.fetch_time_source,

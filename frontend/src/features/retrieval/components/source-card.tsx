@@ -37,7 +37,32 @@ export function SourceCard({
         <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
           {formatCount(source.chunk_count, "chunk")}
         </span>
+        {source.corpus_partition_label || source.corpus_partition_id ? (
+          <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
+            {source.corpus_partition_label ?? humanize(source.corpus_partition_id ?? "")}
+          </span>
+        ) : null}
+        {source.corpus_visibility ? (
+          <span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-muted-foreground">
+            {humanize(source.corpus_visibility)}
+          </span>
+        ) : null}
+        {source.external_provider_allowed === false ? (
+          <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">
+            No external provider
+          </span>
+        ) : null}
+        {source.phi_allowed ? (
+          <span className="rounded-full bg-rose-50 px-2 py-1 text-xs font-bold text-rose-800">
+            PHI allowed
+          </span>
+        ) : null}
       </div>
+      {source.retention_policy_id ? (
+        <div className="break-words text-xs text-muted-foreground">
+          Retention: {humanize(source.retention_policy_id)}
+        </div>
+      ) : null}
       <Button
         className="w-fit"
         onClick={() => onUseSource(source.source_id)}

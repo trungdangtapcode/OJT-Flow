@@ -3267,6 +3267,16 @@ GraphRAG/evidence exploration and audit, not clinical decision support.
 definitions, including adapter ID, source family, ingestion mode, license notes,
 and operational requirements.
 
+`GET /api/v1/retrieval/corpus/partitions` returns the tenant-aware searchable
+corpus partition policy. The catalog defines partition IDs, labels, purpose,
+visibility (`global`, `organization`, or `private`), source ID/path matching
+rules, required permission scopes, PHI allowance, external-provider allowance,
+review requirement, and retention policy. Retrieval search filters support
+`filters.corpus_partition`, `filters.corpus_visibility`, and
+`filters.organization_id`; authenticated API routes overwrite
+`filters.organization_id` with the caller's active workspace organization before
+executing search.
+
 `GET /api/v1/retrieval/corpus/manifest` returns the reviewed corpus source
 manifest used by ingestion and readiness checks.
 

@@ -668,6 +668,43 @@ class CorpusAdapterCatalog(ContractModel):
     adapters: list[CorpusSourceAdapter] = Field(default_factory=list)
 
 
+CorpusPartitionVisibility = Literal["global", "organization", "private"]
+CorpusPartitionPurpose = Literal[
+    "global_standard",
+    "tenant_policy",
+    "private_document",
+    "shared_reference",
+]
+
+
+class CorpusPartitionPolicy(ContractModel):
+    """Data-driven scope policy for one searchable corpus partition."""
+
+    partition_id: NonBlankStr
+    label: NonBlankStr
+    purpose: CorpusPartitionPurpose
+    visibility: CorpusPartitionVisibility
+    description: NonBlankStr
+    source_id_prefixes: list[NonBlankStr] = Field(default_factory=list)
+    local_path_prefixes: list[NonBlankStr] = Field(default_factory=list)
+    allowed_source_types: list[EvidenceSourceType] = Field(default_factory=list)
+    default_for_uncataloged: bool = False
+    required_permission_scopes: list[NonBlankStr] = Field(default_factory=list)
+    external_provider_allowed: bool = False
+    phi_allowed: bool = False
+    requires_reviewer_approval: bool = True
+    retention_policy_id: NonBlankStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CorpusPartitionCatalog(ContractModel):
+    """Versioned corpus partition registry for tenant-aware retrieval scope."""
+
+    version: NonBlankStr
+    default_partition_id: NonBlankStr
+    partitions: list[CorpusPartitionPolicy] = Field(default_factory=list)
+
+
 class CorpusChunkingProfile(ContractModel):
     """Data-driven chunking behavior for one family of corpus artifacts."""
 
@@ -1403,6 +1440,14 @@ class RetrievalSource(ContractModel):
     canonical_source_id: str | None = None
     chunk_profile: str | None = None
     resource_type: str | None = None
+    corpus_partition_id: str | None = None
+    corpus_partition_label: str | None = None
+    corpus_partition_purpose: str | None = None
+    corpus_visibility: str | None = None
+    organization_id: str | None = None
+    external_provider_allowed: bool | None = None
+    phi_allowed: bool | None = None
+    retention_policy_id: str | None = None
 
 
 class RetrievalIntegrityItem(ContractModel):

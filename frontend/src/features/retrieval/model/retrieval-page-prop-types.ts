@@ -1,6 +1,7 @@
 import type {
   useRetrievalActiveLearningCandidatesQuery,
   useRetrievalActiveLearningSummaryQuery,
+  useRetrievalCorpusPartitionsQuery,
   useRetrievalGraphContextsQuery,
   useRetrievalGraphNeighborhoodQuery,
   useRetrievalFreshnessQuery,
@@ -21,6 +22,7 @@ import type { useRetrievalPageWorkspace } from "../hooks/use-retrieval-page-work
 export type RetrievalPagePropsArgs = {
   activeLearningCandidatesQuery: ReturnType<typeof useRetrievalActiveLearningCandidatesQuery>;
   activeLearningSummaryQuery: ReturnType<typeof useRetrievalActiveLearningSummaryQuery>;
+  corpusPartitionsQuery: ReturnType<typeof useRetrievalCorpusPartitionsQuery>;
   graphContextsQuery: ReturnType<typeof useRetrievalGraphContextsQuery>;
   graphNeighborhoodQuery: RetrievalGraphNeighborhoodQuery | null;
   graphNeighborhoodResultQuery: ReturnType<typeof useRetrievalGraphNeighborhoodQuery>;

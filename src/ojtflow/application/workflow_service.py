@@ -1074,10 +1074,13 @@ class WorkflowService:
         self._load_requested_schema(query.schema_id, workflow_id=query.workflow_id)
         return self.retrieval_service.plan(query)
 
-    def list_retrieval_sources(self) -> list[RetrievalSource]:
+    def list_retrieval_sources(
+        self,
+        organization_id: str | None = None,
+    ) -> list[RetrievalSource]:
         """List available retrieval source inventory."""
 
-        return self.retrieval_service.list_sources()
+        return self.retrieval_service.list_sources(organization_id=organization_id)
 
     def list_graph_contexts(
         self,

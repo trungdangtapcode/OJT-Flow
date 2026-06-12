@@ -13,6 +13,7 @@ import { retrievalPageTraceProps } from "./retrieval-page-trace-props";
 import { retrievalRuntimeStatusStripView } from "./retrieval-summary-model";
 
 export function retrievalPageResultsColumnProps({
+  corpusPartitionsQuery,
   freshnessQuery,
   graphContextsQuery,
   graphNeighborhoodQuery,
@@ -70,7 +71,9 @@ export function retrievalPageResultsColumnProps({
     runtimeStatus: runtimeStatusView ? { view: runtimeStatusView } : null,
     searchResults: retrievalPageSearchResultsProps({ searchMutation, workspace }),
     sourceInventory: {
+      corpusPartitions: corpusPartitionsQuery.data ?? null,
       isLoading: sourcesQuery.isLoading,
+      isPartitionCatalogLoading: corpusPartitionsQuery.isLoading,
       onUseSource: searchActions.applySourceIdFilter,
       sources,
     },

@@ -3,6 +3,7 @@ import * as React from "react";
 import {
   useRetrievalActiveLearningCandidatesQuery,
   useRetrievalActiveLearningSummaryQuery,
+  useRetrievalCorpusPartitionsQuery,
   useRetrievalGraphContextsQuery,
   useRetrievalGraphNeighborhoodQuery,
   useRetrievalFreshnessQuery,
@@ -32,6 +33,7 @@ export function useRetrievalPageController(): {
   const presetsQuery = useRetrievalPresetsQuery();
   const searchOptionsQuery = useRetrievalSearchOptionsQuery();
   const sourcesQuery = useRetrievalSourcesQuery();
+  const corpusPartitionsQuery = useRetrievalCorpusPartitionsQuery();
   const schemasQuery = useSchemasQuery();
   const runtimeQuery = useRuntimeConfigQuery();
   const searchMutation = useRetrievalSearchMutation();
@@ -65,6 +67,7 @@ export function useRetrievalPageController(): {
   return retrievalPageProps({
     activeLearningCandidatesQuery,
     activeLearningSummaryQuery,
+    corpusPartitionsQuery,
     graphContextsQuery,
     graphNeighborhoodQuery,
     graphNeighborhoodResultQuery,
