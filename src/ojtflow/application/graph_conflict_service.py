@@ -1,4 +1,4 @@
-"""Deterministic conflict detection over Graph-NER retrieval handoffs."""
+"""Rule-based conflict detection over Graph-NER retrieval handoffs."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalPackage,
     RetrievalQuery,
 )
+from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.time import utc_now
 
 
@@ -63,7 +64,7 @@ class ContradictionRule:
 
 @dataclass(frozen=True)
 class GraphConflictPolicy:
-    """Loaded policy for deterministic graph conflict detection."""
+    """Loaded policy for rule-based graph conflict detection."""
 
     version: str
     contradiction_rules: tuple[ContradictionRule, ...]
@@ -142,10 +143,16 @@ def load_graph_conflict_policy(path_text: str) -> GraphConflictPolicy:
 
     path = Path(path_text)
     if not path.exists():
-        return _fallback_policy()
+        raise DependencyUnavailableError(
+            "Graph conflict policy is not configured.",
+            details={"code": "GRAPH_CONFLICT_POLICY_UNAVAILABLE", "path": str(path)},
+        )
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        return _fallback_policy()
+        raise DependencyUnavailableError(
+            "Graph conflict policy is invalid.",
+            details={"code": "GRAPH_CONFLICT_POLICY_INVALID", "path": str(path)},
+        )
     rules = raw.get("contradiction_rules")
     contradiction_rules = tuple(
         _contradiction_rule(item)
@@ -166,63 +173,6 @@ def active_graph_conflict_policy() -> GraphConflictPolicy:
 
     return load_graph_conflict_policy(
         os.environ.get(GRAPH_CONFLICT_RULES_ENV_VAR) or str(DEFAULT_GRAPH_CONFLICT_RULES)
-    )
-
-
-def _fallback_policy() -> GraphConflictPolicy:
-    return GraphConflictPolicy(
-        version="graph_conflict_rules.fallback",
-        contradiction_rules=(
-            ContradictionRule(
-                rule_id="required_vs_not_required",
-                label="Required versus not-required guidance",
-                severity="warning",
-                aspect_terms=("unit", "date", "patient_id", "code", "value"),
-                positive_patterns=("required", "requires", "must include"),
-                negative_patterns=("not required", "does not require", "optional"),
-                message_template=(
-                    "Retrieved evidence contains contradictory guidance about {aspect}."
-                ),
-                suggested_action=(
-                    "Route this evidence set to human review before applying guidance."
-                ),
-            ),
-        ),
-        deprecated_mapping={
-            "severity": "warning",
-            "source_version_markers": ["deprecated", "retired", "inactive"],
-            "lifecycle_states": ["deprecated", "blocked", "failed"],
-            "reviewer_states": ["deprecated", "blocked", "failed", "needs_review"],
-            "message_template": (
-                "Terminology or standard mapping evidence comes from a deprecated "
-                "or review-required source."
-            ),
-            "suggested_action": (
-                "Verify the mapping against the current official release before use."
-            ),
-        },
-        version_mismatch={
-            "severity": "warning",
-            "group_locator_keys": ["standard_system", "resource"],
-            "ignore_versions": ["", "unknown", "n/a"],
-            "message_template": (
-                "Retrieved standard guidance for {group_key} spans multiple source "
-                "versions: {versions}."
-            ),
-            "suggested_action": (
-                "Prefer the configured current source version or split the answer "
-                "by source version."
-            ),
-        },
-        unit_conflict={
-            "severity": "warning",
-            "message_template": (
-                "Retrieved evidence links {concept} to multiple unit candidates: {units}."
-            ),
-            "suggested_action": (
-                "Normalize units with an approved UCUM conversion path before comparison."
-            ),
-        },
     )
 
 

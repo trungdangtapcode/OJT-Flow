@@ -184,6 +184,7 @@ export function WorkflowDetail({
             isReviewActive={Boolean(activeReview)}
             onDecision={decideReview}
             review={review}
+            workflow={workflow}
           />
         </TabsContent>
         <TabsContent value="output">

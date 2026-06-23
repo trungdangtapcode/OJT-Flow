@@ -12,7 +12,7 @@ export function RunComparisonRankChanges({
 }) {
   if (!rankChanges.length) {
     return (
-      <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2">
+      <div className="grid gap-1 rounded-lg border border-border/60 bg-card px-3 py-2">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold text-muted-foreground">Rank movement</span>
           <Badge variant="success">stable</Badge>
@@ -40,7 +40,7 @@ export function RunComparisonRankChanges({
       <div className="grid gap-1">
         {rankChanges.slice(0, 4).map((change) => (
           <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
+            className="grid min-w-0 gap-1 rounded-lg border border-border/60 bg-card px-3 py-2 text-xs"
             key={change.evidenceId}
           >
             <span className="break-words font-bold">{change.evidenceId}</span>

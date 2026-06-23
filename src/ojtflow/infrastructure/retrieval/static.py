@@ -1,4 +1,4 @@
-"""Static retrieval adapters for tests and local fallback."""
+"""Static retrieval adapters for local non-production utilities."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQuery,
     RetrievalSource,
 )
+from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.corpus_partitions import (
     chunk_visible_for_organization,
@@ -26,7 +27,6 @@ from ojtflow.infrastructure.retrieval.corpus_partitions import (
     metadata_visibility,
 )
 from ojtflow.infrastructure.retrieval.engine import (
-    DeterministicEmbeddingProvider,
     KnowledgeChunk,
     default_healthcare_chunks,
     diversity_settings_from_query,
@@ -87,14 +87,14 @@ class StaticKnowledgeRepository:
     def search(self, query: str, *, top_k: int = 5) -> list[Evidence]:
         """Backward-compatible evidence search for existing callers."""
 
-        package = StaticRetrievalRepository(self.root).search(
-            RetrievalQuery(query=query, top_k=top_k)
+        raise DependencyUnavailableError(
+            "Static knowledge search requires an explicit semantic embedding provider.",
+            details={"code": "EMBEDDING_PROVIDER_NOT_CONFIGURED"},
         )
-        return package.evidence
 
 
 class StaticRetrievalRepository:
-    """Deterministic hybrid retrieval over local healthcare knowledge chunks."""
+    """Local retrieval over healthcare knowledge chunks with an explicit provider."""
 
     def __init__(
         self,
@@ -110,7 +110,12 @@ class StaticRetrievalRepository:
         chunk_overlap_chars: int = 160,
     ) -> None:
         self.root = Path(root)
-        self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        if embedding_provider is None:
+            raise DependencyUnavailableError(
+                "Static retrieval requires an explicit semantic embedding provider.",
+                details={"code": "EMBEDDING_PROVIDER_NOT_CONFIGURED"},
+            )
+        self.embedding_provider = embedding_provider
         self.reranker = reranker
         self.rerank_candidate_limit = rerank_candidate_limit
         self.rerank_score_weight = rerank_score_weight

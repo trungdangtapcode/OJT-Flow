@@ -11,7 +11,7 @@ export function RankedEvidenceTriage({ view }: { view: RankedEvidenceTriageView 
   return (
     <section
       aria-label="Ranked evidence triage"
-      className="grid gap-3 rounded-md border border-border bg-card/80 p-3"
+      className="grid gap-3 rounded-lg border border-border/60 bg-card/80 p-3"
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">

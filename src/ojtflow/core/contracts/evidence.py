@@ -20,6 +20,10 @@ class Evidence(ContractModel):
     claim: str
     source_version: str | None = None
     locator: dict[str, Any] = Field(default_factory=dict)
+    source_locator: dict[str, Any] = Field(default_factory=dict)
     confidence: float | None = None
     trust_level: TrustLevel = TrustLevel.APPROVED
 
+    def model_post_init(self, __context: Any) -> None:
+        if not self.source_locator and self.locator:
+            self.source_locator = dict(self.locator)

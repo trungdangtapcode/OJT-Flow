@@ -19,7 +19,7 @@ export function CoverageDiagnosticsItemRow({
   const actionable = item.status !== "covered" && suggestedFilter !== null;
   return (
     <div
-      className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs"
+      className="grid gap-2 rounded-lg border border-border/60 bg-card p-2 text-xs"
       key={`${label}-${item.field}-${item.value}`}
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">

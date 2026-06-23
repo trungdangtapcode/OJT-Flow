@@ -176,10 +176,10 @@ def test_auth_service_google_login_session_and_logout() -> None:
         repository=repository,
         cache=cache,
         identity_provider=FakeGoogleClient(),
-        google_redirect_uri="http://localhost:8000/api/v1/auth/google/callback",
+        google_redirect_uri="http://localhost:18000/api/v1/auth/google/callback",
         allowed_redirect_uris={
-            "http://localhost:8000/api/v1/auth/google/callback",
-            "http://localhost:5173/auth/callback",
+            "http://localhost:18000/api/v1/auth/google/callback",
+            "http://localhost:15173/auth/callback",
         },
         session_ttl_seconds=3600,
         state_ttl_seconds=600,
@@ -187,7 +187,7 @@ def test_auth_service_google_login_session_and_logout() -> None:
     )
 
     auth_url = service.google_authorization_url(
-        redirect_uri="http://localhost:5173/auth/callback",
+        redirect_uri="http://localhost:15173/auth/callback",
     )
     assert auth_url["authorization_url"].startswith("https://accounts.google.com")
 
@@ -241,7 +241,7 @@ def test_auth_service_recovers_from_malformed_cached_session() -> None:
     cache = FakeCache()
     service = _auth_service(repository=repository, cache=cache)
     auth_url = service.google_authorization_url(
-        redirect_uri="http://localhost:5173/auth/callback",
+        redirect_uri="http://localhost:15173/auth/callback",
     )
     login = asyncio.run(
         service.complete_google_login(
@@ -264,7 +264,7 @@ def test_auth_service_rejects_revoked_cached_session() -> None:
     cache = FakeCache()
     service = _auth_service(repository=repository, cache=cache)
     auth_url = service.google_authorization_url(
-        redirect_uri="http://localhost:5173/auth/callback",
+        redirect_uri="http://localhost:15173/auth/callback",
     )
     login = asyncio.run(
         service.complete_google_login(
@@ -281,7 +281,7 @@ def test_auth_service_rejects_revoked_cached_session() -> None:
 
 def test_auth_service_rejects_unallowed_redirect_uri() -> None:
     service = _auth_service(
-        allowed_redirect_uris={"http://localhost:5173/auth/callback"},
+        allowed_redirect_uris={"http://localhost:15173/auth/callback"},
     )
 
     with pytest.raises(OJTFlowError, match="redirect URI is not allowed"):
@@ -290,7 +290,7 @@ def test_auth_service_rejects_unallowed_redirect_uri() -> None:
 
 def test_auth_service_consumes_oauth_state_once() -> None:
     service = _auth_service()
-    auth_url = service.google_authorization_url(redirect_uri="http://localhost:5173/auth/callback")
+    auth_url = service.google_authorization_url(redirect_uri="http://localhost:15173/auth/callback")
     asyncio.run(service.complete_google_login(code="google-code", state=auth_url["state"]))
 
     with pytest.raises(OJTFlowError, match="Invalid or expired OAuth state"):
@@ -305,7 +305,7 @@ def test_google_oauth_client_wraps_malformed_token_json(monkeypatch: pytest.Monk
         asyncio.run(
             client.exchange_code_for_profile(
                 code="google-code",
-                redirect_uri="http://localhost:5173/auth/callback",
+                redirect_uri="http://localhost:15173/auth/callback",
             )
         )
 
@@ -320,7 +320,7 @@ def test_google_oauth_client_rejects_unexpected_token_shape(
         asyncio.run(
             client.exchange_code_for_profile(
                 code="google-code",
-                redirect_uri="http://localhost:5173/auth/callback",
+                redirect_uri="http://localhost:15173/auth/callback",
             )
         )
 
@@ -333,7 +333,7 @@ def test_google_oauth_client_requires_string_id_token(monkeypatch: pytest.Monkey
         asyncio.run(
             client.exchange_code_for_profile(
                 code="google-code",
-                redirect_uri="http://localhost:5173/auth/callback",
+                redirect_uri="http://localhost:15173/auth/callback",
             )
         )
 
@@ -489,11 +489,11 @@ def _auth_service(
         repository=repository or FakeAuthRepository(),
         cache=cache or FakeCache(),
         identity_provider=FakeGoogleClient(),
-        google_redirect_uri="http://localhost:8000/api/v1/auth/google/callback",
+        google_redirect_uri="http://localhost:18000/api/v1/auth/google/callback",
         allowed_redirect_uris=allowed_redirect_uris
         or {
-            "http://localhost:8000/api/v1/auth/google/callback",
-            "http://localhost:5173/auth/callback",
+            "http://localhost:18000/api/v1/auth/google/callback",
+            "http://localhost:15173/auth/callback",
         },
         session_ttl_seconds=3600,
         state_ttl_seconds=600,

@@ -9,7 +9,7 @@ export function SearchPlanCoverageSummaryPanel({
   summary: SearchPlanCoverageSummaryView;
 }) {
   return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid min-w-0 gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-black uppercase text-muted-foreground">
           Plan coverage
@@ -40,7 +40,7 @@ export function SearchPlanCoverageSummaryPanel({
           value={summary.filterCount}
         />
       </div>
-      <div className="rounded-md border border-border bg-muted/20 px-2 py-1.5 text-xs">
+      <div className="rounded-lg border border-border/60 bg-muted/20 px-2 py-1.5 text-xs">
         <div className="font-black uppercase text-muted-foreground">Next action</div>
         <div className="mt-1 break-words font-semibold">{summary.nextAction}</div>
       </div>

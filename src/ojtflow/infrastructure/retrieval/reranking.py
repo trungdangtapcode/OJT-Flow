@@ -24,7 +24,7 @@ class Reranker(Protocol):
 
 
 class NullReranker:
-    """Disabled reranker used by default and in deterministic tests."""
+    """Disabled reranker used when no real rerank provider is configured."""
 
     provider_name = "none"
     model = "none"

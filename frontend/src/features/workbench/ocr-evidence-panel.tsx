@@ -39,7 +39,7 @@ export function OcrEvidencePanel() {
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
@@ -136,7 +136,7 @@ function OcrEvidenceSummary({
   requiresReview: boolean;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/25 p-3 text-sm">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/25 p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="muted">{formatCount(pageCount, "page")}</Badge>
         <Badge variant="muted">{formatCount(fieldCount, "field")}</Badge>
@@ -164,7 +164,7 @@ function OcrEvidenceSummary({
 
 function OcrPageEvidenceGroup({ fields, page }: { fields: OcrField[]; page: number }) {
   return (
-    <section className="grid gap-3 rounded-md border border-border bg-card p-3">
+    <section className="grid gap-3 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="font-extrabold">Page {page}</div>
@@ -189,7 +189,7 @@ function OcrPageEvidenceGroup({ fields, page }: { fields: OcrField[]; page: numb
 function OcrPageMap({ fields }: { fields: OcrField[] }) {
   const bounds = pageBounds(fields);
   return (
-    <div className="relative h-44 overflow-hidden rounded-md border border-border bg-[linear-gradient(90deg,rgba(148,163,184,0.16)_1px,transparent_1px),linear-gradient(rgba(148,163,184,0.16)_1px,transparent_1px)] bg-[size:24px_24px]">
+    <div className="relative h-44 overflow-hidden rounded-lg border border-border/60 bg-[linear-gradient(90deg,rgba(148,163,184,0.16)_1px,transparent_1px),linear-gradient(rgba(148,163,184,0.16)_1px,transparent_1px)] bg-[size:24px_24px]">
       {fields.map((field) => {
         const [x, y, width, height] = field.bbox;
         return (
@@ -218,7 +218,7 @@ function OcrPageMap({ fields }: { fields: OcrField[] }) {
 
 function OcrFieldRow({ field }: { field: OcrField }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-sm">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="break-words font-extrabold">{field.name}</div>

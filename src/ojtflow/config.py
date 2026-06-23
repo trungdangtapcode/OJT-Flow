@@ -14,13 +14,18 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, model_validator
 
 
-EmbeddingProvider = Literal["deterministic", "openai", "huggingface"]
+EmbeddingProvider = Literal["openai", "huggingface"]
 LLMProvider = Literal["disabled", "openai"]
 ProductMode = Literal["local_dev", "demo", "pilot", "production"]
 RetrievalFramework = Literal["custom", "llamaindex"]
+RetrievalMode = Literal["semantic_vector"]
 RerankProvider = Literal["none", "huggingface"]
 RateLimitBackend = Literal["auto", "memory", "redis"]
-StorageBackend = Literal["postgres", "sqlite", "memory"]
+StorageBackend = Literal["postgres", "memory"]
+ObjectStorageBackend = Literal["local", "minio"]
+KnowledgeGraphBackend = Literal["neo4j", "memory", "kuzu"]
+AuthProvider = Literal["google", "keycloak"]
+QueueBackend = Literal["sync_local", "rabbitmq"]
 RuntimeSettingsPayload = dict[str, str | int | float | bool]
 RuntimeRetrievalSettingsPayload = RuntimeSettingsPayload
 RuntimeAssistantSettingsPayload = RuntimeSettingsPayload
@@ -50,7 +55,8 @@ DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = (
 COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 DNS_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 UPLOAD_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9][a-z0-9-]{0,15}$")
-ALLOWED_STORAGE_BACKENDS: tuple[StorageBackend, ...] = ("postgres", "sqlite", "memory")
+ALLOWED_STORAGE_BACKENDS: tuple[StorageBackend, ...] = ("postgres", "memory")
+ALLOWED_OBJECT_STORAGE_BACKENDS: tuple[ObjectStorageBackend, ...] = ("local", "minio")
 ALLOWED_PRODUCT_MODES: tuple[ProductMode, ...] = (
     "local_dev",
     "demo",
@@ -58,15 +64,13 @@ ALLOWED_PRODUCT_MODES: tuple[ProductMode, ...] = (
     "production",
 )
 ALLOWED_EMBEDDING_PROVIDERS: tuple[EmbeddingProvider, ...] = (
-    "deterministic",
     "openai",
     "huggingface",
 )
 ALLOWED_LLM_PROVIDERS: tuple[LLMProvider, ...] = ("disabled", "openai")
 ALLOWED_RERANK_PROVIDERS: tuple[RerankProvider, ...] = ("none", "huggingface")
 ALLOWED_RETRIEVAL_FRAMEWORKS: tuple[RetrievalFramework, ...] = ("custom", "llamaindex")
-DETERMINISTIC_EMBEDDING_MODEL = "deterministic-hash-v0"
-DETERMINISTIC_EMBEDDING_DIMENSIONS = 64
+ALLOWED_RETRIEVAL_MODES: tuple[RetrievalMode, ...] = ("semantic_vector",)
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDING_DIMENSIONS = 384
 OPENAI_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
@@ -79,9 +83,19 @@ DEFAULT_HF_EMBEDDING_CACHE_DIR = Path("var/huggingface")
 DEFAULT_RETRIEVAL_CORPUS_DIRS = (Path("knowledge/corpus"),)
 DEFAULT_RETRIEVAL_HNSW_EF_SEARCH = 100
 DEFAULT_STORAGE_BACKEND: StorageBackend = "postgres"
-DEFAULT_POSTGRES_DSN = "postgresql://ojtflow:ojtflow@localhost:5432/ojtflow"
-DEFAULT_DATABASE_PATH = Path("var/ojtflow.db")
+DEFAULT_OBJECT_STORAGE_BACKEND: ObjectStorageBackend = "local"
+DEFAULT_POSTGRES_DSN = "postgresql://ojtflow:ojtflow@localhost:15432/ojtflow"
 DEFAULT_DATA_DIR = Path("var")
+DEFAULT_MINIO_BUCKET = "ojtflow-artifacts"
+DEFAULT_KNOWLEDGE_GRAPH_BACKEND: KnowledgeGraphBackend = "neo4j"
+DEFAULT_KUZU_DB_PATH = DEFAULT_DATA_DIR / "kuzu" / "corpus"
+DEFAULT_NEO4J_URI = "bolt://localhost:7687"
+DEFAULT_NEO4J_USER = "neo4j"
+DEFAULT_NEO4J_DATABASE = "neo4j"
+DEFAULT_GRAPH_MED_LLM_MODEL = "google/medgemma-4b-it"
+DEFAULT_GRAPH_MED_ICD_VECTOR_INDEX = "icd_disease_embedding"
+DEFAULT_GRAPH_MED_DEVICE = "cuda"
+DEFAULT_MEDSIGLIP_MODEL = "google/medsiglip-448"
 DEFAULT_RUNTIME_SETTINGS_PATH = Path("var/runtime_settings.json")
 DEFAULT_KNOWLEDGE_DIR = Path("knowledge")
 DEFAULT_RATE_LIMIT_POLICY_PATH = Path("knowledge/security/rate_limit_policy.json")
@@ -92,14 +106,16 @@ DEFAULT_OWASP_LLM_THREAT_MODEL_PATH = Path(
 )
 DEFAULT_DISCLAIMER_POLICY_PATH = Path("knowledge/governance/disclaimer_policy.json")
 DEFAULT_MIGRATIONS_DIR = Path("sql/postgres/migrations")
-DEFAULT_REDIS_URL = "redis://localhost:6379/0"
-DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:8000/api/v1/auth/google/callback"
-DEFAULT_GOOGLE_FRONTEND_REDIRECT_URI = "http://localhost:5173/auth/callback"
+DEFAULT_REDIS_URL = "redis://localhost:16379/0"
+DEFAULT_RABBITMQ_URL = "amqp://ojtflow:ojtflow@localhost:5672//"
+DEFAULT_GOOGLE_REDIRECT_URI = "http://localhost:18000/api/v1/auth/google/callback"
+DEFAULT_GOOGLE_FRONTEND_REDIRECT_URI = "http://localhost:15173/auth/callback"
 LOCAL_OAUTH_REDIRECT_HOSTS = {"localhost", "127.0.0.1", "::1"}
 RUNTIME_RETRIEVAL_SETTING_ALIASES = {
     "embedding_provider": "OJT_EMBEDDING_PROVIDER",
     "embedding_model": "OJT_EMBEDDING_MODEL",
     "embedding_dimensions": "OJT_EMBEDDING_DIMENSIONS",
+    "retrieval_mode": "OJT_RETRIEVAL_MODE",
     "retrieval_framework": "OJT_RETRIEVAL_FRAMEWORK",
     "retrieval_candidate_multiplier": "OJT_RETRIEVAL_CANDIDATE_MULTIPLIER",
     "retrieval_min_candidates": "OJT_RETRIEVAL_MIN_CANDIDATES",
@@ -177,19 +193,106 @@ class Settings(BaseModel):
         default=DEFAULT_STORAGE_BACKEND,
         alias="OJT_STORAGE_BACKEND",
     )
+    object_storage_backend: ObjectStorageBackend = Field(
+        default=DEFAULT_OBJECT_STORAGE_BACKEND,
+        alias="OJT_OBJECT_STORAGE_BACKEND",
+    )
     postgres_dsn: str = Field(
         default=DEFAULT_POSTGRES_DSN,
         alias="OJT_DATABASE_URL",
     )
-    database_path: Path = Field(default=DEFAULT_DATABASE_PATH, alias="OJT_DATABASE_PATH")
     data_dir: Path = Field(default=DEFAULT_DATA_DIR, alias="OJT_DATA_DIR")
+    minio_endpoint: str = Field(default="", alias="OJT_MINIO_ENDPOINT")
+    minio_access_key: str = Field(default="", alias="OJT_MINIO_ACCESS_KEY")
+    minio_secret_key: str = Field(default="", alias="OJT_MINIO_SECRET_KEY")
+    minio_bucket: str = Field(default=DEFAULT_MINIO_BUCKET, alias="OJT_MINIO_BUCKET")
+    minio_region: str = Field(default="us-east-1", alias="OJT_MINIO_REGION")
+    minio_secure: bool = Field(default=False, alias="OJT_MINIO_SECURE")
     knowledge_dir: Path = Field(default=DEFAULT_KNOWLEDGE_DIR, alias="OJT_KNOWLEDGE_DIR")
+    knowledge_graph_backend: KnowledgeGraphBackend = Field(
+        default=DEFAULT_KNOWLEDGE_GRAPH_BACKEND,
+        alias="OJT_KNOWLEDGE_GRAPH_BACKEND",
+    )
+    kuzu_db_path: Path = Field(default=DEFAULT_KUZU_DB_PATH, alias="OJT_KUZU_DB_PATH")
+    neo4j_uri: str = Field(default=DEFAULT_NEO4J_URI, alias="OJT_NEO4J_URI")
+    neo4j_user: str = Field(default=DEFAULT_NEO4J_USER, alias="OJT_NEO4J_USER")
+    neo4j_password: str = Field(default="", alias="OJT_NEO4J_PASSWORD")
+    neo4j_database: str = Field(default=DEFAULT_NEO4J_DATABASE, alias="OJT_NEO4J_DATABASE")
+    graph_med_annotation_enabled: bool = Field(
+        default=True,
+        alias="OJT_GRAPH_MED_ANNOTATION_ENABLED",
+    )
+    graph_med_service_base_url: str = Field(
+        default="",
+        alias="OJT_GRAPH_MED_SERVICE_BASE_URL",
+    )
+    graph_med_embedding_base_url: str = Field(
+        default="",
+        alias="OJT_GRAPH_MED_EMBEDDING_BASE_URL",
+    )
+    graph_med_llm_base_url: str = Field(default="", alias="OJT_GRAPH_MED_LLM_BASE_URL")
+    graph_med_llm_model: str = Field(
+        default=DEFAULT_GRAPH_MED_LLM_MODEL,
+        alias="OJT_GRAPH_MED_LLM_MODEL",
+    )
+    graph_med_embedding_model: str = Field(
+        default="",
+        alias="OJT_GRAPH_MED_EMBEDDING_MODEL",
+    )
+    graph_med_gnn_base_url: str = Field(default="", alias="OJT_GRAPH_MED_GNN_BASE_URL")
+    graph_med_device: str = Field(
+        default=DEFAULT_GRAPH_MED_DEVICE,
+        alias="OJT_GRAPH_MED_DEVICE",
+    )
+    graph_med_require_gpu: bool = Field(default=False, alias="OJT_GRAPH_MED_REQUIRE_GPU")
+    graph_med_icd_vector_index: str = Field(
+        default=DEFAULT_GRAPH_MED_ICD_VECTOR_INDEX,
+        alias="OJT_GRAPH_MED_ICD_VECTOR_INDEX",
+    )
+    graph_med_candidate_k: int = Field(default=10, alias="OJT_GRAPH_MED_CANDIDATE_K", gt=0)
+    graph_med_timeout_seconds: float = Field(
+        default=90.0,
+        alias="OJT_GRAPH_MED_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    medsiglip_enabled: bool = Field(default=True, alias="OJT_MEDSIGLIP_ENABLED")
+    medsiglip_base_url: str = Field(default="", alias="OJT_MEDSIGLIP_BASE_URL")
+    medsiglip_model: str = Field(
+        default=DEFAULT_MEDSIGLIP_MODEL,
+        alias="OJT_MEDSIGLIP_MODEL",
+    )
+    medsiglip_timeout_seconds: float = Field(
+        default=90.0,
+        alias="OJT_MEDSIGLIP_TIMEOUT_SECONDS",
+        gt=0,
+    )
     migrations_dir: Path = Field(default=DEFAULT_MIGRATIONS_DIR, alias="OJT_MIGRATIONS_DIR")
     runtime_settings_path: Path = Field(
         default=DEFAULT_RUNTIME_SETTINGS_PATH,
         alias="OJT_RUNTIME_SETTINGS_PATH",
     )
     redis_url: str = Field(default=DEFAULT_REDIS_URL, alias="OJT_REDIS_URL")
+    queue_backend: QueueBackend = Field(default="sync_local", alias="OJT_QUEUE_BACKEND")
+    rabbitmq_url: str = Field(default=DEFAULT_RABBITMQ_URL, alias="OJT_RABBITMQ_URL")
+    celery_task_time_limit_seconds: int = Field(
+        default=900,
+        alias="OJT_CELERY_TASK_TIME_LIMIT_SECONDS",
+        gt=0,
+    )
+    celery_task_soft_time_limit_seconds: int = Field(
+        default=840,
+        alias="OJT_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS",
+        gt=0,
+    )
+    ocr_queue_name: str = Field(default="ocr", alias="OJT_OCR_QUEUE")
+    rag_queue_name: str = Field(default="rag", alias="OJT_RAG_QUEUE")
+    embedding_queue_name: str = Field(default="embedding", alias="OJT_EMBEDDING_QUEUE")
+    medsiglip_queue_name: str = Field(default="medsiglip", alias="OJT_MEDSIGLIP_QUEUE")
+    ingestion_queue_name: str = Field(default="ingestion", alias="OJT_INGESTION_QUEUE")
+    export_queue_name: str = Field(default="export", alias="OJT_EXPORT_QUEUE")
+    default_queue_name: str = Field(default="default", alias="OJT_DEFAULT_QUEUE")
+    sentry_dsn: str = Field(default="", alias="OJT_SENTRY_DSN")
+    loki_enabled: bool = Field(default=True, alias="OJT_LOKI_ENABLED")
     google_client_id: str = Field(default="", alias="OJT_GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="OJT_GOOGLE_CLIENT_SECRET")
     google_redirect_uri: str = Field(
@@ -211,6 +314,27 @@ class Settings(BaseModel):
     google_oauth_timeout_seconds: float = Field(
         default=10.0,
         alias="OJT_GOOGLE_OAUTH_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    auth_provider: AuthProvider = Field(
+        default="google",
+        alias="OJT_AUTH_PROVIDER",
+    )
+    keycloak_base_url: str = Field(default="", alias="OJT_KEYCLOAK_BASE_URL")
+    keycloak_public_base_url: str = Field(default="", alias="OJT_KEYCLOAK_PUBLIC_BASE_URL")
+    keycloak_realm: str = Field(default="", alias="OJT_KEYCLOAK_REALM")
+    keycloak_client_id: str = Field(default="", alias="OJT_KEYCLOAK_CLIENT_ID")
+    keycloak_client_secret: str = Field(default="", alias="OJT_KEYCLOAK_CLIENT_SECRET")
+    keycloak_redirect_uri: str = Field(default="", alias="OJT_KEYCLOAK_REDIRECT_URI")
+    keycloak_oauth_timeout_seconds: float = Field(
+        default=10.0,
+        alias="OJT_KEYCLOAK_OAUTH_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    frontend_base_url: str = Field(default="", alias="OJT_FRONTEND_BASE_URL")
+    invitation_ttl_seconds: int = Field(
+        default=7 * 24 * 60 * 60,
+        alias="OJT_INVITATION_TTL_SECONDS",
         gt=0,
     )
     auth_session_ttl_seconds: int = Field(
@@ -266,15 +390,15 @@ class Settings(BaseModel):
         alias="OJT_ARTIFACT_RETENTION_RULES",
     )
     embedding_provider: EmbeddingProvider = Field(
-        default="deterministic",
+        default="openai",
         alias="OJT_EMBEDDING_PROVIDER",
     )
     embedding_model: str = Field(
-        default=DETERMINISTIC_EMBEDDING_MODEL,
+        default=OPENAI_EMBEDDING_MODEL,
         alias="OJT_EMBEDDING_MODEL",
     )
     embedding_dimensions: int = Field(
-        default=DETERMINISTIC_EMBEDDING_DIMENSIONS,
+        default=OPENAI_EMBEDDING_DIMENSIONS,
         alias="OJT_EMBEDDING_DIMENSIONS",
         gt=0,
     )
@@ -393,6 +517,10 @@ class Settings(BaseModel):
         default="custom",
         alias="OJT_RETRIEVAL_FRAMEWORK",
     )
+    retrieval_mode: RetrievalMode = Field(
+        default="semantic_vector",
+        alias="OJT_RETRIEVAL_MODE",
+    )
     retrieval_candidate_multiplier: int = Field(
         default=4,
         alias="OJT_RETRIEVAL_CANDIDATE_MULTIPLIER",
@@ -469,27 +597,72 @@ class Settings(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _validate_queue_settings(self) -> "Settings":
+        if self.celery_task_soft_time_limit_seconds >= self.celery_task_time_limit_seconds:
+            raise ValueError(
+                "OJT_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS must be smaller than "
+                "OJT_CELERY_TASK_TIME_LIMIT_SECONDS"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_object_storage_settings(self) -> "Settings":
+        if self.object_storage_backend == "minio":
+            missing = [
+                name
+                for name, value in {
+                    "OJT_MINIO_ENDPOINT": self.minio_endpoint,
+                    "OJT_MINIO_ACCESS_KEY": self.minio_access_key,
+                    "OJT_MINIO_SECRET_KEY": self.minio_secret_key,
+                    "OJT_MINIO_BUCKET": self.minio_bucket,
+                }.items()
+                if not str(value or "").strip()
+            ]
+            if missing:
+                raise ValueError(
+                    "MinIO object storage requires "
+                    + ", ".join(missing)
+                    + "."
+                )
+        return self
+
+    @model_validator(mode="after")
     def _validate_product_mode_policy(self) -> "Settings":
         if self.product_mode in {"pilot", "production"}:
-            if self.storage_backend == "memory":
+            if self.storage_backend != "postgres":
                 raise ValueError(
-                    "OJT_STORAGE_BACKEND=memory is not allowed when "
-                    "OJT_PRODUCT_MODE is pilot or production"
+                    "Production RAG requires Postgres pgvector storage. "
+                    f"Got OJT_STORAGE_BACKEND={self.storage_backend}."
+                )
+            if self.queue_backend != "rabbitmq":
+                raise ValueError(
+                    "Pilot/production deployments require OJT_QUEUE_BACKEND=rabbitmq "
+                    "so long-running OCR/RAG jobs do not execute inside API requests."
                 )
             if self.llm_provider == "disabled":
                 raise ValueError(
                     "OJT_LLM_PROVIDER=disabled is not allowed when "
                     "OJT_PRODUCT_MODE is pilot or production"
                 )
+            _validate_real_embedding_settings(self)
+            if self.llm_provider == "openai" and not self.openai_api_key:
+                raise ValueError(
+                    "Production Assistant requires OJT_OPENAI_API_KEY or OPENAI_API_KEY "
+                    "for OpenAI LLM."
+                )
+            if self.retrieval_mode != "semantic_vector":
+                raise ValueError(
+                    "Production RAG requires vector retrieval. Lexical fallback is forbidden."
+                )
+            if self.retrieval_framework != "custom":
+                raise ValueError(
+                    "Production RAG currently requires the custom Postgres pgvector retriever."
+                )
         return self
 
     @property
     def repo_root(self) -> Path:
         return Path(__file__).resolve().parents[2]
-
-    @property
-    def resolved_database_path(self) -> Path:
-        return _resolve_path(self.database_path, self.repo_root)
 
     @property
     def resolved_data_dir(self) -> Path:
@@ -542,6 +715,7 @@ class Settings(BaseModel):
             for uri in (
                 self.google_redirect_uri,
                 self.google_frontend_redirect_uri,
+                self.keycloak_redirect_uri,
                 *self.allowed_auth_redirect_uris,
             )
             if uri
@@ -614,15 +788,88 @@ def get_settings() -> Settings:
             "ojtflow:rate_limit",
         ),
         OJT_STORAGE_BACKEND=_parse_storage_backend(os.getenv("OJT_STORAGE_BACKEND")),
+        OJT_OBJECT_STORAGE_BACKEND=_parse_object_storage_backend(
+            os.getenv("OJT_OBJECT_STORAGE_BACKEND")
+        ),
         OJT_DATABASE_URL=_parse_postgres_dsn(
             os.getenv(
                 "OJT_DATABASE_URL",
                 os.getenv("DATABASE_URL", DEFAULT_POSTGRES_DSN),
             )
         ),
-        OJT_DATABASE_PATH=Path(os.getenv("OJT_DATABASE_PATH", str(DEFAULT_DATABASE_PATH))),
         OJT_DATA_DIR=Path(os.getenv("OJT_DATA_DIR", str(DEFAULT_DATA_DIR))),
+        OJT_MINIO_ENDPOINT=(os.getenv("OJT_MINIO_ENDPOINT", "") or "").strip(),
+        OJT_MINIO_ACCESS_KEY=(os.getenv("OJT_MINIO_ACCESS_KEY", "") or "").strip(),
+        OJT_MINIO_SECRET_KEY=(os.getenv("OJT_MINIO_SECRET_KEY", "") or "").strip(),
+        OJT_MINIO_BUCKET=(
+            os.getenv("OJT_MINIO_BUCKET", DEFAULT_MINIO_BUCKET) or DEFAULT_MINIO_BUCKET
+        ).strip(),
+        OJT_MINIO_REGION=(os.getenv("OJT_MINIO_REGION", "us-east-1") or "us-east-1").strip(),
+        OJT_MINIO_SECURE=_parse_bool(os.getenv("OJT_MINIO_SECURE"), default=False),
         OJT_KNOWLEDGE_DIR=Path(os.getenv("OJT_KNOWLEDGE_DIR", str(DEFAULT_KNOWLEDGE_DIR))),
+        OJT_KNOWLEDGE_GRAPH_BACKEND=_parse_knowledge_graph_backend(
+            os.getenv("OJT_KNOWLEDGE_GRAPH_BACKEND")
+        ),
+        OJT_KUZU_DB_PATH=Path(os.getenv("OJT_KUZU_DB_PATH", str(DEFAULT_KUZU_DB_PATH))),
+        OJT_NEO4J_URI=os.getenv("OJT_NEO4J_URI", DEFAULT_NEO4J_URI),
+        OJT_NEO4J_USER=os.getenv("OJT_NEO4J_USER", DEFAULT_NEO4J_USER),
+        OJT_NEO4J_PASSWORD=os.getenv("OJT_NEO4J_PASSWORD", ""),
+        OJT_NEO4J_DATABASE=os.getenv("OJT_NEO4J_DATABASE", DEFAULT_NEO4J_DATABASE),
+        OJT_GRAPH_MED_ANNOTATION_ENABLED=_parse_bool(
+            os.getenv("OJT_GRAPH_MED_ANNOTATION_ENABLED"),
+            default=True,
+        ),
+        OJT_GRAPH_MED_SERVICE_BASE_URL=(
+            os.getenv("OJT_GRAPH_MED_SERVICE_BASE_URL", "") or ""
+        ).strip().rstrip("/"),
+        OJT_GRAPH_MED_EMBEDDING_BASE_URL=(
+            os.getenv("OJT_GRAPH_MED_EMBEDDING_BASE_URL", "") or ""
+        ).strip().rstrip("/"),
+        OJT_GRAPH_MED_LLM_BASE_URL=(
+            os.getenv("OJT_GRAPH_MED_LLM_BASE_URL", "") or ""
+        ).strip().rstrip("/"),
+        OJT_GRAPH_MED_LLM_MODEL=(
+            os.getenv("OJT_GRAPH_MED_LLM_MODEL", DEFAULT_GRAPH_MED_LLM_MODEL) or ""
+        ).strip()
+        or DEFAULT_GRAPH_MED_LLM_MODEL,
+        OJT_GRAPH_MED_EMBEDDING_MODEL=(
+            os.getenv("OJT_GRAPH_MED_EMBEDDING_MODEL", "") or ""
+        ).strip(),
+        OJT_GRAPH_MED_GNN_BASE_URL=(
+            os.getenv("OJT_GRAPH_MED_GNN_BASE_URL", "") or ""
+        ).strip().rstrip("/"),
+        OJT_GRAPH_MED_DEVICE=(
+            os.getenv("OJT_GRAPH_MED_DEVICE", DEFAULT_GRAPH_MED_DEVICE) or ""
+        ).strip()
+        or DEFAULT_GRAPH_MED_DEVICE,
+        OJT_GRAPH_MED_REQUIRE_GPU=_parse_bool(
+            os.getenv("OJT_GRAPH_MED_REQUIRE_GPU"),
+            default=False,
+        ),
+        OJT_GRAPH_MED_ICD_VECTOR_INDEX=(
+            os.getenv("OJT_GRAPH_MED_ICD_VECTOR_INDEX", DEFAULT_GRAPH_MED_ICD_VECTOR_INDEX)
+            or ""
+        ).strip()
+        or DEFAULT_GRAPH_MED_ICD_VECTOR_INDEX,
+        OJT_GRAPH_MED_CANDIDATE_K=int(os.getenv("OJT_GRAPH_MED_CANDIDATE_K", "10")),
+        OJT_GRAPH_MED_TIMEOUT_SECONDS=float(
+            os.getenv("OJT_GRAPH_MED_TIMEOUT_SECONDS", "90.0")
+        ),
+        OJT_MEDSIGLIP_ENABLED=_parse_bool(
+            os.getenv("OJT_MEDSIGLIP_ENABLED"),
+            default=True,
+        ),
+        OJT_MEDSIGLIP_BASE_URL=(
+            os.getenv("OJT_MEDSIGLIP_BASE_URL", "") or ""
+        ).strip().rstrip("/"),
+        OJT_MEDSIGLIP_MODEL=_parse_model_identifier(
+            os.getenv("OJT_MEDSIGLIP_MODEL"),
+            default=DEFAULT_MEDSIGLIP_MODEL,
+            setting_name="OJT_MEDSIGLIP_MODEL",
+        ),
+        OJT_MEDSIGLIP_TIMEOUT_SECONDS=float(
+            os.getenv("OJT_MEDSIGLIP_TIMEOUT_SECONDS", "90.0")
+        ),
         OJT_MIGRATIONS_DIR=Path(
             os.getenv("OJT_MIGRATIONS_DIR", str(DEFAULT_MIGRATIONS_DIR))
         ),
@@ -630,6 +877,35 @@ def get_settings() -> Settings:
             os.getenv("OJT_RUNTIME_SETTINGS_PATH", str(DEFAULT_RUNTIME_SETTINGS_PATH))
         ),
         OJT_REDIS_URL=_parse_redis_url(os.getenv("OJT_REDIS_URL")),
+        OJT_QUEUE_BACKEND=_parse_queue_backend(os.getenv("OJT_QUEUE_BACKEND")),
+        OJT_RABBITMQ_URL=_parse_rabbitmq_url(os.getenv("OJT_RABBITMQ_URL")),
+        OJT_CELERY_TASK_TIME_LIMIT_SECONDS=int(
+            os.getenv("OJT_CELERY_TASK_TIME_LIMIT_SECONDS", "900")
+        ),
+        OJT_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS=int(
+            os.getenv("OJT_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS", "840")
+        ),
+        OJT_OCR_QUEUE=_parse_queue_name(os.getenv("OJT_OCR_QUEUE"), default="ocr"),
+        OJT_RAG_QUEUE=_parse_queue_name(os.getenv("OJT_RAG_QUEUE"), default="rag"),
+        OJT_EMBEDDING_QUEUE=_parse_queue_name(
+            os.getenv("OJT_EMBEDDING_QUEUE"),
+            default="embedding",
+        ),
+        OJT_MEDSIGLIP_QUEUE=_parse_queue_name(
+            os.getenv("OJT_MEDSIGLIP_QUEUE"),
+            default="medsiglip",
+        ),
+        OJT_INGESTION_QUEUE=_parse_queue_name(
+            os.getenv("OJT_INGESTION_QUEUE"),
+            default="ingestion",
+        ),
+        OJT_EXPORT_QUEUE=_parse_queue_name(os.getenv("OJT_EXPORT_QUEUE"), default="export"),
+        OJT_DEFAULT_QUEUE=_parse_queue_name(
+            os.getenv("OJT_DEFAULT_QUEUE"),
+            default="default",
+        ),
+        OJT_SENTRY_DSN=(os.getenv("OJT_SENTRY_DSN", "") or "").strip(),
+        OJT_LOKI_ENABLED=_parse_bool(os.getenv("OJT_LOKI_ENABLED"), default=True),
         OJT_GOOGLE_CLIENT_ID=os.getenv("OJT_GOOGLE_CLIENT_ID", ""),
         OJT_GOOGLE_CLIENT_SECRET=os.getenv("OJT_GOOGLE_CLIENT_SECRET", ""),
         OJT_GOOGLE_REDIRECT_URI=_parse_oauth_redirect_uri(
@@ -651,6 +927,25 @@ def get_settings() -> Settings:
         ),
         OJT_GOOGLE_OAUTH_TIMEOUT_SECONDS=float(
             os.getenv("OJT_GOOGLE_OAUTH_TIMEOUT_SECONDS", "10.0")
+        ),
+        OJT_AUTH_PROVIDER=_parse_auth_provider(os.getenv("OJT_AUTH_PROVIDER")),
+        OJT_KEYCLOAK_BASE_URL=(os.getenv("OJT_KEYCLOAK_BASE_URL", "") or "").strip(),
+        OJT_KEYCLOAK_PUBLIC_BASE_URL=(
+            os.getenv("OJT_KEYCLOAK_PUBLIC_BASE_URL", "") or ""
+        ).strip(),
+        OJT_KEYCLOAK_REALM=(os.getenv("OJT_KEYCLOAK_REALM", "") or "").strip(),
+        OJT_KEYCLOAK_CLIENT_ID=os.getenv("OJT_KEYCLOAK_CLIENT_ID", ""),
+        OJT_KEYCLOAK_CLIENT_SECRET=os.getenv("OJT_KEYCLOAK_CLIENT_SECRET", ""),
+        OJT_KEYCLOAK_REDIRECT_URI=_parse_optional_oauth_redirect_uri(
+            "OJT_KEYCLOAK_REDIRECT_URI",
+            os.getenv("OJT_KEYCLOAK_REDIRECT_URI"),
+        ),
+        OJT_KEYCLOAK_OAUTH_TIMEOUT_SECONDS=float(
+            os.getenv("OJT_KEYCLOAK_OAUTH_TIMEOUT_SECONDS", "10.0")
+        ),
+        OJT_FRONTEND_BASE_URL=(os.getenv("OJT_FRONTEND_BASE_URL", "") or "").strip().rstrip("/"),
+        OJT_INVITATION_TTL_SECONDS=int(
+            os.getenv("OJT_INVITATION_TTL_SECONDS", str(7 * 24 * 60 * 60))
         ),
         OJT_AUTH_SESSION_TTL_SECONDS=int(
             os.getenv("OJT_AUTH_SESSION_TTL_SECONDS", str(7 * 24 * 60 * 60))
@@ -685,7 +980,9 @@ def get_settings() -> Settings:
             provider=os.getenv("OJT_EMBEDDING_PROVIDER"),
             model=os.getenv("OJT_EMBEDDING_MODEL"),
         ),
-        OJT_OPENAI_API_KEY=os.getenv("OJT_OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "")),
+        OJT_RETRIEVAL_MODE=_parse_retrieval_mode(os.getenv("OJT_RETRIEVAL_MODE")),
+        OJT_OPENAI_API_KEY=os.getenv("OJT_OPENAI_API_KEY")
+        or os.getenv("OPENAI_API_KEY", ""),
         OJT_OPENAI_EMBEDDING_BASE_URL=_parse_openai_base_url(
             os.getenv("OJT_OPENAI_EMBEDDING_BASE_URL")
         ),
@@ -707,7 +1004,7 @@ def get_settings() -> Settings:
             os.getenv("OJT_LLM_BASE_URL"),
             setting_name="OpenAI LLM base URL",
         ),
-        OJT_LLM_TIMEOUT_SECONDS=float(os.getenv("OJT_LLM_TIMEOUT_SECONDS", "30.0")),
+        OJT_LLM_TIMEOUT_SECONDS=float(os.getenv("OJT_LLM_TIMEOUT_SECONDS", "90.0")),
         OJT_LLM_MAX_TOOL_CALLS=int(os.getenv("OJT_LLM_MAX_TOOL_CALLS", "4")),
         OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS=float(
             os.getenv("OJT_LLM_PLANNING_PROGRESS_INTERVAL_SECONDS", "2.0")
@@ -815,6 +1112,7 @@ def runtime_retrieval_settings(settings: Settings) -> RuntimeRetrievalSettingsPa
         "embedding_provider": settings.embedding_provider,
         "embedding_model": settings.embedding_model,
         "embedding_dimensions": settings.embedding_dimensions,
+        "retrieval_mode": settings.retrieval_mode,
         "retrieval_framework": settings.retrieval_framework,
         "retrieval_candidate_multiplier": settings.retrieval_candidate_multiplier,
         "retrieval_min_candidates": settings.retrieval_min_candidates,
@@ -1041,6 +1339,11 @@ def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float 
         normalized = value.strip()
         if not _valid_model_identifier(normalized):
             raise ValueError("embedding_model must be a non-blank model id")
+        if _forbidden_fake_ai_token(normalized):
+            raise ValueError(
+                "Production RAG requires a real semantic embedding model. "
+                f"Got: {normalized}."
+            )
         return normalized
     if key == "embedding_dimensions":
         if isinstance(value, bool):
@@ -1049,6 +1352,10 @@ def _coerce_runtime_setting_value(key: str, value: object) -> str | int | float 
         if parsed_dimensions <= 0:
             raise ValueError("embedding_dimensions must be greater than zero")
         return parsed_dimensions
+    if key == "retrieval_mode":
+        if not isinstance(value, str):
+            raise ValueError("retrieval_mode must be a string")
+        return _parse_retrieval_mode(value)
     if key == "retrieval_framework":
         if not isinstance(value, str):
             raise ValueError("retrieval_framework must be a string")
@@ -1154,6 +1461,25 @@ def _parse_oauth_redirect_uri(
             f"Invalid OAuth redirect URI for {setting_name}: non-local HTTP callbacks must use HTTPS"
         )
     return raw
+
+
+def _parse_optional_oauth_redirect_uri(setting_name: str, value: str | None) -> str:
+    """Validate an OAuth redirect URI, returning "" when unset."""
+
+    if value is None or not value.strip():
+        return ""
+    return _parse_oauth_redirect_uri(setting_name, value)
+
+
+def _parse_auth_provider(value: str | None) -> str:
+    if value is None or not value.strip():
+        return "google"
+    normalized = value.strip().lower()
+    if normalized not in {"google", "keycloak"}:
+        raise ValueError(
+            f"Invalid OJT_AUTH_PROVIDER: {value!r} (expected 'google' or 'keycloak')"
+        )
+    return normalized
 
 
 def _parse_oauth_redirect_uri_csv(setting_name: str, value: str | None) -> tuple[str, ...]:
@@ -1287,6 +1613,50 @@ def _parse_redis_url(value: str | None) -> str:
     return normalized
 
 
+def _parse_queue_backend(value: str | None) -> QueueBackend:
+    normalized = "sync_local" if value is None else value.strip().lower().replace("-", "_")
+    if normalized in {"sync", "local", "sync_local"}:
+        return "sync_local"
+    if normalized == "rabbitmq":
+        return "rabbitmq"
+    raise ValueError(
+        "Invalid OJT_QUEUE_BACKEND. Expected sync_local or rabbitmq; "
+        f"got {value!r}."
+    )
+
+
+def _parse_rabbitmq_url(value: str | None) -> str:
+    normalized = (value or DEFAULT_RABBITMQ_URL).strip()
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"amqp", "amqps"}:
+        raise ValueError(
+            "Invalid RabbitMQ URL for OJT_RABBITMQ_URL: scheme must be amqp or amqps"
+        )
+    if not parsed.hostname:
+        raise ValueError("Invalid RabbitMQ URL for OJT_RABBITMQ_URL: host is required")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ValueError(
+            "Invalid RabbitMQ URL for OJT_RABBITMQ_URL: port must be numeric"
+        ) from exc
+    if parsed.fragment:
+        raise ValueError("Invalid RabbitMQ URL for OJT_RABBITMQ_URL: fragments are not allowed")
+    return normalized
+
+
+def _parse_queue_name(value: str | None, *, default: str) -> str:
+    normalized = (value or default).strip()
+    if not normalized:
+        raise ValueError("Queue names must not be blank")
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", normalized):
+        raise ValueError(
+            "Queue names may contain only letters, digits, underscore, dot, colon, "
+            "and dash, and must be 1-128 characters."
+        )
+    return normalized
+
+
 def _parse_postgres_dsn(value: str | None) -> str:
     if value is None:
         return DEFAULT_POSTGRES_DSN
@@ -1321,17 +1691,41 @@ def _parse_same_site(value: str | None) -> str:
     raise ValueError(f"Invalid SameSite environment value: {value}")
 
 
+def _parse_knowledge_graph_backend(value: str | None) -> KnowledgeGraphBackend:
+    normalized = DEFAULT_KNOWLEDGE_GRAPH_BACKEND if value is None else value.strip().lower()
+    if normalized in ("neo4j", "memory", "kuzu"):
+        return normalized  # type: ignore[return-value]
+    raise ValueError(
+        f"Invalid knowledge graph backend environment value: {value}. "
+        "Expected one of: neo4j, memory, kuzu"
+    )
+
+
 def _parse_storage_backend(value: str | None) -> StorageBackend:
     normalized = "postgres" if value is None else value.strip().lower()
     if normalized == "postgres":
         return "postgres"
-    if normalized == "sqlite":
-        return "sqlite"
     if normalized == "memory":
         return "memory"
+    if normalized == "sqlite":
+        raise ValueError(
+            "SQLite storage backend has been removed from runtime configuration. "
+            "Use OJT_STORAGE_BACKEND=postgres."
+        )
     allowed = ", ".join(ALLOWED_STORAGE_BACKENDS)
     raise ValueError(
         f"Invalid storage backend environment value: {value}. Expected one of: {allowed}"
+    )
+
+
+def _parse_object_storage_backend(value: str | None) -> ObjectStorageBackend:
+    normalized = DEFAULT_OBJECT_STORAGE_BACKEND if value is None else value.strip().lower()
+    if normalized in ALLOWED_OBJECT_STORAGE_BACKENDS:
+        return normalized  # type: ignore[return-value]
+    allowed = ", ".join(ALLOWED_OBJECT_STORAGE_BACKENDS)
+    raise ValueError(
+        "Invalid object storage backend environment value: "
+        f"{value}. Expected one of: {allowed}"
     )
 
 
@@ -1358,9 +1752,16 @@ def _parse_product_mode(value: str | None) -> ProductMode:
 
 
 def _parse_embedding_provider(value: str | None) -> EmbeddingProvider:
-    normalized = "deterministic" if value is None else value.strip().lower()
-    if normalized == "deterministic":
-        return "deterministic"
+    if value is None or not value.strip():
+        raise ValueError(
+            "Embedding provider is not configured. Refusing to start production server."
+        )
+    normalized = value.strip().lower()
+    if _forbidden_fake_ai_token(normalized):
+        raise ValueError(
+            "Production RAG requires a real semantic embedding provider. "
+            f"Got: {normalized}."
+        )
     if normalized == "openai":
         return "openai"
     if normalized in {"huggingface", "sentence-transformers", "sentence_transformers", "hf"}:
@@ -1368,6 +1769,51 @@ def _parse_embedding_provider(value: str | None) -> EmbeddingProvider:
     allowed = ", ".join(ALLOWED_EMBEDDING_PROVIDERS)
     raise ValueError(
         f"Invalid embedding provider environment value: {value}. Expected one of: {allowed}"
+    )
+
+
+def _validate_real_embedding_settings(settings: Settings) -> None:
+    provider = str(settings.embedding_provider or "").strip().lower()
+    model = str(settings.embedding_model or "").strip()
+    if not provider:
+        raise ValueError(
+            "Embedding provider is not configured. Refusing to start production server."
+        )
+    if provider not in ALLOWED_EMBEDDING_PROVIDERS or _forbidden_fake_ai_token(provider):
+        raise ValueError(
+            "Production RAG requires a real semantic embedding provider. "
+            f"Got: {provider}."
+        )
+    if not model:
+        raise ValueError(
+            "Embedding model is not configured. Refusing to start production server."
+        )
+    if _forbidden_fake_ai_token(model):
+        raise ValueError(
+            "Production RAG requires a real semantic embedding model. "
+            f"Got: {model}."
+        )
+    if provider == "openai" and not settings.openai_api_key:
+        raise ValueError(
+            "Production RAG requires OJT_OPENAI_API_KEY or OPENAI_API_KEY for OpenAI embeddings."
+        )
+
+
+def _forbidden_fake_ai_token(value: str) -> bool:
+    normalized = value.strip().lower()
+    return any(
+        token in normalized
+        for token in (
+            "deter" + "ministic",
+            "hash",
+            "fake",
+            "mock",
+            "stub",
+            "test",
+            "lexical",
+            "keyword",
+            "random",
+        )
     )
 
 
@@ -1395,6 +1841,28 @@ def _parse_retrieval_framework(value: str | None) -> RetrievalFramework:
     )
 
 
+def _parse_retrieval_mode(value: str | None) -> RetrievalMode:
+    normalized = "semantic_vector" if value is None else value.strip().lower().replace("-", "_")
+    if normalized in {"semantic_vector", "vector", "semantic"}:
+        return "semantic_vector"
+    if normalized in {
+        "lexical",
+        "keyword",
+        "fulltext",
+        "full_text",
+        "fts",
+        "bm25",
+        "hybrid",
+    }:
+        raise ValueError(
+            "Production RAG requires vector retrieval. Lexical fallback is forbidden."
+        )
+    allowed = ", ".join(ALLOWED_RETRIEVAL_MODES)
+    raise ValueError(
+        f"Invalid retrieval mode environment value: {value}. Expected one of: {allowed}"
+    )
+
+
 def _parse_llm_provider(value: str | None) -> LLMProvider:
     normalized = "disabled" if value is None else value.strip().lower()
     if normalized in {"", "none", "off", "disabled"}:
@@ -1416,6 +1884,18 @@ def _parse_llm_model(value: str | None) -> str:
     )
 
 
+def _parse_model_identifier(
+    value: str | None,
+    *,
+    default: str,
+    setting_name: str,
+) -> str:
+    normalized = default if value is None or not value.strip() else value.strip()
+    if _valid_model_identifier(normalized):
+        return normalized
+    raise ValueError(f"Invalid {setting_name}: expected a non-blank model id")
+
+
 def _parse_optional_llm_model(value: str | None) -> str | None:
     if value is None or not value.strip():
         return None
@@ -1424,16 +1904,17 @@ def _parse_optional_llm_model(value: str | None) -> str | None:
 
 def _parse_embedding_model(value: str | None, *, provider: str | None = None) -> str:
     parsed_provider = _parse_embedding_provider(provider)
-    default = (
-        OPENAI_EMBEDDING_MODEL
-        if parsed_provider == "openai"
-        else HUGGINGFACE_EMBEDDING_MODEL
-        if parsed_provider == "huggingface"
-        else DETERMINISTIC_EMBEDDING_MODEL
-    )
-    normalized = default if value is None else value.strip()
+    if value is None or not value.strip():
+        raise ValueError(
+            "Embedding model is not configured. Refusing to start production server."
+        )
+    normalized = value.strip()
+    if _forbidden_fake_ai_token(normalized):
+        raise ValueError(
+            "Production RAG requires a real semantic embedding model. "
+            f"Got: {normalized}."
+        )
     allowed = {
-        "deterministic": {DETERMINISTIC_EMBEDDING_MODEL},
         "openai": {OPENAI_EMBEDDING_MODEL, "text-embedding-3-large"},
         "huggingface": None,
     }[parsed_provider]
@@ -1459,13 +1940,15 @@ def _parse_embedding_dimensions(
     model: str | None = None,
 ) -> int:
     parsed_provider = _parse_embedding_provider(provider)
-    parsed_model = _parse_embedding_model(model, provider=parsed_provider)
+    parsed_model = (model or (
+        OPENAI_EMBEDDING_MODEL
+        if parsed_provider == "openai"
+        else HUGGINGFACE_EMBEDDING_MODEL
+    )).strip()
     default_dimensions = (
         OPENAI_EMBEDDING_DIMENSIONS
         if parsed_provider == "openai"
         else HUGGINGFACE_EMBEDDING_DIMENSIONS
-        if parsed_provider == "huggingface"
-        else DETERMINISTIC_EMBEDDING_DIMENSIONS
     )
     normalized = str(default_dimensions) if value is None else value.strip()
     try:
@@ -1475,8 +1958,6 @@ def _parse_embedding_dimensions(
             "Invalid embedding dimensions environment value: "
             f"{value}. Expected a positive integer supported by {parsed_model}"
         ) from exc
-    if parsed_provider == "deterministic" and dimensions == DETERMINISTIC_EMBEDDING_DIMENSIONS:
-        return dimensions
     if parsed_provider == "openai" and dimensions > 0:
         if parsed_model.startswith("text-embedding-3-"):
             return dimensions

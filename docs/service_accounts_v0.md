@@ -27,8 +27,10 @@ path.
 
 ## Token Rules
 
-`POST /api/v1/auth/service-accounts` returns the raw bearer token once. The
-backend stores only the SHA-256 token hash in the existing `sessions` table.
+`POST /api/v1/auth/service-accounts` returns the first raw bearer token once.
+`POST /api/v1/auth/service-accounts/{account_id}/tokens` returns replacement
+tokens for an existing service account. The backend stores only the SHA-256
+token hash in the existing `sessions` table.
 
 Token prefix:
 
@@ -90,6 +92,29 @@ Requires `users:read` and returns service accounts in the caller's current
 organization unless `organization_id` is supplied and the caller is also a
 member of that organization.
 
+`POST /api/v1/auth/service-accounts/{account_id}/tokens`
+
+Issues a new bearer token for an existing service account without creating a new
+identity. A human user must have `users:write` in the target organization. A
+service account may also issue a successor token for itself while its current
+token is still valid; self-issued tokens cannot request a TTL longer than
+`OJT_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS`.
+
+Request:
+
+```json
+{
+  "token_ttl_seconds": 3600
+}
+```
+
+Response data includes:
+
+- `service_account`
+- `token_type`
+- `access_token`
+- `expires_at`
+
 ## Authorization Behavior
 
 Service-account tokens resolve to:
@@ -115,8 +140,8 @@ Postgres migration:
 
 - `sql/postgres/migrations/017_service_accounts.sql`
 
-SQLite and memory backends create equivalent tables/records for local
-development and tests.
+The in-memory backend is reserved for isolated tests. Runtime service-account
+records are stored in Postgres.
 
 ## Non-Goals
 

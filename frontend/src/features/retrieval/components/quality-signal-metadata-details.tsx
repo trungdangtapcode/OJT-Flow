@@ -10,7 +10,7 @@ export function QualitySignalMetadataDetails({
   const details = qualitySignalMetadataDetails(signal);
   if (!details.length) return null;
   return (
-    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 p-2">
+    <div className="grid gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-2">
       <div className="text-[11px] font-bold uppercase text-muted-foreground">
         Signal details
       </div>

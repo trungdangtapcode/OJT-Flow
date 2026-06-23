@@ -12,12 +12,12 @@ export function DiversitySelectionExplanation({
 }) {
   if (!selection) return null;
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-2">
       <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
         <Network className="h-3.5 w-3.5 shrink-0" />
         <span>Diversity selection</span>
       </div>
-      <div className="grid gap-1 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs">
+      <div className="grid gap-1 rounded-lg border border-border/60 bg-card/70 px-2 py-1.5 text-xs">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <Badge variant="muted">selected #{selection.selectedRank}</Badge>
           <Badge variant="muted">original #{selection.originalRank}</Badge>

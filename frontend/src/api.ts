@@ -1,5 +1,8 @@
 import type {
   ApiEnvelope,
+  ArtifactDetailResponse,
+  ArtifactListResponse,
+  ArtifactScope,
   AiRiskRegister,
   AssistantChatPayload,
   AssistantAnswerTemplate,
@@ -21,6 +24,7 @@ import type {
   AuthLoginResponse,
   AuthSessionResponse,
   BackgroundJob,
+  CreateInvitationResponse,
   CorpusAdapterCatalog,
   CorpusChunkingProfileCatalog,
   CorpusPartitionCatalog,
@@ -28,6 +32,12 @@ import type {
   DisclaimerPolicy,
   ExtractedDocument,
   ExtractorInventory,
+  GraphMedStatus,
+  KnowledgeGraphImportPayload,
+  KnowledgeGraphImportResult,
+  KnowledgeGraphNode,
+  KnowledgeGraphStats,
+  KnowledgeGraphView,
   MigrationDiagnostics,
   McpPromptCatalog,
   McpResourceCatalog,
@@ -74,11 +84,15 @@ import type {
   SchemaEntry,
   StartWorkflowPayload,
   UploadParseJobResponse,
+  UploadedArtifact,
   WorkflowEvent,
+  WorkflowInputPreview,
   WorkflowOutputArtifact,
   WorkflowStats,
   WorkflowSummaryPage,
   WorkflowState,
+  Workspace,
+  WorkspaceInvitation,
 } from "./types";
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
@@ -141,6 +155,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       "request_failed",
       `Request failed with status ${response.status}`,
     );
+  }
+  return envelope.data as T;
+}
+
+async function requestQuiet<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetchApi(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: requestHeaders(init),
+  });
+  const envelope = await parseEnvelope<T>(response);
+  if (!response.ok || envelope.error) {
+    throw new ApiRequestError({
+      status: response.status,
+      code: envelope.error?.code ?? "request_failed",
+      message: envelope.error?.message ?? `Request failed with status ${response.status}`,
+      details: envelope.error?.details,
+      workflowId: envelope.error?.workflow_id ?? null,
+      requestId: envelope.error?.request_id ?? responseRequestId(response),
+      endpoint: response.url,
+    });
   }
   return envelope.data as T;
 }
@@ -453,6 +488,57 @@ export function logoutCurrentSession(): Promise<{ status: string }> {
   return request<{ status: string }>("/auth/logout", { method: "POST" });
 }
 
+export function listWorkspaces(): Promise<{ items: Workspace[] }> {
+  return request<{ items: Workspace[] }>("/organizations");
+}
+
+export function createWorkspace(payload: {
+  display_name: string;
+  slug?: string;
+}): Promise<Workspace> {
+  return request<Workspace>("/organizations", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listInvitations(
+  organizationId: string,
+): Promise<{ items: WorkspaceInvitation[] }> {
+  return request<{ items: WorkspaceInvitation[] }>(
+    `/organizations/${encodeURIComponent(organizationId)}/invitations`,
+  );
+}
+
+export function createInvitation(
+  organizationId: string,
+  payload: { email: string; role_key: string },
+): Promise<CreateInvitationResponse> {
+  return request<CreateInvitationResponse>(
+    `/organizations/${encodeURIComponent(organizationId)}/invitations`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export function acceptInvitation(token: string): Promise<Workspace> {
+  return request<Workspace>("/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function revokeInvitation(
+  organizationId: string,
+  invitationId: string,
+): Promise<WorkspaceInvitation> {
+  return request<WorkspaceInvitation>(
+    `/organizations/${encodeURIComponent(organizationId)}/invitations/${encodeURIComponent(
+      invitationId,
+    )}/revoke`,
+    { method: "POST" },
+  );
+}
+
 export function listWorkflowSummaries(params: {
   status?: string | null;
   q?: string | null;
@@ -474,6 +560,10 @@ export function getWorkflow(workflowId: string): Promise<WorkflowState> {
 
 export function listWorkflowEvents(workflowId: string): Promise<WorkflowEvent[]> {
   return request<WorkflowEvent[]>(`/workflows/${pathSegment(workflowId)}/events`);
+}
+
+export function getWorkflowInputPreview(workflowId: string): Promise<WorkflowInputPreview> {
+  return request<WorkflowInputPreview>(`/workflows/${pathSegment(workflowId)}/input-preview`);
 }
 
 export function getWorkflowOutput(workflowId: string): Promise<WorkflowOutputArtifact> {
@@ -598,6 +688,70 @@ export function getRetrievalGraphNeighborhood(
       workflow_id: params.workflow_id,
     })}`,
   );
+}
+
+export function searchKnowledgeGraph(params: {
+  q?: string | null;
+  limit?: number;
+} = {}): Promise<KnowledgeGraphNode[]> {
+  return request<KnowledgeGraphNode[]>(
+    `/knowledge-graph/search${queryString({
+      limit: params.limit,
+      q: params.q ?? "",
+    })}`,
+  );
+}
+
+export function getKnowledgeGraphNeighborhood(params: {
+  node_id?: string | null;
+  q?: string | null;
+  depth?: number;
+  limit?: number;
+}): Promise<KnowledgeGraphView> {
+  return request<KnowledgeGraphView>(
+    `/knowledge-graph/neighborhood${queryString({
+      depth: params.depth,
+      limit: params.limit,
+      node_id: params.node_id,
+      q: params.q,
+    })}`,
+  );
+}
+
+export function getKnowledgeGraphStats(): Promise<KnowledgeGraphStats> {
+  return request<KnowledgeGraphStats>("/knowledge-graph/stats");
+}
+
+export function getGraphMedStatus(): Promise<GraphMedStatus> {
+  return request<GraphMedStatus>("/knowledge-graph/graph-med/status");
+}
+
+export function importKnowledgeGraph(
+  payload: KnowledgeGraphImportPayload,
+): Promise<KnowledgeGraphImportResult> {
+  return request<KnowledgeGraphImportResult>("/knowledge-graph/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function importKnowledgeGraphFile(params: {
+  file: File;
+  document_id?: string | null;
+  source_id?: string | null;
+  patient_id?: string | null;
+  encounter_id?: string | null;
+}): Promise<KnowledgeGraphImportResult> {
+  const formData = new FormData();
+  formData.set("file", params.file);
+  if (params.document_id) formData.set("document_id", params.document_id);
+  if (params.source_id) formData.set("source_id", params.source_id);
+  if (params.patient_id) formData.set("patient_id", params.patient_id);
+  if (params.encounter_id) formData.set("encounter_id", params.encounter_id);
+  return request<KnowledgeGraphImportResult>("/knowledge-graph/import-file", {
+    method: "POST",
+    body: formData,
+  });
 }
 
 export function listRetrievalJudgments(params: {
@@ -1014,7 +1168,191 @@ export async function extractFileText(
       `Extraction failed with status ${response.status}`,
     );
   }
-  return envelope.data as ExtractedDocument;
+  const data = envelope.data as ExtractedDocument | UploadParseJobResponse;
+  if (isUploadParseJobResponse(data)) {
+    return waitForQueuedExtractedDocument(data);
+  }
+  if (!isExtractedDocument(data)) {
+    throw new ApiRequestError({
+      status: response.status,
+      code: "extract_response_invalid",
+      message: "Extraction response did not include document text.",
+      requestId: responseRequestId(response),
+      endpoint: response.url,
+      details: { filename: file.name, extractor: options.extractor },
+    });
+  }
+  return data;
+}
+
+export async function getArtifactExtractedDocument(
+  artifactId: string,
+  params: { jobId?: string | null; traceId?: string | null } = {},
+): Promise<ExtractedDocument> {
+  const query = new URLSearchParams();
+  if (params.jobId) query.set("job_id", params.jobId);
+  if (params.traceId) query.set("trace_id", params.traceId);
+  return request<ExtractedDocument>(
+    `/parse/artifacts/${pathSegment(artifactId)}/extracted-document${
+      query.toString() ? `?${query.toString()}` : ""
+    }`,
+  );
+}
+
+export async function listWorkspaceArtifacts(params: {
+  scope?: ArtifactScope;
+  limit?: number;
+  q?: string;
+  mimeType?: string;
+  source?: string;
+} = {}): Promise<ArtifactListResponse> {
+  const query = new URLSearchParams();
+  query.set("scope", params.scope ?? "workspace");
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.mimeType?.trim()) query.set("mime_type", params.mimeType.trim());
+  if (params.source?.trim()) query.set("source", params.source.trim());
+  try {
+    return await requestQuiet<ArtifactListResponse>(
+      `/artifacts${query.toString() ? `?${query.toString()}` : ""}`,
+    );
+  } catch (error) {
+    if (!isMissingArtifactBrowserRoute(error)) throw error;
+    const legacyItems = await request<UploadedArtifact[]>(
+      `/parse/artifacts${queryString({ limit: params.limit ?? 100 })}`,
+    );
+    return {
+      items: filterLegacyArtifacts(legacyItems, params),
+      scope: "mine",
+      organization_id: "legacy-owner-scope",
+      storage_backend: "postgres",
+      object_storage_backend: inferObjectStorageBackend(legacyItems),
+    };
+  }
+}
+
+export async function getWorkspaceArtifact(artifactId: string): Promise<ArtifactDetailResponse> {
+  try {
+    return await requestQuiet<ArtifactDetailResponse>(`/artifacts/${pathSegment(artifactId)}`);
+  } catch (error) {
+    if (!isMissingArtifactBrowserRoute(error)) throw error;
+    const [artifact, traces, accessEvents] = await Promise.all([
+      request<UploadedArtifact>(`/parse/artifacts/${pathSegment(artifactId)}`),
+      request<ArtifactDetailResponse["traces"]>(
+        `/parse/artifacts/${pathSegment(artifactId)}/traces`,
+      ),
+      request<ArtifactDetailResponse["access_events"]>(
+        `/parse/artifacts/${pathSegment(artifactId)}/access-events`,
+      ),
+    ]);
+    return {
+      artifact,
+      traces,
+      access_events: accessEvents,
+    };
+  }
+}
+
+export function workspaceArtifactDownloadUrl(
+  artifactId: string,
+  artifact?: UploadedArtifact | null,
+): string {
+  if (artifact && !artifact.organization_id) {
+    return `${API_BASE_URL}/parse/artifacts/${pathSegment(artifactId)}/download`;
+  }
+  return `${API_BASE_URL}/artifacts/${pathSegment(artifactId)}/download`;
+}
+
+function isMissingArtifactBrowserRoute(error: unknown): boolean {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 404 &&
+    error.code === "not_found"
+  );
+}
+
+function filterLegacyArtifacts(
+  artifacts: UploadedArtifact[],
+  params: {
+    q?: string;
+    mimeType?: string;
+    source?: string;
+  },
+): UploadedArtifact[] {
+  const needle = (params.q ?? "").trim().toLowerCase();
+  return artifacts.filter(
+    (artifact) =>
+      (!needle || artifact.filename.toLowerCase().includes(needle)) &&
+      (!params.mimeType?.trim() || artifact.mime_type === params.mimeType.trim()) &&
+      (!params.source?.trim() || artifact.source === params.source.trim()),
+  );
+}
+
+function inferObjectStorageBackend(artifacts: UploadedArtifact[]): string {
+  return artifacts.some((artifact) => artifact.storage_ref.startsWith("s3://"))
+    ? "minio"
+    : "local";
+}
+
+async function waitForQueuedExtractedDocument(
+  queued: UploadParseJobResponse,
+): Promise<ExtractedDocument> {
+  const artifactId = queued.artifact?.artifact_id;
+  const jobId = queued.job?.job_id;
+  if (!artifactId || !jobId) {
+    throw new ApiRequestError({
+      status: 202,
+      code: "extract_job_missing_refs",
+      message: "Queued extraction response did not include artifact/job references.",
+      details: { queued },
+    });
+  }
+  const deadline = Date.now() + 120_000;
+  let lastJob: BackgroundJob | null = queued.job;
+  while (Date.now() < deadline) {
+    lastJob = await getJob(jobId);
+    if (lastJob.status === "succeeded") {
+      return getArtifactExtractedDocument(artifactId, { jobId });
+    }
+    if (lastJob.status === "failed" || lastJob.status === "cancelled") {
+      throw new ApiRequestError({
+        status: 202,
+        code: "extract_job_failed",
+        message:
+          lastJob.error?.message ||
+          `Queued extraction ${lastJob.status}. No document text was produced.`,
+        details: { job_id: jobId, artifact_id: artifactId, job: lastJob },
+      });
+    }
+    await sleep(1500);
+  }
+  throw new ApiRequestError({
+    status: 202,
+    code: "extract_job_timeout",
+    message: "Queued extraction did not finish before the Assistant timeout.",
+    details: { job_id: jobId, artifact_id: artifactId, last_job: lastJob },
+  });
+}
+
+function isUploadParseJobResponse(value: unknown): value is UploadParseJobResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return Boolean(record.job && record.artifact);
+}
+
+function isExtractedDocument(value: unknown): value is ExtractedDocument {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.filename === "string" &&
+    typeof record.source_format === "string" &&
+    typeof record.extractor_used === "string" &&
+    typeof record.text === "string"
+  );
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 export function createClipboardImageParseJob(payload: {

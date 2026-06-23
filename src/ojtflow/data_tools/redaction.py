@@ -1,4 +1,4 @@
-"""Deterministic sensitive text redaction preview."""
+"""Rule-based sensitive text redaction preview."""
 
 from __future__ import annotations
 

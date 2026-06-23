@@ -1,6 +1,6 @@
 # OJTFlow
 
-OJTFlow is a governed healthcare data workflow scaffold. The current implementation is the system backbone: typed contracts, deterministic data tools, workflow orchestration, review gates, audit events, static trusted knowledge, and FastAPI routes.
+OJTFlow is a governed healthcare data workflow scaffold. The current implementation is the system backbone: typed contracts, rule-based data tools, workflow orchestration, review gates, audit events, static trusted knowledge, and FastAPI routes.
 
 The product UI is a React/TypeScript operations console for both daily end users and B2B evaluators:
 
@@ -20,10 +20,10 @@ The code follows a clean architecture shape:
 ```text
 src/ojtflow/
   core/             pure contracts, enums, policies, errors
-  data_tools/       deterministic parse/profile/validate/convert tools
-  agents/           role-specific wrappers around deterministic services
+  data_tools/       rule-based parse/profile/validate/convert tools
+  agents/           role-specific wrappers around rule-based services
   application/      workflow use cases and ports
-  infrastructure/   Postgres, SQLite, in-memory, and static knowledge adapters
+  infrastructure/   Postgres, in-memory test harness, and static knowledge adapters
   interfaces/api/   FastAPI routes and request schemas
   medical/          OCR/DICOM/visual evidence extension contracts
   mcp_servers/      local MCP wrappers for allowlisted OJTFlow tools
@@ -43,15 +43,16 @@ Dependency direction points inward to `core`. API, storage, retrieval, and futur
 - Data profiling and schema validation.
 - Conservative transformation plans that require review for semantic changes.
 - Human review pause/resume flow.
-- Google OAuth sign-in through auth ports, Postgres/SQLite/memory session storage,
+- Google OAuth sign-in through auth ports, Postgres session storage,
   Redis session cache in Postgres deployments, and HTTP-only browser session cookies.
-- Deterministic CSV-to-JSON conversion after approval.
+- Rule-based CSV-to-JSON conversion after approval.
 - Evidence-grounded explanation report with medical intended-use limitation.
-- Healthcare-aware retrieval module with Postgres full-text search, pgvector-ready
-  storage, OpenAI semantic embeddings, deterministic test embeddings, and static fallback.
+- Healthcare-aware RAG retrieval module with real semantic embeddings and
+  Postgres pgvector similarity search as the production path.
 - FastAPI routes for workflows, review, assistant chat, convert, validate, retrieval, FHIR profile, OCR evidence, and health.
-- Optional OpenAI Responses planner for assistant tool selection, with deterministic fallback.
-- Persisted Assistant chat sessions/messages for memory, SQLite, and Postgres storage, with frontend session history, stream replay payloads, and workflow refs.
+- OpenAI Responses planner for assistant tool selection; missing or failed LLM
+  planning raises an error instead of generating a local rule/template answer.
+- Persisted Assistant chat sessions/messages for Postgres storage, with frontend session history, stream replay payloads, and workflow refs.
 - Local MCP server wrappers for retrieval, validation, conversion, FHIR profiling, workflow reads, review reads, and gated workflow creation.
 - Authenticated runtime diagnostics for sanitized configuration, readiness checks,
   migration ledger status, and bootstrap failure classification.
@@ -80,8 +81,8 @@ Release evidence is tracked in `RELEASE_CANDIDATE.md` and
 `docs/release_verification_matrix.md`. Keep those documents aligned with the
 release script whenever backend contracts, storage, auth, retrieval, OCR/FHIR
 handoffs, frontend behavior, or deployment checks change.
-The release script also runs the deterministic retrieval quality eval so search
-changes are checked against known healthcare evidence cases before demo freeze.
+The release script also runs retrieval quality checks so search changes are
+checked against known healthcare evidence cases before demo freeze.
 
 Run the full local release check against the Docker stack:
 
@@ -106,23 +107,58 @@ Use `docker-compose up --build` if your machine has Docker Compose v1.
 
 This starts:
 
-- `postgres` on `localhost:5432` using the pgvector-capable Postgres image
-- `redis` on `localhost:6379`
-- `api` on `localhost:8000`
-- `frontend` on `localhost:5173`
+- `postgres` on `localhost:15432` using the pgvector-capable Postgres image
+- `redis` on `localhost:16379`
+- `rabbitmq` AMQP on `localhost:15673`
+- RabbitMQ Management UI on `localhost:15672`
+- `api` on `localhost:18000`
+- `frontend` on `localhost:15173`
+- OCR/RAG/embedding/ingestion/export Celery workers
+- optional GPU MedSigLIP image classification service on `localhost:18103`
+- optional MedSigLIP Celery worker on the `medsiglip` queue
+- Flower on `localhost:15555`
+- Prometheus on `localhost:19090`
+- Grafana on `localhost:13000`
+- Loki on `localhost:13100`
 
 Those host ports are local defaults. Override them with
-`OJT_POSTGRES_PORT`, `OJT_REDIS_PORT`, `OJT_API_PORT`, and
-`OJT_FRONTEND_PORT` when running beside existing services. The Compose
+`OJT_POSTGRES_PORT`, `OJT_REDIS_PORT`, `OJT_RABBITMQ_AMQP_PORT`,
+`OJT_RABBITMQ_MANAGEMENT_PORT`, `OJT_API_PORT`, `OJT_FRONTEND_PORT`,
+`OJT_FLOWER_PORT`, `OJT_PROMETHEUS_PORT`, `OJT_GRAFANA_PORT`, and
+`OJT_LOKI_PORT` when running beside existing services. The Compose
 Postgres container also accepts `OJT_POSTGRES_DB`, `OJT_POSTGRES_USER`, and
 `OJT_POSTGRES_PASSWORD`; the API container DSN is derived from those Compose
 settings and points at the internal `postgres` service.
 
-Compose health checks verify Postgres, Redis, API `/health`, and frontend
-serving readiness. The frontend waits for the API health check before starting.
-The Docker frontend is a built static React bundle served by nginx on port
-`5173`; nginx preserves SPA routes and proxies `/api/*` plus `/health` to the
-API container.
+Compose health checks verify Postgres, Redis, RabbitMQ, API `/health`, and
+frontend serving readiness. The frontend waits for the API health check before starting.
+The Docker frontend is a built static React bundle exposed on host port `15173`
+with nginx listening on container port `5173`; nginx preserves SPA routes and
+proxies `/api/*` plus `/health` to the API container.
+
+Long-running parse/OCR/RAG jobs are queue-backed in Compose. The API creates a
+durable Postgres `background_jobs` record and dispatches work to RabbitMQ/Celery;
+workers write status, trace output, or structured errors back to Postgres.
+Scanned PDF/image OCR therefore returns a job for polling instead of blocking
+the request thread. Use `/api/v1/jobs/{job_id}` for status, Flower for task
+inspection, RabbitMQ Management UI for queue/consumer state, Prometheus/Grafana
+for metrics, and Loki for container logs. Configure `OJT_SENTRY_DSN` to send
+API and worker exceptions to Sentry without exposing secrets.
+
+Run the GPU-backed MedSigLIP service after accepting the model terms on
+Hugging Face and setting `HF_TOKEN` or `HUGGING_FACE_HUB_TOKEN`:
+
+```bash
+docker compose --profile medsiglip up --build medsiglip worker-medsiglip prometheus grafana
+```
+
+The model service loads `google/medsiglip-448` on CUDA by default and exposes
+`/health`, `/classify`, and `/metrics`. The main API exposes authenticated
+`/api/v1/medsiglip/status`, `/api/v1/medsiglip/classify`, and
+`/api/v1/medsiglip/classification-jobs`; queued jobs are polled through the
+standard `/api/v1/jobs/{job_id}` endpoint. Prometheus scrapes the MedSigLIP
+service plus NVIDIA DCGM metrics, and the Grafana overview dashboard includes
+MedSigLIP latency, throughput, queue depth, and GPU utilization panels.
 
 The API applies pending Postgres migrations automatically when the Postgres
 storage adapters are constructed. The explicit migration command remains useful
@@ -145,12 +181,12 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_STORAGE_BACKEND=postgres`
 - `OJT_PRODUCT_MODE=local_dev`
 - `OJT_NO_MOCK_DATA=false`
-- `OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
-- `OJT_REDIS_URL=redis://localhost:6379/0`
+- `OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:15432/ojtflow`
+- `OJT_REDIS_URL=redis://localhost:16379/0`
 - `OJT_GOOGLE_CLIENT_ID=`
 - `OJT_GOOGLE_CLIENT_SECRET=`
-- `OJT_GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback`
-- `OJT_GOOGLE_FRONTEND_REDIRECT_URI=http://localhost:5173/auth/callback`
+- `OJT_GOOGLE_REDIRECT_URI=http://localhost:18000/api/v1/auth/google/callback`
+- `OJT_GOOGLE_FRONTEND_REDIRECT_URI=http://localhost:15173/auth/callback`
 - `OJT_ALLOWED_AUTH_REDIRECT_URIS=`
 - `OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS=`
 - `OJT_GOOGLE_OAUTH_TIMEOUT_SECONDS=10.0`
@@ -167,9 +203,9 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_MAX_INLINE_DATA_BYTES=1048576`
 - `OJT_UPLOAD_READ_CHUNK_BYTES=1048576`
 - `OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml`
-- `OJT_EMBEDDING_PROVIDER=deterministic`
-- `OJT_EMBEDDING_MODEL=deterministic-hash-v0`
-- `OJT_EMBEDDING_DIMENSIONS=64`
+- `OJT_EMBEDDING_PROVIDER=openai`
+- `OJT_EMBEDDING_MODEL=text-embedding-3-small`
+- `OJT_EMBEDDING_DIMENSIONS=384`
 - `OJT_PYTHON_EXTRAS=parsing`
 - `OJT_OPENAI_API_KEY=` or `OPENAI_API_KEY=`
 - `OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1`
@@ -185,17 +221,31 @@ The default backend storage is Postgres plus local file artifacts:
 - `OJT_RERANK_BATCH_SIZE=16`
 - `OJT_RERANK_CANDIDATE_LIMIT=20`
 - `OJT_RERANK_SCORE_WEIGHT=0.08`
+- `OJT_MEDSIGLIP_ENABLED=true`
+- `OJT_MEDSIGLIP_BASE_URL=http://localhost:18103`
+- `OJT_MEDSIGLIP_DOCKER_BASE_URL=http://medsiglip:8000`
+- `OJT_MEDSIGLIP_MODEL=google/medsiglip-448`
+- `OJT_MEDSIGLIP_PORT=18103`
+- `OJT_MEDSIGLIP_GPU=0`
+- `OJT_MEDSIGLIP_DEVICE=cuda`
+- `OJT_MEDSIGLIP_REQUIRE_GPU=true`
+- `OJT_MEDSIGLIP_TIMEOUT_SECONDS=90.0`
+- `OJT_MEDSIGLIP_QUEUE=medsiglip`
+- `HF_TOKEN=` or `HUGGING_FACE_HUB_TOKEN=`
 - `OJT_RETRIEVAL_DIVERSITY_ENABLED=true`
 - `OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72`
 
-`OJT_STORAGE_BACKEND` must be one of `postgres`, `sqlite`, or `memory`.
-Postgres is the production-like default. SQLite is a local single-file fallback.
-Memory storage is for tests and short-lived demos only.
+`OJT_STORAGE_BACKEND=postgres` is the supported runtime storage configuration.
+The in-memory backend is reserved for isolated in-process tests and cannot serve
+production RAG.
 `OJT_PRODUCT_MODE` must be `local_dev`, `demo`, `pilot`, or `production`.
-Pilot and production modes require persistent storage and a real Assistant LLM
-provider; `OJT_LLM_PROVIDER=disabled` and memory storage are rejected during
-settings load. `OJT_NO_MOCK_DATA=true` explicitly blocks demo/mock data paths,
-and it is effectively enabled in pilot and production modes.
+Pilot and production modes require Postgres pgvector storage, real semantic
+embeddings, and a real Assistant LLM provider. Missing embedding provider,
+missing embedding model, missing OpenAI key for OpenAI embeddings,
+`OJT_LLM_PROVIDER=disabled`, non-Postgres storage, lexical retrieval mode, and
+fake/hash provider names are rejected during settings load. `OJT_NO_MOCK_DATA=true`
+explicitly blocks demo/mock data paths, and it is effectively enabled in pilot
+and production modes.
 `OJT_DATABASE_URL` must use `postgres://` or `postgresql://` syntax with a host,
 optional numeric port, and database name.
 `OJT_REDIS_URL` may be blank only to mark Redis as not configured; otherwise it
@@ -225,16 +275,18 @@ lowercase, and must be simple supported suffixes such as `.csv` or `.pdf`.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, paths, wildcards, or
 extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
-Deterministic mode is for offline tests and demos. OpenAI mode uses the
-Embeddings API with `OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY` when
-the project-specific variable is not set. Recommended CPU-safe semantic
-retrieval settings are:
+`OJT_EMBEDDING_PROVIDER` supports real semantic providers only: `openai` and
+`huggingface`. Fake, mock, rule-based, hash, lexical, keyword, random, or
+test providers are rejected. OpenAI mode uses the Embeddings API with
+`OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY` when the project-specific
+variable is not set. Recommended production semantic retrieval settings are:
 
 ```text
 OJT_EMBEDDING_PROVIDER=openai
 OJT_EMBEDDING_MODEL=text-embedding-3-small
 OJT_EMBEDDING_DIMENSIONS=384
+OJT_RETRIEVAL_MODE=semantic_vector
+OJT_RETRIEVAL_FRAMEWORK=custom
 ```
 
 For local GPU retrieval, install the optional dependency group and use:
@@ -257,18 +309,25 @@ OJT_EMBEDDING_DIMENSIONS=384
 OJT_HF_EMBEDDING_DEVICE=cuda
 ```
 
-The Postgres semantic vector schema uses `embedding vector(384)`. Retrieval
-still stores JSON embeddings and performs Python reranking if pgvector is not
-available or if the configured provider dimension does not match the vector
-column. Operator-provided trusted corpus files are indexed from
+The Postgres semantic vector schema uses `embedding vector(384)`. Production
+RAG embeds the query with the configured real provider and queries pgvector with
+`embedding <=> query_vector`. If pgvector is unavailable, dimensions mismatch,
+indexed vectors are missing, or index metadata belongs to a different provider
+generation, the request fails with a clear unavailable error. It does not fall
+back to full-text search, BM25, token matching, JSON/Python vector reranking, or
+keyword retrieval. Operator-provided trusted corpus files are indexed from
 `OJT_RETRIEVAL_CORPUS_DIRS` and can be refreshed through
 `POST /api/v1/retrieval/reindex`.
 
 The native retrieval adapter remains the production default:
 
 ```text
+OJT_RETRIEVAL_MODE=semantic_vector
 OJT_RETRIEVAL_FRAMEWORK=custom
 ```
+
+See `docs/production_semantic_rag.md` for the production fail-fast policy,
+provider setup, vector index requirements, reindex command, and guardrail check.
 
 For framework-backed RAG experiments, install or build the LlamaIndex extra:
 
@@ -277,7 +336,7 @@ uv pip install -e '.[rag-framework]'
 OJT_PYTHON_EXTRAS=parsing,rag-framework docker compose build api
 ```
 
-Then opt in:
+Then opt in for non-production framework evaluation:
 
 ```text
 OJT_RETRIEVAL_FRAMEWORK=llamaindex
@@ -289,9 +348,11 @@ OJT_RETRIEVAL_BM25_WEIGHT=0.38
 
 That adapter uses LlamaIndex Documents/Nodes, `SentenceSplitter`,
 `VectorStoreIndex`, and `QueryFusionRetriever`. When
-`llama-index-retrievers-bm25` is installed, it adds BM25 to vector retrieval
-with reciprocal-rank fusion. The API response shape stays the same because the
-framework is isolated behind the existing retrieval repository port.
+`llama-index-retrievers-bm25` is installed, BM25 can be a secondary signal after
+semantic vector retrieval. It is not the production/default RAG path, and BM25
+must not replace pgvector semantic retrieval. The API response shape stays the
+same because the framework is isolated behind the existing retrieval repository
+port.
 
 Retrieval runtime controls can also be changed from the Settings page or
 `PUT /api/v1/runtime/retrieval-settings`. The backend validates the requested
@@ -335,6 +396,9 @@ Upload parsing routes:
 - `GET /api/v1/auth/google/url`
 - `GET /api/v1/auth/google/callback`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/auth/service-accounts`
+- `POST /api/v1/auth/service-accounts`
+- `POST /api/v1/auth/service-accounts/{account_id}/tokens`
 - `GET /api/v1/assistant/sessions/{session_id}/stream-replays`
 - `GET /api/v1/runtime/config`
 - `GET /api/v1/runtime/readiness`
@@ -350,8 +414,8 @@ Upload parsing routes:
 Create a Google OAuth client and set these callback URLs:
 
 ```text
-http://localhost:8000/api/v1/auth/google/callback
-http://localhost:5173/auth/callback
+http://localhost:18000/api/v1/auth/google/callback
+http://localhost:15173/auth/callback
 ```
 
 Then set:
@@ -359,13 +423,13 @@ Then set:
 ```bash
 OJT_GOOGLE_CLIENT_ID=...
 OJT_GOOGLE_CLIENT_SECRET=...
-OJT_GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback
-OJT_GOOGLE_FRONTEND_REDIRECT_URI=http://localhost:5173/auth/callback
+OJT_GOOGLE_REDIRECT_URI=http://localhost:18000/api/v1/auth/google/callback
+OJT_GOOGLE_FRONTEND_REDIRECT_URI=http://localhost:15173/auth/callback
 ```
 
 Login flow:
 
-1. The frontend calls `GET /api/v1/auth/google/url?redirect_uri=http://localhost:5173/auth/callback`.
+1. The frontend calls `GET /api/v1/auth/google/url?redirect_uri=http://localhost:15173/auth/callback`.
 2. Redirect the user to `data.authorization_url`.
 3. Google redirects back to `/auth/callback` in the React app.
 4. The backend creates/updates `ojtflow.users`, creates a hashed session in
@@ -404,13 +468,13 @@ npm run dev
 Open:
 
 ```text
-http://localhost:5173
+http://localhost:15173
 ```
 
-The local Vite server defaults to proxying API requests to `http://localhost:8000`. Override with:
+The local Vite server defaults to proxying API requests to `http://localhost:18000`. Override with:
 
 ```bash
-VITE_API_PROXY_TARGET=http://127.0.0.1:8000 npm run dev
+VITE_API_PROXY_TARGET=http://127.0.0.1:18000 npm run dev
 ```
 
 When using the Docker frontend, verify the running container is serving the same
@@ -446,13 +510,12 @@ PYTHONPATH=src python -m ojtflow.infrastructure.storage.migrate
 Run the API:
 
 ```bash
-PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 8000
+PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 18000
 ```
 
-Use `OJT_STORAGE_BACKEND=sqlite` for a single-file local fallback, or
-`OJT_STORAGE_BACKEND=memory` for short-lived tests. The only supported storage
-backend values are `postgres`, `sqlite`, or `memory`; invalid values fail during
-settings load.
+Use `OJT_STORAGE_BACKEND=postgres` for local and deployed API runtime. The
+in-memory backend is reserved for short-lived in-process tests; invalid values,
+including `sqlite`, fail during settings load.
 
 Useful routes:
 

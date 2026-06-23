@@ -24,7 +24,6 @@ Service:
 Repositories:
 
 - `src/ojtflow/infrastructure/storage/governance_memory.py`
-- `src/ojtflow/infrastructure/storage/governance_sqlite.py`
 - `src/ojtflow/infrastructure/storage/governance_postgres.py`
 
 Data-driven defaults:

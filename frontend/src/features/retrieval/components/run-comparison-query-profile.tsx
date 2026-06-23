@@ -14,14 +14,14 @@ export function RunComparisonQueryProfile({
   const after = comparison.activeSummary.queryProfile;
   if (!before && !after) {
     return (
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
         <span className="text-xs font-bold text-muted-foreground">Query profile</span>
         <Badge variant="muted">not reported</Badge>
       </div>
     );
   }
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-card px-3 py-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="font-bold text-muted-foreground">Query profile</span>
         <Badge variant={comparison.queryProfileChanged ? "warning" : "success"}>

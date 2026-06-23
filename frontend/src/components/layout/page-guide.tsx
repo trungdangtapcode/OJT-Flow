@@ -22,9 +22,8 @@ export function PageGuide({ pathname }: { pathname: string }) {
   if (!guide) return null;
 
   return (
-    <GuidePanel className="mb-4" title={guide.title}>
-      <div className="grid gap-3">
-        <p className="text-sm leading-6 text-muted-foreground">{guide.summary}</p>
+    <GuidePanel className="mb-3" title={guide.title}>
+      <div className="grid gap-2 text-sm">
         <GuideGrid columns="lg:grid-cols-3">
           {guide.items.map((item) => (
             <GuideItem key={item.title} title={item.title}>
@@ -32,10 +31,6 @@ export function PageGuide({ pathname }: { pathname: string }) {
             </GuideItem>
           ))}
         </GuideGrid>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm">
-          <span className="font-semibold text-muted-foreground">{guide.nextAction}</span>
-          <ManualLink>Open manual</ManualLink>
-        </div>
       </div>
     </GuidePanel>
   );

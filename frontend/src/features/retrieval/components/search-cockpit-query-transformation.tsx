@@ -9,7 +9,7 @@ export function SearchCockpitQueryTransformation({
   view: RetrievalSearchCockpitView;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-black uppercase text-muted-foreground">
           Query transformation
@@ -40,7 +40,7 @@ export function SearchCockpitQueryTransformation({
         <div className="grid gap-1.5">
           {view.queryAspects.slice(0, 3).map((aspect) => (
             <div
-              className="grid gap-1 rounded-md border border-border bg-muted/25 px-3 py-2 text-xs"
+              className="grid gap-1 rounded-lg border border-border/60 bg-muted/25 px-3 py-2 text-xs"
               key={aspect.aspectId}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">

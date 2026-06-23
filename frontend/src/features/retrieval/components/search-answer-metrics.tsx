@@ -12,7 +12,7 @@ export function SearchAnswerMetrics({ metrics }: { metrics: SearchAnswerMetric[]
 
 function SearchAnswerMetricCard({ metric }: { metric: SearchAnswerMetric }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-card px-3 py-2">
+    <div className="min-w-0 rounded-lg border border-border/60 bg-card px-3 py-2">
       <div className="text-xs font-black uppercase text-muted-foreground">
         {metric.label}
       </div>

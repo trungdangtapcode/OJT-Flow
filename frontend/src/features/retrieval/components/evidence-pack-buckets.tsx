@@ -9,7 +9,7 @@ export function EvidencePackBuckets({ buckets }: { buckets: RetrievalEvidenceBuc
     (bucket) => bucket.required && bucket.hit_count === 0,
   ).length;
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-xs font-bold uppercase text-muted-foreground">
@@ -28,7 +28,7 @@ export function EvidencePackBuckets({ buckets }: { buckets: RetrievalEvidenceBuc
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {buckets.map((bucket) => (
           <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
+            className="grid min-w-0 gap-1 rounded-lg border border-border/60 bg-card px-3 py-2 text-xs"
             key={bucket.bucket_id}
           >
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">

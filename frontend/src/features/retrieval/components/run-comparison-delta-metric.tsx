@@ -15,7 +15,7 @@ export function RunComparisonMetric({
   positiveIsGood: boolean;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+    <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
       <span className="text-xs font-bold text-muted-foreground">{label}</span>
       <Badge variant={deltaBadgeVariant(delta, positiveIsGood)}>
         {formatSignedDelta(delta)}

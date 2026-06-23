@@ -14,7 +14,7 @@ from ojtflow.core.ids import new_id
 
 
 class FormatDetection(ContractModel):
-    """Result of deterministic format detection."""
+    """Result of rule-based format detection."""
 
     format: DataFormat
     confidence: float
@@ -92,7 +92,7 @@ class TransformationPlan(ContractModel):
 
 
 class TransformationOutput(ContractModel):
-    """Output of deterministic transformation."""
+    """Output of rule-based transformation."""
 
     output_id: str = Field(default_factory=lambda: new_id("out"))
     output_format: DataFormat

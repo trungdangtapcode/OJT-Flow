@@ -51,6 +51,7 @@ from ojtflow.core.time import utc_now
 from ojtflow.data_tools.hashing import sha256_bytes, sha256_text
 from ojtflow.infrastructure.storage.file_refs import artifact_path_from_file_ref
 from ojtflow.infrastructure.storage.migrations import PostgresMigrator
+from ojtflow.infrastructure.storage.object_store import MinioObjectStore, is_s3_storage_ref
 from ojtflow.infrastructure.storage.summary import (
     clamp_page,
     clamp_page_size,
@@ -86,10 +87,15 @@ class PostgresBackboneStore:
 
 
 class PostgresDatasetStore:
-    """Stores text artifacts as local files and metadata in Postgres."""
+    """Stores dataset metadata in Postgres and bytes in local files or object storage."""
 
-    def __init__(self, backbone: PostgresBackboneStore) -> None:
+    def __init__(
+        self,
+        backbone: PostgresBackboneStore,
+        object_store: MinioObjectStore | None = None,
+    ) -> None:
         self.backbone = backbone
+        self.object_store = object_store
 
     def put_text(
         self,
@@ -101,10 +107,27 @@ class PostgresDatasetStore:
     ) -> DatasetRecord:
         digest = sha256_text(text)
         dataset_id = new_id("ds")
-        directory = self.backbone.outputs_dir if source_kind == "generated" else self.backbone.datasets_dir
-        path = directory / f"{dataset_id}.txt"
-        path.write_text(text, encoding="utf-8")
-        storage_ref = path.resolve().as_uri()
+        if self.object_store:
+            object_key = _dataset_object_key(
+                dataset_id=dataset_id,
+                source_kind=source_kind,
+                suffix=".txt",
+            )
+            storage_ref = self.object_store.put_bytes(
+                object_key=object_key,
+                data=text.encode("utf-8"),
+                content_type="text/plain; charset=utf-8",
+                metadata={"sha256": digest, "dataset_id": dataset_id},
+            )
+        else:
+            directory = (
+                self.backbone.outputs_dir
+                if source_kind == "generated"
+                else self.backbone.datasets_dir
+            )
+            path = directory / f"{dataset_id}.txt"
+            path.write_text(text, encoding="utf-8")
+            storage_ref = path.resolve().as_uri()
         record = DatasetRecord(
             dataset_id=dataset_id,
             workflow_id=workflow_id,
@@ -150,9 +173,21 @@ class PostgresDatasetStore:
         digest = sha256_bytes(data)
         dataset_id = new_id("ds")
         suffix = Path(filename or "").suffix.lower()
-        path = self.backbone.datasets_dir / f"{dataset_id}{suffix or '.bin'}"
-        path.write_bytes(data)
-        storage_ref = path.resolve().as_uri()
+        if self.object_store:
+            storage_ref = self.object_store.put_bytes(
+                object_key=_dataset_object_key(
+                    dataset_id=dataset_id,
+                    source_kind=source_kind,
+                    suffix=suffix or ".bin",
+                ),
+                data=data,
+                content_type="application/octet-stream",
+                metadata={"sha256": digest, "dataset_id": dataset_id},
+            )
+        else:
+            path = self.backbone.datasets_dir / f"{dataset_id}{suffix or '.bin'}"
+            path.write_bytes(data)
+            storage_ref = path.resolve().as_uri()
         record = DatasetRecord(
             dataset_id=dataset_id,
             workflow_id=workflow_id,
@@ -187,6 +222,10 @@ class PostgresDatasetStore:
         return record
 
     def get_text(self, storage_ref: str) -> str:
+        if is_s3_storage_ref(storage_ref):
+            if not self.object_store:
+                raise OJTFlowError("Object storage is not configured for S3 dataset ref.")
+            return self.object_store.get_bytes(storage_ref).decode("utf-8")
         path = artifact_path_from_file_ref(
             storage_ref,
             [self.backbone.datasets_dir, self.backbone.outputs_dir],
@@ -211,15 +250,21 @@ class PostgresDatasetStore:
 
 
 class PostgresUploadedArtifactRepository:
-    """Postgres-backed uploaded artifact metadata with local file bytes."""
+    """Postgres-backed uploaded artifact metadata with local or object-store bytes."""
 
-    def __init__(self, backbone: PostgresBackboneStore) -> None:
+    def __init__(
+        self,
+        backbone: PostgresBackboneStore,
+        object_store: MinioObjectStore | None = None,
+    ) -> None:
         self.backbone = backbone
+        self.object_store = object_store
 
     def put_bytes(
         self,
         *,
         owner_user_id: str,
+        organization_id: str | None = None,
         filename: str,
         mime_type: str,
         data: bytes,
@@ -229,20 +274,38 @@ class PostgresUploadedArtifactRepository:
     ) -> UploadedArtifact:
         digest = sha256_bytes(data)
         extension = Path(filename).suffix.lower()
+        artifact_id = new_id("art")
         duplicate = self._canonical_for_hash(
             owner_user_id=owner_user_id,
             sha256=digest,
             byte_size=len(data),
         )
-        if duplicate:
+        if duplicate and (
+            self.object_store is None or is_s3_storage_ref(duplicate.storage_ref)
+        ):
             storage_ref = duplicate.storage_ref
+        elif self.object_store:
+            storage_ref = self.object_store.put_bytes(
+                object_key=_artifact_object_key(
+                    organization_id=organization_id,
+                    owner_user_id=owner_user_id,
+                    artifact_id=artifact_id,
+                    sha256=digest,
+                    extension=extension,
+                ),
+                data=data,
+                content_type=mime_type or "application/octet-stream",
+                metadata={"sha256": digest, "artifact_id": artifact_id},
+            )
         else:
             storage_path = self.backbone.uploads_dir / f"{new_id('blob')}{extension or '.bin'}"
             storage_path.write_bytes(data)
             storage_ref = storage_path.resolve().as_uri()
 
         artifact = UploadedArtifact(
+            artifact_id=artifact_id,
             owner_user_id=owner_user_id,
+            organization_id=organization_id,
             filename=filename,
             mime_type=mime_type or "application/octet-stream",
             extension=extension,
@@ -259,11 +322,11 @@ class PostgresUploadedArtifactRepository:
                 cursor.execute(
                     """
                     insert into ojtflow.uploaded_artifacts (
-                        artifact_id, owner_user_id, filename, mime_type, extension,
-                        byte_size, sha256, source, storage_ref, dataset_id,
+                        artifact_id, owner_user_id, organization_id, filename,
+                        mime_type, extension, byte_size, sha256, source, storage_ref, dataset_id,
                         duplicate_of_artifact_id, retention_policy, metadata, created_at
                     ) values (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s::jsonb, %s::jsonb, %s::timestamptz
                     )
                     """,
@@ -289,6 +352,10 @@ class PostgresUploadedArtifactRepository:
 
     def get_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes:
         artifact = self.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
+        if is_s3_storage_ref(artifact.storage_ref):
+            if not self.object_store:
+                raise OJTFlowError("Object storage is not configured for S3 artifact ref.")
+            return self.object_store.get_bytes(artifact.storage_ref)
         path = artifact_path_from_file_ref(
             artifact.storage_ref,
             [self.backbone.uploads_dir],
@@ -309,6 +376,85 @@ class PostgresUploadedArtifactRepository:
                 )
                 rows = cursor.fetchall()
         return [_postgres_uploaded_artifact_from_row(row) for row in rows]
+
+    def list_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        owner_user_id: str | None = None,
+        limit: int = 100,
+        q: str | None = None,
+        mime_type: str | None = None,
+        source: str | None = None,
+    ) -> list[UploadedArtifact]:
+        clauses = ["organization_id = %s"]
+        params: list[object] = [organization_id]
+        if owner_user_id:
+            clauses.append("owner_user_id = %s")
+            params.append(owner_user_id)
+        if q and q.strip():
+            clauses.append("filename ilike %s")
+            params.append(f"%{q.strip()}%")
+        if mime_type and mime_type.strip():
+            clauses.append("mime_type = %s")
+            params.append(mime_type.strip())
+        if source and source.strip():
+            clauses.append("source = %s")
+            params.append(source.strip())
+        params.append(max(1, min(limit, 500)))
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select * from ojtflow.uploaded_artifacts
+                    where {' and '.join(clauses)}
+                    order by created_at desc, artifact_id desc
+                    limit %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+        return [_postgres_uploaded_artifact_from_row(row) for row in rows]
+
+    def get_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> UploadedArtifact:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select * from ojtflow.uploaded_artifacts
+                    where organization_id = %s and artifact_id = %s
+                    """,
+                    (organization_id, artifact_id),
+                )
+                row = cursor.fetchone()
+        if not row:
+            raise NotFoundError(f"Uploaded artifact not found: {artifact_id}")
+        return _postgres_uploaded_artifact_from_row(row)
+
+    def get_bytes_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> bytes:
+        artifact = self.get_for_workspace(
+            organization_id=organization_id,
+            artifact_id=artifact_id,
+        )
+        if is_s3_storage_ref(artifact.storage_ref):
+            if not self.object_store:
+                raise OJTFlowError("Object storage is not configured for S3 artifact ref.")
+            return self.object_store.get_bytes(artifact.storage_ref)
+        path = artifact_path_from_file_ref(
+            artifact.storage_ref,
+            [self.backbone.uploads_dir],
+        )
+        return path.read_bytes()
 
     def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace:
         self.get(owner_user_id=trace.owner_user_id, artifact_id=trace.artifact_id)
@@ -1934,6 +2080,7 @@ def _postgres_uploaded_artifact_values(artifact: UploadedArtifact) -> tuple[obje
     return (
         artifact.artifact_id,
         artifact.owner_user_id,
+        artifact.organization_id,
         artifact.filename,
         artifact.mime_type,
         artifact.extension,
@@ -1957,6 +2104,7 @@ def _postgres_uploaded_artifact_from_row(row) -> UploadedArtifact:
     return UploadedArtifact(
         artifact_id=row["artifact_id"],
         owner_user_id=row["owner_user_id"],
+        organization_id=row.get("organization_id"),
         filename=row["filename"],
         mime_type=row["mime_type"],
         extension=row["extension"],
@@ -1970,6 +2118,38 @@ def _postgres_uploaded_artifact_from_row(row) -> UploadedArtifact:
         metadata=metadata,
         created_at=row["created_at"].isoformat(),
     )
+
+
+def _artifact_object_key(
+    *,
+    organization_id: str | None,
+    owner_user_id: str,
+    artifact_id: str,
+    sha256: str,
+    extension: str,
+) -> str:
+    workspace = _object_key_segment(organization_id or "legacy")
+    owner = _object_key_segment(owner_user_id)
+    artifact = _object_key_segment(artifact_id)
+    suffix = extension if extension.startswith(".") else f".{extension}" if extension else ".bin"
+    return f"uploads/{workspace}/{owner}/{artifact}/{sha256}{suffix}"
+
+
+def _dataset_object_key(*, dataset_id: str, source_kind: str, suffix: str) -> str:
+    directory = "outputs" if source_kind == "generated" else "datasets"
+    clean_dataset_id = _object_key_segment(dataset_id)
+    clean_suffix = suffix if suffix.startswith(".") else f".{suffix}" if suffix else ".bin"
+    return f"{directory}/{clean_dataset_id}{clean_suffix}"
+
+
+def _object_key_segment(value: str) -> str:
+    cleaned = "".join(
+        char
+        if char.isalnum() or char in {"_", "-"}
+        else "_"
+        for char in value.strip()
+    ).strip("_")
+    return cleaned or "unknown"
 
 
 def _postgres_job_values(job: BackgroundJob) -> tuple[object, ...]:

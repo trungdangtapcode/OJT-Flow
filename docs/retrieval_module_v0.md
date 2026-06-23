@@ -15,22 +15,24 @@ Production Docker uses Postgres with:
 
 - `ojtflow.knowledge_documents`
 - `ojtflow.knowledge_chunks`
-- generated `tsvector` search
-- optional pgvector `vector(384)` and HNSW index when the extension is available
-- JSON embeddings as a portable fallback
+- required pgvector `embedding vector(384)` storage
+- an HNSW vector index for semantic similarity retrieval
+- embedding generation metadata tied to provider, model, dimensions, and chunking
 
-Memory and SQLite modes use the static retrieval repository so tests and local
-demos do not require database state. The static adapter still accepts configured
-embedding providers for parity with Postgres mode.
+Memory mode is reserved for isolated tests and cannot serve production RAG.
+Static retrieval utilities require an explicit embedding provider and are not a
+production fallback.
 
-`OJT_RETRIEVAL_FRAMEWORK=custom` is the default and uses the native Postgres or
-static adapters above. `OJT_RETRIEVAL_FRAMEWORK=llamaindex` opts into the
-framework adapter behind the same `RetrievalRepository` port. That adapter uses
+`OJT_RETRIEVAL_MODE=semantic_vector` and `OJT_RETRIEVAL_FRAMEWORK=custom` are
+the production defaults and use the native Postgres pgvector adapter.
+`OJT_RETRIEVAL_FRAMEWORK=llamaindex` is non-production unless explicitly
+qualified and validated for the same vector-index requirements. That adapter uses
 LlamaIndex `Document`/`Node` objects, `SentenceSplitter`, `VectorStoreIndex`,
 and `QueryFusionRetriever`; when `llama-index-retrievers-bm25` is installed, it
-adds BM25 to vector retrieval with reciprocal-rank fusion. The API response
-contract remains `RetrievalPackage`, so workflow state, UI rendering, assistant
-tools, and audit/explanation paths do not depend on LlamaIndex types.
+can add BM25 as a secondary signal. BM25/full-text search must not replace the
+semantic vector retrieval path. The API response contract remains
+`RetrievalPackage`, so workflow state, UI rendering, assistant tools, and
+audit/explanation paths do not depend on LlamaIndex types.
 Framework retrieval also populates package readiness metadata and per-hit
 aspect/concept locator signals through the same OJTFlow retrieval contracts.
 It emits the same `standard_search_plan` contract as the native retrieval
@@ -58,35 +60,39 @@ atomically, clears cached settings/services, and reloads the retrieval adapter.
 The retrieval pipeline is auditable in v0:
 
 1. Analyze the query and build variants from instruction, fields, schema,
-   format, resource type, and deterministic clinical-standard expansion rules.
+   format, resource type, and rule-based clinical-standard expansion rules.
 2. Candidate chunks are filtered by trust level, clinical domain, standard system,
    source type, or exact source ID.
-3. Postgres mode retrieves separate lexical and vector candidate pools before
-   fusion so exact-term evidence and semantic-neighbor evidence cannot starve
-   each other inside a single bounded SQL result set.
-4. LlamaIndex mode applies equivalent metadata filters to framework retrievers
+3. Postgres production mode embeds the user query with the configured real
+   semantic embedding provider.
+4. Postgres production mode queries pgvector using vector similarity
+   (`embedding <=> query_vector`) and returns top candidates by distance.
+5. LlamaIndex mode applies equivalent metadata filters to framework retrievers
    before fusion, then keeps a post-filter safety check before evidence is
    emitted.
-5. Lexical score uses token overlap and Postgres full-text search in Postgres mode.
-6. Vector score uses the configured embedding provider:
-   deterministic hash embeddings for offline tests, OpenAI semantic embeddings
-   for CPU-safe production-like retrieval, or Hugging Face/SentenceTransformers
-   embeddings for local GPU retrieval.
-7. Reciprocal Rank Fusion combines lexical and vector rankings.
-8. Data-driven ranking boost rules favor schema matches, field matches,
+6. Vector score uses only real semantic embeddings from OpenAI or
+   Hugging Face/SentenceTransformers. Rule-based, hash, mock, fake, stub,
+   lexical, keyword, random, and test embeddings are forbidden in production.
+7. Data-driven ranking boost rules favor schema matches, field matches,
    approved sources, and relevant healthcare standards.
-9. Each ranked hit gets a deterministic extractive snippet: the most
+8. Each ranked hit gets a rule-based extractive snippet: the most
    query-relevant sentence/window from the source chunk, with matched terms and
    normalized source offsets.
-10. Final selected hits use source-aware diversity selection before packaging,
+9. Final selected hits use source-aware diversity selection before packaging,
    so repeated high-scoring chunks from one source do not hide independent
    standard, policy, or terminology evidence. The trace exposes selected-hit
    rationale under the first-class `diversity.selected_hits` contract and also
    mirrors it to `handoff_context.diversity.selected_hits` for agent handoff.
-11. Final selected hits are summarized into result facets by source type,
+10. Final selected hits are summarized into result facets by source type,
    clinical domain, standard system, and trust level.
-12. Trace safety flags mark prompt-injection-like query text and sensitive field
+11. Trace safety flags mark prompt-injection-like query text and sensitive field
    context without blocking retrieval.
+
+If the embedding provider is missing, the provider/model name is fake or
+hash-like, pgvector is unavailable, dimensions mismatch, indexed vectors are
+missing, or vector metadata is stale, retrieval raises an unavailable error and
+does not fall back to full-text search, BM25, token matching, `LIKE`/`ILIKE`,
+trigram search, JSON/Python vector reranking, or random/static chunks.
 
 The retrieval package now includes a `graph_context` handoff that extracts
 entities and evidence triples from the retrieved claims. This is a
@@ -132,7 +138,7 @@ Graph support can promote a weak support row to partial or a partial support row
 to strong only when the configured policy threshold is met. It cannot override
 source trust, freshness, PHI, policy, or human-review gates.
 
-The package also includes a guarded `answer` object. This is deterministic
+The package also includes a guarded `answer` object. This is rule-based
 retrieval synthesis, not open-ended clinical generation. It is built only from
 the `support_matrix`, ranked evidence, source metadata, and Graph-NER handoff:
 
@@ -241,7 +247,7 @@ handoff is visible, reproducible, and policy-gated before source ingestion.
 Source freshness is now a first-class readiness gate. `GET
 /api/v1/retrieval/freshness` compares the governed corpus adapter catalog,
 source trust policy catalog, generated local corpus manifest, and active source
-inventory. Each source receives a deterministic status:
+inventory. Each source receives a rule-based status:
 
 - `ready`: approved, policy-covered, indexed when expected, and within its
   freshness window.
@@ -285,7 +291,7 @@ UCUM validation route even when the user never names UCUM explicitly.
 Query transformations live in
 `knowledge/retrieval/query_transformation_rules.json` and are included in the
 sanitized `handoff_context.retrieval_rule_packs` fingerprint list. The current
-registry emits deterministic `query_transformation_rule` variants for:
+registry emits rule-based `query_transformation_rule` variants for:
 
 - `rewrite`: makes clinical standard, schema, resource, and field context
   explicit.
@@ -293,7 +299,7 @@ registry emits deterministic `query_transformation_rule` variants for:
   question before evidence lookup.
 - `multi_query_expansion`: combines decomposed query aspects, suggested terms,
   detected concepts, and standards for high-recall search.
-- `hyde`: optional deterministic HyDE-style hypothetical evidence text for
+- `hyde`: optional rule-based HyDE-style hypothetical evidence text for
   recall experiments. This rule is disabled unless
   `OJT_RETRIEVAL_ENABLE_HYDE=true`.
 
@@ -391,11 +397,11 @@ Seeded v0 sources include:
 - RxNorm medication terminology direction
 - OMOP CDM analytics export direction
 - MeSH/PubMed biomedical literature-search direction
-- query expansion rule registry for deterministic healthcare retrieval variants
-- filter suggestion rule registry for deterministic self-query metadata suggestions
-- query aspect rule registry for deterministic decomposition of healthcare
+- query expansion rule registry for rule-based healthcare retrieval variants
+- filter suggestion rule registry for rule-based self-query metadata suggestions
+- query aspect rule registry for rule-based decomposition of healthcare
   search intent into reviewable evidence aspects
-- ranking boost rule registry for deterministic domain-aware first-stage ranking policy
+- ranking boost rule registry for rule-based domain-aware first-stage ranking policy
 - medical search hint target registry for external target rationale and warnings
 - an official healthcare source catalog covering MeSH, RxNorm/RxNav, LOINC,
   FHIR R4, UCUM, MedlinePlus, openFDA, and ClinicalTrials.gov
@@ -413,29 +419,29 @@ not a bulk data dump. It now contains:
 - `knowledge/source_catalog/official_healthcare_sources.json`: authoritative
   source inventory, access URLs, intended use, and ingestion mode.
 - `knowledge/terminologies/medical_concepts.json`: small controlled-vocabulary
-  seed registry used by deterministic query analysis.
-- `knowledge/retrieval/query_expansion_rules.json`: deterministic query
+  seed registry used by rule-based query analysis.
+- `knowledge/retrieval/query_expansion_rules.json`: rule-based query
   expansion rules used by the analyzer before first-stage retrieval.
-- `knowledge/retrieval/filter_suggestion_rules.json`: deterministic metadata
+- `knowledge/retrieval/filter_suggestion_rules.json`: rule-based metadata
   filter suggestion rules for fields such as `clinical_domain` and
   `standard_system`.
-- `knowledge/retrieval/query_diagnostic_rules.json`: deterministic
+- `knowledge/retrieval/query_diagnostic_rules.json`: rule-based
   query-quality diagnostic rules for low-specificity queries, missing
   healthcare concept matches, conflicting standard filters, and
   over-constrained metadata filters with too little clinical query context.
-- `knowledge/retrieval/query_profile_rules.json`: deterministic query-profile
+- `knowledge/retrieval/query_profile_rules.json`: rule-based query-profile
   rules that map concepts, standards, tokens, and candidate metadata to
   operator-visible adaptive retrieval route guidance.
-- `knowledge/retrieval/query_aspect_rules.json`: deterministic query-aspect
+- `knowledge/retrieval/query_aspect_rules.json`: rule-based query-aspect
   rules that decompose medical search intent into operator-visible evidence
   aspects with questions, rationale, suggested terms, and suggested filters.
-- `knowledge/retrieval/ranking_boost_rules.json`: deterministic ranking boost
+- `knowledge/retrieval/ranking_boost_rules.json`: rule-based ranking boost
   rules for schema, field, trust-level, source-type, concept, and healthcare
   standard matches.
-- `knowledge/retrieval/evidence_bucket_rules.json`: deterministic evidence
+- `knowledge/retrieval/evidence_bucket_rules.json`: rule-based evidence
   bucket registry that maps selected hits into schema, policy, terminology,
   FHIR, source-locator, prior-decision, and fallback evidence-pack groups.
-- `knowledge/retrieval/corrective_action_rules.json`: deterministic corrective
+- `knowledge/retrieval/corrective_action_rules.json`: rule-based corrective
   action registry that maps retrieval quality signals to prioritized operator
   actions such as applying filters, broadening queries, requiring review, or
   reindexing sources.
@@ -449,7 +455,7 @@ not a bulk data dump. It now contains:
 - `knowledge/retrieval/search_hint_targets.json`: target metadata for
   external and terminology search hints, including operator rationale and
   warnings for PubMed, FHIR, LOINC, UCUM, ClinicalTrials.gov, and openFDA.
-- `knowledge/retrieval/standard_search_playbook_rules.json`: deterministic
+- `knowledge/retrieval/standard_search_playbook_rules.json`: rule-based
   healthcare-standard search playbook rules that turn query profiles,
   standards, query aspects, dataset fields, query tokens, resource types,
   safety flags, and quality signals into operator-facing FHIR, terminology,
@@ -488,7 +494,7 @@ storage size manageable for an enterprise deployment.
 
 ## Query Analysis
 
-Retrieval now includes deterministic clinical query analysis before first-stage
+Retrieval now includes rule-based clinical query analysis before first-stage
 ranking. This follows the query-transformation direction used in practical RAG
 systems, but keeps the healthcare v0 behavior auditable: no LLM rewrites are
 used, and every expansion is tied to a rule ID.
@@ -512,7 +518,7 @@ The public retrieval package exposes this under
 
 ```json
 {
-  "strategy": "deterministic_clinical_expansion_v0",
+  "strategy": "rule_based_clinical_expansion_v0",
   "detected_concepts": ["hba1c_laboratory_test", "unit_normalization"],
   "concept_candidates": [
     {
@@ -584,7 +590,7 @@ Diagnostics include structured `metadata` for audit and UI rendering, including
 
 Retrieval readiness is data-driven through
 `knowledge/retrieval/quality_gate_policy.json` or
-`OJT_RETRIEVAL_QUALITY_POLICY_PATH`. The engine still emits deterministic
+`OJT_RETRIEVAL_QUALITY_POLICY_PATH`. The engine still emits rule-based
 `quality_signals[]`, but `quality_summary.score`, `quality_summary.status`, and
 the top review action now use the active policy instead of embedded severity
 penalties. The active policy metadata is copied into
@@ -661,7 +667,7 @@ can see whether a search result is grounded by the right classes of healthcare
 evidence before using it in a workflow. `schema` and `policy` buckets are
 required by the default readiness policy for governed workflow use; when either
 bucket has no selected hits, the package marks it `missing` and emits
-deterministic bucket warnings such as `missing_schema_evidence`. Readiness
+rule-based bucket warnings such as `missing_schema_evidence`. Readiness
 turns those bucket gaps into the package-level
 `missing_required_evidence_buckets` quality signal. Bucket membership is
 data-driven from source type, source ID, standard system, and locator metadata.
@@ -737,7 +743,7 @@ human relevance judgments into tuning recommendations.
 
 `query_profile` is loaded from
 `knowledge/retrieval/query_profile_rules.json`, with deployment override
-support through `OJT_QUERY_PROFILE_RULES_PATH`. It is a deterministic routing
+support through `OJT_QUERY_PROFILE_RULES_PATH`. It is a rule-based routing
 hint for adaptive retrieval and operator review, not an automatic hidden
 retriever switch. Current profile rules cover laboratory standardization,
 medication safety, biomedical literature evidence, and observational analytics.
@@ -748,7 +754,7 @@ submitted `trace.filters_applied` values for the displayed retrieval package,
 so draft query-builder edits do not change the apparent provenance of the
 current results.
 
-Filter suggestions are a deterministic self-query feature: they recommend
+Filter suggestions are a rule-based self-query feature: they recommend
 metadata filters such as `clinical_domain=laboratory`,
 `standard_system=UCUM`, or exact `source_id=terminology:ucum`, but do not apply them silently. The analyzer loads those
 rules from `knowledge/retrieval/filter_suggestion_rules.json`; each rule
@@ -765,7 +771,7 @@ applied. Supported suggestions can be applied explicitly from the trace panel,
 which updates the query-builder filter state and reruns the search through the
 same typed `/retrieval/search` request path.
 
-`query_aspects` is a deterministic query-decomposition scaffold loaded from
+`query_aspects` is a rule-based query-decomposition scaffold loaded from
 `knowledge/retrieval/query_aspect_rules.json`, with deployment override support
 through `OJT_QUERY_ASPECT_RULES_PATH`. Aspect rules match the same auditable
 inputs as query profiles: detected concepts, standards, query-expansion rule
@@ -781,7 +787,7 @@ matched aspect contributes a transparent `query_variant_details[]` row with
 data-driven decomposition plan while preserving full provenance. Each ranked
 hit can also include `source_locator.query_aspect_matches[]`, recording the
 aspect ID, label, rule ID, priority, matched metadata filters, matched suggested
-terms, and deterministic reason for the hit-aspect support. The Retrieval
+terms, and rule-based reason for the hit-aspect support. The Retrieval
 console shows those rows as per-hit "Aspect support" evidence, shows
 aspect-suggested filters with applied-state badges based on the submitted
 retrieval trace, and lets operators explicitly apply supported metadata filters
@@ -798,7 +804,7 @@ stable `sha256:<digest>` fingerprint of that normalized request, so browser
 history entries, copied comparison reports, durable judgments, assistant tools,
 and audit notes can reference the same backend search contract.
 
-Deterministic query expansion rules are loaded from
+Rule-based query expansion rules are loaded from
 `knowledge/retrieval/query_expansion_rules.json`, not hardcoded into the query
 analyzer. Each rule defines `rule_id`, `concept`, trigger terms, expanded
 terms, standards, and an auditable query variant. The analyzer reads the
@@ -816,7 +822,7 @@ MeSH `D003920`, Hypertension MeSH `D006973`, and chronic kidney failure MeSH
 operator transparency. They are scaffold data, not a substitute for a full
 licensed terminology service or final clinical code assignment.
 
-Diagnostics are deterministic query-quality checks. They flag low-specificity
+Diagnostics are rule-based query-quality checks. They flag low-specificity
 queries, missing healthcare concept matches, and standard filters that conflict
 with the standards inferred from query content. They also flag sparse queries
 that combine several narrowing metadata filters, because such searches can make
@@ -847,7 +853,7 @@ legacy `source_locator.ranking_boost_rules` ID list is preserved for compact
 audit views and older clients.
 
 Each hit also carries `score_components`, the auditable score explanation for
-the final hit score. The deterministic adapters emit lexical RRF, vector RRF,
+the final hit score. The rule-based adapters emit lexical RRF, vector RRF,
 policy boost, and optional external reranker contribution rows. Each row carries
 the component key, operator label, numeric contribution, optional rank,
 description, and metadata such as raw score, RRF `k`, or ranking-rule IDs. This
@@ -892,7 +898,7 @@ a stable public endpoint. The React trace renders those hints with copy/open
 actions from backend data instead of hardcoding external search URLs in the UI.
 Target rationale and warnings are loaded from
 `knowledge/retrieval/search_hint_targets.json`, while provider-specific query
-syntax, URL encoding, and template construction remain deterministic analyzer
+syntax, URL encoding, and template construction remain rule-based analyzer
 logic. The analyzer reads the registry on request so trusted target metadata can
 change without a code edit. `OJT_SEARCH_HINT_TARGETS_PATH` can point the runtime
 to a deployment-specific target registry.
@@ -944,7 +950,7 @@ Research basis:
 
 ## Snippets And Context Compression
 
-Every `RetrievalHit` includes `snippet`, a deterministic extractive preview of
+Every `RetrievalHit` includes `snippet`, a rule-based extractive preview of
 the source claim. Snippets select the highest-overlap sentence/window after
 retrieval and before UI/explanation rendering:
 
@@ -954,7 +960,7 @@ retrieval and before UI/explanation rendering:
   "start_char": 44,
   "end_char": 114,
   "matched_terms": ["missing", "units", "human", "review"],
-  "extraction_strategy": "deterministic_sentence_window_v0"
+  "extraction_strategy": "rule_based_sentence_window_v0"
 }
 ```
 
@@ -987,7 +993,7 @@ evidence reports, and copied cockpit reports all use the same source of truth:
 }
 ```
 
-The object is deterministic and data-derived. It does not create new clinical
+The object is rule-based and data-derived. It does not create new clinical
 claims; it exposes stable IDs and score drivers already present in the
 retrieval package.
 
@@ -1019,7 +1025,7 @@ bucket updates the query-builder filter state and reruns the same typed
 Applied refinements are shown as active chips next to the query builder; each
 chip can be removed independently, and operators can clear all metadata
 refinements before rerunning the typed search.
-The console also tracks a deterministic signature of the submitted request. If
+The console also tracks a rule-based signature of the submitted request. If
 operators change the query builder after a result package is displayed, the
 results header is marked with pending changes until the current request shape is
 submitted again. Ranked evidence also shows a submitted-search summary with the
@@ -1075,7 +1081,7 @@ the standards represented in final selected evidence:
 }
 ```
 
-The diagnostic is deterministic and metadata-based. It does not claim clinical
+The diagnostic is rule-based and metadata-based. It does not claim clinical
 adequacy; it tells operators when the selected retrieval package is missing a
 standard cue that the query analysis expected. Missing coverage warnings are
 also copied into `RetrievalTrace.warnings` so existing audit views continue to
@@ -1127,7 +1133,7 @@ trace metadata into operator-facing quality gates:
 ]
 ```
 
-Current signals are deterministic and derived from selected hits, coverage
+Current signals are rule-based and derived from selected hits, coverage
 diagnostics, query safety flags, and source-diversity metadata. They are meant
 to make retrieval review faster and more auditable: a reviewer can see whether
 the result set is empty, under-covered, safety-sensitive, or source-redundant
@@ -1143,7 +1149,7 @@ does not hide the underlying signals; it only provides a first-glance answer to
 whether the package is ready, needs review, or is blocked.
 
 `RetrievalPackage.recommended_actions` turns warning/destructive signals into a
-deterministic corrective retrieval checklist. The mapping is loaded from
+rule-based corrective retrieval checklist. The mapping is loaded from
 `knowledge/retrieval/corrective_action_rules.json`; deployments can point
 `OJT_CORRECTIVE_ACTION_RULES_PATH` to an approved replacement registry. This
 follows the corrective-RAG pattern: evaluate initial retrieval quality, then
@@ -1280,7 +1286,7 @@ Workflow output includes:
   code, data-field, FHIR resource, and FHIR search-parameter nodes.
   Standards, data fields, and fallback clinical concepts are recognized from
   `knowledge/terminologies/graph_ner_rules.json`, overridable with
-  `OJT_GRAPH_NER_RULES_PATH`. Nodes include deterministic `confidence` and
+  `OJT_GRAPH_NER_RULES_PATH`. Nodes include rule-based `confidence` and
   `rule_source` metadata when available. Every node also carries `provenance`
   with the extractor name/version, extraction source, confidence when known,
   review state, and source evidence/chunk metadata when the node came from a
@@ -1288,7 +1294,7 @@ Workflow output includes:
   the same concept appears in both query text and retrieved evidence.
 - `clinical_concept` nodes whose label matches an alias in
   `knowledge/terminologies/medical_concepts.json` (the same seed registry
-  deterministic query analysis uses, overridable with
+  rule-based query analysis uses, overridable with
   `OJT_MEDICAL_CONCEPT_REGISTRY_PATH`) carry dictionary normalization:
   `normalized_code` (e.g. `LOINC:4548-4`), `normalized_system`,
   `normalized_display`, `clinical_domain`, and `concept_registry_id`. The
@@ -1301,7 +1307,7 @@ Workflow output includes:
   `mentions_entity`, `requests_resource`, `has_search_parameter`,
   `uses_standard`, and `normalizes_to` (clinical concept to its canonical
   standard code). Edges carry the same `provenance` envelope; `normalizes_to`
-  edges use `review_state="candidate_requires_review"` because deterministic
+  edges use `review_state="candidate_requires_review"` because rule-based
   code candidates are reviewable evidence, not an automatic clinical coding
   decision.
 - `triples`: source/evidence triples, including `normalizes_to` triples that
@@ -1313,7 +1319,7 @@ Workflow output includes:
   review, Graph-NER rule, and concept-registry counts so UIs and operators can
   tell whether a graph package is thin, review-heavy, or well grounded.
 
-Concept normalization is deterministic dictionary lookup against seed
+Concept normalization is rule-based dictionary lookup against seed
 registries, not a clinical coding decision; unmapped terms keep their plain
 `clinical_concept` node without a `normalizes_to` edge.
 
@@ -1342,9 +1348,7 @@ supported.
 
 Persisted graph records are stored in the backend spine:
 
-- Memory mode keeps graph records for tests and local demos only.
-- SQLite mode stores `graph_contexts` beside workflow, event, dataset,
-  retrieval, assistant, and audit tables.
+- Memory mode keeps graph records for isolated tests only.
 - Postgres mode stores `ojtflow.graph_contexts` through migration
   `019_graph_contexts.sql`.
 - `GET /api/v1/retrieval/graph/contexts` lists authenticated-owner records,
@@ -1356,7 +1360,7 @@ Persisted graph records are stored in the backend spine:
   returns a bounded owner-scoped subgraph around matching nodes/triples for
   GraphRAG/evidence exploration.
 
-Graph-NER has a deterministic evaluation gate:
+Graph-NER has a rule-based evaluation gate:
 
 ```bash
 python scripts/evaluate-graph-ner.py
@@ -1371,7 +1375,7 @@ node recall, expected edge recall, and normalized-code recall. CI, deploy, and
 `scripts/release-check.sh` run the same gate so Graph-NER extraction regressions
 are caught before release.
 
-`retrieval_trace.safety_flags` is deterministic and auditable. Current flags are:
+`retrieval_trace.safety_flags` is rule-based and auditable. Current flags are:
 
 - `prompt_injection_pattern_in_query`: the retrieval query or query context
   looks like instruction injection and must be treated as untrusted data.
@@ -1381,12 +1385,12 @@ are caught before release.
 
 ## Ranking Architecture
 
-Retrieval is a two-stage architecture with deterministic defaults:
+Retrieval is a vector-first architecture in production:
 
-1. First-stage candidate retrieval uses query expansion, lexical overlap,
-   configured embeddings, and reciprocal-rank fusion. Postgres deployments use
-   full-text search and pgvector when available, then keep JSON/Python vector
-   scoring as a fallback.
+1. First-stage candidate retrieval embeds the query with the configured real
+   embedding provider and runs pgvector similarity search over indexed chunk
+   embeddings. Postgres deployments require pgvector and a current vector index;
+   if either is missing, production RAG is unavailable.
 2. Optional second-stage reranking uses a SentenceTransformers CrossEncoder over
    only the top candidate set. This follows the standard retrieve-then-rerank
    pattern: the first stage is broad and efficient; the reranker is slower but
@@ -1414,18 +1418,21 @@ provide local model dependencies and CPU/GPU capacity.
 
 ```text
 OJT_STORAGE_BACKEND=postgres
-OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
+OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:15432/ojtflow
 OJT_KNOWLEDGE_DIR=knowledge
-OJT_EMBEDDING_PROVIDER=deterministic
-OJT_EMBEDDING_MODEL=deterministic-hash-v0
-OJT_EMBEDDING_DIMENSIONS=64
+OJT_RETRIEVAL_MODE=semantic_vector
+OJT_RETRIEVAL_FRAMEWORK=custom
+OJT_EMBEDDING_PROVIDER=openai
+OJT_EMBEDDING_MODEL=text-embedding-3-small
+OJT_EMBEDDING_DIMENSIONS=384
+OJT_OPENAI_API_KEY=...
 ```
 
-`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
-Deterministic mode is for tests and offline demos only. OpenAI mode uses the
-Embeddings API and reads `OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY`
-when the project-specific variable is not set. Hugging Face mode uses
-SentenceTransformers locally and can run on GPU with `OJT_HF_EMBEDDING_DEVICE=cuda`.
+`OJT_EMBEDDING_PROVIDER` supports real semantic providers only: `openai` and
+`huggingface`. OpenAI mode uses the Embeddings API and reads
+`OJT_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY` when the project-specific
+variable is not set. Hugging Face mode uses SentenceTransformers locally and can
+run on GPU with `OJT_HF_EMBEDDING_DEVICE=cuda`.
 
 Recommended OpenAI semantic retrieval settings:
 
@@ -1532,7 +1539,7 @@ from the configured embedding provider, model, and dimension count. Retrieval
 checks candidate chunk metadata against the current generation ID and warns the
 operator to reindex when stored vectors were produced by an older provider/model
 configuration. This prevents silent use of stale vectors after switching between
-deterministic, OpenAI, and local Hugging Face embedding modes.
+rule-based, OpenAI, and local Hugging Face embedding modes.
 
 Local trusted corpus files are read from `OJT_RETRIEVAL_CORPUS_DIRS`, defaulting
 to `knowledge/corpus`. Supported corpus file extensions are `.md`, `.txt`,
@@ -1599,8 +1606,7 @@ be overridden with `OJT_RETRIEVAL_EVALUATION_POLICY_PATH`. This is the runtime
 counterpart to the offline evaluation harness: it makes current operator
 searches measurable and actionable without copying labels into fixture files.
 Postgres deployments use migration `020_retrieval_judgment_policy_labels.sql`
-to expand the durable value constraint. SQLite local stores rebuild the
-judgment table in place during startup when they detect the older constraint.
+to expand the durable value constraint.
 Reviewer labels and weak evaluation results also feed an active-learning queue.
 `PUT /api/v1/retrieval/judgments` enqueues non-relevant and partial labels as
 benchmark candidates, while `POST /api/v1/retrieval/judgments/evaluate`
@@ -1611,8 +1617,7 @@ searches update the same candidate instead of inflating the backlog.
 `GET /api/v1/retrieval/active-learning/summary` returns backlog counts, and
 `PATCH /api/v1/retrieval/active-learning/candidates/{candidate_id}` lets a
 reviewer accept, reject, promote, or archive a candidate. Postgres deployments
-use migration `021_retrieval_active_learning_candidates.sql`; SQLite creates the
-same table during local startup.
+use migration `021_retrieval_active_learning_candidates.sql`.
 `evaluation_readiness` states whether the current labels are unlabeled, low
 confidence, usable with gaps, or ready for tuning so sparse label sets do not
 look like reliable ranking quality measurements.
@@ -1698,7 +1703,7 @@ history scanability does not require opening trace JSON. Copied cockpit and
 run-comparison JSON reports include the same remediation summary, including
 active/baseline summaries for comparisons, so offline audit notes stay aligned
 with the operator-facing history row. New payloads should use backend
-`RetrievalPackage.remediation_summary`; browser fallback derivation exists only
+`RetrievalPackage.remediation_summary`; browser compatibility derivation exists only
 for older packages.
 It compares added, removed, and retained `quality_signals` so package
 readiness regressions are visible in the same comparison view.
@@ -1731,7 +1736,7 @@ may be caused by configuration or data changes rather than the query alone.
 
 ## Evaluation Harness
 
-The retrieval module includes a deterministic offline eval runner:
+The retrieval module includes a rule-based offline eval runner:
 
 ```bash
 python scripts/evaluate-retrieval.py

@@ -40,6 +40,9 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
         "019",
         "020",
         "021",
+        "022",
+        "023",
+        "024",
     ]
     assert migrations[0].name == "backend_v0"
     assert migrations[1].name == "retrieval_v0"
@@ -62,6 +65,9 @@ def test_postgres_migration_files_are_loaded_in_order() -> None:
     assert migrations[18].name == "graph_contexts"
     assert migrations[19].name == "retrieval_judgment_policy_labels"
     assert migrations[20].name == "retrieval_active_learning_candidates"
+    assert migrations[21].name == "user_identity_provider"
+    assert migrations[22].name == "organization_invitations"
+    assert migrations[23].name == "medsiglip_background_jobs"
     assert all(len(migration.checksum) == 64 for migration in migrations)
 
 
@@ -393,6 +399,14 @@ def test_background_jobs_migration_has_job_table_and_indexes() -> None:
     assert "export_package" in sql
     assert "idx_background_jobs_owner_updated" in sql
     assert "idx_background_jobs_owner_status" in sql
+
+
+def test_medsiglip_background_jobs_migration_extends_job_type_constraint() -> None:
+    sql = (ROOT / "sql/postgres/migrations/024_medsiglip_background_jobs.sql").read_text()
+
+    assert "drop constraint if exists background_jobs_type_check" in sql
+    assert "medsiglip_classification" in sql
+    assert "export_package" in sql
 
 
 def test_assistant_stream_replays_migration_has_replay_table_and_indexes() -> None:

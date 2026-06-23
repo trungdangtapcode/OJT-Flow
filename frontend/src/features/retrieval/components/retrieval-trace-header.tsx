@@ -9,7 +9,7 @@ import { HelpTooltip } from "../../../components/ui/help-tooltip";
 
 export function RetrievalTraceHeader() {
   return (
-    <CardHeader className="border-b border-border bg-card/70">
+    <CardHeader className="border-b border-border/60 bg-muted/30">
       <CardTitle className="flex items-center gap-2">
         <ListFilter className="h-5 w-5 text-primary" />
         Retrieval trace

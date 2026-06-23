@@ -5,13 +5,17 @@ description = "Governed healthcare data workflow scaffold for OJTFlow"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.111,<1",
+  "celery>=5.5,<6",
   "google-auth[requests]>=2.29,<3",
   "httpx>=0.27,<1",
+  "minio>=7.2,<8",
+  "prometheus-client>=0.21,<1",
   "pydantic>=2.7,<3",
   "psycopg[binary]>=3.2,<4",
   "python-multipart>=0.0.9",
   "pyyaml>=6,<7",
   "redis>=5,<6",
+  "sentry-sdk>=2,<3",
   "uvicorn[standard]>=0.29,<1"
 ]
 
@@ -49,6 +53,32 @@ rag-framework = [
 mcp = [
   "mcp[cli]>=1.13,<2",
 ]
+graph = [
+  "neo4j>=5,<6",
+  "kuzu>=0.6,<0.12",
+]
+graph-med-service = [
+  "Jinja2==3.1.6",
+  "kuzu>=0.6,<0.12",
+  "langchain-core==1.2.14",
+  "langchain-neo4j>=0.6.0,<1.0.0",
+  "langchain-openai==1.1.10",
+  "langgraph>=1.0.3,<2.0.0",
+  "neo4j>=5,<6",
+  "openai==2.21.0",
+    "pandas==3.0.3",
+  "rdflib==7.5.0",
+  "rdflib-neo4j==1.1",
+    "requests==2.34.2",
+  "tqdm==4.67.2",
+]
+medsiglip-service = [
+  "accelerate>=1,<2",
+  "pillow>=10,<12",
+  "safetensors>=0.4,<1",
+  "torch>=2.7,<3",
+  "transformers>=4.53,<5",
+]
 
 [build-system]
 requires = ["setuptools>=69"]
@@ -65,3 +95,4 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["src/ojtflow/infrastructure/graph_med/vendor"]

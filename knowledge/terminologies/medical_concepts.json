@@ -1,6 +1,6 @@
 {
   "version": "2026-06-04",
-  "source_note": "Seed registry for deterministic retrieval query normalization. Codes are limited examples and must be verified against the authoritative terminology before clinical or production use.",
+  "source_note": "Seed registry for rule-based retrieval query normalization. Codes are limited examples and must be verified against the authoritative terminology before clinical or production use.",
   "concepts": [
     {
       "concept_id": "hba1c_lab_test",

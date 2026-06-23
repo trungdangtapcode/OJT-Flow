@@ -10,7 +10,7 @@ export function SourceDiversityRationale({
 }) {
   if (isSearchPending) {
     return (
-      <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
+      <div className="rounded-lg border border-border/60 bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
         Updating source-diversity trace...
       </div>
     );
@@ -18,7 +18,7 @@ export function SourceDiversityRationale({
 
   if (!selections.length) {
     return (
-      <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
+      <div className="rounded-lg border border-border/60 bg-muted/25 px-3 py-2 text-sm font-semibold text-muted-foreground">
         No selected-hit diversity trace was returned for this run.
       </div>
     );
@@ -45,7 +45,7 @@ function SourceDiversityRationaleRow({
   selection: DiversitySelectionStack;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <Badge variant="muted">#{selection.selectedRank}</Badge>

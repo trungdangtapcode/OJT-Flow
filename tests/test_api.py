@@ -2251,13 +2251,14 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "postgres")
     monkeypatch.setenv("OJT_DATABASE_URL", "postgresql://user:secret@example.test/db")
     monkeypatch.setenv("OJT_REDIS_URL", "redis://example.test:6379/0")
+    monkeypatch.setenv("OJT_RATE_LIMIT_BACKEND", "memory")
     monkeypatch.setenv("OJT_GOOGLE_CLIENT_ID", "client-id")
     monkeypatch.setenv("OJT_GOOGLE_CLIENT_SECRET", "client-secret")
     monkeypatch.setenv("OJT_AUTH_COOKIE_SECURE", "true")
     monkeypatch.setenv("OJT_AUTH_COOKIE_SAMESITE", "strict")
-    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "deterministic")
-    monkeypatch.setenv("OJT_EMBEDDING_MODEL", "deterministic-hash-v0")
-    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", "64")
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "huggingface")
+    monkeypatch.setenv("OJT_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", "384")
     monkeypatch.setenv("OJT_RERANK_PROVIDER", "huggingface")
     monkeypatch.setenv("OJT_RERANK_MODEL", "BAAI/bge-reranker-base")
     monkeypatch.setenv("OJT_RERANK_DEVICE", "cuda")
@@ -2298,7 +2299,9 @@ async def test_runtime_config_exposes_sanitized_operational_settings(monkeypatch
         assert body["auth"]["cookie_secure"] is True
         assert body["auth"]["cookie_effective_secure"] is True
         assert body["auth"]["cookie_samesite"] == "strict"
-        assert body["embedding"]["provider"] == "deterministic"
+        assert body["embedding"]["provider"] == "huggingface"
+        assert body["embedding"]["model"] == "BAAI/bge-small-en-v1.5"
+        assert body["embedding"]["dimensions"] == 384
         assert body["rerank"] == {
             "provider": "huggingface",
             "enabled": True,
@@ -2561,11 +2564,54 @@ async def test_runtime_readiness_returns_sanitized_operational_checks(monkeypatc
     monkeypatch.setenv("OJT_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("OJT_DATABASE_URL", "postgresql://user:secret@example.test/db")
     monkeypatch.setenv("OJT_REDIS_URL", "redis://secret-cache.example.test:6379/0")
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "huggingface")
+    monkeypatch.setenv("OJT_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+    monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", "384")
     clear_settings_cache()
     clear_workflow_service_cache()
 
     try:
-        async with await _client() as client:
+        class ReadyWorkflowRepository:
+            def stats(self, owner_user_id=None):
+                del owner_user_id
+
+                class Stats:
+                    total = 0
+
+                return Stats()
+
+        class ReadyWorkflowService:
+            workflows = ReadyWorkflowRepository()
+
+            def list_schemas(self):
+                return [{"schema_id": "lab_result_v1"}]
+
+            def list_retrieval_sources(self):
+                return [{"source_id": "trusted_policy"}]
+
+            def search_retrieval(self, query):
+                del query
+
+                class Trace:
+                    strategy = "static_hybrid_rrf"
+                    warnings: list[str] = []
+                    candidates_seen = 1
+
+                class Package:
+                    hits = [{"source_id": "trusted_policy"}]
+                    trace = Trace()
+
+                return Package()
+
+        app = create_app()
+        app.dependency_overrides[require_authentication] = _authenticated_dependency
+
+        async def ready_workflow_service() -> ReadyWorkflowService:
+            return ReadyWorkflowService()
+
+        app.dependency_overrides[get_workflow_service] = ready_workflow_service
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             response = await client.get("/api/v1/runtime/readiness")
 
         assert response.status_code == 200
@@ -3475,7 +3521,7 @@ async def test_auth_callback_sets_and_logout_clears_cookie() -> None:
         client.cookies.set("ojtflow_session", "raw-session-token")
         logout = await client.post(
             "/api/v1/auth/logout",
-            headers={"Origin": "http://localhost:5173"},
+            headers={"Origin": "http://localhost:15173"},
         )
 
     assert callback.status_code == 200
@@ -3516,12 +3562,25 @@ async def test_service_account_token_authenticates_with_workspace_role(monkeypat
             },
         )
         listed = await client.get("/api/v1/auth/service-accounts")
-        token = _assert_success_envelope(created)["data"]["access_token"]
+        created_data = _assert_success_envelope(created)["data"]
+        token = created_data["access_token"]
+        account_id = created_data["service_account"]["account_id"]
 
         app.dependency_overrides.pop(require_authentication)
         headers = {"Authorization": f"Bearer {token}"}
         me = await client.get("/api/v1/auth/me", headers=headers)
         workflows = await client.get("/api/v1/workflows", headers=headers)
+        rotated = await client.post(
+            f"/api/v1/auth/service-accounts/{account_id}/tokens",
+            headers=headers,
+            json={"token_ttl_seconds": 300},
+        )
+        rotated_data = _assert_success_envelope(rotated)["data"]
+        rotated_token = rotated_data["access_token"]
+        rotated_me = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {rotated_token}"},
+        )
         reindex = await client.post(
             "/api/v1/retrieval/reindex",
             headers=headers,
@@ -3529,7 +3588,6 @@ async def test_service_account_token_authenticates_with_workspace_role(monkeypat
         )
 
     assert created.status_code == 200, created.text
-    created_data = _assert_success_envelope(created)["data"]
     assert created_data["token_type"] == "bearer"
     assert created_data["access_token"].startswith("ojt_sa_")
     assert created_data["service_account"]["role_key"] == "operator"
@@ -3540,6 +3598,15 @@ async def test_service_account_token_authenticates_with_workspace_role(monkeypat
     me_data = _assert_success_envelope(me)["data"]
     assert me_data["identity_type"] == "service_account"
     assert me_data["service_account"]["slug"] == "nightly-ingestion"
+    assert rotated.status_code == 200, rotated.text
+    assert rotated_data["token_type"] == "bearer"
+    assert rotated_data["access_token"].startswith("ojt_sa_")
+    assert rotated_data["access_token"] != token
+    assert rotated_data["service_account"]["account_id"] == account_id
+    assert rotated_me.status_code == 200, rotated_me.text
+    assert _assert_success_envelope(rotated_me)["data"]["service_account"]["slug"] == (
+        "nightly-ingestion"
+    )
     assert workflows.status_code == 200, workflows.text
     assert reindex.status_code == 403
     body = _assert_error_envelope(reindex, expected_code="policy_blocked")
@@ -3610,7 +3677,7 @@ async def test_auth_url_and_session_responses_are_not_cacheable() -> None:
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         authorization_url = await client.get(
-            "/api/v1/auth/google/url?redirect_uri=http://localhost:5173/auth/callback"
+            "/api/v1/auth/google/url?redirect_uri=http://localhost:15173/auth/callback"
         )
         current_user = await client.get("/api/v1/auth/me")
         invalid_callback = await client.get("/api/v1/auth/google/callback?code=code")
@@ -3653,7 +3720,7 @@ async def test_auth_cookie_samesite_none_forces_secure_cookie(monkeypatch) -> No
             client.cookies.set("ojtflow_session", "raw-session-token")
             logout = await client.post(
                 "/api/v1/auth/logout",
-                headers={"Origin": "http://localhost:5173"},
+                headers={"Origin": "http://localhost:15173"},
             )
 
         assert runtime.status_code == 200

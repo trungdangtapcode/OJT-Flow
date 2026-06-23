@@ -98,7 +98,7 @@ def filter_sort_page_summaries(
     sort = normalize_sort(sort)
     reverse = normalize_direction(direction) == "desc"
     # Match the Postgres adapter: primary sort is caller-controlled, with a
-    # deterministic workflow_id ascending tie-breaker for stable pagination.
+    # rule-based workflow_id ascending tie-breaker for stable pagination.
     summaries.sort(key=lambda item: item.workflow_id)
     summaries.sort(key=lambda item: getattr(item, sort), reverse=reverse)
 

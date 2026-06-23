@@ -23,7 +23,7 @@ export function AttachmentPreview({
 }) {
   const isImage = file.type.startsWith("image/");
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm">
       <div className="flex min-w-0 items-center gap-2">
         {isImage ? (
           <Image className="h-4 w-4 shrink-0 text-primary" />
@@ -117,18 +117,18 @@ export function AssistantControlsPanel({
 }) {
   return (
     <details className="group relative">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-black shadow-sm transition hover:border-primary">
+      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-border/60 bg-card px-3 text-sm font-black shadow-sm transition hover:border-primary">
         <Settings2 className="h-4 w-4 text-primary" />
         Advanced context
       </summary>
-      <div className="absolute bottom-12 right-0 z-20 hidden w-[min(620px,calc(100vw-2rem))] gap-4 rounded-md border border-border bg-card p-4 shadow-lg group-open:grid">
+      <div className="absolute bottom-12 right-0 z-20 hidden w-[min(620px,calc(100vw-2rem))] gap-4 rounded-lg border border-border/60 bg-card p-4 shadow-lg group-open:grid">
         <div>
           <div className="text-sm font-black">Advanced context</div>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Context and safety gates for the next message.
           </p>
         </div>
-        <label className="flex items-center gap-2 rounded-md border border-border bg-muted/35 px-3 py-2 text-sm font-semibold">
+        <label className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/35 px-3 py-2 text-sm font-semibold">
           <input
             checked={executeWriteActions}
             className="h-4 w-4 accent-primary"
@@ -244,7 +244,7 @@ function AssistantMemoryPanel({
   );
   const definitions = policy?.preferences ?? [];
   return (
-    <section className="grid gap-3 rounded-md border border-border bg-muted/25 px-3 py-3">
+    <section className="grid gap-3 rounded-lg border border-border/60 bg-muted/25 px-3 py-3">
       <div>
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-black">
           Assistant memory
@@ -263,7 +263,7 @@ function AssistantMemoryPanel({
             const updating = isUpdating && mutationKey === definition.key;
             return (
               <div
-                className="grid gap-2 rounded-md border border-border bg-card px-3 py-2"
+                className="grid gap-2 rounded-lg border border-border/60 bg-card px-3 py-2"
                 key={definition.key}
               >
                 <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
@@ -313,7 +313,7 @@ function AssistantMemoryPanel({
           })}
         </div>
       ) : (
-        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
+        <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
           Assistant memory policy is unavailable from the backend.
         </div>
       )}
@@ -334,7 +334,7 @@ function MemoryInput({
 }) {
   if (definition.value_type === "boolean") {
     return (
-      <label className="inline-flex min-h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold">
+      <label className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border/60 bg-background px-3 text-sm font-semibold">
         <input
           checked={Boolean(value)}
           className="h-4 w-4 accent-primary"
@@ -349,7 +349,7 @@ function MemoryInput({
   if (definition.value_type === "enum") {
     return (
       <select
-        className="h-9 min-w-48 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+        className="h-9 min-w-48 rounded-lg border border-border/60 bg-background px-3 text-sm font-semibold"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={String(value)}
@@ -365,7 +365,7 @@ function MemoryInput({
   if (definition.value_type === "number") {
     return (
       <input
-        className="h-9 min-w-32 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+        className="h-9 min-w-32 rounded-lg border border-border/60 bg-background px-3 text-sm font-semibold"
         disabled={disabled}
         maxLength={definition.max_length}
         onChange={(event) => onChange(Number(event.target.value))}
@@ -376,7 +376,7 @@ function MemoryInput({
   }
   return (
     <input
-      className="h-9 min-w-48 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+      className="h-9 min-w-48 rounded-lg border border-border/60 bg-background px-3 text-sm font-semibold"
       disabled={disabled}
       maxLength={definition.max_length}
       onChange={(event) => onChange(event.target.value)}

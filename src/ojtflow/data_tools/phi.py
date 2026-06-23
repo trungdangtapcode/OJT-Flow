@@ -1,4 +1,4 @@
-"""Deterministic PHI and sensitive-data classification."""
+"""Rule-based PHI and sensitive-data classification."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import csv
 import io
 from collections.abc import Iterable
 from typing import Any
+from urllib.parse import parse_qsl, urlparse
 
 from ojtflow.core.contracts.data import ParsedData
 from ojtflow.core.contracts.enums import DataFormat
@@ -23,6 +24,51 @@ from ojtflow.core.policy.phi_policy import (
     match_phi_field_rule,
     normalize_policy_text,
 )
+
+
+ALWAYS_SENSITIVE_URL_KEYS = {
+    "access_token",
+    "auth",
+    "bearer",
+    "beneficiary",
+    "birth_date",
+    "code_verifier",
+    "date_of_birth",
+    "dob",
+    "email",
+    "id_token",
+    "medical_record",
+    "member_id",
+    "mrn",
+    "patient_id",
+    "person_id",
+    "phone",
+    "secret",
+    "session",
+    "ssn",
+    "subject_id",
+    "token",
+}
+
+CONTEXT_SENSITIVE_URL_KEYS = {
+    "account",
+    "first_name",
+    "full_name",
+    "last_name",
+    "member",
+    "name",
+    "patient",
+    "person",
+    "subject",
+}
+
+SENSITIVE_URL_ROUTE_KEYS = {
+    "account",
+    "member",
+    "patient",
+    "person",
+    "subject",
+}
 
 
 def classify_parsed_data(
@@ -203,6 +249,8 @@ def _regex_findings(
     findings: list[PhiFinding] = []
     for rule, pattern in _regex_rules(policy):
         for match in pattern.finditer(text):
+            if rule.kind == "url" and not _url_contains_sensitive_identifier(match.group(0)):
+                continue
             findings.append(
                 PhiFinding(
                     target_type=target_type,
@@ -217,6 +265,87 @@ def _regex_findings(
                 )
             )
     return findings
+
+
+def _url_contains_sensitive_identifier(value: str) -> bool:
+    cleaned = value.strip(" \t\r\n\"'<>[]{}()")
+    parsed = urlparse(cleaned)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    path_tokens = [
+        token
+        for token in _normalize(parsed.path).replace(".", "_").split("/")
+        for token in token.split("_")
+        if token
+    ]
+    if _path_contains_sensitive_identifier(path_tokens):
+        return True
+    for key, item in parse_qsl(parsed.query, keep_blank_values=True):
+        normalized_key = _normalize(key)
+        normalized_value = str(item).strip()
+        if _is_always_sensitive_url_key(normalized_key):
+            return True
+        if _is_context_sensitive_url_key(normalized_key) and _looks_like_person_name(
+            normalized_value
+        ):
+            return True
+        if normalized_key in {"code", "url", "format", "_format"}:
+            continue
+        if normalized_key and normalized_value and _looks_like_secret(normalized_value):
+            return True
+    return False
+
+
+def _path_contains_sensitive_identifier(path_tokens: list[str]) -> bool:
+    if not set(path_tokens) & SENSITIVE_URL_ROUTE_KEYS:
+        return False
+    return any(_looks_like_url_identifier(token) for token in path_tokens)
+
+
+def _is_always_sensitive_url_key(normalized_key: str) -> bool:
+    if normalized_key in ALWAYS_SENSITIVE_URL_KEYS:
+        return True
+    key_tokens = {
+        token
+        for token in normalized_key.replace(".", "_").replace("/", "_").split("_")
+        if token
+    }
+    return bool(key_tokens & ALWAYS_SENSITIVE_URL_KEYS)
+
+
+def _is_context_sensitive_url_key(normalized_key: str) -> bool:
+    if normalized_key in CONTEXT_SENSITIVE_URL_KEYS:
+        return True
+    key_tokens = {
+        token
+        for token in normalized_key.replace(".", "_").replace("/", "_").split("_")
+        if token
+    }
+    return bool(key_tokens & CONTEXT_SENSITIVE_URL_KEYS)
+
+
+def _looks_like_secret(value: str) -> bool:
+    compact = value.replace("-", "").replace("_", "")
+    return len(compact) >= 24 and compact.isalnum()
+
+
+def _looks_like_url_identifier(value: str) -> bool:
+    compact = value.replace("-", "").replace("_", "")
+    return (
+        len(compact) >= 6
+        and any(char.isdigit() for char in compact)
+        and compact.isalnum()
+    )
+
+
+def _looks_like_person_name(value: str) -> bool:
+    normalized = " ".join(_normalize(value).replace("-", " ").replace("_", " ").split())
+    if not normalized:
+        return False
+    parts = normalized.split()
+    if len(parts) < 2:
+        return False
+    return all(part.isalpha() and len(part) >= 2 for part in parts[:4])
 
 
 def _classification(

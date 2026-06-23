@@ -33,7 +33,7 @@ class AssistantToolSpec(ContractModel):
 
 
 class AssistantToolPlan(ContractModel):
-    """A proposed tool call from deterministic or LLM planning."""
+    """A proposed tool call from governed LLM planning."""
 
     tool_name: NonBlankStr
     arguments: dict[str, Any] = Field(default_factory=dict)
@@ -100,7 +100,7 @@ class AssistantEvidenceSummary(ContractModel):
 
 
 class AssistantPlan(ContractModel):
-    """Validated LLM/deterministic plan before backend execution."""
+    """Validated LLM plan before backend execution."""
 
     message: str
     tool_calls: list[AssistantToolPlan] = Field(default_factory=list)
@@ -285,8 +285,8 @@ class AssistantResponse(ContractModel):
     """Public assistant response."""
 
     message: str
-    mode: Literal["deterministic", "llm"]
-    synthesis_mode: Literal["deterministic", "llm"] = "deterministic"
+    mode: Literal["llm", "recovery"]
+    synthesis_mode: Literal["llm"] = "llm"
     model: str | None = None
     findings: list[AssistantFinding] = Field(default_factory=list)
     evidence_summary: list[AssistantEvidenceSummary] = Field(default_factory=list)

@@ -1,6 +1,6 @@
 {
   "version": "2026-06-08",
-  "source_note": "Deterministic Graph-NER seed rules for evidence/query graph handoff. These rules are for retrieval grounding and audit, not clinical coding or diagnosis.",
+  "source_note": "Rule-based Graph-NER seed rules for evidence/query graph handoff. These rules are for retrieval grounding and audit, not clinical coding or diagnosis.",
   "entity_rules": [
     {
       "entity_id": "standard:fhir",

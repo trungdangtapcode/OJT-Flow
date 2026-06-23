@@ -16,18 +16,25 @@ export function Notice({
   return (
     <div
       className={cn(
-        "flex items-start gap-3 rounded-md border p-4 text-sm",
+        "flex items-start gap-3.5 rounded-xl border p-5 text-sm",
         tone === "danger"
-          ? "border-red-200 bg-red-50 text-red-900"
-          : "border-border bg-muted/40 text-muted-foreground",
+          ? "border-red-200/80 bg-red-50/80 text-red-800"
+          : "border-border/50 bg-muted/30 text-muted-foreground",
       )}
     >
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <div className="min-w-0">
-        <div className={cn("font-bold", tone === "danger" ? "text-red-950" : "text-foreground")}>
+      <div
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+          tone === "danger" ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary",
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 pt-1">
+        <div className={cn("font-semibold", tone === "danger" ? "text-red-900" : "text-foreground")}>
           {title}
         </div>
-        {children ? <div className="mt-1">{children}</div> : null}
+        {children ? <div className="mt-1.5 leading-relaxed">{children}</div> : null}
       </div>
     </div>
   );

@@ -33,7 +33,7 @@ Each row connects one evidence claim to one ranked hit:
 - `reasoning`
 - `warnings`
 
-The matrix is deterministic. It uses existing retrieval scoring, bucket
+The matrix is rule-based. It uses existing retrieval scoring, bucket
 coverage, source locators, matched terms, and hit match explanations. It does
 not ask the LLM to decide whether a source supports a claim.
 

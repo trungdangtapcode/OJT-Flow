@@ -12,7 +12,7 @@ export function SearchHintParameterExamplesSection({
       <div className="font-black uppercase text-muted-foreground">Parameter examples</div>
       {examples.map((example) => (
         <div
-          className="grid gap-1 rounded-md border border-border bg-card px-2 py-1.5"
+          className="grid gap-1 rounded-lg border border-border/60 bg-card px-2 py-1.5"
           key={`${example.name}:${example.example}`}
         >
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">

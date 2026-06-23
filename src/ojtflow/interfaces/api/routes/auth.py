@@ -11,6 +11,7 @@ from ojtflow.application.auth_service import AuthService, auth_session_response
 from ojtflow.config import Settings
 from ojtflow.core.contracts.auth import AuthenticatedSession
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr
+from ojtflow.core.errors import NotFoundError, PolicyBlockedError
 from ojtflow.interfaces.api.deps import (
     bearer_scheme,
     get_api_settings,
@@ -45,6 +46,20 @@ class CreateServiceAccountRequest(ContractModel):
         default=None,
         gt=0,
         description="Optional shorter TTL for the first issued bearer token.",
+    )
+
+
+class IssueServiceAccountTokenRequest(ContractModel):
+    """Issue a new bearer token for an existing automation identity."""
+
+    organization_id: NonBlankStr | None = Field(
+        default=None,
+        description="Defaults to the current user's active organization.",
+    )
+    token_ttl_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        description="Optional shorter TTL for the issued bearer token.",
     )
 
 
@@ -155,14 +170,33 @@ async def create_service_account(
         service_account=service_account,
         token_ttl_seconds=request.token_ttl_seconds,
     )
-    return ok(
-        {
-            "service_account": token["service_account"],
-            "token_type": token["token_type"],
-            "access_token": token["access_token"],
-            "expires_at": token["expires_at"],
-        }
+    return ok(_service_account_token_response(token))
+
+
+@router.post("/auth/service-accounts/{account_id}/tokens")
+async def issue_service_account_token(
+    account_id: str,
+    request: IssueServiceAccountTokenRequest,
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    settings: Settings = Depends(get_api_settings),
+    service: AuthService = Depends(get_auth_service),
+    governance: GovernanceService = Depends(get_governance_service),
+) -> dict:
+    """Issue a replacement token without creating a new service-account identity."""
+
+    service_account = _service_account_for_token_issue(
+        account_id=account_id,
+        request=request,
+        authenticated=authenticated,
+        settings=settings,
+        service=service,
+        governance=governance,
     )
+    token = service.issue_service_account_token(
+        service_account=service_account,
+        token_ttl_seconds=request.token_ttl_seconds,
+    )
+    return ok(_service_account_token_response(token))
 
 
 @router.post("/auth/logout")
@@ -181,6 +215,71 @@ async def logout(
     service.logout(token)
     _clear_session_cookie(response, settings)
     return ok({"status": "logged_out"})
+
+
+def _service_account_for_token_issue(
+    *,
+    account_id: str,
+    request: IssueServiceAccountTokenRequest,
+    authenticated: AuthenticatedSession,
+    settings: Settings,
+    service: AuthService,
+    governance: GovernanceService,
+):
+    if (
+        authenticated.identity_type == "service_account"
+        and authenticated.service_account is not None
+        and authenticated.service_account.account_id == account_id
+    ):
+        if (
+            request.organization_id
+            and request.organization_id != authenticated.service_account.organization_id
+        ):
+            raise NotFoundError(
+                "Service account was not found in the requested organization.",
+                details={
+                    "account_id": account_id,
+                    "organization_id": request.organization_id,
+                },
+            )
+        if (
+            request.token_ttl_seconds is not None
+            and request.token_ttl_seconds > settings.service_account_token_ttl_seconds
+        ):
+            raise PolicyBlockedError(
+                "Self-rotated service account tokens cannot exceed the configured TTL.",
+                details={
+                    "account_id": account_id,
+                    "max_ttl_seconds": settings.service_account_token_ttl_seconds,
+                },
+            )
+        return authenticated.service_account
+
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="users:write",
+    )
+    organization_id = request.organization_id or workspace.organization.organization_id
+    governance.require_workspace_membership(
+        user=authenticated.user,
+        organization_id=organization_id,
+    )
+    for account in service.list_service_accounts(organization_id=organization_id):
+        if account.account_id == account_id:
+            return account
+    raise NotFoundError(
+        "Service account was not found in the requested organization.",
+        details={"account_id": account_id, "organization_id": organization_id},
+    )
+
+
+def _service_account_token_response(token: dict) -> dict:
+    return {
+        "service_account": token["service_account"],
+        "token_type": token["token_type"],
+        "access_token": token["access_token"],
+        "expires_at": token["expires_at"],
+    }
 
 
 def _set_session_cookie(response: Response, settings: Settings, token: str) -> None:

@@ -30,7 +30,7 @@
       "rule_id": "aspect_unit_and_value_quality",
       "aspect_id": "unit_and_value_quality",
       "label": "Unit and value quality",
-      "question": "Are values, units, and date fields complete enough for deterministic validation?",
+      "question": "Are values, units, and date fields complete enough for rule-based validation?",
       "rationale": "Healthcare data cleaning requires separate evidence for UCUM units, missing values, malformed rows, and date quality.",
       "priority": 20,
       "suggested_terms": [

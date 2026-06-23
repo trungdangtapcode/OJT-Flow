@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run deterministic retrieval evaluation cases."""
+"""Run rule-based retrieval evaluation cases."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from ojtflow.infrastructure.retrieval.static import StaticRetrievalRepository  #
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Evaluate deterministic healthcare retrieval quality.",
+        description="Evaluate rule-based healthcare retrieval quality.",
     )
     parser.add_argument(
         "--cases",

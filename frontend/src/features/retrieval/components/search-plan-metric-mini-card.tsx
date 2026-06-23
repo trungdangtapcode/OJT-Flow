@@ -8,7 +8,7 @@ export function MetricMiniCard({
   value: number | string;
 }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-muted/20 p-2">
+    <div className="min-w-0 rounded-lg border border-border/60 bg-muted/20 p-2">
       <div className="truncate text-[0.68rem] font-black uppercase text-muted-foreground">
         {label}
       </div>

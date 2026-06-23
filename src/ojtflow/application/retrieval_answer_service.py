@@ -21,6 +21,7 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalPackage,
     RetrievalQuery,
 )
+from ojtflow.core.errors import DependencyUnavailableError
 
 
 DEFAULT_ANSWER_POLICY = (
@@ -230,8 +231,16 @@ def load_answer_policy(path_text: str) -> AnswerPolicy:
 
     path = Path(path_text)
     if not path.exists():
-        return _fallback_policy()
+        raise DependencyUnavailableError(
+            "Retrieval answer policy is not configured.",
+            details={"code": "RETRIEVAL_ANSWER_POLICY_UNAVAILABLE", "path": str(path)},
+        )
     raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise DependencyUnavailableError(
+            "Retrieval answer policy is invalid.",
+            details={"code": "RETRIEVAL_ANSWER_POLICY_INVALID", "path": str(path)},
+        )
     synthesis = raw.get("synthesis") if isinstance(raw, dict) else {}
     freshness = raw.get("freshness") if isinstance(raw, dict) else {}
     claim_guard = raw.get("claim_triple_guard") if isinstance(raw, dict) else {}
@@ -289,31 +298,6 @@ def active_answer_policy() -> AnswerPolicy:
 
     return load_answer_policy(
         os.environ.get(ANSWER_POLICY_ENV_VAR) or str(DEFAULT_ANSWER_POLICY)
-    )
-
-
-def _fallback_policy() -> AnswerPolicy:
-    return AnswerPolicy(
-        version="retrieval_answer_synthesis_policy.fallback",
-        supported_statuses=("strong", "partial"),
-        review_statuses=("partial", "weak", "unsupported"),
-        stale_version_markers=("deprecated", "stale", "old", "outdated"),
-        stale_lifecycle_states=("deprecated", "blocked", "failed", "needs_review"),
-        graph_guard_enabled=True,
-        graph_guard_required_statuses=("strong",),
-        graph_guard_clinical_assertion_terms=(
-            "patient",
-            "diagnosis",
-            "medication",
-            "lab",
-            "observation",
-            "unit",
-            "loinc",
-            "rxnorm",
-            "fhir",
-        ),
-        graph_guard_warning_id="claim_without_graph_triple_support",
-        refusal_messages={},
     )
 
 

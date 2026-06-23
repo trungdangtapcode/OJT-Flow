@@ -156,12 +156,12 @@
             "src/ojtflow/application/assistant_service.py"
           ],
           "test_refs": ["tests/test_assistant_safety.py", "tests/test_assistant_service.py"],
-          "notes": "Unsafe generated plans fall back to deterministic behavior instead of executing model output."
+          "notes": "Unsafe generated plans are blocked with structured errors instead of executing model output or substituting local behavior."
         }
       ],
       "monitoring_signals": ["generated_output_validation_failed", "assistant_plan_validation_failed", "unsupported_claims"],
       "residual_risk": "medium",
-      "residual_risk_note": "Output validation is deterministic, but unsupported clinical claims still require evidence checks and human review.",
+      "residual_risk_note": "Output validation is policy-driven, but unsupported clinical claims still require evidence checks and human review.",
       "roadmap_refs": ["F103", "F128", "F083", "F094"],
       "evidence_refs": ["docs/generated_output_validation_v0.md"]
     },
@@ -201,7 +201,7 @@
       "mitigations": [
         {
           "mitigation_id": "LLM07-M1",
-          "title": "Keep secrets out of runtime diagnostics and use deterministic secret health checks",
+          "title": "Keep secrets out of runtime diagnostics and use rule-based secret health checks",
           "status": "implemented",
           "owner_role": "platform owner",
           "implementation_refs": ["src/ojtflow/interfaces/api/routes/runtime.py"],

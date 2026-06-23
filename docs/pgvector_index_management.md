@@ -6,13 +6,11 @@ This guide covers OJTFlow retrieval index operations for Postgres deployments th
 
 The Postgres retrieval adapter supports:
 
-- lexical candidate retrieval through generated `search_vector`
-- JSON embedding fallback for environments without pgvector
-- pgvector `vector(384)` storage when the extension is available
+- pgvector `vector(384)` storage for chunk embeddings
 - HNSW cosine index for vector candidate retrieval
 - per-query `hnsw.ef_search` tuning through `OJT_RETRIEVAL_HNSW_EF_SEARCH`
 
-The Docker stack uses `pgvector/pgvector:pg16`, so the vector column and HNSW index are expected to be available in normal local and demo deployments.
+The Docker stack uses `pgvector/pgvector:pg16`, so the vector column and HNSW index are required in normal local and demo deployments. If pgvector or the vector index is unavailable, production RAG readiness must fail.
 
 ## Reindex Requirement
 

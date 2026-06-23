@@ -14,7 +14,7 @@ export function EvidenceInterpretationPanel({
 }) {
   const interpretation = buildEvidenceInterpretationViewModel(packageData);
   return (
-    <section className="grid gap-3 rounded-md border border-border bg-card p-3">
+    <section className="grid gap-3 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">

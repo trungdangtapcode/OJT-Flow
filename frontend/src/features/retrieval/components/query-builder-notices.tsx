@@ -17,30 +17,12 @@ export function QueryBuilderNotices({
 }) {
   return (
     <>
-      {formError ? (
-        <Notice title="Search blocked" tone="danger">
-          {formError}
-        </Notice>
-      ) : null}
-      {searchError ? (
-        <Notice title="Search request failed" tone="danger">
-          {searchError}
-        </Notice>
-      ) : null}
-      {presetsError ? (
-        <Notice title="Search presets unavailable">{presetsError}</Notice>
-      ) : null}
-      {searchOptionsError ? (
-        <Notice title="Search options unavailable">{searchOptionsError}</Notice>
-      ) : null}
-      {planControlNotice ? (
-        <Notice title="Plan filter applied">{planControlNotice}</Notice>
-      ) : null}
-      {isSearchResultStale ? (
-        <Notice title="Search settings changed">
-          Run search to refresh ranked evidence with the current query builder state.
-        </Notice>
-      ) : null}
+      {formError ? <Notice title="Blocked" tone="danger">{formError}</Notice> : null}
+      {searchError ? <Notice title="Error" tone="danger">{searchError}</Notice> : null}
+      {presetsError ? <Notice title="Presets unavailable">{presetsError}</Notice> : null}
+      {searchOptionsError ? <Notice title="Options unavailable">{searchOptionsError}</Notice> : null}
+      {planControlNotice ? <Notice title="Filter applied">{planControlNotice}</Notice> : null}
+      {isSearchResultStale ? <Notice title="Stale results">Re-run search to refresh.</Notice> : null}
     </>
   );
 }

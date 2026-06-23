@@ -39,7 +39,7 @@ Audit history & Past accepted transformations and approvals. & Supports consiste
   \item Use metadata filters to avoid mixing unrelated schemas.
   \item Track schema versions and retrieval source IDs.
   \item Require low-confidence warnings when retrieval quality is weak.
-  \item Validate every model-suggested transformation with deterministic tools.
+  \item Validate every model-suggested transformation with rule-based tools.
 \end{itemize}
 
 \subsection{Advanced Retrieval Strategy}
@@ -269,7 +269,7 @@ output:
 
 \subsection{Foundation Model Strategy}
 
-The foundation model should be treated as the reasoning and communication layer. Its responsibilities are intent interpretation, workflow planning, tool selection, explanation, summarization, and uncertainty communication. Exact parsing, conversion, schema validation, and storage should remain deterministic.
+The foundation model should be treated as the reasoning and communication layer. Its responsibilities are intent interpretation, workflow planning, tool selection, explanation, summarization, and uncertainty communication. Exact parsing, conversion, schema validation, and storage should remain rule-based.
 
 \begin{tabularx}{\textwidth}{p{0.2\textwidth}X X X}
 \toprule

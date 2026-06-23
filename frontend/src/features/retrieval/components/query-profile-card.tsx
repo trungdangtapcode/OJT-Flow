@@ -30,7 +30,7 @@ export function QueryProfileCard({
     return <TokenList items={[]} title="Query profile" />;
   }
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-2 text-xs">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="break-words font-bold">{profile.label}</span>
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">

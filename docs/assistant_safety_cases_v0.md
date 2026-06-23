@@ -68,7 +68,7 @@ planner and synthesis payloads add explicit trust labels:
 }
 ```
 
-This keeps deterministic parsing, validation, and retrieval behavior intact
+This keeps rule-based parsing, validation, and retrieval behavior intact
 while reducing the chance that model synthesis treats uploaded or retrieved text
 as instructions.
 

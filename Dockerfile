@@ -16,7 +16,12 @@ COPY src ./src
 COPY knowledge ./knowledge
 COPY sql ./sql
 
-RUN python -m pip install --no-cache-dir "pip==${PIP_VERSION}" \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        poppler-utils \
+        tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir "pip==${PIP_VERSION}" \
     && python -m pip install --no-cache-dir \
         --constraint /app/constraints.txt \
         --build-constraint /app/constraints.txt \

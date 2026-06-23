@@ -21,7 +21,7 @@ By the end of the MVP, the team should deliver:
 \textbf{Risk} & \textbf{Impact} & \textbf{Mitigation} \\
 \midrule
 Scope creep & Team may attempt too many features. & Define MVP strictly and move analytics, multimodal extraction, and enterprise integration to stretch scope. \\
-Unreliable model outputs & Invalid structured output or incorrect explanation. & Use deterministic tools for conversion and validators after model outputs. \\
+Unreliable model outputs & Invalid structured output or incorrect explanation. & Use rule-based tools for conversion and validators after model outputs. \\
 RAG quality issues & Wrong context may cause poor explanations. & Use curated docs, metadata filters, retrieval evaluation, and low-confidence warnings. \\
 Retrieval complexity & HyDE, rerankers, GraphRAG, and GNN ranking can add latency, cost, and implementation risk. & Use a retrieval benchmark, ship hybrid search first, and enable advanced modules only when they outperform the baseline. \\
 Representation learning overreach & Training an embedding or foundation model can distract from core product delivery. & Restrict MVP to pretrained embeddings; run SSL adaptation as an optional experiment with a promotion gate. \\

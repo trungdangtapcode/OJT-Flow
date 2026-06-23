@@ -20,10 +20,6 @@ from ojtflow.core.policy.external_provider_policy import (
     external_provider_policy_from_settings,
     require_external_provider_handoff,
 )
-from ojtflow.infrastructure.retrieval.engine import (
-    DeterministicEmbeddingProvider,
-    NullEmbeddingProvider,
-)
 
 
 class EmbeddingProvider(Protocol):
@@ -335,8 +331,6 @@ class HuggingFaceEmbeddingProvider:
 def build_embedding_provider(settings: Settings) -> EmbeddingProvider:
     """Build the configured embedding provider."""
 
-    if settings.embedding_provider == "deterministic":
-        return DeterministicEmbeddingProvider(settings.embedding_dimensions)
     if settings.embedding_provider == "openai":
         abuse_cost_policy = load_abuse_cost_policy(settings.resolved_abuse_cost_policy_path)
         return OpenAIEmbeddingProvider(
@@ -356,7 +350,15 @@ def build_embedding_provider(settings: Settings) -> EmbeddingProvider:
             batch_size=settings.hf_embedding_batch_size,
             cache_dir=settings.resolved_hf_embedding_cache_dir,
         )
-    return NullEmbeddingProvider()
+    raise DependencyUnavailableError(
+        "Production RAG requires a real semantic embedding provider. "
+        f"Got: {settings.embedding_provider}.",
+        details={
+            "code": "EMBEDDING_PROVIDER_UNAVAILABLE",
+            "provider": settings.embedding_provider,
+            "model": settings.embedding_model,
+        },
+    )
 
 
 def _coerce_vector(vector: Any) -> list[float]:

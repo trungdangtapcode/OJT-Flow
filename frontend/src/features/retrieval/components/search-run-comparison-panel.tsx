@@ -49,7 +49,7 @@ export function SearchRunComparisonPanel({
   return (
     <div
       aria-label="Search run comparison"
-      className="mt-1 grid gap-3 rounded-md border border-border bg-muted/25 p-3 text-sm"
+      className="mt-1 grid gap-3 rounded-lg border border-border/60 bg-muted/25 p-3 text-sm"
     >
       <SearchRunComparisonHeader
         copyTextToClipboard={copyTextToClipboard}

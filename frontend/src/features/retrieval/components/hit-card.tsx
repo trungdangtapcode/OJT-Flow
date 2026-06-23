@@ -41,7 +41,7 @@ export function HitCard({
 
   return (
     <article
-      className="grid min-w-0 scroll-mt-24 gap-3 rounded-md border border-border bg-card p-3 shadow-sm"
+      className="grid min-w-0 scroll-mt-24 gap-3 rounded-lg border border-border/60 bg-card p-3 shadow-sm"
       id={evidenceAnchorId(evidence.evidence_id)}
     >
       <HitCardHeader

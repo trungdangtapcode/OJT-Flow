@@ -64,6 +64,8 @@ class OpenAIResponsesPlanner:
         external_provider_policy: ExternalProviderPolicy | None = None,
         abuse_cost_policy: AbuseCostPolicy | None = None,
     ) -> None:
+        if not api_key:
+            raise ValueError("OpenAIResponsesPlanner requires OJT_OPENAI_API_KEY or OPENAI_API_KEY.")
         self.api_key = api_key
         shared_model = model or planning_model or synthesis_model
         if not shared_model:

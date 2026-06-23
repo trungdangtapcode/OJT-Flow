@@ -33,7 +33,7 @@ export function IntegritySourceChecks({
           />
         ))}
         {!checks.length ? (
-          <div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
             No source checks returned.
           </div>
         ) : null}

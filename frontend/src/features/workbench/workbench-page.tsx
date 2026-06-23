@@ -43,10 +43,10 @@ export function WorkbenchPage() {
   const createWorkflow = useCreateWorkflowMutation();
   const uploadWorkflow = useUploadWorkflowMutation();
   const [instruction, setInstruction] = React.useState(
-    "Clean this CSV, convert it to JSON, and explain anomalies.",
+    "Validate this data against the selected schema and flag reviewable data-quality issues.",
   );
   const [uploadInstruction, setUploadInstruction] = React.useState(
-    "Extract this file, convert relevant healthcare data to JSON, and explain anomalies.",
+    "Extract this file, validate it against the selected schema, and flag reviewable data-quality issues.",
   );
   const [data, setData] = React.useState("");
   const [inputFormat, setInputFormat] = React.useState("csv");
@@ -184,12 +184,12 @@ export function WorkbenchPage() {
       />
       <div className="grid gap-5 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.05fr)]">
         <Card className="overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70 p-4">
+          <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
             <CardTitle className="flex items-center gap-2">
               <FileCode className="h-5 w-5" />
               Data intake
             </CardTitle>
-            <CardDescription>Start with deterministic parsing, validation, retrieval, and review gates.</CardDescription>
+            <CardDescription>Start with rule-based parsing, validation, retrieval, and review gates.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 pt-4">
             {schemasQuery.isError ? (
@@ -242,9 +242,9 @@ export function WorkbenchPage() {
                   )}
                   <Label>
                     <span className="inline-flex items-center gap-1.5">
-                      Instruction
+                      Task summary
                       <HelpTooltip label="Workflow instruction help">
-                        Describe the operational task, not a clinical decision. Example: validate this lab CSV, convert it to JSON, and explain missing units with trusted evidence.
+                        This is workflow context for audit history and evidence search. It does not decide which validation rules run. Parsing, validation, missing-unit checks, and conversion are controlled by the selected schema, source data, target format, and review settings.
                       </HelpTooltip>
                     </span>
                     <Textarea
@@ -327,9 +327,9 @@ export function WorkbenchPage() {
                   ) : null}
                   <Label>
                     <span className="inline-flex items-center gap-1.5">
-                      Instruction
+                      Task summary
                       <HelpTooltip label="Upload instruction help">
-                        Tell the backend what to extract and how to validate it. Extraction warnings mean the file text may be incomplete.
+                        This is workflow context for audit history and evidence search. It does not make the backend understand the file like a chat prompt. Extraction is controlled by the selected extractor; validation is controlled by the selected schema and review settings.
                       </HelpTooltip>
                     </span>
                     <Textarea
@@ -382,7 +382,7 @@ export function WorkbenchPage() {
                     </Label>
                   </div>
                   {file ? (
-                    <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                    <div className="rounded-lg border border-border/60 bg-muted/40 p-3 text-sm">
                       <div className="font-bold">{file.name}</div>
                       <div className="text-muted-foreground">
                         {formatBytes(file.size)}

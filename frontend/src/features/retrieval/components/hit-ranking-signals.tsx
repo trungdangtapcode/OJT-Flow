@@ -12,7 +12,7 @@ export function HitRankingSignals({
 }) {
   if (!signals.length) return null;
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-2">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-2">
       <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
         <Gauge className="h-3.5 w-3.5 shrink-0" />
         <span>Ranking signals</span>
@@ -20,7 +20,7 @@ export function HitRankingSignals({
       <div className="grid gap-1.5">
         {signals.map((signal) => (
           <div
-            className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-border bg-card/70 px-2 py-1.5 text-xs"
+            className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-card/70 px-2 py-1.5 text-xs"
             key={signal.ruleId}
           >
             <Badge className="max-w-full break-words" variant="muted">

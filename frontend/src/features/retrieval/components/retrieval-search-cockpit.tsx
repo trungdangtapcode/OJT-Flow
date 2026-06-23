@@ -35,7 +35,7 @@ export function RetrievalSearchCockpit({
   return (
     <section
       aria-label="Retrieval cockpit"
-      className="grid gap-3 rounded-md border border-border bg-muted/20 p-3"
+      className="grid gap-3 rounded-lg border border-border/60 bg-muted/20 p-3"
     >
       <SearchCockpitHeader
         copyTextToClipboard={copyTextToClipboard}

@@ -1,4 +1,4 @@
-"""Deterministic healthcare interoperability adapters."""
+"""Rule-based healthcare interoperability adapters."""
 
 from __future__ import annotations
 

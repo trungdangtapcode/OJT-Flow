@@ -128,6 +128,7 @@ class InMemoryUploadedArtifactRepository:
         self,
         *,
         owner_user_id: str,
+        organization_id: str | None = None,
         filename: str,
         mime_type: str,
         data: bytes,
@@ -151,6 +152,7 @@ class InMemoryUploadedArtifactRepository:
             self._bytes_by_ref[storage_ref] = bytes(data)
         artifact = UploadedArtifact(
             owner_user_id=owner_user_id,
+            organization_id=organization_id,
             filename=filename,
             mime_type=mime_type or "application/octet-stream",
             extension=extension,
@@ -184,6 +186,55 @@ class InMemoryUploadedArtifactRepository:
         ]
         artifacts.sort(key=lambda artifact: artifact.created_at, reverse=True)
         return [deepcopy(artifact) for artifact in artifacts[: max(1, min(limit, 500))]]
+
+    def list_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        owner_user_id: str | None = None,
+        limit: int = 100,
+        q: str | None = None,
+        mime_type: str | None = None,
+        source: str | None = None,
+    ) -> list[UploadedArtifact]:
+        needle = (q or "").strip().lower()
+        artifacts = [
+            artifact
+            for artifact in self._artifacts.values()
+            if artifact.organization_id == organization_id
+            and (owner_user_id is None or artifact.owner_user_id == owner_user_id)
+            and (not needle or needle in artifact.filename.lower())
+            and (not mime_type or artifact.mime_type == mime_type)
+            and (not source or artifact.source == source)
+        ]
+        artifacts.sort(key=lambda artifact: artifact.created_at, reverse=True)
+        return [deepcopy(artifact) for artifact in artifacts[: max(1, min(limit, 500))]]
+
+    def get_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> UploadedArtifact:
+        artifact = self._artifacts.get(artifact_id)
+        if not artifact or artifact.organization_id != organization_id:
+            raise NotFoundError(f"Uploaded artifact not found: {artifact_id}")
+        return deepcopy(artifact)
+
+    def get_bytes_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> bytes:
+        artifact = self.get_for_workspace(
+            organization_id=organization_id,
+            artifact_id=artifact_id,
+        )
+        try:
+            return bytes(self._bytes_by_ref[artifact.storage_ref])
+        except KeyError as exc:
+            raise NotFoundError(f"Uploaded artifact bytes not found: {artifact_id}") from exc
 
     def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace:
         self._artifact(owner_user_id=trace.owner_user_id, artifact_id=trace.artifact_id)

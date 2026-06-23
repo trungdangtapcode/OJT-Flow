@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""Move legacy local uploaded artifacts and datasets into MinIO object storage."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from ojtflow.config import DEFAULT_POSTGRES_DSN  # noqa: E402
+from ojtflow.core.errors import OJTFlowError  # noqa: E402
+from ojtflow.data_tools.hashing import sha256_bytes  # noqa: E402
+from ojtflow.infrastructure.storage.file_refs import artifact_path_from_file_ref  # noqa: E402
+from ojtflow.infrastructure.storage.object_store import MinioObjectStore  # noqa: E402
+
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # pragma: no cover - operator dependency check.
+    psycopg = None
+    dict_row = None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Upload legacy file:// objects from Postgres metadata into MinIO. "
+            "Dry-run is default; pass --execute to update storage_ref rows."
+        )
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Update Postgres storage_ref values after successful object upload.",
+    )
+    parser.add_argument(
+        "--env-file",
+        action="append",
+        default=[],
+        help="Environment file to load before running. Defaults to .env when present.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=1000,
+        help="Maximum rows per table to inspect.",
+    )
+    args = parser.parse_args()
+
+    for env_file in args.env_file or _default_env_files():
+        _load_env_file(Path(env_file))
+
+    if psycopg is None:
+        print("error: psycopg is required for Postgres migration", file=sys.stderr)
+        return 1
+
+    data_dir = _resolve_path(os.getenv("OJT_DATA_DIR", "var"))
+    store = _build_minio_store()
+    dsn = os.getenv("OJT_DATABASE_URL", DEFAULT_POSTGRES_DSN)
+    limit = max(1, min(args.limit, 100_000))
+
+    migrated = 0
+    skipped = 0
+    with psycopg.connect(dsn, row_factory=dict_row) as connection:
+        uploaded = _fetch_rows(
+            connection,
+            """
+            select artifact_id, owner_user_id, organization_id, filename, extension,
+                   mime_type, sha256, storage_ref
+            from ojtflow.uploaded_artifacts
+            where storage_ref like 'file://%%'
+            order by created_at asc, artifact_id asc
+            limit %s
+            """,
+            limit,
+        )
+        datasets = _fetch_rows(
+            connection,
+            """
+            select dataset_id, source_kind, detected_format, sha256, storage_ref
+            from ojtflow.datasets
+            where storage_ref like 'file://%%'
+            order by created_at asc, dataset_id asc
+            limit %s
+            """,
+            limit,
+        )
+
+        for row in uploaded:
+            result = _migrate_uploaded_artifact(
+                store=store,
+                data_dir=data_dir,
+                row=row,
+                execute=args.execute,
+                connection=connection,
+            )
+            migrated += int(result == "migrated")
+            skipped += int(result == "skipped")
+
+        for row in datasets:
+            result = _migrate_dataset(
+                store=store,
+                data_dir=data_dir,
+                row=row,
+                execute=args.execute,
+                connection=connection,
+            )
+            migrated += int(result == "migrated")
+            skipped += int(result == "skipped")
+
+        if args.execute:
+            connection.commit()
+        else:
+            connection.rollback()
+
+    mode = "EXECUTED" if args.execute else "DRY-RUN"
+    print(f"{mode}: migrated={migrated} skipped={skipped}")
+    if not args.execute and migrated:
+        print("Run again with --execute to update Postgres storage_ref rows.")
+    return 0
+
+
+def _migrate_uploaded_artifact(
+    *,
+    store: MinioObjectStore,
+    data_dir: Path,
+    row,
+    execute: bool,
+    connection,
+) -> str:
+    path = artifact_path_from_file_ref(row["storage_ref"], [data_dir / "uploads"])
+    data = path.read_bytes()
+    _verify_digest(data, row["sha256"], label=row["artifact_id"])
+    object_ref = store.put_bytes(
+        object_key=_artifact_key(row),
+        data=data,
+        content_type=row["mime_type"] or "application/octet-stream",
+        metadata={"sha256": row["sha256"], "artifact_id": row["artifact_id"]},
+    )
+    print(f"artifact {row['artifact_id']}: {row['storage_ref']} -> {object_ref}")
+    if execute:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                update ojtflow.uploaded_artifacts
+                set storage_ref = %s
+                where artifact_id = %s and storage_ref = %s
+                """,
+                (object_ref, row["artifact_id"], row["storage_ref"]),
+            )
+    return "migrated"
+
+
+def _migrate_dataset(
+    *,
+    store: MinioObjectStore,
+    data_dir: Path,
+    row,
+    execute: bool,
+    connection,
+) -> str:
+    path = artifact_path_from_file_ref(
+        row["storage_ref"],
+        [data_dir / "datasets", data_dir / "outputs"],
+    )
+    data = path.read_bytes()
+    _verify_digest(data, row["sha256"], label=row["dataset_id"])
+    object_ref = store.put_bytes(
+        object_key=_dataset_key(row, path),
+        data=data,
+        content_type="application/octet-stream",
+        metadata={"sha256": row["sha256"], "dataset_id": row["dataset_id"]},
+    )
+    print(f"dataset {row['dataset_id']}: {row['storage_ref']} -> {object_ref}")
+    if execute:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                update ojtflow.datasets
+                set storage_ref = %s
+                where dataset_id = %s and storage_ref = %s
+                """,
+                (object_ref, row["dataset_id"], row["storage_ref"]),
+            )
+    return "migrated"
+
+
+def _fetch_rows(connection, sql: str, limit: int):
+    with connection.cursor() as cursor:
+        cursor.execute(sql, (limit,))
+        rows = cursor.fetchall()
+    return rows
+
+
+def _verify_digest(data: bytes, expected: str, *, label: str) -> None:
+    actual = sha256_bytes(data)
+    if actual != expected:
+        raise OJTFlowError(
+            f"SHA-256 mismatch for {label}; refusing to migrate.",
+            details={"expected": expected, "actual": actual},
+        )
+
+
+def _build_minio_store() -> MinioObjectStore:
+    return MinioObjectStore(
+        endpoint=_minio_endpoint(os.getenv("OJT_MINIO_ENDPOINT", "localhost:19000")),
+        access_key=_required_env("OJT_MINIO_ACCESS_KEY"),
+        secret_key=_required_env("OJT_MINIO_SECRET_KEY"),
+        bucket=os.getenv("OJT_MINIO_BUCKET", "ojtflow-artifacts"),
+        region=os.getenv("OJT_MINIO_REGION", "us-east-1"),
+        secure=_env_bool(os.getenv("OJT_MINIO_SECURE", "false")),
+    )
+
+
+def _artifact_key(row) -> str:
+    workspace = _segment(row["organization_id"] or "legacy")
+    owner = _segment(row["owner_user_id"])
+    artifact = _segment(row["artifact_id"])
+    suffix = row["extension"] if str(row["extension"] or "").startswith(".") else ".bin"
+    return f"uploads/{workspace}/{owner}/{artifact}/{row['sha256']}{suffix}"
+
+
+def _dataset_key(row, path: Path) -> str:
+    directory = "outputs" if row["source_kind"] == "generated" else "datasets"
+    suffix = path.suffix or ".bin"
+    return f"{directory}/{_segment(row['dataset_id'])}{suffix}"
+
+
+def _segment(value: str) -> str:
+    cleaned = "".join(
+        char if char.isalnum() or char in {"_", "-"} else "_"
+        for char in str(value or "").strip()
+    ).strip("_")
+    return cleaned or "unknown"
+
+
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise OJTFlowError(f"{name} is required.")
+    return value
+
+
+def _env_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _minio_endpoint(value: str) -> str:
+    endpoint = value.strip()
+    parsed = urlparse(endpoint)
+    if parsed.scheme:
+        endpoint = parsed.netloc + parsed.path
+    return endpoint.strip("/")
+
+
+def _resolve_path(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def _default_env_files() -> list[str]:
+    default = REPO_ROOT / ".env"
+    return [str(default)] if default.exists() else []
+
+
+def _load_env_file(path: Path) -> None:
+    env_path = path if path.is_absolute() else REPO_ROOT / path
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        os.environ.setdefault(key, value)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

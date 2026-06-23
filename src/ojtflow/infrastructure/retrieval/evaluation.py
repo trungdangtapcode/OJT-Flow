@@ -1,4 +1,4 @@
-"""Deterministic retrieval evaluation helpers."""
+"""Rule-based retrieval evaluation helpers."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
--- Move retrieval vector storage from deterministic hash dimensions to the
+-- Move retrieval vector storage from rule-based hash dimensions to the
 -- semantic embedding dimension used by the default OpenAI/BGE-small setup.
 
 do $$

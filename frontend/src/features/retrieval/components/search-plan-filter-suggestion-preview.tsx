@@ -19,7 +19,7 @@ export function SearchPlanFilterSuggestionPreview({
   supported: boolean;
 }) {
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-card px-2 py-1.5 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <Badge variant={suggestion.applied ? "success" : supported ? "muted" : "warning"}>

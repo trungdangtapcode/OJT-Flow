@@ -172,7 +172,7 @@ Reload validation is available through:
 It rehydrates the package, validates required shape, verifies package and Bundle
 hashes when present, checks that Bundle entries include all package resources,
 and returns the typed package without writing to storage. This gives downstream
-ETL or interoperability code a deterministic way to prove that an exported
+ETL or interoperability code a rule-based way to prove that an exported
 package can be loaded without dropping evidence or provenance.
 
 ## Workflow Detail UI

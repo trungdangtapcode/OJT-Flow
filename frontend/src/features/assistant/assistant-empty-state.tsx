@@ -36,7 +36,7 @@ export function ChatEmptyState({
             {Array.from({ length: 3 }).map((_, index) => (
               <div
                 aria-hidden="true"
-                className="h-28 rounded-md border border-border bg-muted/35"
+                className="h-28 rounded-lg border border-border/60 bg-muted/35"
                 key={index}
               />
             ))}
@@ -46,7 +46,7 @@ export function ChatEmptyState({
           <div className="grid min-w-0 gap-3 text-left sm:grid-cols-3">
             {examples.map((example) => (
               <button
-                className="grid min-h-28 min-w-0 gap-2 rounded-md border border-border bg-card p-3 text-left transition hover:border-primary hover:bg-primary/5"
+                className="grid min-h-28 min-w-0 gap-2 rounded-lg border border-border/60 bg-card p-3 text-left transition hover:border-primary hover:bg-primary/5"
                 key={example.example_id}
                 onClick={() => onSelect(example)}
                 type="button"
@@ -60,7 +60,7 @@ export function ChatEmptyState({
           </div>
         ) : null}
         {!error && !isLoading && !examples.length ? (
-          <div className="rounded-md border border-border bg-muted/25 p-3 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border/60 bg-muted/25 p-3 text-sm text-muted-foreground">
             No starter tasks are configured.
           </div>
         ) : null}

@@ -205,9 +205,6 @@ Postgres tables:
 - `ojtflow.document_parse_traces`
 - `ojtflow.artifact_access_events`
 
-SQLite local tables with the same logical fields are created by the SQLite
-backbone initializer.
-
 ## Deduplication
 
 Deduplication is owner-scoped in v0:
@@ -267,7 +264,7 @@ stamps policy and audit metadata; automatic deletion is a later governance task.
 - PDF files are profiled for digital/scanned/mixed likelihood when PyMuPDF or
   pypdf is installed. If no analyzer is available, the trace records a clear
   warning instead of failing the upload.
-- Extraction traces include a deterministic quality report based on empty text,
+- Extraction traces include a rule-based quality report based on empty text,
   short text, extractor warnings, low confidence, workbook caveats, and PDF OCR
   requirements.
 - Extraction traces include a user-facing explanation: what was read, what was
@@ -286,7 +283,11 @@ stamps policy and audit metadata; automatic deletion is a later governance task.
 
 ## Remaining Month 2 Work
 
-- Real queue worker mode for long-running parse jobs.
+- RabbitMQ/Celery worker mode is available for long-running parse/OCR jobs.
+  In queue-backed deployments the API creates a durable Postgres job, dispatches
+  it to RabbitMQ, and workers persist trace output or structured errors back to
+  Postgres. Flower, RabbitMQ Management UI, Prometheus/Grafana, Loki, and Sentry
+  cover task state, queue depth, metrics, logs, and exception grouping.
 - Workflow creation directly from batch outputs.
 - Extracted-text deduplication with extractor/version awareness.
 - Frontend paste UX wired to the clipboard image artifact endpoint.

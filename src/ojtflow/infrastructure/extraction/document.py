@@ -1,4 +1,4 @@
-"""Adapter for the existing deterministic document extraction pipeline."""
+"""Adapter for the existing rule-based document extraction pipeline."""
 
 from __future__ import annotations
 

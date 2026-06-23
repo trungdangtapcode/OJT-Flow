@@ -52,8 +52,8 @@ export function AuditPage() {
   }, [items, selectedId]);
 
   return (
-    <div className="grid min-w-0 max-w-full gap-5">
-      <PageHeader title="Audit" description="Reconstruct workflow decisions from events, hashes, reviews, and artifacts." />
+    <div className="grid min-w-0 max-w-full gap-6">
+      <PageHeader title="Audit" description="Workflow events and decisions." />
       <AuditSummaryStrip
         eventCount={eventItems.length}
         eventsLoading={events.isLoading}
@@ -63,9 +63,9 @@ export function AuditPage() {
         visibleIssueCount={visibleIssueCount}
         visibleTrailCount={items.length}
       />
-      <div className="grid min-w-0 max-w-full items-start gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+      <div className="grid min-w-0 max-w-full items-start gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70 p-4">
+          <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <CardTitle className="flex items-center gap-2">
@@ -120,12 +120,12 @@ export function AuditPage() {
             {!summaries.isLoading && !summaries.isError && items.length > 0
               ? (
                 <>
-                  <div className="grid divide-y divide-border">
+                  <div className="grid gap-1">
                     {items.map((item) => (
                       <button
                         className={cn(
-                          "min-w-0 rounded-md border border-transparent bg-card p-2.5 text-left transition-colors hover:border-primary/25 hover:bg-slate-50 focus-ring",
-                          item.workflow_id === selectedId && "border-primary/35 bg-teal-50/75 shadow-[inset_3px_0_0_#087f7a]",
+                          "min-w-0 rounded-lg border border-transparent bg-card p-3 text-left transition-all duration-150 list-item-hover focus-ring",
+                          item.workflow_id === selectedId && "list-item-active",
                         )}
                         key={item.workflow_id}
                         onClick={() => setSelectedId(item.workflow_id)}
@@ -134,11 +134,11 @@ export function AuditPage() {
                         <div className="grid min-w-0 gap-2 sm:flex sm:items-start sm:justify-between sm:gap-3">
                           <div className="min-w-0">
                             <div className="break-all font-bold">{item.workflow_id}</div>
-                            <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.instruction}</div>
+                            <div className="mt-1.5 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.instruction}</div>
                           </div>
                           <StatusBadge className="shrink-0 whitespace-nowrap px-2 text-[11px]" status={item.status} />
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold uppercase text-muted-foreground">
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                           <span>{item.issue_count} issues</span>
                           <span>{item.evidence_count} evidence</span>
                           <span>{formatCompactDate(item.updated_at)}</span>
@@ -158,10 +158,10 @@ export function AuditPage() {
               : null}
           </CardContent>
         </Card>
-        <div className="grid min-w-0 gap-4">
+        <div className="grid min-w-0 gap-5">
           <AuditPacket workflow={selectedWorkflow} events={eventItems} loading={events.isLoading} />
           <Card className="min-w-0 overflow-hidden">
-            <CardHeader className="border-b border-border">
+            <CardHeader className="border-b border-border/60 bg-muted/30">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
@@ -189,7 +189,7 @@ export function AuditPage() {
                   This workflow has no persisted audit events yet.
                 </Notice>
               ) : (
-                <ol className="relative grid gap-4 before:absolute before:left-[5px] before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-border">
+                <ol className="relative grid gap-4 before:absolute before:left-[5px] before:top-2 before:h-[calc(100%-1rem)] before:w-0.5 before:rounded-full before:bg-border">
                   {eventItems.map((event) => (
                     <AuditEventItem event={event} key={event.event_id} />
                   ))}
@@ -263,11 +263,11 @@ function AuditSummaryStrip({
 
 function AuditTrailSkeleton() {
   return (
-    <div aria-label="Loading audit trails" className="grid gap-2" role="status">
+    <div aria-label="Loading audit trails" className="grid gap-1" role="status">
       {Array.from({ length: 6 }).map((_, index) => (
         <div
           aria-hidden="true"
-          className="grid gap-2 rounded-md border border-border bg-card p-2.5"
+          className="grid gap-2 rounded-lg border border-border/60 bg-card p-3"
           data-testid="audit-trail-skeleton-row"
           key={index}
         >
@@ -294,7 +294,7 @@ function AuditEventTimelineSkeleton() {
   return (
     <ol
       aria-label="Loading audit event timeline"
-      className="relative grid gap-4 before:absolute before:left-[5px] before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-border"
+      className="relative grid gap-4 before:absolute before:left-[5px] before:top-2 before:h-[calc(100%-1rem)] before:w-0.5 before:rounded-full before:bg-border"
       role="status"
     >
       {Array.from({ length: 5 }).map((_, index) => (
@@ -305,7 +305,7 @@ function AuditEventTimelineSkeleton() {
           key={index}
         >
           <Skeleton className="absolute left-0 top-1.5 h-3 w-3 rounded-full" />
-          <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+          <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="grid min-w-0 flex-1 gap-2">
                 <Skeleton className="h-5 w-44 max-w-full" />
@@ -338,7 +338,7 @@ function AuditPacket({
   const lastEvent = events.at(-1);
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <CardTitle className="flex items-center gap-2">
           <Fingerprint className="h-5 w-5 text-primary" />
           Audit packet
@@ -351,15 +351,15 @@ function AuditPacket({
             Select a workflow trail to inspect its audit packet.
           </Notice>
         ) : (
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="break-all font-mono text-lg font-black leading-tight">{workflow.workflow_id}</div>
-                <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{workflow.instruction}</p>
+                <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-muted-foreground">{workflow.instruction}</p>
               </div>
               <StatusBadge className="shrink-0 whitespace-nowrap px-2 text-[11px]" status={workflow.status} />
             </div>
-            <div className="grid divide-y divide-border rounded-md border border-border">
+            <div className="grid divide-y divide-border/60 rounded-lg border border-border/60">
               <AuditFact label="Issues" value={workflow.issue_count} />
               <AuditFact label="Evidence" value={workflow.evidence_count} />
               <AuditFact label="Actors" value={loading ? "..." : actorCount} />
@@ -385,7 +385,7 @@ function formatEventCount(count: number) {
 function AuditFact({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="grid gap-1 px-3 py-2.5 sm:grid-cols-[8rem_minmax(0,1fr)]">
-      <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
+      <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="min-w-0 break-words text-sm font-semibold">{value}</div>
     </div>
   );
@@ -393,10 +393,16 @@ function AuditFact({ label, value }: { label: string; value: number | string }) 
 
 function AuditEventItem({ event }: { event: WorkflowEvent }) {
   const refCount = event.input_refs.length + event.output_refs.length;
+  const dotColor =
+    event.severity === "error" || event.severity === "critical"
+      ? "bg-destructive"
+      : event.severity === "warning"
+        ? "bg-amber-500"
+        : "bg-primary";
   return (
     <li className="relative grid grid-cols-[12px_minmax(0,1fr)] gap-3">
-      <span className="mt-4 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-card" />
-      <div className="min-w-0 border-b border-border py-3 last:border-b-0">
+      <span className={cn("mt-4 h-3 w-3 rounded-full ring-4 ring-card", dotColor)} />
+      <div className="min-w-0 rounded-lg border border-border/60 bg-card p-3.5 transition-colors hover:bg-muted/20">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="break-words font-bold">{event.event_type}</div>

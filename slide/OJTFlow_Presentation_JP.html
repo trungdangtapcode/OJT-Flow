@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OJTFlow — プロジェクト発表</title>
+<style>
+  :root {
+    --primary: #0891b2;
+    --primary-dark: #0e7490;
+    --bg: #f0f4f8;
+    --card: #ffffff;
+    --sidebar: #0f172a;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); }
+
+  .slide {
+    width: 960px; height: 540px; margin: 40px auto;
+    background: var(--card); border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    overflow: hidden; position: relative;
+    page-break-after: always;
+  }
+
+  .slide-title {
+    background: linear-gradient(135deg, var(--sidebar) 0%, #1e293b 100%);
+    color: white; display: flex; flex-direction: column;
+    justify-content: center; padding: 60px 80px;
+  }
+  .slide-title h1 { font-size: 42px; font-weight: 700; letter-spacing: -0.5px; }
+  .slide-title .subtitle { font-size: 17px; color: #94a3b8; margin-top: 12px; line-height: 1.8; }
+  .slide-title .meta { position: absolute; bottom: 40px; left: 80px; font-size: 13px; color: #64748b; }
+  .slide-title .logo { position: absolute; top: 40px; right: 60px; width: 48px; height: 48px;
+    background: var(--primary); border-radius: 12px; display: flex; align-items: center;
+    justify-content: center; font-weight: 800; font-size: 18px; color: white; }
+
+  .slide-content { padding: 48px 60px; display: flex; flex-direction: column; height: 100%; }
+  .slide-content .slide-header { margin-bottom: 28px; }
+  .slide-content .slide-header h2 { font-size: 26px; font-weight: 700; color: var(--text); }
+  .slide-content .slide-header .accent-bar { width: 48px; height: 4px; background: var(--primary); border-radius: 2px; margin-top: 8px; }
+  .slide-content .slide-header p { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  .cols { display: flex; gap: 32px; flex: 1; }
+  .col { flex: 1; }
+
+  .card-box {
+    background: #f8fafc; border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 10px;
+  }
+  .card-box h4 { font-size: 13px; font-weight: 700; color: var(--primary-dark); margin-bottom: 4px; }
+  .card-box p { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+
+  ul { padding-left: 20px; }
+  ul li { font-size: 13px; line-height: 1.9; color: var(--text); }
+  ul li strong { color: var(--primary-dark); }
+
+  .tag { display: inline-block; background: #ecfeff; color: var(--primary-dark); font-size: 11px;
+    font-weight: 600; padding: 3px 10px; border-radius: 6px; margin: 2px 4px 2px 0; }
+  .tag-green { background: #ecfdf5; color: #065f46; }
+  .tag-amber { background: #fffbeb; color: #92400e; }
+
+  .arch-box {
+    background: linear-gradient(135deg, #f0f9ff, #ecfeff);
+    border: 1px solid #bae6fd; border-radius: 12px;
+    padding: 18px; text-align: center; margin-bottom: 8px;
+  }
+  .arch-box .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--primary); font-weight: 700; margin-bottom: 4px; }
+  .arch-box .value { font-size: 13px; font-weight: 600; color: var(--text); }
+
+  .metric-row { display: flex; gap: 16px; margin-bottom: 14px; }
+  .metric {
+    flex: 1; background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; text-align: center;
+  }
+  .metric .num { font-size: 26px; font-weight: 800; color: var(--primary); }
+  .metric .lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  .flow-arrow { text-align: center; font-size: 20px; color: var(--primary); margin: 4px 0; }
+
+  .footer-tag { position: absolute; bottom: 20px; right: 40px; font-size: 11px; color: #cbd5e1; }
+  .slide-num { position: absolute; bottom: 20px; left: 40px; font-size: 11px; color: #cbd5e1; }
+
+  .timeline { display: flex; gap: 6px; }
+  .tl-item { flex: 1; text-align: center; border-radius: 10px; padding: 10px 6px;
+    background: #f8fafc; border: 1px solid var(--border); }
+  .tl-item .wk { font-size: 10px; color: var(--primary); font-weight: 700; }
+  .tl-item .desc { font-size: 10.5px; color: var(--text); font-weight: 600; margin-top: 4px; }
+
+  @media print { .slide { margin: 0; box-shadow: none; } }
+</style>
+</head>
+<body>
+
+<!-- スライド 1: タイトル -->
+<div class="slide slide-title">
+  <div class="logo">OJT</div>
+  <h1>OJTFlow</h1>
+  <div class="subtitle">
+    基盤モデル・RAG・MCP・マルチエージェントによる<br>
+    医療データガバナンス運用システム
+  </div>
+  <div class="meta">
+    HuReDee-IoYou AI OJTプログラム &nbsp;|&nbsp; 2026年6月
+  </div>
+</div>
+
+<!-- スライド 2: 課題と解決策 -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>課題と解決策</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h4 style="font-size:14px; margin-bottom:12px; color:var(--accent-red);">現在の課題</h4>
+        <ul>
+          <li>医療データ変換は<strong>手動でエラーが多い</strong></li>
+          <li>非技術者にはJSON/YAML/CSV構造が難しい</li>
+          <li>LLMのみでは<strong>もっともらしいが無効な</strong>出力が発生</li>
+          <li>既存ツールにトレーサビリティや承認機能がない</li>
+          <li>スキーマのドリフトとPHI漏洩リスク</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h4 style="font-size:14px; margin-bottom:12px; color:var(--accent-green);">OJTFlowの解決策</h4>
+        <ul>
+          <li>医療データ協調のための<strong>AIミドルウェア</strong></li>
+          <li>自然言語インターフェース＋<strong>ルールベース実行</strong></li>
+          <li>リスクのある変換にはヒューマンレビュー</li>
+          <li>RAGによる根拠付き説明と出所追跡</li>
+          <li>完全な監査証跡とガバナンス制御</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">2</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 3: システムアーキテクチャ -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>システムアーキテクチャ</h2>
+      <div class="accent-bar"></div>
+      <p>クリーンアーキテクチャ — すべての外部統合は交換可能</p>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="arch-box">
+          <div class="label">ユーザー層</div>
+          <div class="value">React UI &nbsp;|&nbsp; REST API &nbsp;|&nbsp; アシスタントチャット</div>
+        </div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="arch-box">
+          <div class="label">オーケストレーション</div>
+          <div class="value">FastAPI &nbsp;|&nbsp; ワークフローエンジン &nbsp;|&nbsp; マルチエージェント</div>
+        </div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="arch-box">
+          <div class="label">コアドメイン</div>
+          <div class="value">コントラクト &nbsp;|&nbsp; ポリシー &nbsp;|&nbsp; データツール</div>
+        </div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="arch-box">
+          <div class="label">インフラストラクチャ</div>
+          <div class="value">Postgres + pgvector &nbsp;|&nbsp; Redis &nbsp;|&nbsp; MCPサーバー</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box"><h4>コアコントラクト</h4><p>型付きワークフロー状態、イベント、課題、エビデンス、レビュー、監査エントリ</p></div>
+        <div class="card-box"><h4>データツール</h4><p>ルールベースの解析・プロファイリング・バリデーション・変換 — LLMの推測なし</p></div>
+        <div class="card-box"><h4>エージェント層</h4><p>パーサー、バリデーター、トランスフォーマー、説明、安全性エージェント</p></div>
+        <div class="card-box"><h4>RAG検索</h4><p>pgvectorセマンティック検索、ソース考慮MMR、CrossEncoderリランキング</p></div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">3</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 4: 主要機能 -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>主要機能</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box">
+          <h4>ワークベンチ</h4>
+          <p>乱雑な医療CSV/JSON/YAMLをアップロード。解析・プロファイリング・バリデーションを一括処理。</p>
+        </div>
+        <div class="card-box">
+          <h4>AIアシスタント</h4>
+          <p>自然言語で検索、バリデーション、変換、FHIRプロファイリング、ワークフロー作成にアクセス。</p>
+        </div>
+        <div class="card-box">
+          <h4>ワークフローエンジン</h4>
+          <p>ステータス遷移、ステップ追跡、課題フラグ、エビデンス添付、説明レポート。</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box">
+          <h4>レビューキュー</h4>
+          <p>リスクのある変換に対するヒューマンインザループ判断。承認・編集・却下・明確化要求。</p>
+        </div>
+        <div class="card-box">
+          <h4>検索コンソール</h4>
+          <p>信頼性の高い医療検索。ランキングトレース、ソースインベントリ、グラフハンドオフ。</p>
+        </div>
+        <div class="card-box">
+          <h4>ガバナンスと監査</h4>
+          <p>追記専用イベントストリーム、ハッシュチェーン整合性、スキーマレジストリ、B2B設定。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">4</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 5: 技術スタック -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>技術スタック</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div style="margin-bottom: 18px;">
+      <h4 style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">バックエンド</h4>
+      <span class="tag">Python 3.12</span>
+      <span class="tag">FastAPI</span>
+      <span class="tag">Pydantic</span>
+      <span class="tag">PostgreSQL + pgvector</span>
+      <span class="tag">Redis</span>
+      <span class="tag">OpenAI Embeddings</span>
+      <span class="tag">SentenceTransformers</span>
+      <span class="tag">MCP Python SDK</span>
+    </div>
+    <div style="margin-bottom: 18px;">
+      <h4 style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">フロントエンド</h4>
+      <span class="tag">React 18</span>
+      <span class="tag">TypeScript</span>
+      <span class="tag">Vite</span>
+      <span class="tag">Tailwind CSS v4</span>
+      <span class="tag">TanStack Router</span>
+      <span class="tag">TanStack Query</span>
+      <span class="tag">Radix UI</span>
+    </div>
+    <div style="margin-bottom: 18px;">
+      <h4 style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">インフラストラクチャ</h4>
+      <span class="tag">Docker Compose</span>
+      <span class="tag">nginx</span>
+      <span class="tag">Playwright E2E</span>
+      <span class="tag">Google OAuth</span>
+      <span class="tag">FHIRプロファイリング</span>
+      <span class="tag">OCR/DICOMエビデンス</span>
+    </div>
+    <div class="metric-row" style="margin-top: auto;">
+      <div class="metric"><div class="num">9</div><div class="lbl">フロントエンドモジュール</div></div>
+      <div class="metric"><div class="num">5</div><div class="lbl">エージェント</div></div>
+      <div class="metric"><div class="num">30+</div><div class="lbl">APIエンドポイント</div></div>
+      <div class="metric"><div class="num">6</div><div class="lbl">MCPサーバー</div></div>
+    </div>
+  </div>
+  <span class="slide-num">5</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 6: RAGと医療検索 -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>RAGと医療検索</h2>
+      <div class="accent-bar"></div>
+      <p>信頼性の高い医療知識を活用した本番品質のセマンティック検索</p>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box">
+          <h4>知識ソース</h4>
+          <p>スキーマ、データ辞書、ガバナンスルール、変換例、FHIRプロファイル、臨床用語</p>
+        </div>
+        <div class="card-box">
+          <h4>セマンティックベクトル検索</h4>
+          <p>OpenAI text-embedding-3-small (384次元)をPostgres pgvectorに格納。キーワードフォールバックなし。</p>
+        </div>
+        <div class="card-box">
+          <h4>ソース考慮MMR</h4>
+          <p>最大周辺関連性でソース多様性を確保。同一ドキュメントからの重複チャンクを回避。</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box">
+          <h4>オプションのリランキング</h4>
+          <p>GPUが利用可能な場合、CrossEncoder（BAAI/bge-reranker-base）による二段階リランキング。</p>
+        </div>
+        <div class="card-box">
+          <h4>グラフハンドオフ</h4>
+          <p>エンティティ認識、用語グラウンディング、FHIR検索フック、Graph-NER/RAG用エビデンストリプル。</p>
+        </div>
+        <div class="card-box">
+          <h4>品質管理</h4>
+          <p>鮮度ゲート、整合性チェックサム、ソースインベントリ、回帰ダッシュボード、能動学習キュー。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">6</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 7: セキュリティとガバナンス -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>セキュリティとガバナンス</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box" style="border-left: 3px solid var(--accent-red);">
+          <h4>脅威モデル</h4>
+          <p>OWASP LLM Top 10準拠。プロンプトインジェクション防御、出力バリデーション、最小権限MCPツール。</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--accent-amber);">
+          <h4>PHI保護</h4>
+          <p>機密フィールド検出、墨消しポリシー、生のPHIログ記録禁止、エクスポート前のマスキング。</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--accent-green);">
+          <h4>監査証跡</h4>
+          <p>ハッシュチェーン整合性検証付き追記専用イベントストリーム。すべての操作を記録。</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box" style="border-left: 3px solid var(--primary);">
+          <h4>認証</h4>
+          <p>Google OAuth、HTTP-Onlyセッションクッキー、Postgresセッションストレージ、Redisキャッシュ。</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--primary);">
+          <h4>ヒューマンレビューゲート</h4>
+          <p>意味変更、低信頼度、PHI検出、破壊的操作はすべて人間の承認を待つ。</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--primary);">
+          <h4>デプロイメントモード</h4>
+          <p>local_dev、demo、pilot、production — 各モードに必要な機能要件を強制。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">7</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 8: デモフロー -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>デモワークフロー</h2>
+      <div class="accent-bar"></div>
+      <p>乱雑な医療CSVからバリデーション済み・レビュー済み・変換済みJSONまでのエンドツーエンド</p>
+    </div>
+    <div class="timeline" style="margin-bottom: 16px;">
+      <div class="tl-item" style="border-top: 3px solid var(--primary);">
+        <div class="wk">ステップ1</div><div class="desc">CSVアップロード</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--primary);">
+        <div class="wk">ステップ2</div><div class="desc">解析とプロファイル</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-amber);">
+        <div class="wk">ステップ3</div><div class="desc">スキーマ検証</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-red);">
+        <div class="wk">ステップ4</div><div class="desc">課題とPHIフラグ</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-amber);">
+        <div class="wk">ステップ5</div><div class="desc">ヒューマンレビュー</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-green);">
+        <div class="wk">ステップ6</div><div class="desc">JSON変換</div>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box">
+          <h4>入力</h4>
+          <p>lab_results_messy.csv — 不整合な日付、欠損値、PHIフィールド、不正な行</p>
+        </div>
+        <div class="card-box">
+          <h4>バリデーション</h4>
+          <p>lab_result_v1.schema.jsonに対して検証。重要度付きで課題をフラグ。エビデンス添付。</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box">
+          <h4>レビューゲート</h4>
+          <p>変換計画は人間の承認を待つ。レビュアーは課題、エビデンス、出力プレビューを確認。</p>
+        </div>
+        <div class="card-box">
+          <h4>出力</h4>
+          <p>クリーンなJSON＋説明レポート＋監査イベント。すべての判断が追跡可能。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">8</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 9: 実装ロードマップ -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>実装ロードマップ</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="timeline" style="margin-bottom: 18px;">
+      <div class="tl-item" style="background: #ecfeff; border: 1px solid #bae6fd;">
+        <div class="wk">W1</div><div class="desc">調査と設計</div>
+      </div>
+      <div class="tl-item" style="background: #ecfeff; border: 1px solid #bae6fd;">
+        <div class="wk">W2-3</div><div class="desc">コアAPIとデータツール</div>
+      </div>
+      <div class="tl-item" style="background: #ecfdf5; border: 1px solid #a7f3d0;">
+        <div class="wk">W3-4</div><div class="desc">エージェント</div>
+      </div>
+      <div class="tl-item" style="background: #ecfdf5; border: 1px solid #a7f3d0;">
+        <div class="wk">W4-5</div><div class="desc">RAG層</div>
+      </div>
+      <div class="tl-item" style="background: #fffbeb; border: 1px solid #fde68a;">
+        <div class="wk">W5-6</div><div class="desc">MCP統合</div>
+      </div>
+      <div class="tl-item" style="background: #fffbeb; border: 1px solid #fde68a;">
+        <div class="wk">W6-7</div><div class="desc">HITL・安全性</div>
+      </div>
+      <div class="tl-item" style="background: #fef2f2; border: 1px solid #fecaca;">
+        <div class="wk">W7-8</div><div class="desc">UI・デプロイ</div>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h4 style="font-size:12px; color:var(--muted); margin-bottom:8px;">完了済み</h4>
+        <ul style="font-size:11.5px;">
+          <li>FastAPIバックエンド（30+エンドポイント）</li>
+          <li>レビューゲート付きワークフローエンジン</li>
+          <li>共有状態の5つのルールベースエージェント</li>
+          <li>pgvectorセマンティックRAG + MMR</li>
+          <li>6つのMCPサーバーラッパー</li>
+          <li>Google OAuth + セッション管理</li>
+          <li>Reactプロダクトコンソール（9モジュール）</li>
+          <li>Docker Composeデプロイメント</li>
+          <li>Playwright E2Eテストスイート</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h4 style="font-size:12px; color:var(--muted); margin-bottom:8px;">ステータス</h4>
+        <div class="card-box" style="border-left: 3px solid var(--accent-green);">
+          <h4>リリース候補 v0</h4>
+          <p>ローカルリリースゲート全通過。バックエンド、API、検索、認証、ストレージ、フロントエンドがデモ向けに強化済み。</p>
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag-green tag">テスト合格</span>
+          <span class="tag-green tag">E2E合格</span>
+          <span class="tag-green tag">Docker準備完了</span>
+          <span class="tag-green tag">ビルドクリーン</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">9</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- スライド 10: ありがとうございました -->
+<div class="slide slide-title">
+  <div class="logo">OJT</div>
+  <h1>ありがとうございました</h1>
+  <div class="subtitle">
+    OJTFlow — 医療データガバナンス運用システム<br>
+    <span style="color:#67e8f9;">基盤モデル + RAG + MCP + マルチエージェント</span>
+  </div>
+  <div class="meta">
+    ご質問は？ &nbsp;|&nbsp; github.com/ojtflow &nbsp;|&nbsp; HuReDee-IoYou AI OJT
+  </div>
+</div>
+
+</body>
+</html>

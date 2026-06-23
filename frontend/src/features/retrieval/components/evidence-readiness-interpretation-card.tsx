@@ -11,7 +11,7 @@ export function EvidenceReadinessInterpretationCard({
   qualitySummary: RetrievalQualitySummary | null;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="break-words text-sm font-black">{interpretation.title}</div>
         <Badge variant={interpretation.variant}>{interpretation.badge}</Badge>

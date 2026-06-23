@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import faulthandler
+import signal
+import sys
+
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.concurrency import run_in_threadpool
 from uuid import uuid4
 
 from ojtflow.core.errors import OJTFlowError
 from ojtflow.config import get_settings
 from ojtflow.observability.logging_guard import install_no_raw_phi_filter
+from ojtflow.observability.metrics import monotonic_seconds, observe_api_request
+from ojtflow.observability.sentry import configure_sentry
 from ojtflow.interfaces.api.rate_limit import build_rate_limiter, rate_limited_response
 from ojtflow.interfaces.api.responses import (
     http_exception_handler,
@@ -20,6 +27,7 @@ from ojtflow.interfaces.api.responses import (
 from ojtflow.interfaces.api.deps import require_authentication
 from ojtflow.interfaces.api.routes import (
     assistant,
+    artifacts,
     audit,
     auth,
     convert,
@@ -28,6 +36,9 @@ from ojtflow.interfaces.api.routes import (
     health,
     interoperability,
     jobs,
+    knowledge_graph,
+    medsiglip,
+    metrics,
     ocr,
     parse,
     retrieval,
@@ -41,7 +52,9 @@ from ojtflow.interfaces.api.routes import (
 def create_app() -> FastAPI:
     """Create the local OJTFlow API app."""
 
+    _install_stack_dump_signal()
     install_no_raw_phi_filter()
+    configure_sentry(get_settings(), runtime="api")
     app = FastAPI(
         title="OJTFlow",
         version="0.1.0",
@@ -55,10 +68,17 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def request_id_responses(request, call_next):
+        started_at = monotonic_seconds()
         request_id = _request_id(request.headers.get("x-request-id"))
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
+        observe_api_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_seconds=monotonic_seconds() - started_at,
+        )
         return response
 
     @app.middleware("http")
@@ -67,7 +87,13 @@ def create_app() -> FastAPI:
         if not isinstance(request_id, str) or not request_id:
             request_id = _request_id(request.headers.get("x-request-id"))
             request.state.request_id = request_id
-        decision = rate_limiter.check(request, settings=get_settings())
+        if request.url.path in {"/health", "/metrics"}:
+            return await call_next(request)
+        decision = await run_in_threadpool(
+            rate_limiter.check,
+            request,
+            settings=get_settings(),
+        )
         if decision is not None and not decision.allowed:
             return rate_limited_response(decision, request_id=request_id)
         response = await call_next(request)
@@ -87,8 +113,10 @@ def create_app() -> FastAPI:
 
     protected = [Depends(require_authentication)]
     app.include_router(health.router)
+    app.include_router(metrics.router)
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(assistant.router, prefix="/api/v1")
+    app.include_router(artifacts.router, prefix="/api/v1")
     app.include_router(audit.router, prefix="/api/v1")
     app.include_router(workflows.router, prefix="/api/v1")
     app.include_router(review.router, prefix="/api/v1")
@@ -98,8 +126,10 @@ def create_app() -> FastAPI:
     app.include_router(interoperability.router, prefix="/api/v1", dependencies=protected)
     app.include_router(governance.router, prefix="/api/v1")
     app.include_router(ocr.router, prefix="/api/v1", dependencies=protected)
+    app.include_router(medsiglip.router, prefix="/api/v1", dependencies=protected)
     app.include_router(parse.router, prefix="/api/v1")
     app.include_router(retrieval.router, prefix="/api/v1")
+    app.include_router(knowledge_graph.router, prefix="/api/v1")
     app.include_router(jobs.router, prefix="/api/v1")
     app.include_router(runtime.router, prefix="/api/v1")
     return app
@@ -114,6 +144,13 @@ def _request_id(value: str | None) -> str:
         ):
             return clean
     return f"req_{uuid4().hex}"
+
+
+def _install_stack_dump_signal() -> None:
+    try:
+        faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True)
+    except (RuntimeError, ValueError):
+        return
 
 
 app = create_app()

@@ -1,3 +1,5 @@
+import { SlidersHorizontal } from "lucide-react";
+
 import { QueryBuilderActiveFilterBar } from "./query-builder-active-filter-bar";
 import {
   QueryBuilderContextFields,
@@ -37,29 +39,39 @@ export function QueryBuilderFormContent({
         searchOptionsError={status.searchOptionsError}
       />
 
-      <SearchPresetStrip
-        activePresetId={value.activePresetId}
-        isLoading={status.presetsLoading}
-        onApplyPreset={actions.onApplyPreset}
-        presets={options.presets}
-      />
-
       <QueryBuilderTextFields actions={actions} value={value} />
-      <QueryBuilderContextFields actions={actions} options={options} value={value} />
-      <QueryBuilderScopeFields actions={actions} options={options} value={value} />
 
-      <SourceScopePicker
-        isSearchPending={value.isSearchPending}
-        onClear={actions.onClearSourceScope}
-        onSelect={actions.onSelectSourceScope}
-        selectedSource={options.selectedSource}
-        sourceId={value.sourceId}
-        sources={options.sources}
-      />
+      <div className="flex items-center gap-2">
+        <QueryBuilderSubmitButton isSearchPending={value.isSearchPending} />
+        <QueryBuilderActiveFilterBar actions={actions} value={value} />
+      </div>
 
-      <QueryBuilderActiveFilterBar actions={actions} value={value} />
+      <details className="rounded-lg border border-border/40 bg-muted/10 px-3 py-2">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium text-muted-foreground">
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          Filters &amp; presets
+        </summary>
+        <div className="mt-3 grid gap-3">
+          <SearchPresetStrip
+            activePresetId={value.activePresetId}
+            isLoading={status.presetsLoading}
+            onApplyPreset={actions.onApplyPreset}
+            presets={options.presets}
+          />
 
-      <QueryBuilderSubmitButton isSearchPending={value.isSearchPending} />
+          <QueryBuilderContextFields actions={actions} options={options} value={value} />
+          <QueryBuilderScopeFields actions={actions} options={options} value={value} />
+
+          <SourceScopePicker
+            isSearchPending={value.isSearchPending}
+            onClear={actions.onClearSourceScope}
+            onSelect={actions.onSelectSourceScope}
+            selectedSource={options.selectedSource}
+            sourceId={value.sourceId}
+            sources={options.sources}
+          />
+        </div>
+      </details>
     </>
   );
 }

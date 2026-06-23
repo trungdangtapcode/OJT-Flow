@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+START_STACK=0
+BUILD_IMAGE=1
+EXPLICIT_REAL_SMOKE_AUTH_TOKEN="${OJT_REAL_SMOKE_AUTH_TOKEN:-}"
+if [[ "${1:-}" == "--start-compose" ]]; then
+  START_STACK=1
+  BUILD_IMAGE=0
+  shift
+elif [[ "${1:-}" == "--no-start" ]]; then
+  START_STACK=0
+  BUILD_IMAGE=0
+  shift
+elif [[ "${1:-}" == "--no-build" ]]; then
+  BUILD_IMAGE=0
+  shift
+fi
+
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+if [[ -n "$EXPLICIT_REAL_SMOKE_AUTH_TOKEN" ]]; then
+  OJT_REAL_SMOKE_AUTH_TOKEN="$EXPLICIT_REAL_SMOKE_AUTH_TOKEN"
+fi
+
+OJT_OPENAI_API_KEY="${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-${OJT_OPENAI_API_KEY:-}}"
+OJT_REAL_SMOKE_API_BASE_URL="${OJT_REAL_SMOKE_API_BASE_URL:-http://127.0.0.1:18000}"
+OJT_REAL_SMOKE_TIMEOUT_SECONDS="${OJT_REAL_SMOKE_TIMEOUT_SECONDS:-60}"
+if [[ "$START_STACK" -eq 1 ]]; then
+  OJT_REAL_SMOKE_HEALTH_WAIT_SECONDS="${OJT_REAL_SMOKE_HEALTH_WAIT_SECONDS:-${OJT_REAL_SMOKE_TIMEOUT_SECONDS}}"
+else
+  OJT_REAL_SMOKE_HEALTH_WAIT_SECONDS="${OJT_REAL_SMOKE_HEALTH_WAIT_SECONDS:-3}"
+fi
+
+missing=0
+if [[ -z "${OJT_OPENAI_API_KEY}" ]]; then
+  echo "Missing OJT_OPENAI_API_KEY. Put the real key in .env or export OPENAI_API_KEY." >&2
+  missing=1
+fi
+if [[ -z "${OJT_REAL_SMOKE_API_BASE_URL}" ]]; then
+  echo "Missing OJT_REAL_SMOKE_API_BASE_URL. Put the running API base URL in .env." >&2
+  missing=1
+fi
+if [[ "$missing" -ne 0 ]]; then
+  exit 2
+fi
+
+export OJT_OPENAI_API_KEY
+export OPENAI_API_KEY
+export OJT_REAL_SMOKE_API_BASE_URL
+export OJT_REAL_SMOKE_AUTH_TOKEN
+export OJT_REAL_SMOKE_TIMEOUT_SECONDS
+export OJT_REAL_SMOKE_HEALTH_WAIT_SECONDS
+
+if [[ "$START_STACK" -eq 1 ]]; then
+  docker compose up -d postgres redis api
+fi
+
+if ! "${PYTHON:-./.venv/bin/python}" - <<'PY'
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
+base_url = os.environ["OJT_REAL_SMOKE_API_BASE_URL"].rstrip("/")
+deadline = time.time() + float(os.environ.get("OJT_REAL_SMOKE_HEALTH_WAIT_SECONDS", "3"))
+last_error: Exception | None = None
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(f"{base_url}/health", timeout=3) as response:
+            if response.status == 200:
+                print(f"API health OK: {base_url}/health")
+                sys.exit(0)
+    except (OSError, urllib.error.URLError) as exc:
+        last_error = exc
+    time.sleep(2)
+print(f"API health did not become ready at {base_url}/health: {last_error}", file=sys.stderr)
+sys.exit(1)
+PY
+then
+  if [[ "$BUILD_IMAGE" -eq 1 ]]; then
+    echo "No healthy API at ${OJT_REAL_SMOKE_API_BASE_URL}; building the Docker API image." >&2
+    docker compose build api
+  fi
+  echo "Start the API image on ${OJT_REAL_SMOKE_API_BASE_URL}, then rerun: scripts/run-real-smoke-tests --no-build" >&2
+  exit 1
+fi
+
+if [[ -z "${OJT_REAL_SMOKE_AUTH_TOKEN:-}" ]]; then
+  echo "OJT_REAL_SMOKE_AUTH_TOKEN is empty; issuing a real service-account smoke token." >&2
+  OJT_REAL_SMOKE_AUTH_TOKEN="$("${PYTHON:-./.venv/bin/python}" - <<'PY'
+import os
+import sys
+
+from ojtflow.config import get_settings
+from ojtflow.core.contracts.auth import GoogleIdentityProfile
+from ojtflow.interfaces.api.deps import _build_auth_service, _build_governance_service
+
+settings = get_settings()
+auth = _build_auth_service()
+governance = _build_governance_service()
+
+owner = auth.repository.upsert_google_user(
+    GoogleIdentityProfile(
+        google_sub="local-real-smoke-owner",
+        email="local-real-smoke-owner@ojtflow.local",
+        email_verified=True,
+        display_name="Local Real Smoke Owner",
+    )
+)
+workspace = governance.get_or_create_current_workspace(owner)
+role_key = settings.service_account_default_role_key
+slug = "real-smoke"
+
+service_account = next(
+    (
+        account
+        for account in auth.list_service_accounts(
+            organization_id=workspace.organization.organization_id
+        )
+        if account.slug == slug
+    ),
+    None,
+)
+if service_account is None:
+    service_account = auth.create_service_account_identity(
+        organization_id=workspace.organization.organization_id,
+        slug=slug,
+        display_name="Real Smoke Service Account",
+        role_key=role_key,
+        created_by_user_id=owner.user_id,
+    )
+
+try:
+    governance.add_organization_member(
+        user=owner,
+        organization_id=workspace.organization.organization_id,
+        member_user_id=service_account.user_id,
+        role_key=role_key,
+    )
+except Exception as exc:
+    message = str(exc).lower()
+    if (
+        "unique" not in message
+        and "duplicate" not in message
+        and "already exists" not in message
+    ):
+        raise
+
+token = auth.issue_service_account_token(service_account=service_account)
+sys.stdout.write(token["access_token"])
+PY
+)"
+  export OJT_REAL_SMOKE_AUTH_TOKEN
+fi
+
+"${PYTHON:-./.venv/bin/python}" -m pytest \
+  tests/test_real_gpu_api_smoke.py \
+  -q -rs "$@"

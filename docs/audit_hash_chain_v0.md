@@ -1,6 +1,6 @@
 # Audit Hash Chain v0
 
-OJTFlow writes every generic audit record with deterministic hash-chain fields:
+OJTFlow writes every generic audit record with rule-based hash-chain fields:
 
 - `chain_scope`: independent chain partition, currently `owner_user:<user_id>` or `owner_user:system`.
 - `chain_sequence`: monotonic sequence within the chain scope.
@@ -31,10 +31,8 @@ OJT_AUDIT_HASH_CHAIN_REQUIRED=true
 
 ## Storage
 
-SQLite self-heals the audit table with nullable chain columns for local and
-test deployments. Postgres migration `018_audit_hash_chain.sql` adds mirrored
-columns and indexes for chain-scope/sequence verification and record-hash
-lookup.
+Postgres migration `018_audit_hash_chain.sql` adds mirrored columns and indexes
+for chain-scope/sequence verification and record-hash lookup.
 
 The authoritative record remains `record_json`, which includes the chain fields.
 Mirrored SQL columns are for efficient integrity checks and future export/report

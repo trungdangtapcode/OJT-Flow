@@ -22,6 +22,14 @@ const AuditPage = lazy(() =>
 const HelpPage = lazy(() =>
   import("./features/help/help-page").then((module) => ({ default: module.HelpPage })),
 );
+const FilesPage = lazy(() =>
+  import("./features/files/files-page").then((module) => ({ default: module.FilesPage })),
+);
+const KnowledgePage = lazy(() =>
+  import("./features/knowledge/knowledge-page").then((module) => ({
+    default: module.KnowledgePage,
+  })),
+);
 const RetrievalPage = lazy(() =>
   import("./features/retrieval/retrieval-page").then((module) => ({
     default: module.RetrievalPage,
@@ -79,6 +87,16 @@ const assistantRoute = createRoute({
   component: () => (
     <RouteSuspense>
       <AssistantPage />
+    </RouteSuspense>
+  ),
+});
+
+const knowledgeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/knowledge",
+  component: () => (
+    <RouteSuspense>
+      <KnowledgePage />
     </RouteSuspense>
   ),
 });
@@ -146,6 +164,16 @@ const workbenchRoute = createRoute({
   ),
 });
 
+const filesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/files",
+  component: () => (
+    <RouteSuspense>
+      <FilesPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -192,21 +220,30 @@ const authCallbackRoute = createRoute({
   component: () => <Navigate to="/assistant" />,
 });
 
+const inviteAcceptRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite/accept",
+  component: () => <Navigate to="/settings" />,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   assistantRoute,
+  knowledgeRoute,
   workflowsRoute,
   workflowDetailRoute,
   reviewsRoute,
   retrievalRoute,
   auditRoute,
-  schemasRoute,
-  workbenchRoute,
-  settingsRoute,
+    schemasRoute,
+    workbenchRoute,
+    filesRoute,
+    settingsRoute,
   helpRoute,
   helpTutorialsRoute,
   helpManualRoute,
   authCallbackRoute,
+  inviteAcceptRoute,
 ]);
 
 const router = createRouter({ routeTree });
@@ -232,7 +269,7 @@ function RouteSuspense({ children }: { children: ReactNode }) {
 function RouteLoading() {
   return (
     <div className="grid min-h-[320px] place-items-center p-6">
-      <div className="rounded-md border border-border bg-card px-4 py-3 text-sm font-semibold text-muted-foreground shadow-sm">
+      <div className="animate-pulse rounded-lg border border-border/80 bg-card px-4 py-3 text-sm font-semibold text-muted-foreground elevation-card">
         Loading route
       </div>
     </div>

@@ -20,7 +20,7 @@ export function SearchHintCard({
 }) {
   return (
     <div
-      className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs"
+      className="grid gap-1.5 rounded-lg border border-border/60 bg-card p-2 text-xs"
       key={hintKey}
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">

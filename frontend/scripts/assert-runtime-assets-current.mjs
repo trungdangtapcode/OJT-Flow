@@ -9,7 +9,7 @@ const expectedIndexPath = process.env.OJT_EXPECTED_FRONTEND_INDEX
   ? path.resolve(frontendRoot, process.env.OJT_EXPECTED_FRONTEND_INDEX)
   : null;
 const expectedImage = process.env.OJT_EXPECTED_FRONTEND_IMAGE ?? "med-frontend";
-const runtimeBaseURL = process.env.OJT_RUNTIME_BASE_URL ?? "http://localhost:5173";
+const runtimeBaseURL = process.env.OJT_RUNTIME_BASE_URL ?? "http://localhost:15173";
 
 function extractAssetRefs(html) {
   return [

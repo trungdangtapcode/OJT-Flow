@@ -12,9 +12,16 @@ The feature is intentionally conservative:
 - workflow parsing, validation, review, transformation, and explanation run from the derived text artifact;
 - failed extraction/parsing is persisted as a failed workflow with audit events and returned as a structured API error;
 - structured text uploads (`.csv`, `.json`, `.yaml`, `.md`, `.txt`) bypass optional document
-  extractors and go directly through deterministic parsing;
+  extractors and go directly through rule-based parsing;
 - configured OpenAI-compatible OCR can recover text from pasted images,
   scanned PDFs, and image-heavy Office files before assistant/tool execution.
+
+The realistic PDF target is a healthcare document a doctor, clinic operator, or
+patient would upload before a governed workflow: a clinic visit summary, lab
+report, discharge/referral note, medication list, intake form, or scanned
+patient portal document. The smoke PDF fixture is synthetic, but it now models a
+doctor/patient clinic visit summary with patient ID, doctor, visit date, reason
+for visit, lab values, and a follow-up plan.
 
 The upload feature does not claim FHIR compliance, diagnosis, treatment, or
 autonomous medical interpretation. OCR output is untrusted extracted evidence
@@ -115,7 +122,7 @@ For workflow uploads, OJTFlow stores two artifacts:
 1. `uploaded_file_raw`: original bytes, original sanitized filename, source format, SHA-256, and byte size.
 2. `uploaded_file_extracted_text`: derived markdown/text, extraction metadata, warnings, SHA-256, and storage ref.
 
-`WorkflowState.input` points to the derived text artifact once extraction succeeds so review resume can re-parse deterministic text. The raw artifact remains linked under `workflow.handoff_context.raw_upload` for audit and reproducibility.
+`WorkflowState.input` points to the derived text artifact once extraction succeeds so review resume can re-parse rule-based text. The raw artifact remains linked under `workflow.handoff_context.raw_upload` for audit and reproducibility.
 For structured text uploads, `WorkflowState.input.declared_format` is the
 detected parser format (`csv`, `json`, `yaml`, or `markdown`) instead of forced
 markdown.

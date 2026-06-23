@@ -21,7 +21,7 @@ export function SourceInventoryFilterControls({
   updateFilters: (filters: SourceInventoryFilters) => void;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <SourceInventoryFilterHeader sourceCount={sourceCount} shownCount={shownCount} />
       <Input
         aria-label="Filter trusted sources"

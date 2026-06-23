@@ -45,38 +45,84 @@ class PostgresAuthRepository:
         self._schema_initialized = True
 
     def upsert_google_user(self, profile: GoogleIdentityProfile) -> UserRecord:
-        """Create or update a user by stable Google subject."""
+        """Create or update a user, keyed by external subject and linked by email.
 
-        user_id = new_id("usr")
+        Matches an existing account by the stable external subject first, then by
+        email (so an account created via a different provider — e.g. legacy direct
+        Google before Keycloak brokering — is re-linked to the new subject instead
+        of colliding on the unique email constraint), and finally inserts.
+        """
+
+        returning = (
+            "user_id, google_sub, email, email_verified, display_name, avatar_url, "
+            "identity_provider, created_at, updated_at, last_login_at"
+        )
         with self.connect() as connection:
             with connection.cursor() as cursor:
+                # 1) Existing account by external subject.
                 cursor.execute(
-                    """
-                    insert into ojtflow.users (
-                        user_id, google_sub, email, email_verified,
-                        display_name, avatar_url, last_login_at
-                    ) values (%s, %s, %s, %s, %s, %s, now())
-                    on conflict (google_sub) do update set
-                        email = excluded.email,
-                        email_verified = excluded.email_verified,
-                        display_name = excluded.display_name,
-                        avatar_url = excluded.avatar_url,
-                        updated_at = now(),
-                        last_login_at = now()
-                    returning
-                        user_id, google_sub, email, email_verified,
-                        display_name, avatar_url, created_at, updated_at, last_login_at
+                    f"""
+                    update ojtflow.users set
+                        email = %s, email_verified = %s, display_name = %s,
+                        avatar_url = %s,
+                        identity_provider = coalesce(%s, identity_provider),
+                        updated_at = now(), last_login_at = now()
+                    where google_sub = %s
+                    returning {returning}
                     """,
                     (
-                        user_id,
-                        profile.google_sub,
                         profile.email,
                         profile.email_verified,
                         profile.display_name,
                         profile.avatar_url,
+                        profile.identity_provider,
+                        profile.google_sub,
                     ),
                 )
                 row = cursor.fetchone()
+                if row is None:
+                    # 2) Existing account by email: re-link to the new subject.
+                    cursor.execute(
+                        f"""
+                        update ojtflow.users set
+                            google_sub = %s, email_verified = %s, display_name = %s,
+                            avatar_url = %s,
+                            identity_provider = coalesce(%s, identity_provider),
+                            updated_at = now(), last_login_at = now()
+                        where email = %s
+                        returning {returning}
+                        """,
+                        (
+                            profile.google_sub,
+                            profile.email_verified,
+                            profile.display_name,
+                            profile.avatar_url,
+                            profile.identity_provider,
+                            profile.email,
+                        ),
+                    )
+                    row = cursor.fetchone()
+                if row is None:
+                    # 3) New account.
+                    cursor.execute(
+                        f"""
+                        insert into ojtflow.users (
+                            user_id, google_sub, email, email_verified,
+                            display_name, avatar_url, identity_provider, last_login_at
+                        ) values (%s, %s, %s, %s, %s, %s, %s, now())
+                        returning {returning}
+                        """,
+                        (
+                            new_id("usr"),
+                            profile.google_sub,
+                            profile.email,
+                            profile.email_verified,
+                            profile.display_name,
+                            profile.avatar_url,
+                            profile.identity_provider,
+                        ),
+                    )
+                    row = cursor.fetchone()
             connection.commit()
         return _user_from_row(row)
 
@@ -210,7 +256,8 @@ class PostgresAuthRepository:
                     """
                     select
                         u.user_id, u.google_sub, u.email, u.email_verified,
-                        u.display_name, u.avatar_url, u.created_at as user_created_at,
+                        u.display_name, u.avatar_url, u.identity_provider,
+                        u.created_at as user_created_at,
                         u.updated_at as user_updated_at, u.last_login_at,
                         s.session_id, s.token_hash, s.created_at as session_created_at,
                         s.expires_at, s.revoked_at, s.last_seen_at,
@@ -317,6 +364,7 @@ def _user_from_row(row) -> UserRecord:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         last_login_at=row["last_login_at"],
+        identity_provider=row.get("identity_provider"),
     )
 
 
@@ -343,6 +391,7 @@ def _joined_user_from_row(row) -> UserRecord:
         created_at=row["user_created_at"],
         updated_at=row["user_updated_at"],
         last_login_at=row["last_login_at"],
+        identity_provider=row.get("identity_provider"),
     )
 
 

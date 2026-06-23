@@ -110,7 +110,12 @@ async def create_retrieval_reindex_job(
             "request_id": getattr(http_request.state, "request_id", None),
         },
     )
-    if request.execute_now:
+    if request.execute_now and jobs.queue_backed:
+        job = jobs.enqueue(
+            owner_user_id=authenticated.user.user_id,
+            job_id=job.job_id,
+        )
+    elif request.execute_now:
         job = jobs.run_sync(
             owner_user_id=authenticated.user.user_id,
             job_id=job.job_id,
@@ -168,7 +173,12 @@ async def create_embedding_reindex_job(
             "before_manifest_hash": retrieval_manifest_hash(before_manifest),
         },
     )
-    if request.execute_now:
+    if request.execute_now and jobs.queue_backed:
+        job = jobs.enqueue(
+            owner_user_id=authenticated.user.user_id,
+            job_id=job.job_id,
+        )
+    elif request.execute_now:
         job = jobs.run_sync(
             owner_user_id=authenticated.user.user_id,
             job_id=job.job_id,

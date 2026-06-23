@@ -1,6 +1,6 @@
 # PHI Redaction Policy Engine v0
 
-F124 adds a deterministic redaction policy engine on top of the shared PHI
+F124 adds a rule-based redaction policy engine on top of the shared PHI
 classification contract. PHI detection and redaction behavior are intentionally
 separate:
 
@@ -19,7 +19,7 @@ The v0 engine supports four actions:
   `[REDACTED:SSN]`.
 - `suppress`: remove the value while preserving the surrounding format where
   possible. In CSV this leaves an empty cell.
-- `tokenize_placeholder`: replace the value with a deterministic placeholder
+- `tokenize_placeholder`: replace the value with a rule-based placeholder
   such as `[TOKEN:SSN:69f09b1d23b0]`.
 - `review_gated_reveal`: replace the value with `[REVIEW_REQUIRED:KIND]` and
   mark the preview as requiring review.

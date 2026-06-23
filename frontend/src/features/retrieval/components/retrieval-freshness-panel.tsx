@@ -25,12 +25,12 @@ export function RetrievalFreshnessPanel({
   const statusView = freshnessStatusView(report?.status ?? "watch");
 
   return (
-    <section className="grid gap-3 rounded-md border border-border bg-card p-4">
+    <section className="grid gap-4 rounded-xl border border-border/50 bg-card p-5">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="inline-flex min-w-0 items-center gap-2">
             <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
-            <h2 className="break-words text-sm font-black">Source freshness gate</h2>
+            <h2 className="break-words text-sm font-semibold">Source freshness gate</h2>
           </div>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Check source lifecycle, reviewer state, indexing, policies, and refresh cadence.
@@ -71,7 +71,7 @@ export function RetrievalFreshnessPanel({
         <div className="grid gap-2">
           {report.warnings.slice(0, 3).map((warning) => (
             <div
-              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"
+              className="rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-2.5 text-xs leading-5 text-amber-900"
               key={warning}
             >
               {warning}
@@ -82,7 +82,7 @@ export function RetrievalFreshnessPanel({
 
       {riskySources.length ? (
         <div className="grid gap-2">
-          <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
             <DatabaseZap className="h-3.5 w-3.5" />
             Highest-risk sources
           </div>
@@ -91,7 +91,7 @@ export function RetrievalFreshnessPanel({
           ))}
         </div>
       ) : (
-        <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-border/50 bg-muted/30 p-3 text-sm text-muted-foreground">
           All configured retrieval sources are inside the current readiness gate.
         </div>
       )}
@@ -112,9 +112,9 @@ export function RetrievalFreshnessPanel({
 
 function FreshnessMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-card/80 px-3 py-2">
+    <div className="min-w-0 rounded-xl border border-border/50 bg-card/80 px-3 py-2">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-black tabular-nums">{value}</div>
+      <div className="mt-1 break-words text-sm font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -125,7 +125,7 @@ function FreshnessSourceRow({ source }: { source: RetrievalFreshnessSource }) {
   const primaryAction = source.recommended_actions[0] ?? "Review source governance metadata.";
   const qualityAction = source.quality?.top_action;
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-xl border border-border/50 bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="break-words text-sm font-bold">{source.title}</div>

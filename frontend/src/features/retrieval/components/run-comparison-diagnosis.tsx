@@ -11,7 +11,7 @@ export function RunComparisonDiagnosis({
 }) {
   const warningCount = diagnosis.filter((item) => item.severity === "warning").length;
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="font-bold text-muted-foreground">
           Comparison diagnosis

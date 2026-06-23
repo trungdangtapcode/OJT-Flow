@@ -8,7 +8,7 @@
 \midrule
 Backend API & Python + FastAPI & FastAPI is a modern, high-performance Python web framework based on standard type hints \cite{fastapiDocs}. \\
 Validation & Pydantic + JSON Schema & Pydantic can generate JSON Schema compliant with JSON Schema Draft 2020-12 and OpenAPI 3.1 \cite{pydanticJsonSchema}. \\
-Data conversion & Python \texttt{json}, \texttt{csv}, PyYAML, optional Pandas & Deterministic parsing and conversion for MVP formats. \\
+Data conversion & Python \texttt{json}, \texttt{csv}, PyYAML, optional Pandas & Rule-based parsing and conversion for MVP formats. \\
 Agent orchestration & LangGraph preferred; AutoGen as alternative & LangGraph provides durable execution and human-in-the-loop patterns; AutoGen is a strong research-backed multi-agent option. \\
 RAG/vector store & pgvector for deployment; FAISS for lightweight local MVP & pgvector stores vectors inside PostgreSQL and supports exact and approximate nearest-neighbor search \cite{pgvector}. \\
 MCP & MCP Python SDK / FastMCP & Official SDK supports servers and clients that expose resources, prompts, tools, stdio, SSE, and Streamable HTTP \cite{mcpPythonSdk}. \\

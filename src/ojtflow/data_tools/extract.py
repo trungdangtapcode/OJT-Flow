@@ -17,6 +17,8 @@ from __future__ import annotations
 import base64
 import io
 import os
+import shutil
+import subprocess
 import tempfile
 from collections.abc import Collection
 from dataclasses import dataclass, field
@@ -25,7 +27,12 @@ from pathlib import Path
 import httpx
 
 from ojtflow.config import OPENAI_VISION_MODEL, get_settings
-from ojtflow.core.errors import PolicyBlockedError, ToolExecutionError, UnsupportedUploadError
+from ojtflow.core.errors import (
+    DependencyUnavailableError,
+    PolicyBlockedError,
+    ToolExecutionError,
+    UnsupportedUploadError,
+)
 from ojtflow.core.policy.abuse_cost_policy import (
     load_abuse_cost_policy,
     markitdown_ocr_allowed,
@@ -64,6 +71,7 @@ EXTENSION_FORMAT: dict[str, str] = {
 
 
 class Extractor:
+    DIRECT_TEXT = "direct_text"
     MARKITDOWN = "markitdown"
     MINERU = "mineru"
     OPENAI_VISION = "openai_vision"
@@ -80,6 +88,10 @@ ALLOWED_EXTRACTORS = {
 }
 MAX_UPLOAD_FILENAME_BYTES = 255
 OCR_SENSITIVE_FORMATS = {"pdf", "docx", "pptx", "xlsx", "xls", "image"}
+DIRECT_TEXT_FORMATS = {"csv", "json", "yaml", "markdown", "text", "html"}
+PDF_OCR_MAX_PAGES = 3
+PDF_RENDER_DPI = 200
+PDF_RENDER_TIMEOUT_SECONDS = 45
 
 
 def sanitize_upload_filename(
@@ -136,7 +148,7 @@ class ExtractionResult:
     """Output of document extraction."""
 
     text: str
-    extractor_used: str       # "markitdown" | "mineru" | "openai_vision" | "tesseract"
+    extractor_used: str       # "direct_text" | "markitdown" | "mineru" | "openai_vision" | "tesseract"
     source_format: str        # "pdf" | "image" | "docx" | ...
     filename: str
     page_count: int | None = None
@@ -155,7 +167,8 @@ def extract_document(
         data: Raw file bytes.
         filename: Original filename — used for extension detection.
         prefer: Which extractor to use.
-            "auto"       — try markitdown first, fall back to minerU.
+            "auto"       — direct text for text-like files, real OCR for images,
+                           markitdown for document formats.
             "markitdown" — markitdown only (lighter, handles most formats).
             "mineru"     — minerU only (better for complex PDFs with tables/formulas).
 
@@ -163,7 +176,7 @@ def extract_document(
         ExtractionResult with extracted text and metadata.
 
     Raises:
-        ToolExecutionError: if extraction fails and no fallback is available.
+        ToolExecutionError: if extraction fails.
         ImportError: if the required library is not installed.
     """
     safe_filename = sanitize_upload_filename(filename)
@@ -171,6 +184,15 @@ def extract_document(
     suffix = Path(safe_filename).suffix.lower()
     source_format = EXTENSION_FORMAT[suffix]
     warnings: list[str] = []
+
+    if prefer == Extractor.AUTO and source_format in DIRECT_TEXT_FORMATS:
+        return _extract_direct_text(data, safe_filename, source_format, warnings)
+
+    if prefer == Extractor.AUTO and source_format == "image":
+        return _extract_image_auto(data, safe_filename, source_format, warnings)
+
+    if prefer == Extractor.AUTO and source_format == "pdf":
+        return _extract_pdf_auto(data, safe_filename, source_format, warnings)
 
     if prefer == Extractor.MINERU:
         return _extract_mineru(data, safe_filename, source_format, warnings)
@@ -208,53 +230,233 @@ def extract_document(
             )
         return result
 
-    # AUTO: try markitdown first, fall back to minerU
-    markitdown_error: Exception | None = None
-    try:
-        result = _extract_markitdown(data, safe_filename, source_format, list(warnings))
-        if source_format == "image" and not result.text.strip():
-            fallback_warnings = list(result.warnings)
-            tesseract_result = _extract_tesseract(
-                data=data,
-                filename=safe_filename,
-                source_format=source_format,
-                warnings=fallback_warnings,
-                require_installed=False,
-            )
-            if tesseract_result is not None:
-                return tesseract_result
-            vision_result = _extract_openai_vision(
-                data=data,
-                filename=safe_filename,
-                source_format=source_format,
-                warnings=fallback_warnings,
-                require_configured=False,
-            )
-            if vision_result is not None:
-                return vision_result
-            result.warnings = fallback_warnings
-        return result
-    except ImportError as exc:
-        markitdown_error = exc
-        warnings.append("markitdown not installed, falling back to minerU.")
-    except ToolExecutionError as exc:
-        markitdown_error = exc
-        warnings.append(f"markitdown failed ({exc}), falling back to minerU.")
-
-    try:
-        return _extract_mineru(data, safe_filename, source_format, warnings)
-    except ImportError:
-        raise ImportError(
-            "No document extractor is available. Install at least one:\n"
-            "  pip install 'ojtflow[parsing]'       # markitdown\n"
-            "  pip install 'ojtflow[parsing-full]'  # markitdown + minerU\n"
-            f"Original markitdown error: {markitdown_error}"
-        ) from markitdown_error
-    except ToolExecutionError as exc:
+    result = _extract_markitdown(data, safe_filename, source_format, list(warnings))
+    if source_format == "image" and not result.text.strip():
         raise ToolExecutionError(
-            f"Both markitdown and minerU failed to extract '{safe_filename}'. "
-            f"minerU error: {exc}"
-        ) from exc
+            "markitdown returned empty image text. Select the tesseract or "
+            "openai_vision extractor explicitly for OCR."
+        )
+    return result
+
+
+def _extract_direct_text(
+    data: bytes,
+    filename: str,
+    source_format: str,
+    warnings: list[str],
+) -> ExtractionResult:
+    """Extract text-like uploads without optional document/OCR dependencies."""
+
+    for encoding in ("utf-8-sig", "utf-16", "cp1252"):
+        try:
+            text = data.decode(encoding)
+            if encoding != "utf-8-sig":
+                warnings.append(f"Decoded text upload using {encoding}.")
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise UnsupportedUploadError(
+            f"Could not decode text upload '{filename}'. Use UTF-8, UTF-16, or CP1252."
+        )
+    return ExtractionResult(
+        text=text,
+        extractor_used=Extractor.DIRECT_TEXT,
+        source_format=source_format,
+        filename=filename,
+        warnings=warnings,
+        metadata={
+            "provider": "local",
+            "engine": "direct_text_decoder",
+            "external_provider": False,
+            "cost_tracking": {
+                "billable": False,
+                "basis": "local byte-to-text decoding only",
+            },
+        },
+    )
+
+
+def _extract_image_auto(
+    data: bytes,
+    filename: str,
+    source_format: str,
+    warnings: list[str],
+) -> ExtractionResult:
+    """Select a real configured OCR provider for image uploads."""
+
+    result = _extract_openai_vision(
+        data=data,
+        filename=filename,
+        source_format=source_format,
+        warnings=warnings,
+        require_configured=False,
+    )
+    if result is not None:
+        return result
+
+    result = _extract_tesseract(
+        data=data,
+        filename=filename,
+        source_format=source_format,
+        warnings=warnings,
+        require_installed=False,
+    )
+    if result is not None and result.text.strip():
+        return result
+
+    raise DependencyUnavailableError(
+        "Image OCR is unavailable. Configure OpenAI vision OCR or install "
+        "Pillow, pytesseract, and the tesseract binary.",
+        details={
+            "code": "IMAGE_OCR_UNAVAILABLE",
+            "filename": filename,
+            "source_format": source_format,
+            "providers_attempted": [Extractor.OPENAI_VISION, Extractor.TESSERACT],
+            "warnings": list(warnings),
+            "fallback_attempted": False,
+        },
+    )
+
+
+def _extract_pdf_auto(
+    data: bytes,
+    filename: str,
+    source_format: str,
+    warnings: list[str],
+) -> ExtractionResult:
+    """Extract scanned PDFs by rendering pages and OCRing the real page images."""
+
+    page_images = _render_pdf_pages_to_png(data, filename, warnings)
+    if not page_images:
+        raise DependencyUnavailableError(
+            "Scanned PDF OCR is unavailable. Install poppler/pdftoppm and configure "
+            "OpenAI vision OCR, or select a real PDF extractor explicitly.",
+            details={
+                "code": "PDF_OCR_UNAVAILABLE",
+                "filename": filename,
+                "source_format": source_format,
+                "renderer": "pdftoppm",
+                "ocr_provider": Extractor.OPENAI_VISION,
+                "warnings": list(warnings),
+                "fallback_attempted": False,
+            },
+        )
+
+    page_results: list[tuple[int, ExtractionResult]] = []
+    stem = Path(filename).stem
+    for page_number, page_data in enumerate(page_images, start=1):
+        page_warnings: list[str] = []
+        result = _extract_openai_vision(
+            data=page_data,
+            filename=f"{stem}-page-{page_number}.png",
+            source_format="image",
+            warnings=page_warnings,
+            require_configured=False,
+        )
+        warnings.extend(f"page {page_number}: {warning}" for warning in page_warnings)
+        if result is not None and result.text.strip():
+            page_results.append((page_number, result))
+
+    if not page_results:
+        raise DependencyUnavailableError(
+            "Scanned PDF OCR is unavailable. PDF pages rendered successfully, but no "
+            "configured OCR provider returned text.",
+            details={
+                "code": "PDF_OCR_UNAVAILABLE",
+                "filename": filename,
+                "source_format": source_format,
+                "renderer": "pdftoppm",
+                "rendered_page_count": len(page_images),
+                "ocr_provider": Extractor.OPENAI_VISION,
+                "warnings": list(warnings),
+                "fallback_attempted": False,
+            },
+        )
+
+    text = "\n\n".join(
+        f"[page {page_number}]\n{result.text.strip()}"
+        for page_number, result in page_results
+    )
+    metadata = dict(page_results[0][1].metadata)
+    metadata.update(
+        {
+            "provider": "openai",
+            "model": page_results[0][1].metadata.get("model"),
+            "external_provider": True,
+            "pdf_renderer": "pdftoppm",
+            "pdf_render_dpi": PDF_RENDER_DPI,
+            "rendered_page_count": len(page_images),
+            "ocr_page_count": len(page_results),
+            "source_format_original": "pdf",
+            "fallback_attempted": False,
+        }
+    )
+    return ExtractionResult(
+        text=text,
+        extractor_used=Extractor.OPENAI_VISION,
+        source_format=source_format,
+        filename=filename,
+        page_count=len(page_images),
+        warnings=warnings,
+        metadata=metadata,
+    )
+
+
+def _render_pdf_pages_to_png(
+    data: bytes,
+    filename: str,
+    warnings: list[str],
+) -> list[bytes]:
+    """Render the first PDF pages to PNG bytes using the host poppler binary."""
+
+    renderer = shutil.which("pdftoppm")
+    if renderer is None:
+        warnings.append("pdftoppm is not installed; scanned PDF pages cannot be rendered.")
+        return []
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_dir_path = Path(tmp_dir)
+        input_path = tmp_dir_path / sanitize_upload_filename(filename)
+        output_prefix = tmp_dir_path / "page"
+        input_path.write_bytes(data)
+        command = [
+            renderer,
+            "-png",
+            "-r",
+            str(PDF_RENDER_DPI),
+            "-f",
+            "1",
+            "-l",
+            str(PDF_OCR_MAX_PAGES),
+            str(input_path),
+            str(output_prefix),
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=PDF_RENDER_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            warnings.append(f"pdftoppm failed while rendering scanned PDF pages: {exc}")
+            return []
+
+        if completed.returncode != 0:
+            stderr = (completed.stderr or completed.stdout or "").strip()
+            warnings.append(
+                "pdftoppm failed while rendering scanned PDF pages"
+                + (f": {stderr[:300]}" if stderr else ".")
+            )
+            return []
+
+        page_paths = sorted(tmp_dir_path.glob("page-*.png"))
+        if not page_paths:
+            warnings.append("pdftoppm rendered no PNG pages from the uploaded PDF.")
+            return []
+        return [path.read_bytes() for path in page_paths]
 
 
 def _extract_openai_vision(
@@ -265,11 +467,11 @@ def _extract_openai_vision(
     warnings: list[str],
     require_configured: bool = False,
 ) -> ExtractionResult | None:
-    """Use OpenAI vision as an OCR fallback for image attachments when configured."""
+    """Use OpenAI vision as an explicitly selected OCR provider."""
 
     api_key = _openai_api_key()
     if not api_key:
-        warning = "OpenAI vision OCR fallback is not configured; set OJT_OPENAI_API_KEY."
+        warning = "OpenAI vision OCR is not configured; set OJT_OPENAI_API_KEY."
         warnings.append(warning)
         if require_configured:
             raise ToolExecutionError(warning)
@@ -315,11 +517,13 @@ def _extract_openai_vision(
                     {
                         "type": "input_text",
                         "text": (
-                            "Extract all readable text from this image for a healthcare "
-                            "data workflow. Preserve tables, field names, units, patient "
-                            "identifiers, warnings, and uncertainty. If no text is visible, "
-                            "return a concise visual description and state that no OCR text "
-                            "was found."
+                            "Transcribe all readable text from this image exactly as OCR "
+                            "plain text for a healthcare data workflow. Preserve the "
+                            "original line order, labels, values, units, identifiers, and "
+                            "table text. Do not summarize, do not add bullets that are not "
+                            "visible, do not add parsed fields, and do not add notes unless "
+                            "a word is genuinely unreadable. If no text is visible, state "
+                            "only that no OCR text was found."
                         ),
                     },
                     {"type": "input_image", "image_url": image_url, "detail": "high"},
@@ -354,8 +558,6 @@ def _extract_openai_vision(
         warnings.append("OpenAI vision OCR returned empty text.")
         return None
 
-    if not require_configured:
-        warnings.append("markitdown returned empty image text; used OpenAI vision OCR fallback.")
     return ExtractionResult(
         text=text,
         extractor_used=Extractor.OPENAI_VISION,

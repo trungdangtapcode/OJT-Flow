@@ -41,7 +41,7 @@ class PolicyBlockedError(OJTFlowError):
 
 
 class ToolExecutionError(OJTFlowError):
-    """Raised when a deterministic tool fails with a known cause."""
+    """Raised when a rule-based tool fails with a known cause."""
 
 
 class UploadTooLargeError(OJTFlowError):

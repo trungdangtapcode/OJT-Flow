@@ -13,7 +13,7 @@ export function SourceCard({
   source: RetrievalSource;
 }) {
   return (
-    <article className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+    <article className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-sm">
       <div className="min-w-0">
         <div className="break-words font-bold">{source.title}</div>
         <div className="break-all font-mono text-xs text-muted-foreground">

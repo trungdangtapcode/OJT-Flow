@@ -94,8 +94,17 @@ async def runtime_config(
             "status": "ok",
             "product_mode": settings.product_mode,
             "storage_backend": settings.storage_backend,
-            "persistent_storage": settings.storage_backend in {"postgres", "sqlite"},
+            "object_storage_backend": settings.object_storage_backend,
+            "persistent_storage": settings.storage_backend == "postgres",
             "postgres_configured": bool(settings.postgres_dsn),
+            "minio_configured": bool(
+                settings.object_storage_backend == "minio"
+                and settings.minio_endpoint
+                and settings.minio_access_key
+                and settings.minio_secret_key
+                and settings.minio_bucket
+            ),
+            "minio_bucket_configured": bool(settings.minio_bucket),
             "redis_configured": bool(settings.redis_url),
             "data_dir_configured": bool(settings.data_dir),
             "knowledge_dir_configured": bool(settings.knowledge_dir),
@@ -106,9 +115,12 @@ async def runtime_config(
                 "hash_chain_required_configured": settings.audit_hash_chain_required,
             },
             "auth": {
+                "provider": settings.auth_provider,
+                "auth_configured": _auth_provider_configured(settings),
                 "google_oauth_configured": bool(
                     settings.google_client_id and settings.google_client_secret
                 ),
+                "keycloak_configured": _keycloak_configured(settings),
                 "hosted_domain_restricted": bool(settings.allowed_google_hosted_domains),
                 "cookie_secure": settings.auth_cookie_secure,
                 "cookie_effective_secure": settings.effective_auth_cookie_secure,
@@ -148,6 +160,13 @@ async def runtime_config(
                 ),
                 "runtime_settings_configured": bool(settings.runtime_settings_path),
                 "runtime_settings": runtime_assistant_settings(settings),
+            },
+            "medsiglip": {
+                "enabled": settings.medsiglip_enabled,
+                "model": settings.medsiglip_model,
+                "base_url_configured": bool(settings.medsiglip_base_url),
+                "timeout_seconds": settings.medsiglip_timeout_seconds,
+                "queue": settings.medsiglip_queue_name,
             },
             "rerank": {
                 "provider": settings.rerank_provider,
@@ -476,15 +495,31 @@ def _secret_health(settings: Settings) -> dict[str, Any]:
             name="Google OAuth client ID",
             env_vars=["OJT_GOOGLE_CLIENT_ID"],
             configured=bool(settings.google_client_id),
-            required=settings.product_mode in {"pilot", "production"},
+            required=(
+                settings.auth_provider == "google"
+                and settings.product_mode in {"pilot", "production"}
+            ),
             remediation="Create a Google OAuth web client and set OJT_GOOGLE_CLIENT_ID.",
         ),
         _secret_check(
             name="Google OAuth client secret",
             env_vars=["OJT_GOOGLE_CLIENT_SECRET"],
             configured=bool(settings.google_client_secret),
-            required=settings.product_mode in {"pilot", "production"},
+            required=(
+                settings.auth_provider == "google"
+                and settings.product_mode in {"pilot", "production"}
+            ),
             remediation="Set OJT_GOOGLE_CLIENT_SECRET from the OAuth client secret value.",
+        ),
+        _secret_check(
+            name="Keycloak client secret",
+            env_vars=["OJT_KEYCLOAK_CLIENT_SECRET"],
+            configured=bool(settings.keycloak_client_secret),
+            required=(
+                settings.auth_provider == "keycloak"
+                and settings.product_mode in {"pilot", "production"}
+            ),
+            remediation="Set OJT_KEYCLOAK_CLIENT_SECRET from the Keycloak confidential client.",
         ),
         _secret_check(
             name="OpenAI API key",
@@ -568,7 +603,7 @@ async def runtime_readiness(
             "Runtime settings loaded.",
             {
                 "storage_backend": settings.storage_backend,
-                "persistent_storage": settings.storage_backend in {"postgres", "sqlite"},
+                "persistent_storage": settings.storage_backend == "postgres",
             },
         )
     ]
@@ -1046,25 +1081,42 @@ def _migration_bootstrap_summary(exc: Exception) -> str:
 
 
 def _auth_configuration_check(settings: Settings) -> dict[str, Any]:
-    has_client_id = bool(settings.google_client_id)
-    has_client_secret = bool(settings.google_client_secret)
-    configured = has_client_id and has_client_secret
-    partial = has_client_id != has_client_secret
+    if settings.auth_provider == "keycloak":
+        required = (
+            settings.keycloak_base_url,
+            settings.keycloak_realm,
+            settings.keycloak_client_id,
+            settings.keycloak_client_secret,
+        )
+        configured = all(required)
+        partial = any(required) and not configured
+        provider_label = "Keycloak"
+    else:
+        has_client_id = bool(settings.google_client_id)
+        has_client_secret = bool(settings.google_client_secret)
+        configured = has_client_id and has_client_secret
+        partial = has_client_id != has_client_secret
+        provider_label = "Google OAuth"
     if partial:
         status = "error"
-        summary = "Google OAuth is partially configured; both client ID and client secret are required."
+        summary = f"{provider_label} is partially configured; all provider settings are required."
     elif configured:
         status = "ok"
-        summary = "Google OAuth configuration is present."
+        summary = f"{provider_label} configuration is present."
     else:
         status = "ok"
-        summary = "Google OAuth is not configured; local/dev auth overrides may still run."
+        summary = f"{provider_label} is not configured; local/dev auth overrides may still run."
     return _check(
         "auth_configuration",
         status,
         summary,
         {
-            "google_oauth_configured": configured,
+            "provider": settings.auth_provider,
+            "auth_configured": configured,
+            "google_oauth_configured": bool(
+                settings.google_client_id and settings.google_client_secret
+            ),
+            "keycloak_configured": _keycloak_configured(settings),
             "partial_configuration": partial,
             "hosted_domain_restricted": bool(settings.allowed_google_hosted_domains),
             "cookie_secure": settings.auth_cookie_secure,
@@ -1073,6 +1125,21 @@ def _auth_configuration_check(settings: Settings) -> dict[str, Any]:
             "session_ttl_seconds": settings.auth_session_ttl_seconds,
             "state_ttl_seconds": settings.auth_state_ttl_seconds,
         },
+    )
+
+
+def _auth_provider_configured(settings: Settings) -> bool:
+    if settings.auth_provider == "keycloak":
+        return _keycloak_configured(settings)
+    return bool(settings.google_client_id and settings.google_client_secret)
+
+
+def _keycloak_configured(settings: Settings) -> bool:
+    return bool(
+        settings.keycloak_base_url
+        and settings.keycloak_realm
+        and settings.keycloak_client_id
+        and settings.keycloak_client_secret
     )
 
 
@@ -1097,7 +1164,7 @@ def _embedding_configuration_check(settings: Settings) -> dict[str, Any]:
             "provider": settings.embedding_provider,
             "model": settings.embedding_model,
             "dimensions": settings.embedding_dimensions,
-            "semantic_provider": settings.embedding_provider != "deterministic",
+            "semantic_provider": settings.embedding_provider in {"openai", "huggingface"},
         },
     )
 
@@ -1198,14 +1265,14 @@ def _session_cache_check(storage_backend: str, redis_url: str) -> dict[str, Any]
             "session_cache",
             "error",
             "Redis session cache is not configured; Postgres auth is not multi-instance ready.",
-            {"mode": "fallback"},
+            {"mode": "unavailable"},
         )
     if redis_client is None:
         return _check(
             "session_cache",
             "error",
             "Redis dependency is unavailable; Postgres auth is not multi-instance ready.",
-            {"mode": "fallback", "error_type": "ImportError"},
+            {"mode": "unavailable", "error_type": "ImportError"},
         )
     try:
         client = redis_client.from_url(
@@ -1220,7 +1287,7 @@ def _session_cache_check(storage_backend: str, redis_url: str) -> dict[str, Any]
             "session_cache",
             "error",
             "Redis session cache is configured but not reachable; Postgres auth is not multi-instance ready.",
-            {"mode": "fallback", "error_type": type(exc).__name__},
+            {"mode": "unavailable", "error_type": type(exc).__name__},
         )
     return _check(
         "session_cache",
@@ -1325,8 +1392,8 @@ def _job_repository_check(
         "Background job repository is reachable.",
         {
             "probe_count": len(visible_jobs),
-            "runner_mode": "sync_local",
-            "queue_backed": False,
+            "runner_mode": "rabbitmq_celery" if jobs.queue_backed else "sync_local",
+            "queue_backed": jobs.queue_backed,
             "supported_job_types": [
                 "retrieval_reindex",
                 "file_parse",

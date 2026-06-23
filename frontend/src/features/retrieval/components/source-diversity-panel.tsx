@@ -26,7 +26,7 @@ export function SourceDiversityPanel({
   );
 
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-3 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">

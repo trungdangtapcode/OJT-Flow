@@ -58,7 +58,7 @@ The proposed system combines four modern AI architecture patterns:
 
 The central design principle is to use the foundation model for language
 understanding, planning, explanation, and decision support, while
-deterministic tools handle data parsing, format conversion, schema
+rule-based tools handle data parsing, format conversion, schema
 validation, and persistence. This separation improves reliability
 because the system does not ask the model to “guess” structured outputs
 when code-based tools can perform exact transformations.
@@ -78,7 +78,7 @@ findings are most relevant to this project.
 
 | **Area**            | **Key research or documentation finding**                                                                                                                                                                                         | **Design implication for this project**                                                                                                                                                |
 |---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Foundation models   | Stanford CRFM defines foundation models as models trained on broad data, generally using self-supervision at scale, that can be adapted to many downstream tasks [R1].                                                          | Use a foundation model as the natural language interface, intent interpreter, planner, and explanation engine. Avoid using it as the only mechanism for deterministic data conversion. |
+| Foundation models   | Stanford CRFM defines foundation models as models trained on broad data, generally using self-supervision at scale, that can be adapted to many downstream tasks [R1].                                                          | Use a foundation model as the natural language interface, intent interpreter, planner, and explanation engine. Avoid using it as the only mechanism for rule-based data conversion. |
 | RAG                 | The original RAG work combines parametric model memory with explicit non-parametric memory; it highlights provenance and updating knowledge as major limitations of model-only systems [R2].                                    | Build a knowledge base of schemas, transformation rules, examples, project documentation, and prior validated outputs so generated explanations can be grounded and traceable.         |
 | MCP                 | MCP is an open protocol for connecting LLM applications with external data sources and tools, using JSON-RPC 2.0 and a host-client-server architecture [R3].                                                                    | Expose conversion, validation, retrieval, and audit functions as MCP tools/resources/prompts so agents can use standardized capabilities.                                              |
 | MCP primitives      | MCP servers can expose tools, resources, and prompts; clients can support features such as sampling, roots, elicitation, logging, and progress tracking [R3, R4].                                                               | Implement separate MCP servers for structured-data tools, schema registry, RAG retrieval, and workflow audit. Use elicitation/human review patterns for risky actions.                 |
@@ -126,7 +126,7 @@ one-off chatbot responses.
 
 OJTFlow addresses these pain points by becoming an intelligent
 structured-data collaboration layer. It enables users to communicate
-naturally while the system internally uses validated, deterministic
+naturally while the system internally uses validated, rule-based
 tools and multi-agent workflows to preserve correctness. This direction
 is practical for OJT evaluation because it demonstrates backend
 engineering, AI orchestration, system design, RAG, MCP, agentic
@@ -178,7 +178,7 @@ team has enough compute and time.
 # 5. System Architecture
 
 The proposed architecture separates user interaction, orchestration,
-agents, MCP tools, RAG storage, deterministic processing, and deployment
+agents, MCP tools, RAG storage, rule-based processing, and deployment
 infrastructure. This makes the system modular and easier to extend.
 
 ```mermaid
@@ -215,7 +215,7 @@ flowchart TD
 |---------------------------------|--------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
 | User interaction layer          | Receives natural language instructions, file uploads, API requests, and human approval decisions.                        | React/Next.js or simple web UI; FastAPI REST endpoints; optional WebSocket progress stream. |
 | Orchestrator layer              | Classifies intent, creates task plan, routes work to agents, handles state, aggregates results.                          | LangGraph for stateful graph workflows; AutoGen or CrewAI as alternatives.                  |
-| Agent layer                     | Executes specialized responsibilities: parse, validate, transform, retrieve, explain, audit, and request human feedback. | Python classes or graph nodes; role-specific prompts; deterministic tools.                  |
+| Agent layer                     | Executes specialized responsibilities: parse, validate, transform, retrieve, explain, audit, and request human feedback. | Python classes or graph nodes; role-specific prompts; rule-based tools.                  |
 | Foundation model gateway        | Provides natural language reasoning, explanation, planning, and summarization.                                           | Cloud LLM API or local model via Ollama/vLLM; model abstraction layer.                      |
 | RAG layer                       | Retrieves relevant schemas, documentation, transformation examples, and project rules.                                   | Embeddings + vector store such as pgvector or FAISS; metadata filters.                      |
 | MCP layer                       | Provides standardized access to tools, resources, and prompts.                                                           | MCP Python SDK / FastMCP servers with streamable HTTP for remote deployment.                |
@@ -242,7 +242,7 @@ fields, and anomalies.
 6. If ambiguity or risk is detected, Human Review Agent asks the user
 to approve, edit, reject, or clarify the action.
 
-7. Transformation Agent executes deterministic conversion or cleaning
+7. Transformation Agent executes rule-based conversion or cleaning
 through MCP tools.
 
 8. Explanation Agent generates a grounded explanation using retrieved
@@ -369,7 +369,7 @@ in internal trace metadata.
 - Separate untrusted user-provided data from trusted system
   documentation to reduce prompt injection risk.
 
-- Use deterministic validators after model-generated transformation
+- Use rule-based validators after model-generated transformation
   plans.
 
 # 8. MCP Integration Design
@@ -460,7 +460,7 @@ The foundation model acts as the reasoning and language layer, not as
 the sole processor. It should interpret intent, plan the workflow,
 generate user-friendly explanations, summarize validation results,
 propose schema repairs, and help select tools. Exact conversion and
-validation should be performed by deterministic code tools.
+validation should be performed by rule-based code tools.
 
 ## 9.2 Model Deployment Options
 
@@ -485,7 +485,7 @@ switching between providers or local inference engines.
   unbounded data.
 
 - Require JSON-formatted planning outputs from the Orchestrator Agent.
-- Use deterministic validation after every model-suggested plan.
+- Use rule-based validation after every model-suggested plan.
 
 - Make uncertainty visible to the user when schema confidence is low.
 
@@ -574,7 +574,7 @@ target configuration fields.
 |---------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
 | Backend API         | Python + FastAPI                                                     | FastAPI is production-ready, Python-native, type-hint friendly, and integrates well with Pydantic. |
 | Validation          | Pydantic + JSON Schema                                               | Strong schema validation, automatic JSON schema generation, API compatibility.                     |
-| Data conversion     | Python json, csv, PyYAML; Pandas optional                            | Reliable deterministic parsing and conversion.                                                     |
+| Data conversion     | Python json, csv, PyYAML; Pandas optional                            | Reliable rule-based parsing and conversion.                                                     |
 | Agent orchestration | LangGraph preferred; AutoGen alternative                             | LangGraph supports stateful workflows; AutoGen is strong for multi-agent conversations.            |
 | RAG/vector store    | pgvector for integrated database; FAISS for lightweight local search | Both are practical options depending on deployment needs.                                          |
 | MCP                 | MCP Python SDK / FastMCP                                             | Official SDK supports building MCP servers, clients, resources, prompts, tools, and transports.    |
@@ -645,7 +645,7 @@ POST /api/v1/workflows
 | RAG poisoning                    | Untrusted documents may influence model responses.                                                  | Separate trusted and untrusted sources, metadata trust levels, retrieval filters.                              |
 | MCP tool misuse                  | MCP exposes tools and resources that can perform actions.                                           | Whitelist tools, require user consent, audit every call, sandbox execution.                                    |
 | Schema drift                     | Output may follow an old or incorrect schema.                                                       | Schema versioning, retrieval filters, validation against current schema.                                       |
-| Cost and latency                 | Agentic workflows may call the model too often.                                                     | Cap model calls, use deterministic tools, cache retrieval and schema profiles.                                 |
+| Cost and latency                 | Agentic workflows may call the model too often.                                                     | Cap model calls, use rule-based tools, cache retrieval and schema profiles.                                 |
 
 ## 12.2 Human-in-the-Loop Checkpoints
 
@@ -783,7 +783,7 @@ orchestration, validation, and human-in-the-loop governance.
 | **Risk**                 | **Impact**                                          | **Mitigation**                                                                                    |
 |--------------------------|-----------------------------------------------------|---------------------------------------------------------------------------------------------------|
 | Scope creep              | Team may attempt too many advanced features.        | Define MVP strictly; move analytics, multimodal, and enterprise integration to future extensions. |
-| Unreliable model outputs | Invalid structured output or incorrect explanation. | Use deterministic tools for conversion and validators after model outputs.                        |
+| Unreliable model outputs | Invalid structured output or incorrect explanation. | Use rule-based tools for conversion and validators after model outputs.                        |
 | RAG quality issues       | Wrong context may cause poor explanations.          | Use metadata filters, curated docs, retrieval evaluation, and low-confidence warnings.            |
 | MCP complexity           | Protocol integration may consume development time.  | Start with one or two MCP servers; use direct Python tools first, then wrap as MCP.               |
 | GPU or model constraints | Local model performance may be insufficient.        | Use model gateway; choose cloud model for demo if local inference is weak.                        |

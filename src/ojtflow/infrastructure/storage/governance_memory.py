@@ -8,6 +8,7 @@ from threading import RLock
 from ojtflow.core.contracts.governance import (
     OrganizationGroupMembershipRecord,
     OrganizationGroupRecord,
+    OrganizationInvitationRecord,
     OrganizationMembershipRecord,
     OrganizationRecord,
     WorkspaceDetail,
@@ -27,6 +28,7 @@ class InMemoryGovernanceRepository:
         self._groups: dict[str, OrganizationGroupRecord] = {}
         self._group_memberships: dict[tuple[str, str], OrganizationGroupMembershipRecord] = {}
         self._settings: dict[str, WorkspaceSettingsRecord] = {}
+        self._invitations: dict[str, OrganizationInvitationRecord] = {}
 
     def get_current_workspace(self, *, user_id: str) -> WorkspaceDetail | None:
         with self._lock:
@@ -55,6 +57,32 @@ class InMemoryGovernanceRepository:
             existing = self.get_current_workspace(user_id=membership.user_id)
             if existing:
                 return existing
+            self._organizations[organization.organization_id] = organization
+            self._memberships[membership.membership_id] = membership
+            self._groups[group.group_id] = group
+            self._group_memberships[
+                (group_membership.group_id, group_membership.user_id)
+            ] = group_membership
+            self._settings[settings.organization_id] = settings
+            return self._workspace_for_membership(membership)
+
+    def create_workspace(
+        self,
+        *,
+        organization: OrganizationRecord,
+        membership: OrganizationMembershipRecord,
+        group: OrganizationGroupRecord,
+        group_membership: OrganizationGroupMembershipRecord,
+        settings: WorkspaceSettingsRecord,
+    ) -> WorkspaceDetail:
+        with self._lock:
+            if any(
+                existing.slug == organization.slug for existing in self._organizations.values()
+            ):
+                raise OJTFlowError(
+                    "Workspace slug already exists.",
+                    details={"slug": organization.slug},
+                )
             self._organizations[organization.organization_id] = organization
             self._memberships[membership.membership_id] = membership
             self._groups[group.group_id] = group
@@ -139,6 +167,92 @@ class InMemoryGovernanceRepository:
                 )
             self._memberships[membership.membership_id] = membership
             return self._workspace_for_membership(actor_membership)
+
+    def create_invitation(
+        self,
+        *,
+        invitation: OrganizationInvitationRecord,
+    ) -> OrganizationInvitationRecord:
+        with self._lock:
+            self._invitations[invitation.invitation_id] = invitation
+            return invitation
+
+    def list_invitations(
+        self,
+        *,
+        organization_id: str,
+        status: str | None = None,
+    ) -> list[OrganizationInvitationRecord]:
+        with self._lock:
+            return sorted(
+                [
+                    invitation
+                    for invitation in self._invitations.values()
+                    if invitation.organization_id == organization_id
+                    and (status is None or invitation.status == status)
+                ],
+                key=lambda invitation: (invitation.created_at, invitation.invitation_id),
+                reverse=True,
+            )
+
+    def get_invitation_by_token_hash(
+        self,
+        *,
+        token_hash: str,
+    ) -> OrganizationInvitationRecord | None:
+        with self._lock:
+            for invitation in self._invitations.values():
+                if invitation.token_hash == token_hash:
+                    return invitation
+            return None
+
+    def mark_invitation_accepted(
+        self,
+        *,
+        invitation_id: str,
+        accepted_by_user_id: str,
+    ) -> OrganizationInvitationRecord:
+        with self._lock:
+            invitation = self._invitations.get(invitation_id)
+            if not invitation:
+                raise NotFoundError(
+                    "Invitation was not found.",
+                    details={"invitation_id": invitation_id},
+                )
+            updated = invitation.model_copy(
+                update={
+                    "status": "accepted",
+                    "accepted_at": utc_now().isoformat(),
+                    "accepted_by_user_id": accepted_by_user_id,
+                }
+            )
+            self._invitations[invitation_id] = updated
+            return updated
+
+    def revoke_invitation(
+        self,
+        *,
+        organization_id: str,
+        invitation_id: str,
+    ) -> OrganizationInvitationRecord:
+        with self._lock:
+            invitation = self._invitations.get(invitation_id)
+            if not invitation or invitation.organization_id != organization_id:
+                raise NotFoundError(
+                    "Invitation was not found.",
+                    details={
+                        "organization_id": organization_id,
+                        "invitation_id": invitation_id,
+                    },
+                )
+            if invitation.status != "pending":
+                raise OJTFlowError(
+                    "Only pending invitations can be revoked.",
+                    details={"invitation_id": invitation_id, "status": invitation.status},
+                )
+            updated = invitation.model_copy(update={"status": "revoked"})
+            self._invitations[invitation_id] = updated
+            return updated
 
     def _active_memberships(self, user_id: str) -> list[OrganizationMembershipRecord]:
         return sorted(

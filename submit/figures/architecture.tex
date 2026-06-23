@@ -71,7 +71,7 @@
 \draw[arrow, sforange] (orch.east) -- (review.west);
 \draw[<->, line width=0.55pt, sfblue, shorten >=1.4pt, shorten <=1.4pt] (orch.south) -- (model.north);
 
-% Model dispatch to every deterministic agent.
+% Model dispatch to every rule-based agent.
 \draw[arrow, sfdark] (model.south) -- node[right, fill=white, inner sep=1pt] {dispatch} (dispatchC);
 \draw[bus, sfdark] (dispatchL) -- (dispatchR);
 \foreach \x/\dest in {-5.60/parser,-2.80/schema,0/valid,2.80/trans,5.60/explain} {

@@ -17,6 +17,9 @@ dist/
 .eggs/
 
 # Frontend dependencies/build output
+/package.json
+/package-lock.json
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
@@ -70,6 +73,7 @@ tmp/
 temp/
 
 # LaTeX build artifacts
+slide/.cache/
 *.aux
 *.bbl
 *.bcf

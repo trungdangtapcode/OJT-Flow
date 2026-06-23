@@ -6,6 +6,7 @@ import {
   ApiRequestError,
   API_BASE_URL,
   AUTH_SESSION_EXPIRED_EVENT,
+  acceptInvitation,
   completeGoogleLogin,
   getCurrentAuthSession,
   getGoogleAuthorizationUrl,
@@ -15,6 +16,8 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import type { AuthUser } from "../types";
+
+const PENDING_INVITE_KEY = "ojtflow:pending-invite-token";
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -58,18 +61,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const sync = async () => {
       const url = new URL(window.location.href);
       const isCallback = url.pathname === "/auth/callback";
+      const isInviteAccept = url.pathname === "/invite/accept";
+      const inviteToken = url.searchParams.get("token");
       const callbackError = url.searchParams.get("error");
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       setLoading(true);
       setError(null);
       try {
-        if (callbackError) throw new Error(`Google sign-in failed: ${callbackError}`);
+        if (callbackError) throw new Error(`Sign-in failed: ${callbackError}`);
         if (isCallback) {
-          if (!code || !state) throw new Error("Google callback is missing code or state.");
+          if (!code || !state) throw new Error("Sign-in callback is missing code or state.");
           const login = await completeGoogleLogin(code, state);
           setUser(login.user);
-          window.history.replaceState({}, document.title, "/assistant");
+          const pendingInvite = sessionStorage.getItem(PENDING_INVITE_KEY);
+          if (pendingInvite) {
+            sessionStorage.removeItem(PENDING_INVITE_KEY);
+            try {
+              await acceptInvitation(pendingInvite);
+            } catch (inviteError) {
+              setError(inviteError instanceof Error ? inviteError.message : String(inviteError));
+            }
+            window.history.replaceState({}, document.title, "/settings");
+          } else {
+            window.history.replaceState({}, document.title, "/assistant");
+          }
+        } else if (isInviteAccept && inviteToken) {
+          try {
+            const session = await getCurrentAuthSession();
+            await acceptInvitation(inviteToken);
+            setUser(session.user);
+            window.history.replaceState({}, document.title, "/settings");
+          } catch (inviteError) {
+            if (inviteError instanceof ApiRequestError && inviteError.status === 401) {
+              // Not signed in yet: stash the token and route through Keycloak login.
+              sessionStorage.setItem(PENDING_INVITE_KEY, inviteToken);
+              const redirectUri = `${window.location.origin}/auth/callback`;
+              const authUrl = await getGoogleAuthorizationUrl(redirectUri);
+              window.location.assign(authUrl.authorization_url);
+              return;
+            }
+            throw inviteError;
+          }
         } else {
           const session = await getCurrentAuthSession();
           setUser(session.user);
@@ -81,7 +114,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setError(err instanceof Error ? err.message : String(err));
         }
-        if (isCallback) window.history.replaceState({}, document.title, "/");
+        if (isCallback || isInviteAccept) {
+          window.history.replaceState({}, document.title, "/");
+        }
       } finally {
         setLoading(false);
       }
@@ -141,7 +176,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             </div>
             <Loader2 className="ml-auto h-4 w-4 animate-spin text-primary" />
           </div>
-          <div className="rounded-md border border-border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          <div className="rounded-lg border border-border/60 bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
             API <strong className="text-foreground">{API_BASE_URL}</strong>
           </div>
         </div>
@@ -173,7 +208,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               <AccessFact
                 icon={ShieldCheck}
                 label="OAuth session"
-                value="Google identity"
+                value="Keycloak SSO"
               />
               <AccessFact
                 icon={Database}
@@ -189,11 +224,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </section>
 
           <Card className="w-full overflow-hidden">
-            <CardHeader className="border-b border-border bg-card/70">
+            <CardHeader className="border-b border-border/60 bg-muted/30">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <CardTitle>Access boundary</CardTitle>
-                  <CardDescription>Use the configured Google OAuth client.</CardDescription>
+                  <CardDescription>Sign in with email or Google via Keycloak.</CardDescription>
                 </div>
                 <Badge variant="success">controlled</Badge>
               </div>
@@ -206,9 +241,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               ) : null}
               <Button className="h-10" onClick={() => void signIn()} type="button">
                 <LogIn className="h-4 w-4" />
-                Sign in with Google
+                Sign in
               </Button>
-              <div className="grid gap-2 rounded-md border border-border bg-muted/60 p-3 text-xs">
+              <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/60 p-3 text-xs">
                 <div className="flex min-w-0 items-center justify-between gap-3">
                   <span className="font-bold uppercase text-muted-foreground">API</span>
                   <strong className="min-w-0 break-words text-right text-foreground">

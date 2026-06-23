@@ -84,7 +84,7 @@ export function GraphQueryPanel({
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/60 bg-muted/30">
         <CardTitle className="flex items-center gap-2">
           <Network className="h-5 w-5 text-primary" />
           Graph query
@@ -307,7 +307,7 @@ function GraphNeighborhoodResult({
   }
   if (!neighborhood) return null;
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-bold uppercase text-muted-foreground">
           Neighborhood result
@@ -377,7 +377,7 @@ function GraphRecordList({
       {items.length ? (
         items.map((item, index) => (
           <div
-            className="min-w-0 rounded-md border border-border bg-card p-2 text-sm"
+            className="min-w-0 rounded-lg border border-border/60 bg-card p-2 text-sm"
             key={`${title}-${index}-${stableRecordKey(item)}`}
           >
             {renderItem(item, index)}
@@ -398,7 +398,7 @@ function GraphContextRecordRow({
   record: RetrievalGraphContextRecord;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-2 text-sm">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-2 text-sm">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="break-words font-bold">{record.query}</div>

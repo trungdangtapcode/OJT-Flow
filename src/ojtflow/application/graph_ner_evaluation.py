@@ -1,4 +1,4 @@
-"""Fixture-backed evaluation for deterministic Graph-NER extraction."""
+"""Fixture-backed evaluation for rule-based Graph-NER extraction."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def evaluate_graph_ner(
     min_mean_edge_recall: float = 1.0,
     min_mean_normalized_code_recall: float = 1.0,
 ) -> GraphNEREvalSummary:
-    """Evaluate deterministic Graph-NER extraction against labeled fixtures."""
+    """Evaluate rule-based Graph-NER extraction against labeled fixtures."""
 
     results = [_evaluate_case(service, case) for case in cases]
     if not results:

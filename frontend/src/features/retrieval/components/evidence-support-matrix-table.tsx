@@ -16,7 +16,7 @@ export function EvidenceSupportMatrixTable({
   rows: EvidenceSupportMatrixRowView[];
 }) {
   return (
-    <div className="hidden overflow-auto rounded-md border border-border bg-card md:block">
+    <div className="hidden overflow-auto rounded-lg border border-border/60 bg-card md:block">
       <Table>
         <THead>
           <TR>

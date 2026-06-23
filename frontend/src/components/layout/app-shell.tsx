@@ -4,8 +4,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bot,
+  BookOpen,
   ClipboardCheck,
   Database,
+  Files,
   FileCode,
   HelpCircle,
   History,
@@ -30,6 +32,7 @@ const navGroups = [
     label: "Operations",
     items: [
       { to: "/assistant", label: "Assistant", icon: Bot },
+      { to: "/knowledge", label: "Knowledge", icon: BookOpen },
       { to: "/workflows", label: "Workflows", icon: Layers },
       { to: "/reviews", label: "Reviews", icon: ClipboardCheck },
       { to: "/retrieval", label: "Retrieval", icon: Search },
@@ -38,7 +41,10 @@ const navGroups = [
   },
   {
     label: "Intake",
-    items: [{ to: "/workbench", label: "Workbench", icon: FileCode }],
+    items: [
+      { to: "/workbench", label: "Workbench", icon: FileCode },
+      { to: "/files", label: "Files", icon: Files },
+    ],
   },
   {
     label: "Governance",
@@ -59,11 +65,15 @@ export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const runtimeConfig = runtimeConfigQuery.data;
   const storageLabel = runtimeConfig
-    ? `${runtimeConfig.storage_backend}${runtimeConfig.persistent_storage ? "" : " volatile"}`
+    ? `${runtimeConfig.storage_backend}${
+        runtimeConfig.object_storage_backend
+          ? ` + ${runtimeConfig.object_storage_backend}`
+          : ""
+      }${runtimeConfig.persistent_storage ? "" : " volatile"}`
     : "checking";
   const storageClass = runtimeConfig?.persistent_storage
-    ? "bg-emerald-100 text-emerald-800"
-    : "bg-amber-100 text-amber-800";
+    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : "bg-amber-50 text-amber-700 border-amber-200";
   const refreshApplicationData = async () => {
     setRefreshing(true);
     try {
@@ -74,21 +84,23 @@ export function AppShell() {
   };
 
   return (
-    <div className="grid h-dvh min-h-dvh grid-cols-[204px_minmax(0,1fr)] overflow-hidden bg-sidebar max-lg:h-auto max-lg:min-h-screen max-lg:grid-cols-1 max-lg:overflow-visible">
-      <aside className="sticky top-0 z-20 flex h-dvh flex-col border-r border-black/15 bg-sidebar p-3 text-sidebar-foreground shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-r-0 max-lg:p-2 max-sm:grid-cols-1 max-sm:gap-0 max-sm:p-1.5">
-        <div className="mb-6 flex shrink-0 items-center gap-3 px-1 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:hidden">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ccfbf1] text-[11px] font-black text-sidebar shadow-[0_8px_24px_rgba(45,212,191,0.16)] sm:h-9 sm:w-9 sm:rounded-lg sm:text-sm">
+    <div className="grid h-dvh min-h-dvh grid-cols-[240px_minmax(0,1fr)] overflow-hidden bg-background max-lg:h-auto max-lg:min-h-screen max-lg:grid-cols-1 max-lg:overflow-visible">
+      {/* ── Sidebar ── */}
+      <aside className="sticky top-0 z-20 flex h-dvh flex-col bg-sidebar p-4 text-sidebar-foreground max-lg:static max-lg:grid max-lg:h-auto max-lg:w-full max-lg:min-w-0 max-lg:grid-cols-[auto_minmax(0,1fr)] max-lg:items-center max-lg:gap-2 max-lg:border-b max-lg:border-slate-800 max-lg:p-2 max-sm:grid-cols-1 max-sm:gap-0 max-sm:p-1.5">
+        <div className="mb-8 flex shrink-0 items-center gap-3 px-2 max-lg:mb-0 max-lg:min-w-0 max-lg:px-0 max-sm:hidden">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-teal-500 text-xs font-black text-white shadow-lg shadow-cyan-500/20">
             OF
           </div>
           <div className="min-w-0 max-sm:sr-only">
-            <div className="text-base font-extrabold">OJTFlow</div>
-            <div className="whitespace-nowrap text-xs text-sidebar-foreground/62 max-sm:hidden">Clinical data ops</div>
+            <div className="text-[15px] font-extrabold tracking-tight text-white">OJTFlow</div>
+            <div className="text-[11px] font-medium text-slate-400">Clinical data ops</div>
           </div>
         </div>
-        <nav className="grid gap-4 max-lg:flex max-lg:min-w-0 max-lg:justify-end max-lg:gap-1.5 max-lg:overflow-x-auto max-lg:pb-0 max-sm:grid max-sm:grid-cols-5 max-sm:justify-stretch max-sm:gap-1 max-sm:overflow-visible">
+
+        <nav className="grid gap-6 max-lg:flex max-lg:min-w-0 max-lg:justify-end max-lg:gap-1.5 max-lg:overflow-x-auto max-lg:pb-0 max-sm:grid max-sm:grid-cols-5 max-sm:justify-stretch max-sm:gap-1 max-sm:overflow-visible">
           {navGroups.map((group) => (
             <div className="grid gap-1 max-lg:contents" key={group.label}>
-              <div className="px-3 text-[11px] font-bold uppercase tracking-wide text-sidebar-foreground/45 max-lg:hidden">
+              <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500 max-lg:hidden">
                 {group.label}
               </div>
               {group.items.map((item) => {
@@ -100,15 +112,22 @@ export function AppShell() {
                     aria-label={item.label}
                     data-active={active ? "true" : undefined}
                     className={cn(
-                      "mobile-nav-link flex h-9 items-center gap-3 rounded-md px-3 text-sm font-semibold text-sidebar-foreground/78 transition-colors hover:bg-white/10 hover:text-white max-lg:h-9 max-lg:min-w-[6.75rem] max-lg:shrink-0 max-lg:justify-center max-lg:bg-white/5 max-lg:px-3 max-lg:text-xs max-sm:h-11 max-sm:min-w-0 max-sm:shrink max-sm:px-0",
-                      active && "bg-white/12 text-white ring-1 ring-white/12 shadow-[inset_3px_0_0_#5eead4] max-lg:shadow-none",
+                      "group flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-medium text-slate-400 transition-all duration-200 hover:bg-white/[0.06] hover:text-slate-200 max-lg:h-9 max-lg:min-w-[6.75rem] max-lg:shrink-0 max-lg:justify-center max-lg:bg-white/5 max-lg:px-3 max-lg:text-xs max-sm:h-11 max-sm:min-w-0 max-sm:shrink max-sm:px-0",
+                      active && "bg-white/[0.08] font-semibold text-white",
                     )}
                     key={item.to}
                     preload="intent"
                     title={item.label}
                     to={item.to}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors max-lg:h-auto max-lg:w-auto max-lg:rounded-none max-lg:bg-transparent",
+                      active
+                        ? "bg-cyan-500/20 text-cyan-400"
+                        : "text-slate-500 group-hover:text-slate-300",
+                    )}>
+                      <Icon className="h-4 w-4" />
+                    </span>
                     <span className="max-sm:hidden">{item.label}</span>
                   </Link>
                 );
@@ -116,34 +135,48 @@ export function AppShell() {
             </div>
           ))}
         </nav>
+
+        {/* Sidebar footer */}
+        <div className="mt-auto hidden border-t border-white/[0.06] pt-3 max-lg:hidden lg:block">
+          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+            <UserAvatar
+              avatarUrl={user?.avatar_url}
+              displayName={user?.display_name}
+              email={user?.email}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-semibold text-slate-300">{user?.display_name || user?.email}</div>
+            </div>
+            <button
+              aria-label="Sign out"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-slate-300"
+              onClick={() => void logout()}
+              title="Sign out"
+              type="button"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       </aside>
+
+      {/* ── Main ── */}
       <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background max-lg:min-h-screen max-lg:overflow-visible">
-        <header className="z-10 shrink-0 border-b border-border bg-card/88 backdrop-blur">
-          <div className="mx-auto flex min-h-12 w-full max-w-[1440px] items-center justify-between gap-3 px-6 py-2 max-md:px-4 max-sm:gap-2 max-sm:px-3">
-            <div className="hidden min-w-0 items-center gap-2 overflow-x-auto text-[11px] font-bold text-muted-foreground sm:flex">
-              <span className="rounded-full bg-muted px-2 py-1">API {API_BASE_URL}</span>
-              <span className={cn("shrink-0 rounded-full px-2 py-1", storageClass)}>
+        <header className="z-10 shrink-0 border-b border-border/50 bg-white/80 shadow-[var(--shadow-header)] backdrop-blur-md">
+          <div className="mx-auto flex h-14 w-full max-w-[1440px] items-center justify-between gap-4 px-8 max-md:px-4 max-sm:gap-2 max-sm:px-3">
+            <div className="hidden items-center gap-2 text-xs font-medium text-muted-foreground md:flex">
+              <span className="rounded-md border border-border/60 bg-muted/50 px-2 py-0.5">{API_BASE_URL}</span>
+              <span className={cn("rounded-md border px-2 py-0.5", storageClass)}>
                 {storageLabel}
               </span>
             </div>
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-              <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card px-2.5 shadow-sm md:max-w-[18rem]">
-                <UserAvatar
-                  avatarUrl={user?.avatar_url}
-                  displayName={user?.display_name}
-                  email={user?.email}
-                />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-bold max-sm:text-xs">{user?.display_name || user?.email}</div>
-                  <div className="truncate text-[11px] leading-4 text-muted-foreground max-sm:hidden">{user?.email}</div>
-                </div>
-              </div>
+            <div className="flex flex-1 items-center justify-end gap-2">
               <Button
                 asChild
-                className="shrink-0 max-sm:h-11 max-sm:w-11 max-sm:px-0"
+                className="shrink-0 max-sm:h-10 max-sm:w-10 max-sm:px-0"
                 title="Assistant"
                 type="button"
-                variant="outline"
+                variant="default"
               >
                 <Link aria-label="Open assistant" preload="intent" to="/assistant">
                   <Bot className="h-4 w-4" />
@@ -152,37 +185,41 @@ export function AppShell() {
               </Button>
               <Button
                 aria-label="Refresh application data"
-                className="max-sm:h-11 max-sm:w-11"
+                className="max-sm:h-10 max-sm:w-10"
                 disabled={refreshing}
                 onClick={() => void refreshApplicationData()}
                 size="icon"
                 title="Refresh"
                 type="button"
-                variant="outline"
+                variant="ghost"
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
               </Button>
-              <Button
-                aria-label="Sign out"
-                className="max-sm:h-11 max-sm:w-11"
-                onClick={() => void logout()}
-                size="icon"
-                title="Sign out"
-                type="button"
-                variant="outline"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
+              <div className="hidden lg:hidden max-lg:flex">
+                <Button
+                  aria-label="Sign out"
+                  className="max-sm:h-10 max-sm:w-10"
+                  onClick={() => void logout()}
+                  size="icon"
+                  title="Sign out"
+                  type="button"
+                  variant="ghost"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain max-lg:overflow-visible">
-          <div className="mx-auto w-full max-w-[1440px] p-6 max-md:p-4 max-sm:p-2">
-            <PageGuide pathname={pathname} />
-            <ClinicalBoundaryBanner
-              message={disclaimerMessageForPath(disclaimersQuery.data?.surfaces, pathname)}
-            />
+          <div className="mx-auto w-full max-w-[1440px] px-5 py-5 max-md:p-4 max-sm:p-3">
             <Outlet />
+            <div className="mt-6">
+              <ClinicalBoundaryBanner
+                message={disclaimerMessageForPath(disclaimersQuery.data?.surfaces, pathname)}
+              />
+              <PageGuide pathname={pathname} />
+            </div>
           </div>
         </div>
       </main>
@@ -200,57 +237,52 @@ function ClinicalBoundaryBanner({ message }: { message?: DisclaimerMessage | nul
         : "border-border bg-muted/40 text-muted-foreground";
   const iconClass =
     message.severity === "critical"
-      ? "text-red-700"
+      ? "text-red-600"
       : message.severity === "caution"
-        ? "text-amber-700"
+        ? "text-amber-600"
         : "text-muted-foreground";
   return (
-    <section className={cn("mb-4 rounded-md border px-3 py-2.5 text-sm", severityClass)}>
-      <div className="grid gap-2 sm:grid-cols-[20px_minmax(0,1fr)]">
-        <AlertTriangle className={cn("mt-0.5 h-4 w-4", iconClass)} />
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="font-black">{message.title}</div>
-            {message.review_required ? (
-              <span className="rounded-full border border-current/20 bg-white/50 px-2 py-0.5 text-[11px] font-bold">
-                human review required
-              </span>
-            ) : null}
+    <details className={cn("mb-4 rounded-lg border px-3 py-2 text-xs", severityClass)}>
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
+        <AlertTriangle className={cn("h-3.5 w-3.5", iconClass)} />
+        <span className="text-xs font-bold">{message.title}</span>
+        {message.review_required ? (
+          <span className="rounded-full border border-current/20 bg-white/50 px-1.5 py-0.5 text-[10px] font-bold">
+            human review required
+          </span>
+        ) : null}
+        {message.prohibited_uses.length ? (
+          <span className="hidden text-[10px] text-muted-foreground sm:inline">
+            — Not for: {message.prohibited_uses.join(", ")}
+          </span>
+        ) : null}
+      </summary>
+      <div className="mt-2 grid gap-2 text-xs leading-5">
+        <p className="leading-5">{message.message}</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div>
+            <span className="font-bold">Review: </span>
+            {message.human_review_text}
           </div>
-          <p className="mt-1 leading-6">{message.message}</p>
-          <details className="mt-1">
-            <summary className="cursor-pointer text-xs font-bold uppercase tracking-normal">
-              Boundary details
-            </summary>
-            <div className="mt-2 grid gap-2 text-xs leading-5 sm:grid-cols-2">
-              <div>
-                <div className="font-bold">Review</div>
-                <p>{message.human_review_text}</p>
-              </div>
-              <div>
-                <div className="font-bold">Evidence</div>
-                <p>{message.evidence_text}</p>
-              </div>
-              {message.prohibited_uses.length ? (
-                <div className="sm:col-span-2">
-                  <div className="font-bold">Do not use for</div>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {message.prohibited_uses.map((use) => (
-                      <span
-                        className="rounded-full border border-current/20 bg-white/45 px-2 py-0.5 font-semibold"
-                        key={use}
-                      >
-                        {use}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </details>
+          <div>
+            <span className="font-bold">Evidence: </span>
+            {message.evidence_text}
+          </div>
         </div>
+        {message.prohibited_uses.length ? (
+          <div className="flex flex-wrap gap-1 sm:hidden">
+            {message.prohibited_uses.map((use) => (
+              <span
+                className="rounded-full border border-current/20 bg-white/45 px-1.5 py-0.5 text-[10px] font-semibold"
+                key={use}
+              >
+                {use}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -273,6 +305,7 @@ function disclaimerSurfaceForPath(pathname: string): DisclaimerSurface {
   if (pathname.startsWith("/workflows/")) return "workflow_detail";
   if (pathname.startsWith("/workflows")) return "workflows";
   if (pathname.startsWith("/reviews")) return "reviews";
+  if (pathname.startsWith("/knowledge")) return "retrieval";
   if (pathname.startsWith("/retrieval")) return "retrieval";
   if (pathname.startsWith("/audit")) return "audit";
   if (pathname.startsWith("/schemas")) return "schemas";
@@ -318,7 +351,7 @@ function UserAvatar({
     return (
       <span
         aria-label={displayName || email || "User avatar"}
-        className="h-6 w-6 shrink-0 rounded-full border border-border bg-muted bg-cover bg-center"
+        className="h-7 w-7 shrink-0 rounded-full bg-slate-700 bg-cover bg-center ring-2 ring-white/10"
         role="img"
         style={{ backgroundImage: `url("${escapeCssUrl(loadedAvatarUrl)}")` }}
       />
@@ -329,14 +362,14 @@ function UserAvatar({
     return (
       <span
         aria-label={displayName || email || "User avatar"}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-primary/10 text-[10px] font-black uppercase text-primary"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-teal-600 text-[10px] font-bold text-white ring-2 ring-white/10"
       >
         {initials}
       </span>
     );
   }
 
-  return <UserCircle className="h-6 w-6 shrink-0 text-muted-foreground" />;
+  return <UserCircle className="h-7 w-7 shrink-0 text-slate-500" />;
 }
 
 function userInitials(displayName?: string | null, email?: string | null) {

@@ -6,7 +6,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
   ({ className, ...props }, ref) => (
     <input
       className={cn(
-        "h-9 rounded-md border border-input bg-card px-3 text-sm shadow-[inset_0_1px_1px_rgba(16,24,40,0.015)] transition-colors placeholder:text-muted-foreground/70 hover:border-muted-foreground/50 focus:border-primary focus-ring disabled:cursor-not-allowed disabled:opacity-60",
+        "h-10 rounded-xl border border-border/60 bg-card px-3.5 text-sm shadow-xs transition-all duration-200 placeholder:text-muted-foreground/50 hover:border-muted-foreground/30 focus:border-primary focus:shadow-[0_0_0_3px_rgba(8,145,178,0.1)] focus-ring disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       ref={ref}
@@ -20,7 +20,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
   ({ className, ...props }, ref) => (
     <textarea
       className={cn(
-        "min-h-40 rounded-md border border-input bg-card px-3 py-2 text-sm shadow-[inset_0_1px_1px_rgba(16,24,40,0.015)] transition-colors placeholder:text-muted-foreground/70 hover:border-muted-foreground/50 focus:border-primary focus-ring disabled:cursor-not-allowed disabled:opacity-60",
+        "w-full min-h-40 rounded-xl border border-border/60 bg-card px-3.5 py-2.5 text-sm shadow-xs transition-all duration-200 placeholder:text-muted-foreground/50 hover:border-muted-foreground/30 focus:border-primary focus:shadow-[0_0_0_3px_rgba(8,145,178,0.1)] focus-ring disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       ref={ref}
@@ -34,7 +34,7 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   ({ className, ...props }, ref) => (
     <select
       className={cn(
-        "h-9 rounded-md border border-input bg-card px-3 text-sm shadow-[inset_0_1px_1px_rgba(16,24,40,0.015)] transition-colors hover:border-muted-foreground/50 focus:border-primary focus-ring disabled:cursor-not-allowed disabled:opacity-60",
+        "h-10 rounded-xl border border-border/60 bg-card px-3 text-sm shadow-xs transition-all duration-200 hover:border-muted-foreground/30 focus:border-primary focus:shadow-[0_0_0_3px_rgba(8,145,178,0.1)] focus-ring disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       ref={ref}
@@ -45,5 +45,5 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
 Select.displayName = "Select";
 
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn("grid gap-1.5 text-sm font-semibold text-foreground", className)} {...props} />;
+  return <label className={cn("grid gap-2 text-sm font-semibold text-foreground", className)} {...props} />;
 }

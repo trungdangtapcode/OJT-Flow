@@ -33,7 +33,7 @@
         {
           "stage_id": "detect_and_parse",
           "label": "Detect and parse input",
-          "message": "Detecting the source format and parsing rows or records through the deterministic parser.",
+          "message": "Detecting the source format and parsing rows or records through the rule-based parser.",
           "progress": 30,
           "event": "before_execute"
         },

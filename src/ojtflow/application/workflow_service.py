@@ -74,6 +74,7 @@ from ojtflow.core.contracts.workflow import (
     WorkflowIntent,
     WorkflowOutput,
     WorkflowOutputArtifact,
+    WorkflowInputPreview,
     WorkflowProvenanceRecord,
     WorkflowState,
     WorkflowStep,
@@ -1295,6 +1296,68 @@ class WorkflowService:
             diff_summary=output.diff_summary,
         )
 
+    def get_workflow_input_preview(
+        self,
+        workflow_id: str,
+        owner_user_id: str | None = None,
+        *,
+        max_chars: int = 12_000,
+    ) -> WorkflowInputPreview:
+        """Return a bounded source/extracted input preview for review.
+
+        The storage ref is resolved only from persisted workflow state so clients
+        cannot use this method to read arbitrary local files.
+        """
+
+        workflow = self.workflows.get(workflow_id)
+        self._assert_workflow_owner(workflow, owner_user_id)
+        extracted_dataset_ref = _optional_string(
+            workflow.handoff_context.get("extracted_dataset_ref")
+        )
+        if not workflow.input and not extracted_dataset_ref:
+            raise NotFoundError(
+                f"Workflow input not stored: {workflow_id}",
+                workflow_id=workflow_id,
+            )
+        limit = max(1_000, min(max_chars, 50_000))
+        if workflow.input:
+            try:
+                content = self._read_verified_text_artifact(
+                    storage_ref=workflow.input.dataset_ref,
+                    expected_hash=workflow.input.input_hash,
+                    workflow_id=workflow.workflow_id,
+                    artifact_label="input",
+                )
+            except NotFoundError:
+                if not extracted_dataset_ref:
+                    raise
+                content = self._read_verified_text_artifact(
+                    storage_ref=extracted_dataset_ref,
+                    expected_hash=None,
+                    workflow_id=workflow.workflow_id,
+                    artifact_label="extracted input",
+                )
+        else:
+            content = self._read_verified_text_artifact(
+                storage_ref=extracted_dataset_ref,
+                expected_hash=None,
+                workflow_id=workflow.workflow_id,
+                artifact_label="extracted input",
+            )
+        extraction = workflow.handoff_context.get("extraction")
+        return WorkflowInputPreview(
+            workflow_id=workflow.workflow_id,
+            declared_format=workflow.input.declared_format if workflow.input else DataFormat.UNKNOWN,
+            detected_format=workflow.input.detected_format if workflow.input else DataFormat.UNKNOWN,
+            input_hash=workflow.input.input_hash if workflow.input else sha256_text(content),
+            byte_size=len(content.encode("utf-8")),
+            content=content[:limit],
+            truncated=len(content) > limit,
+            max_chars=limit,
+            source_filename=_optional_string(workflow.handoff_context.get("source_filename")),
+            extraction=extraction if isinstance(extraction, dict) else None,
+        )
+
     def export_workflow_clinical_package(
         self,
         workflow_id: str,
@@ -2072,7 +2135,7 @@ def _edited_plan_from_review_payload(
             ) from exc
         if action.action not in SUPPORTED_REVIEW_EDIT_ACTIONS:
             raise PolicyBlockedError(
-                "approve_with_edits action is not supported by the deterministic transformer.",
+                "approve_with_edits action is not supported by the rule-based transformer.",
                 workflow_id=workflow_id,
                 details={
                     "review_id": review_id,
@@ -2102,3 +2165,7 @@ def _primary_fhir_resource_type(profile_payload: dict) -> str | None:
             return str(non_bundle[0])
         return str(sorted(resource_counts)[0])
     return str(resource_type) if resource_type else None
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None

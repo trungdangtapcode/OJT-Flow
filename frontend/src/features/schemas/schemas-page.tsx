@@ -109,9 +109,9 @@ export function SchemasPage() {
       ) : null}
 
       {!schemasQuery.isLoading && !schemasQuery.isError && schemas.length ? (
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,1fr)]">
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,1fr)]">
           <Card className="min-w-0 self-start overflow-hidden">
-            <CardHeader className="border-b border-border bg-card/70 p-4">
+            <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
@@ -141,9 +141,9 @@ export function SchemasPage() {
                 {filteredSchemas.map((schema) => (
                   <button
                     className={cn(
-                      "grid gap-2 rounded-md border border-transparent bg-card p-2.5 text-left transition-colors hover:border-primary/25 hover:bg-slate-50 focus-ring",
+                      "grid gap-2 rounded-lg border border-transparent bg-card p-3 text-left transition-all duration-150 list-item-hover focus-ring",
                       schema.schema_id === selectedSchema?.schema_id &&
-                        "border-primary/35 bg-teal-50/75 shadow-[inset_3px_0_0_#087f7a]",
+                        "list-item-active",
                     )}
                     key={schema.schema_id}
                     onClick={() => setSelectedSchemaId(schema.schema_id)}
@@ -192,9 +192,9 @@ function SchemaDetail({ schema }: { schema: SchemaEntry | null }) {
   }
 
   return (
-    <div className="grid min-w-0 gap-4">
+    <div className="grid min-w-0 gap-5">
       <Card className="min-w-0 overflow-hidden">
-        <CardHeader className="gap-3 border-b border-border bg-card/70 p-4">
+        <CardHeader className="gap-3 border-b border-border/60 bg-muted/30 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardDescription className="font-bold uppercase">Approved profile</CardDescription>
             <Badge variant="success">validation ready</Badge>
@@ -237,7 +237,7 @@ function SchemaDetail({ schema }: { schema: SchemaEntry | null }) {
       </Card>
 
       <Card className="min-w-0 overflow-hidden">
-        <CardHeader className="border-b border-border bg-card/70 p-4">
+        <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
             Field contract
@@ -245,7 +245,7 @@ function SchemaDetail({ schema }: { schema: SchemaEntry | null }) {
           <CardDescription>Type expectations and field-level validation context.</CardDescription>
         </CardHeader>
         <CardContent className="p-0 md:p-4">
-          <Table className="table-fixed" wrapperClassName="hidden rounded-md border border-border md:block">
+          <Table className="table-fixed" wrapperClassName="hidden rounded-lg border border-border/60 md:block">
             <THead>
               <TR>
                 <TH className="w-[24%]">Field</TH>
@@ -273,7 +273,7 @@ function SchemaDetail({ schema }: { schema: SchemaEntry | null }) {
           </Table>
           <div className="grid gap-2 p-4 md:hidden">
             {schema.fields.map((field) => (
-              <div className="grid gap-2 rounded-md border border-border bg-card p-2.5" key={field.name}>
+              <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3" key={field.name}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="break-all font-bold">{field.name}</div>
                   <Badge variant={schema.required.includes(field.name) ? "warning" : "muted"}>
@@ -301,11 +301,11 @@ function SchemaRegistrySkeleton() {
   return (
     <div
       aria-label="Loading schema registry"
-      className="grid items-start gap-4 xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,1fr)]"
+      className="grid items-start gap-5 xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,1fr)]"
       role="status"
     >
       <Card className="min-w-0 self-start overflow-hidden">
-        <CardHeader className="border-b border-border bg-card/70 p-4">
+        <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="grid min-w-0 flex-1 gap-2">
               <Skeleton className="h-5 w-36 max-w-full" />
@@ -320,7 +320,7 @@ function SchemaRegistrySkeleton() {
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 aria-hidden="true"
-                className="grid gap-2 rounded-md border border-border bg-card p-2.5"
+                className="grid gap-2 rounded-lg border border-border/60 bg-card p-3"
                 data-testid="schema-registry-skeleton-row"
                 key={index}
               >
@@ -341,9 +341,9 @@ function SchemaRegistrySkeleton() {
         </CardContent>
       </Card>
 
-      <div className="grid min-w-0 gap-4">
+      <div className="grid min-w-0 gap-5">
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="gap-3 border-b border-border bg-card/70 p-4">
+          <CardHeader className="gap-3 border-b border-border/60 bg-muted/30 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Skeleton className="h-4 w-32" />
               <Skeleton className="h-6 w-28 rounded-full" />
@@ -375,12 +375,12 @@ function SchemaRegistrySkeleton() {
         </Card>
 
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70 p-4">
+          <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
             <Skeleton className="h-5 w-36" />
             <Skeleton className="h-4 w-full max-w-md" />
           </CardHeader>
           <CardContent className="p-0 md:p-4">
-            <Table className="table-fixed" wrapperClassName="hidden rounded-md border border-border md:block">
+            <Table className="table-fixed" wrapperClassName="hidden rounded-lg border border-border/60 md:block">
               <THead>
                 <TR>
                   <TH className="w-[24%]">Field</TH>
@@ -404,7 +404,7 @@ function SchemaRegistrySkeleton() {
               {Array.from({ length: 4 }).map((_, index) => (
                 <div
                   aria-hidden="true"
-                  className="grid gap-2 rounded-md border border-border bg-card p-2.5"
+                  className="grid gap-2 rounded-lg border border-border/60 bg-card p-3"
                   data-testid="schema-field-skeleton-card"
                   key={index}
                 >

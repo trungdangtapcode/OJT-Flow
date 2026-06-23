@@ -1,7 +1,7 @@
 # Interoperability Month 7 v0
 
 This pass adds the first backend adapters for Month 7 interoperability work.
-The implementation is intentionally deterministic and review-oriented: it
+The implementation is intentionally rule-based and review-oriented: it
 profiles and maps healthcare exchange data without claiming full conformance to
 external standards.
 

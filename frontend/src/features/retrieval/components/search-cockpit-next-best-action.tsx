@@ -21,7 +21,7 @@ export function SearchCockpitNextBestAction({
   view: RetrievalSearchCockpitView;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-black uppercase text-muted-foreground">
           Next best action

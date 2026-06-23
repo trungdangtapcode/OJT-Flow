@@ -11,7 +11,7 @@ export function EvidenceUsabilitySummaryPanel({
   return (
     <section
       aria-label="Evidence usability summary"
-      className="grid gap-2 rounded-md border border-border bg-muted/20 p-2 text-sm"
+      className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-2 text-sm"
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="grid min-w-0 gap-1">
@@ -25,7 +25,7 @@ export function EvidenceUsabilitySummaryPanel({
         </Badge>
       </div>
       <div className="grid gap-1.5 sm:grid-cols-2">
-        <div className="rounded-md border border-border bg-card/70 px-2 py-1.5">
+        <div className="rounded-lg border border-border/60 bg-card/70 px-2 py-1.5">
           <div className="text-[11px] font-black uppercase text-muted-foreground">
             Recommendation
           </div>
@@ -33,7 +33,7 @@ export function EvidenceUsabilitySummaryPanel({
             {summary.recommendation}
           </div>
         </div>
-        <div className="rounded-md border border-border bg-card/70 px-2 py-1.5">
+        <div className="rounded-lg border border-border/60 bg-card/70 px-2 py-1.5">
           <div className="text-[11px] font-black uppercase text-muted-foreground">
             Limitation
           </div>

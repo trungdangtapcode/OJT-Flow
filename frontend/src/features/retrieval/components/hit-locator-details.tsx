@@ -8,7 +8,7 @@ export function HitLocatorDetails({
   sourceLocator: Record<string, unknown>;
 }) {
   return (
-    <details className="rounded-md border border-border bg-muted/20 p-2 text-xs">
+    <details className="rounded-lg border border-border/60 bg-muted/20 p-2 text-xs">
       <summary className="cursor-pointer font-bold">Locator and evidence ID</summary>
       <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono">
         {JSON.stringify(

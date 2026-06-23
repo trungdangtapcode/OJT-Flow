@@ -8,7 +8,7 @@ The proposal is grounded in current research and official documentation for foun
 \toprule
 \textbf{Area} & \textbf{Research or documentation finding} & \textbf{Design implication} \\
 \midrule
-Foundation models & Stanford CRFM defines foundation models as models trained on broad data, generally with self-supervision at scale, that can be adapted to many downstream tasks \cite{bommasani2021foundation}. & Use a foundation model for language understanding, planning, explanation, and flexible reasoning. Do not rely on it as the only source of truth for deterministic data transformation. \\
+Foundation models & Stanford CRFM defines foundation models as models trained on broad data, generally with self-supervision at scale, that can be adapted to many downstream tasks \cite{bommasani2021foundation}. & Use a foundation model for language understanding, planning, explanation, and flexible reasoning. Do not rely on it as the only source of truth for rule-based data transformation. \\
 \addlinespace
 RAG & Lewis et al. describe RAG as combining parametric model memory with non-parametric memory, addressing provenance and knowledge updating limitations in model-only systems \cite{lewis2020rag}. & Ground explanations and transformation plans in retrievable project knowledge: schemas, examples, documentation, and approved rules. \\
 \addlinespace
@@ -38,7 +38,7 @@ Risk management & NIST AI 600-1 provides a generative AI profile for identifying
 
 \begin{enumerate}
   \item Use the model to interpret intent, not to silently mutate data.
-  \item Use deterministic parsers and validators for all data transformations.
+  \item Use rule-based parsers and validators for all data transformations.
   \item Use RAG only from trusted, metadata-scoped knowledge sources.
   \item Use MCP to make tools discoverable, typed, and auditable.
   \item Use human review whenever a transformation can change meaning, reveal sensitive data, or call an external system.

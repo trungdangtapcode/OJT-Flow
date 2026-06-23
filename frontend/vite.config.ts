@@ -18,24 +18,24 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 15173,
     strictPort: true,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
+        target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:18000",
         changeOrigin: true,
         headers: {
           Connection: "keep-alive",
         },
       },
       "/health": {
-        target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
+        target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:18000",
         changeOrigin: true,
       },
     },
   },
   preview: {
-    port: 5173,
+    port: 15173,
     strictPort: true,
   },
 });

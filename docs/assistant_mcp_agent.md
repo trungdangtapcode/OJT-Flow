@@ -25,7 +25,7 @@ workflow/retrieval artifacts.
 ```text
 User/API/MCP client
   -> AssistantService
-      -> deterministic planner or OpenAIResponsesPlanner
+      -> rule-based planner or OpenAIResponsesPlanner
       -> OJTFlowToolExecutor
           -> WorkflowService
           -> MedicalEvidenceService
@@ -33,7 +33,7 @@ User/API/MCP client
 ```
 
 The LLM is optional. `OJT_LLM_PROVIDER=disabled` keeps local behavior
-deterministic and token-free. `OJT_LLM_PROVIDER=openai` asks the OpenAI
+rule-based and token-free. `OJT_LLM_PROVIDER=openai` asks the OpenAI
 Responses API for a strict JSON tool plan using `OJT_LLM_PLANNING_MODEL` and
 then synthesizes the final answer with `OJT_LLM_SYNTHESIS_MODEL`. Both default
 to the backwards-compatible `OJT_LLM_MODEL` value. `OJT_LLM_VISION_MODEL`
@@ -47,7 +47,7 @@ reindexing. Runtime changes are stored in `OJT_RUNTIME_SETTINGS_PATH`, reload
 cached services, and do not expose or accept API keys. Secrets stay in
 environment/config management.
 
-Tool execution remains deterministic:
+Tool execution remains rule-based:
 
 - Unknown tool names are skipped.
 - OpenAI planner output is constrained to the configured backend tool names.
@@ -108,9 +108,8 @@ readiness policy loaded from
 `POST /api/v1/assistant/sessions/{session_id}/messages`
 
 Assistant sessions are persisted through the same storage backend as workflows:
-memory for tests, SQLite for local single-file development, and Postgres for
-production-like Docker/runtime deployments. Sessions are scoped by authenticated
-user ID. A session stores title, archive state, message count, timestamps, and
+Postgres for Docker/runtime deployments. Memory is reserved for isolated tests.
+Sessions are scoped by authenticated user ID. A session stores title, archive state, message count, timestamps, and
 ordered messages. Messages store role (`user`, `assistant`, `system`, or
 `tool`), content, explicit `workflow_refs`, and a structured payload for tool
 calls, stream events, context snapshots, or final assistant responses. The
@@ -152,7 +151,7 @@ Failed tool recovery is carried through `context.assistant_recovery`. A
 `retry_tool` action includes the original `tool_name` and `arguments`, and the
 backend bypasses LLM planning to execute that exact allowlisted tool call
 through the normal permission gates. A `continue_after_failure` action records
-the failed tool summaries and returns a deterministic continuation without
+the failed tool summaries and returns a rule-based continuation without
 executing another backend tool, so unresolved failures remain visible instead
 of being silently treated as fixed.
 
@@ -170,7 +169,7 @@ of being silently treated as fixed.
 }
 ```
 
-The response includes mode (`deterministic` or `llm`), model, synthesized
+The response includes mode (`rule-based` or `llm`), model, synthesized
 operator findings, compact evidence summaries, raw tool calls, suggestions, and
 warnings. Feature clients should render `findings` and `evidence_summary`
 first, then expose raw tool output only as supporting detail.
@@ -193,7 +192,7 @@ surfaces it as a `Retrieval remediation` finding and a `Next retrieval step`
 suggestion. When backend `interpretation.next_action_*` is present, that
 interpretation action is shown before the remediation fallback. This keeps chat,
 MCP, and Retrieval UI behavior aligned around the same backend-owned next step.
-For direct retrieval-only deterministic
+For direct retrieval-only rule-based
 answers, the top-level assistant message also prefers that remediation summary,
 so the first visible sentence tells the user what to do next instead of only
 reporting that evidence was retrieved. Validation-first answers continue to lead
@@ -208,15 +207,16 @@ claims. Source-backed claims should cite returned source IDs such as
 `[terminology:ucum]`. The backend redacts raw `context.data` before synthesis;
 tool outputs and evidence summaries are still sent so the model can explain the
 actual operation result. `AssistantResponse.mode` reports planning mode and
-`AssistantResponse.synthesis_mode` reports whether the final answer was LLM or
-deterministic fallback.
+`AssistantResponse.synthesis_mode` is `llm` for successful generated answers.
+If synthesis cannot run or fails validation, the request returns an error
+instead of substituting local answer text.
 
 The Assistant UI is intended for end users who know the data task but not the
 backend route names. It should present outcome-oriented starters loaded from the
 assistant example registry, such as checking uploaded data, finding medical
 standards, and reviewing pending work.
 Unsupported small talk or non-operational text must not silently run retrieval;
-the deterministic planner returns no tool calls and a warning telling the user
+the rule-based planner returns no tool calls and a warning telling the user
 which governed OJTFlow operations are supported. This prevents random text from
 appearing as a completed clinical evidence operation.
 
@@ -305,4 +305,4 @@ verified.
 1. Add retention settings and admin export for persisted sessions.
 2. Implement the remote MCP transport/auth gateway described in the policy.
 3. Expand `knowledge/assistant/evaluation_cases.json` with LLM-backed and
-   browser-backed eval cases after deterministic coverage is stable.
+   browser-backed eval cases after rule-based coverage is stable.

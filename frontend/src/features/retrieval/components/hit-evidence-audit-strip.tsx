@@ -18,7 +18,7 @@ export function HitEvidenceAuditStrip({
   return (
     <div
       aria-label="Evidence support summary"
-      className="flex min-w-0 flex-wrap gap-1.5 rounded-md border border-border bg-muted/20 p-2"
+      className="flex min-w-0 flex-wrap gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-2"
     >
       <Badge variant={summary.matched_term_count ? "success" : "warning"}>
         {formatCount(summary.matched_term_count, "matched term")}

@@ -14,7 +14,6 @@ import {
   X,
 } from "lucide-react";
 
-import { PageHeader } from "../../components/layout/page-header";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/form";
@@ -70,7 +69,6 @@ import {
   AttachmentCapabilityBadge,
   AttachmentPreview,
 } from "./assistant-input-panels";
-import { AssistantInlineGuide } from "./assistant-inline-guide";
 import { LiveToolTimeline } from "./assistant-live-timeline";
 import {
   AssistantResponseDetails,
@@ -441,6 +439,14 @@ export function AssistantPage() {
           documents.push(extractedDocument);
         }
         extractedDocuments = documents;
+        const emptyDocument = documents.find((document) => !document.text.trim());
+        if (emptyDocument) {
+          setFormError(
+            `No readable text was extracted from ${emptyDocument.filename}. ` +
+              "Open the parse job details or retry with a different extractor.",
+          );
+          return;
+        }
       } catch (error) {
         setFormError(workflowErrorMessage(error));
         return;
@@ -753,29 +759,28 @@ export function AssistantPage() {
   }, [activeSessionId, transcript.length, latestStreamEventCount, latestTranscriptItem?.response?.message]);
 
   return (
-    <div className="grid min-h-0 gap-4 lg:h-[calc(100dvh-6rem)] lg:grid-rows-[auto_auto_auto_minmax(0,1fr)] lg:overflow-hidden">
-      <PageHeader
-        title="AI Assistant"
-        description="Ask about your data in natural language. The AI uses OJTFlow tools to validate, convert, retrieve evidence, and explain."
-        action={
-          <div className="flex flex-wrap justify-end gap-2">
-            <Badge variant={llm?.provider === "openai" ? "success" : "muted"}>
-              {llm?.provider === "openai" ? "LLM openai" : "LLM deterministic"}
-            </Badge>
-            <Badge variant={executeWriteActions ? "warning" : "success"}>
-              {executeWriteActions ? "Writes enabled" : "Writes gated"}
-            </Badge>
+    <div className="grid min-h-0 gap-0 lg:h-[calc(100dvh-6rem)] lg:grid-rows-[auto_minmax(0,1fr)] lg:overflow-hidden">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-card/80 px-1 py-2">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold tracking-tight text-foreground">AI Assistant</h1>
+          <div className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+            <Bot className="h-3.5 w-3.5" />
+            <span>{llm?.model ?? "unavailable"}</span>
+            {llm?.provider ? <span className="text-border">|</span> : null}
+            {llm?.provider ? <span>{llm.provider}</span> : null}
           </div>
-        }
-      />
-      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
-        <Bot className="h-3.5 w-3.5" />
-        <span>{llm?.model ?? "deterministic assistant"}</span>
-        {llm?.provider ? <span>/ {llm.provider}</span> : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={llm?.provider === "openai" ? "success" : "muted"}>
+            {llm?.provider === "openai" ? "LLM openai" : "LLM unavailable"}
+          </Badge>
+          <Badge variant={executeWriteActions ? "warning" : "success"}>
+            {executeWriteActions ? "Writes enabled" : "Writes gated"}
+          </Badge>
+        </div>
       </div>
-      <AssistantInlineGuide />
 
-      <div className="grid min-h-0 gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid min-h-0 gap-3 pt-3 lg:h-full lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)]">
         <AssistantSessionSidebar
           activeSessionId={activeSession?.id ?? ""}
           isBusy={isBusy}
@@ -786,26 +791,21 @@ export function AssistantPage() {
           searchText={sessionSearch}
           sessions={sessions}
         />
-        <section className="grid min-h-[640px] min-w-0 overflow-hidden rounded-lg border border-border bg-[#f7f7fb] shadow-sm lg:min-h-0">
-          <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border bg-muted/35 px-4 py-2">
-            <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-mono font-semibold text-muted-foreground">
-              <Settings2 className="h-3.5 w-3.5 shrink-0" />
+        <section className="grid min-h-[640px] min-w-0 overflow-hidden rounded-lg border border-border/60 bg-[#f9fafb] shadow-sm lg:min-h-0">
+          <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/40 bg-card/60 px-4 py-1.5">
+            <div className="flex min-w-0 items-center gap-2 text-xs font-mono text-muted-foreground">
+              <Settings2 className="h-3 w-3 shrink-0" />
               <span className="truncate">{activeToolName}</span>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Badge variant={isBusy ? "warning" : "muted"}>
-                {clipboardParseMutation.isPending
-                  ? "creating artifact"
-                  : extractMutation.isPending
-                  ? "extracting"
-                  : assistantMutation.isPending
-                    ? "streaming"
-                    : "ready"}
-              </Badge>
-              <Badge variant={executeWriteActions ? "warning" : "success"}>
-                {executeWriteActions ? "writes enabled" : "writes gated"}
-              </Badge>
-            </div>
+            <Badge variant={isBusy ? "warning" : "muted"} className="text-[11px]">
+              {clipboardParseMutation.isPending
+                ? "creating artifact"
+                : extractMutation.isPending
+                ? "extracting"
+                : assistantMutation.isPending
+                  ? "streaming"
+                  : "ready"}
+            </Badge>
           </div>
           <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]">
             <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
@@ -851,7 +851,7 @@ export function AssistantPage() {
 
             <form
               className={cn(
-                "border-t border-border bg-card/95 p-4 transition-colors",
+                "border-t border-border/40 bg-card/95 px-4 py-3 transition-colors",
                 isDraggingFile && "bg-primary/5 ring-2 ring-inset ring-primary/50",
               )}
               onDragLeave={handleAttachmentDragLeave}
@@ -880,7 +880,7 @@ export function AssistantPage() {
                 <div className="grid gap-2">
                   <Textarea
                     aria-label="Message"
-                    className="min-h-24 resize-y lg:min-h-28"
+                    className="min-h-20 resize-y lg:min-h-20"
                     disabled={isBusy}
                     onChange={(event) => setMessage(event.target.value)}
                     onPaste={(event) => {
@@ -889,7 +889,7 @@ export function AssistantPage() {
                       event.preventDefault();
                       addAttachmentsFromFiles(files, "clipboard");
                     }}
-                    placeholder="Ask about your data. Paste an image, attach a file, Enter to send, Shift+Enter for newline."
+                    placeholder="Ask about your data..."
                     value={message}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && !event.shiftKey) {
@@ -913,9 +913,9 @@ export function AssistantPage() {
                       snippets={textSnippets}
                     />
                   ) : null}
-                  <details className="rounded-md border border-border bg-muted/20 px-3 py-2">
-                    <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-black">
-                      <Plus className="h-4 w-4 text-primary" />
+                  <details className="rounded-md border border-border/40 bg-muted/10 px-3 py-1.5">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-muted-foreground">
+                      <Plus className="h-3.5 w-3.5 text-primary" />
                       Add text snippet
                     </summary>
                     <div className="mt-3 grid gap-2">
@@ -946,7 +946,7 @@ export function AssistantPage() {
                     </div>
                   </details>
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+                    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
                       <input
                         accept={acceptedUploadExtensions}
                         className="hidden"
@@ -967,8 +967,9 @@ export function AssistantPage() {
                         onClick={() => fileInputRef.current?.click()}
                         type="button"
                         variant="outline"
+                        size="sm"
                       >
-                        <Paperclip className="h-4 w-4" />
+                        <Paperclip className="h-3.5 w-3.5" />
                         Attach
                       </Button>
                       <AttachmentCapabilityBadge
@@ -976,9 +977,6 @@ export function AssistantPage() {
                         isLoading={extractorsQuery.isLoading}
                         supportedExtensions={uploadExtensions}
                       />
-                      <div className="min-w-0 text-xs font-semibold text-muted-foreground">
-                        Drop files here or attach {uploadExtensionHint}.
-                      </div>
                       <AssistantControlsPanel
                         contextText={contextText}
                         executeWriteActions={executeWriteActions}
@@ -1007,17 +1005,18 @@ export function AssistantPage() {
                     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
                       {assistantMutation.isPending ? (
                         <Button
-                          className="min-h-10"
+                          className="min-h-9"
                           onClick={cancelActiveStream}
                           type="button"
                           variant="outline"
+                          size="sm"
                         >
-                          <Square className="h-4 w-4" />
+                          <Square className="h-3.5 w-3.5" />
                           Stop
                         </Button>
                       ) : null}
                       <Button
-                        className="min-h-10 min-w-36"
+                        className="min-h-9 min-w-28"
                         disabled={isBusy || writeConfirmationRequired}
                         type="submit"
                       >
@@ -1064,7 +1063,7 @@ function ComposerContextPreview({
   snippets: AssistantTextSnippet[];
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-black uppercase text-muted-foreground">
           Context for next message
@@ -1084,7 +1083,7 @@ function ComposerContextPreview({
         <div className="grid gap-1.5">
           {selectedContexts.map((context) => (
             <div
-              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm"
               key={context.context_id}
             >
               <div className="min-w-0">
@@ -1127,7 +1126,7 @@ function ComposerContextPreview({
         );
         return (
           <div
-            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm"
+            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm"
             key={`${isContextSnippet ? "context" : "draft"}-${snippet.snippet_id}`}
           >
             <div className="min-w-0">
@@ -1331,7 +1330,7 @@ function AssistantRecoveryActions({
 function PendingAssistantBubble() {
   return (
     <div className="flex justify-start">
-      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/35 px-3 py-2 text-sm font-semibold text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/35 px-3 py-2 text-sm font-semibold text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
         Connecting to assistant stream
       </div>

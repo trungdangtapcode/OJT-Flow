@@ -1,4 +1,4 @@
-"""Deterministic terminology candidate and unit validation helpers."""
+"""Rule-based terminology candidate and unit validation helpers."""
 
 from __future__ import annotations
 

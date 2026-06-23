@@ -14,7 +14,7 @@ export function SearchReadinessChecklist({
   return (
     <section
       aria-label="Search readiness checklist"
-      className="grid gap-2 rounded-md border border-border bg-card p-3"
+      className="grid gap-2 rounded-lg border border-border/60 bg-card p-3"
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
@@ -31,7 +31,7 @@ export function SearchReadinessChecklist({
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {items.map((item) => (
           <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-muted/25 px-3 py-2"
+            className="grid min-w-0 gap-1 rounded-lg border border-border/60 bg-muted/25 px-3 py-2"
             key={item.code}
           >
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">

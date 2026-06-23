@@ -27,7 +27,7 @@ as a confident medical answer.
 `RetrievalPackage.answer` contains:
 
 - `status`: `supported`, `partial`, `review_required`, or `refused`;
-- `answer_text`: deterministic text built only from supported evidence rows;
+- `answer_text`: rule-based text built only from supported evidence rows;
 - `claims[]`: answer claims tied to evidence IDs, citation IDs, and Graph-NER
   path refs, with `graph_guard` status for claim-to-triple checking;
 - `citations[]`: cited evidence source IDs, versions, and locators;
@@ -39,7 +39,7 @@ as a confident medical answer.
 - `graph_path_summary`: Graph-NER path coverage for the answer.
 - `metadata.claim_triple_guard`: summary counts for graph-supported,
   review-required, and not-required claims.
-- `metadata.graph_conflict_summary`: summary counts for deterministic
+- `metadata.graph_conflict_summary`: summary counts for rule-based
   contradictory-claim, deprecated-mapping, unit-conflict, and version-mismatch
   graph conflicts.
 

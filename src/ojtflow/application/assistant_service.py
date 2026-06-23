@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import re
+import unicodedata
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
@@ -22,7 +22,7 @@ from ojtflow.core.contracts.assistant import (
     AssistantToolSpec,
 )
 from ojtflow.core.contracts.prompt_injection import PromptInjectionPolicy
-from ojtflow.core.errors import OJTFlowError
+from ojtflow.core.errors import DependencyUnavailableError, OJTFlowError
 from ojtflow.core.policy.prompt_injection_policy import (
     DEFAULT_PROMPT_INJECTION_POLICY,
     assess_prompt_injection,
@@ -34,6 +34,45 @@ from ojtflow.core.policy.generated_output_policy import (
     validate_assistant_plan_output,
     validate_generated_text_output,
     validation_warning,
+)
+
+ASSISTANT_INTENT_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
+ASSISTANT_HEALTHCARE_INTENT_TOKENS = frozenset(
+    {
+        "a1c",
+        "allergy",
+        "benh",
+        "blood",
+        "clinical",
+        "code",
+        "condition",
+        "diagnosis",
+        "don",
+        "duong",
+        "effective",
+        "fhir",
+        "glucose",
+        "hba1c",
+        "hl7",
+        "huyet",
+        "lab",
+        "laboratory",
+        "loinc",
+        "medication",
+        "nghiem",
+        "observation",
+        "patient",
+        "phi",
+        "result",
+        "rxnorm",
+        "snomed",
+        "test",
+        "ucum",
+        "unit",
+        "value",
+        "vi",
+        "xet",
+    }
 )
 
 
@@ -96,18 +135,23 @@ class AssistantService:
 
         clean_context = context or {}
         planning_mode = (
-            "deterministic"
+            "recovery"
             if _recovery_plan(clean_context)
             else "llm"
             if self.planner
-            else "deterministic"
+            else "unavailable"
         )
-        try:
-            plan = await self._plan(message=message, context=clean_context)
-        except OJTFlowError as exc:
-            plan = _deterministic_plan(message, clean_context)
-            planning_mode = "deterministic"
-            plan.warnings.append(_planning_failure_warning(exc))
+        plan = await self._plan(message=message, context=clean_context)
+        plan = _suppress_out_of_domain_grounded_retrieval(
+            plan,
+            message=message,
+            context=clean_context,
+        )
+        plan = _suppress_display_only_attachment_tools(
+            plan,
+            message=message,
+            context=clean_context,
+        )
         tool_results = [
             self._execute_tool_call(
                 tool_call,
@@ -126,45 +170,46 @@ class AssistantService:
             )
         findings = _findings(tool_results)
         evidence_summary = _evidence_summary(tool_results)
-        synthesis_mode = "deterministic"
-        message_text = _assistant_message(plan.message, tool_results, findings)
-        if (
-            self.planner
-            and hasattr(self.planner, "synthesize")
-            and not _is_continue_recovery(clean_context)
-        ):
-            try:
-                candidate_text = await self.planner.synthesize(
-                    message=message,
-                    context=_context_for_llm(
-                        clean_context,
-                        message=message,
-                        policy=self.prompt_injection_policy,
-                    ),
-                    plan=plan,
-                    tool_results=_tool_results_for_llm(
-                        tool_results,
-                        policy=self.prompt_injection_policy,
-                    ),
-                    findings=[finding.model_dump(mode="json") for finding in findings],
-                    evidence_summary=_evidence_summary_for_llm(
-                        evidence_summary,
-                        policy=self.prompt_injection_policy,
-                    ),
-                )
-                validation = validate_generated_text_output(
-                    candidate_text,
-                    surface="assistant_summary",
-                    source_ref=request_id,
-                )
-                if validation.status == "blocked":
-                    warnings.append(validation_warning(validation))
-                else:
-                    message_text = candidate_text
-                    synthesis_mode = "llm"
-                    warnings.extend(_generated_output_warnings(validation))
-            except OJTFlowError as exc:
-                warnings.append(f"LLM answer synthesis failed: {exc}")
+        if not self.planner or not hasattr(self.planner, "synthesize"):
+            raise DependencyUnavailableError(
+                "Real LLM answer synthesis is not configured.",
+                details={"code": "LLM_NOT_CONFIGURED"},
+            )
+        message_text = await self.planner.synthesize(
+            message=message,
+            context=_context_for_llm(
+                clean_context,
+                message=message,
+                policy=self.prompt_injection_policy,
+            ),
+            plan=plan,
+            tool_results=_tool_results_for_llm(
+                tool_results,
+                policy=self.prompt_injection_policy,
+            ),
+            findings=[finding.model_dump(mode="json") for finding in findings],
+            evidence_summary=_evidence_summary_for_llm(
+                evidence_summary,
+                policy=self.prompt_injection_policy,
+            ),
+        )
+        validation = validate_generated_text_output(
+            message_text,
+            surface="assistant_summary",
+            source_ref=request_id,
+        )
+        if validation.status == "blocked":
+            raise OJTFlowError(
+                "LLM answer synthesis failed validation.",
+                details={"validation": validation.model_dump(mode="json")},
+            )
+        synthesis_mode = "llm"
+        warnings.extend(_generated_output_warnings(validation))
+        message_text = _grounded_refusal_when_no_evidence(
+            message_text,
+            user_message=message,
+            evidence_summary=evidence_summary,
+        )
         return AssistantResponse(
             message=message_text,
             mode=planning_mode,
@@ -191,11 +236,11 @@ class AssistantService:
 
         clean_context = context or {}
         planning_mode = (
-            "deterministic"
+            "recovery"
             if _recovery_plan(clean_context)
             else "llm"
             if self.planner
-            else "deterministic"
+            else "unavailable"
         )
         yield {
             "type": "planning_started",
@@ -263,33 +308,20 @@ class AssistantService:
                             plan_task.cancel()
                         raise
             else:
-                yield {
-                    "type": "planning_step",
-                    "mode": planning_mode,
-                    "label": "Deterministic planner",
-                    "message": "Selecting a tool from the local rule-based planner.",
-                }
                 plan = await self._plan(message=message, context=clean_context)
-        except OJTFlowError as exc:
-            plan = _deterministic_plan(message, clean_context)
-            planning_mode = "deterministic"
-            plan.warnings.append(_planning_failure_warning(exc))
-            yield {
-                "type": "warning",
-                "message": plan.warnings[-1],
-                "details": exc.details,
-            }
-        try:
-            plan = self._validated_generated_plan(plan)
-        except OJTFlowError as exc:
-            plan = _deterministic_plan(message, clean_context)
-            planning_mode = "deterministic"
-            plan.warnings.append(_planning_failure_warning(exc))
-            yield {
-                "type": "warning",
-                "message": plan.warnings[-1],
-                "details": exc.details,
-            }
+        except OJTFlowError:
+            raise
+        plan = self._validated_generated_plan(plan)
+        plan = _suppress_out_of_domain_grounded_retrieval(
+            plan,
+            message=message,
+            context=clean_context,
+        )
+        plan = _suppress_display_only_attachment_tools(
+            plan,
+            message=message,
+            context=clean_context,
+        )
         yield {
             "type": "plan_ready",
             "mode": planning_mode,
@@ -341,12 +373,11 @@ class AssistantService:
 
         findings = _findings(tool_results)
         evidence_summary = _evidence_summary(tool_results)
-        synthesis_mode = "deterministic"
-        message_text = _assistant_message(plan.message, tool_results, findings)
+        synthesis_mode = "llm"
+        message_text = ""
         if (
             self.planner
             and hasattr(self.planner, "synthesize_stream")
-            and not _is_continue_recovery(clean_context)
         ):
             yield {
                 "type": "synthesis_started",
@@ -380,14 +411,10 @@ class AssistantService:
                         source_ref=request_id,
                     )
                     if validation.status == "blocked":
-                        warning = validation_warning(validation)
-                        warnings.append(warning)
-                        yield {
-                            "type": "warning",
-                            "message": warning,
-                            "details": validation.model_dump(mode="json"),
-                        }
-                        break
+                        raise OJTFlowError(
+                            "LLM answer synthesis failed validation.",
+                            details={"validation": validation.model_dump(mode="json")},
+                        )
                     warnings.extend(_generated_output_warnings(validation))
                     chunks.append(chunk)
                     yield {"type": "answer_delta", "delta": chunk}
@@ -399,21 +426,21 @@ class AssistantService:
                         source_ref=request_id,
                     )
                     if validation.status == "blocked":
-                        warning = validation_warning(validation)
-                        if warning not in warnings:
-                            warnings.append(warning)
+                        raise OJTFlowError(
+                            "LLM answer synthesis failed validation.",
+                            details={"validation": validation.model_dump(mode="json")},
+                        )
                     else:
                         message_text = streamed_text
                         synthesis_mode = "llm"
                         warnings.extend(_generated_output_warnings(validation))
-            except OJTFlowError as exc:
-                warning = f"LLM answer synthesis failed: {exc}"
-                warnings.append(warning)
-                yield {"type": "warning", "message": warning}
+                else:
+                    raise OJTFlowError("LLM answer synthesis returned an empty response.")
+            except OJTFlowError:
+                raise
         elif (
             self.planner
             and hasattr(self.planner, "synthesize")
-            and not _is_continue_recovery(clean_context)
         ):
             yield {
                 "type": "synthesis_started",
@@ -445,22 +472,27 @@ class AssistantService:
                     source_ref=request_id,
                 )
                 if validation.status == "blocked":
-                    warning = validation_warning(validation)
-                    warnings.append(warning)
-                    yield {
-                        "type": "warning",
-                        "message": warning,
-                        "details": validation.model_dump(mode="json"),
-                    }
+                    raise OJTFlowError(
+                        "LLM answer synthesis failed validation.",
+                        details={"validation": validation.model_dump(mode="json")},
+                    )
                 else:
                     message_text = candidate_text
                     synthesis_mode = "llm"
                     warnings.extend(_generated_output_warnings(validation))
                     yield {"type": "answer_delta", "delta": message_text}
-            except OJTFlowError as exc:
-                warning = f"LLM answer synthesis failed: {exc}"
-                warnings.append(warning)
-                yield {"type": "warning", "message": warning}
+            except OJTFlowError:
+                raise
+        else:
+            raise DependencyUnavailableError(
+                "Real LLM answer synthesis is not configured.",
+                details={"code": "LLM_NOT_CONFIGURED"},
+            )
+        message_text = _grounded_refusal_when_no_evidence(
+            message_text,
+            user_message=message,
+            evidence_summary=evidence_summary,
+        )
 
         response = AssistantResponse(
             message=message_text,
@@ -494,7 +526,10 @@ class AssistantService:
                 max_tool_calls=self.max_tool_calls,
             )
             return self._validated_generated_plan(plan)
-        return _deterministic_plan(message, context)
+        raise DependencyUnavailableError(
+            "Real LLM planner is not configured.",
+            details={"code": "LLM_NOT_CONFIGURED"},
+        )
 
     def _validated_generated_plan(self, plan: AssistantPlan) -> AssistantPlan:
         if not self.tool_specs:
@@ -580,252 +615,10 @@ def _validated_tool_progress_stages(
     return {tool_name: list(stages) for tool_name, stages in progress_stages.items()}
 
 
-def _planning_failure_warning(exc: OJTFlowError) -> str:
-    detail_parts = [
-        str(value)
-        for key in (
-            "status_code",
-            "event_type",
-            "status",
-            "error_code",
-            "incomplete_reason",
-            "message",
-        )
-        if (value := exc.details.get(key)) not in (None, "")
-    ]
-    suffix = f" ({'; '.join(detail_parts)})" if detail_parts else ""
-    return f"LLM planning failed: {exc}{suffix}"
-
-
 def _generated_output_warnings(validation) -> list[str]:
     if validation.status == "passed":
         return []
     return [validation_warning(validation)]
-
-
-def _deterministic_plan(message: str, context: dict[str, Any]) -> AssistantPlan:
-    normalized = message.lower()
-    data = _context_text(context, "data")
-    schema_id = _context_optional_text(context, "schema_id")
-    input_format = _context_optional_text(context, "input_format")
-    target_format = _context_optional_text(context, "target_format") or "json"
-    fields = context.get("fields") if isinstance(context.get("fields"), list) else []
-    review_task = _review_task_context(context)
-    mapping_draft = _mapping_draft_context(context)
-    workflow_id = _context_optional_text(
-        context,
-        "workflow_id",
-    ) or _workflow_id_from_message(message)
-
-    tool_calls: list[AssistantToolPlan] = []
-    if workflow_id and "workflow" in normalized and any(
-        word in normalized for word in ("summary", "summarize", "explain", "inspect", "status")
-    ):
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="workflow_summary",
-                arguments={"workflow_id": workflow_id},
-                rationale="The user asked for an operator-ready workflow summary.",
-            )
-        )
-    elif "start" in normalized and "workflow" in normalized and data:
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="start_workflow",
-                arguments={
-                    "instruction": context.get("instruction") or message,
-                    "data": data,
-                    "input_format": input_format,
-                    "target_format": target_format,
-                    "schema_id": schema_id or "lab_result_v1",
-                    "require_human_review": bool(context.get("require_human_review", True)),
-                },
-                rationale="The user asked to create a workflow and supplied data.",
-            )
-        )
-    elif _wants_create_review_task(normalized, review_task):
-        arguments: dict[str, Any] = {
-            "question": _review_task_question(message, context, review_task),
-            "schema_id": (
-                _optional_text(review_task.get("schema_id"))
-                or schema_id
-                or "lab_result_v1"
-            ),
-            "review_focus": (
-                _optional_text(review_task.get("review_focus"))
-                or _optional_text(review_task.get("focus"))
-                or "Unresolved data quality or terminology decision"
-            ),
-            "source_workflow_id": (
-                _optional_text(review_task.get("source_workflow_id")) or workflow_id
-            ),
-            "source_turn_id": _optional_text(review_task.get("source_turn_id")),
-            "issue_kinds": _review_task_string_list(review_task.get("issue_kinds")),
-            "evidence_ids": _review_task_string_list(review_task.get("evidence_ids")),
-        }
-        if data:
-            arguments["data"] = data
-        if input_format:
-            arguments["input_format"] = input_format
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="create_review_task",
-                arguments={
-                    key: value
-                    for key, value in arguments.items()
-                    if value not in (None, "", [])
-                },
-                rationale=(
-                    "The user asked to create a durable human-review task for "
-                    "an unresolved governed data decision."
-                ),
-            )
-        )
-    elif _wants_generate_mapping_draft(normalized, mapping_draft) and data:
-        arguments: dict[str, Any] = {
-            "instruction": _mapping_draft_instruction(message, context, mapping_draft),
-            "data": data,
-            "input_format": input_format,
-            "target_format": target_format,
-            "schema_id": (
-                _optional_text(mapping_draft.get("schema_id"))
-                or schema_id
-                or "lab_result_v1"
-            ),
-            "mapping_goal": (
-                _optional_text(mapping_draft.get("mapping_goal"))
-                or _optional_text(mapping_draft.get("goal"))
-            ),
-            "source_fields": _review_task_string_list(
-                mapping_draft.get("source_fields")
-            )
-            or [str(field) for field in fields if isinstance(field, str)],
-            "target_fields": _review_task_string_list(
-                mapping_draft.get("target_fields")
-            ),
-            "evidence_ids": _review_task_string_list(mapping_draft.get("evidence_ids")),
-        }
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="generate_mapping_draft",
-                arguments={
-                    key: value
-                    for key, value in arguments.items()
-                    if value not in (None, "", [])
-                },
-                rationale=(
-                    "The user asked to draft a mapping or transformation plan "
-                    "without executing conversion."
-                ),
-            )
-        )
-    elif ("validate" in normalized or "check" in normalized) and data:
-        validation_tool = (
-            "validate_with_evidence"
-            if any(
-                word in normalized
-                for word in ("evidence", "explain", "why", "standard", "clinical", "medical")
-            )
-            else "validate_data"
-        )
-        validation_args: dict[str, Any] = {
-            "data": data,
-            "input_format": input_format,
-            "schema_id": schema_id or "lab_result_v1",
-        }
-        if validation_tool == "validate_with_evidence":
-            validation_args.update(
-                {
-                    "fields": fields,
-                    "clinical_domain": context.get("clinical_domain"),
-                    "standard_system": context.get("standard_system"),
-                }
-            )
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name=validation_tool,
-                arguments=validation_args,
-                rationale="The user asked for data validation.",
-            )
-        )
-    elif ("convert" in normalized or "transform" in normalized) and data:
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="convert_data",
-                arguments={
-                    "data": data,
-                    "input_format": input_format,
-                    "target_format": target_format,
-                },
-                rationale="The user asked for data conversion.",
-            )
-        )
-    elif ("fhir" in normalized or "resourcetype" in normalized) and data:
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="fhir_profile",
-                arguments={"data": data},
-                rationale="The user asked for FHIR-like profiling.",
-            )
-        )
-    elif "review" in normalized:
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="list_reviews",
-                arguments={"status": context.get("status") or "pending", "limit": 10},
-                rationale="The user asked about human reviews.",
-            )
-        )
-    elif workflow_id and "workflow" in normalized:
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="get_workflow",
-                arguments={"workflow_id": workflow_id},
-                rationale="The user asked to inspect a specific workflow.",
-            )
-        )
-    elif "workflow" in normalized and any(
-        word in normalized for word in ("list", "show", "recent")
-    ):
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="list_workflows",
-                arguments={"status": context.get("status"), "limit": 10},
-                rationale="The user asked to inspect workflows.",
-            )
-        )
-    elif _has_retrieval_intent(normalized, context):
-        tool_calls.append(
-            AssistantToolPlan(
-                tool_name="retrieval_search",
-                arguments={
-                    "query": message,
-                    "top_k": int(context.get("top_k") or 5),
-                    "schema_id": schema_id,
-                    "fields": fields,
-                    "clinical_domain": context.get("clinical_domain"),
-                    "standard_system": context.get("standard_system"),
-                    "trust_level": context.get("trust_level") or "approved",
-                },
-                rationale="Default assistant action is trusted evidence retrieval.",
-            )
-        )
-    else:
-        return AssistantPlan(
-            message=(
-                "I can help with governed OJTFlow operations: validate data, find "
-                "trusted healthcare evidence, inspect workflows, list reviews, convert "
-                "formats, or profile FHIR-like resources. Ask for one of those tasks "
-                "and include data or context when needed."
-            ),
-            tool_calls=[],
-            warnings=["No supported OJTFlow operation was detected."],
-        )
-
-    return AssistantPlan(
-        message="I planned the safest matching OJTFlow tool action.",
-        tool_calls=tool_calls,
-    )
 
 
 def _recovery_plan(context: dict[str, Any]) -> AssistantPlan | None:
@@ -867,6 +660,151 @@ def _recovery_plan(context: dict[str, Any]) -> AssistantPlan | None:
             warnings=["Assistant continued without re-running failed tool calls."],
         )
     return None
+
+
+def _suppress_out_of_domain_grounded_retrieval(
+    plan: AssistantPlan,
+    *,
+    message: str,
+    context: dict[str, Any],
+) -> AssistantPlan:
+    if not _requests_grounded_answer(message):
+        return plan
+    if _assistant_request_has_healthcare_intent(message, context):
+        return plan
+    if not any(tool_call.tool_name == "retrieval_search" for tool_call in plan.tool_calls):
+        return plan
+    return plan.model_copy(
+        update={
+            "tool_calls": [
+                tool_call
+                for tool_call in plan.tool_calls
+                if tool_call.tool_name != "retrieval_search"
+            ],
+            "warnings": [
+                *plan.warnings,
+                (
+                    "Grounded retrieval was suppressed because the request has no "
+                    "healthcare, standards, or configured clinical context."
+                ),
+            ],
+        }
+    )
+
+
+def _suppress_display_only_attachment_tools(
+    plan: AssistantPlan,
+    *,
+    message: str,
+    context: dict[str, Any],
+) -> AssistantPlan:
+    if not plan.tool_calls:
+        return plan
+    if not _has_readable_attachment_text(context):
+        return plan
+    if not _requests_attachment_content_display(message):
+        return plan
+    return plan.model_copy(
+        update={
+            "tool_calls": [],
+            "warnings": [
+                *plan.warnings,
+                (
+                    "Backend analysis tools were skipped because the request only "
+                    "asked to display already extracted attachment text."
+                ),
+            ],
+        }
+    )
+
+
+def _has_readable_attachment_text(context: dict[str, Any]) -> bool:
+    attachments = context.get("attachments")
+    if not isinstance(attachments, list):
+        return False
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        text = attachment.get("text")
+        if isinstance(text, str) and text.strip():
+            return True
+    return False
+
+
+def _requests_attachment_content_display(message: str) -> bool:
+    normalized = _ascii_fold(message).lower()
+    display_markers = (
+        "show",
+        "read",
+        "print",
+        "display",
+        "view",
+        "paste",
+        "copy",
+        "extract text",
+        "noi dung",
+        "doc",
+        "hien thi",
+    )
+    attachment_markers = (
+        "pdf",
+        "file",
+        "document",
+        "attachment",
+        "upload",
+        "scan",
+        "image",
+        "content",
+        "text",
+        "tai lieu",
+        "tep",
+        "file",
+    )
+    analysis_markers = (
+        "json",
+        "csv",
+        "fhir",
+        "validate",
+        "profile",
+        "convert",
+        "mapping",
+        "map",
+        "schema",
+        "unit",
+        "loinc",
+        "extract labs",
+        "structured",
+    )
+    if any(marker in normalized for marker in analysis_markers):
+        return False
+    return any(marker in normalized for marker in display_markers) and any(
+        marker in normalized for marker in attachment_markers
+    )
+
+
+def _assistant_request_has_healthcare_intent(
+    message: str,
+    context: dict[str, Any],
+) -> bool:
+    if any(
+        context.get(key)
+        for key in ("clinical_domain", "schema_id", "resource_type", "standard_system")
+    ):
+        return True
+    fields = context.get("fields")
+    if isinstance(fields, list) and any(str(field).strip() for field in fields):
+        return True
+    normalized_message = _ascii_fold(message)
+    tokens = {
+        match.group(0).lower()
+        for match in ASSISTANT_INTENT_TOKEN_PATTERN.finditer(normalized_message)
+    }
+    return bool(tokens.intersection(ASSISTANT_HEALTHCARE_INTENT_TOKENS))
+
+
+def _ascii_fold(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value)
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
 
 
 def _recovery_failed_tool_names(recovery: dict[str, Any]) -> list[str]:
@@ -997,6 +935,7 @@ def _findings(tool_results: list) -> list[AssistantFinding]:
 
 def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
     evidence = _evidence_items(output)
+    source_id_by_evidence_id = _source_ids_by_evidence_id(evidence)
     trace = output.get("trace") if isinstance(output.get("trace"), dict) else {}
     coverage = output.get("coverage") if isinstance(output.get("coverage"), dict) else {}
     evidence_buckets = _evidence_buckets(output)
@@ -1128,13 +1067,10 @@ def _retrieval_findings(output: dict[str, Any]) -> list[AssistantFinding]:
                 if action.get("severity") == "destructive"
                 else "warning",
                 source_tool="retrieval_search",
-                source_ids=[
-                    str(evidence_id)
-                    for evidence_id in action.get("evidence_ids", [])
-                    if evidence_id
-                ][:5]
-                if isinstance(action.get("evidence_ids"), list)
-                else [],
+                source_ids=_recommended_action_source_ids(
+                    action,
+                    source_id_by_evidence_id,
+                ),
             )
         )
     for warning in coverage.get("warnings") or trace.get("warnings") or []:
@@ -1391,6 +1327,32 @@ def _evidence_items(output: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(workflow_retrieval, dict):
             return _evidence_items(workflow_retrieval)
     return []
+
+
+def _source_ids_by_evidence_id(evidence: list[dict[str, Any]]) -> dict[str, str]:
+    return {
+        str(item["evidence_id"]): str(item["source_id"])
+        for item in evidence
+        if item.get("evidence_id") and item.get("source_id")
+    }
+
+
+def _recommended_action_source_ids(
+    action: dict[str, Any],
+    source_id_by_evidence_id: dict[str, str],
+) -> list[str]:
+    source_ids: list[str] = []
+    raw_source_ids = action.get("source_ids")
+    if isinstance(raw_source_ids, list):
+        source_ids.extend(str(source_id) for source_id in raw_source_ids if source_id)
+    raw_evidence_ids = action.get("evidence_ids")
+    if isinstance(raw_evidence_ids, list):
+        source_ids.extend(
+            source_id_by_evidence_id[evidence_id]
+            for evidence_id in (str(value) for value in raw_evidence_ids if value)
+            if evidence_id in source_id_by_evidence_id
+        )
+    return _unique_nonblank_strings(source_ids)[:5]
 
 
 def _recommended_actions(output: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1705,28 +1667,40 @@ def _tool_results_for_llm(
     policy: PromptInjectionPolicy,
 ) -> list[dict[str, Any]]:
     return [
-        {
-            "tool_name": result.tool_name,
-            "status": result.status,
-            "summary": result.summary,
-            "arguments": _arguments_for_llm(result.arguments, policy=policy),
-            "error": result.error,
-            "evidence": _evidence_items_for_llm(
-                _evidence_items(result.output)[:5],
-                policy=policy,
-            ),
-            "evidence_buckets": _evidence_buckets(result.output),
-            "interpretation": _retrieval_interpretation(result.output),
-            "standard_search_plan": _standard_search_plan(result.output),
-            "medical_search_hints": _compact_medical_search_hints(result.output),
-            "diversity": _compact_retrieval_diversity(result.output),
-            "remediation_summary": _remediation_summary(result.output),
-            "trace": _compact_mapping(result.output.get("trace")),
-            "coverage": _compact_mapping(result.output.get("coverage")),
-            "validation_report": _compact_mapping(result.output.get("validation_report")),
-        }
+        _tool_result_for_llm(result, policy=policy)
         for result in tool_results
     ]
+
+
+def _tool_result_for_llm(
+    result: AssistantToolResult,
+    *,
+    policy: PromptInjectionPolicy,
+) -> dict[str, Any]:
+    evidence_items = _evidence_items(result.output)[:5]
+    compact_result: dict[str, Any] = {
+        "tool_name": result.tool_name,
+        "status": result.status,
+        "summary": result.summary,
+        "arguments": _arguments_for_llm(result.arguments, policy=policy),
+        "error": result.error,
+        "evidence": _evidence_items_for_llm(evidence_items, policy=policy),
+        "interpretation": _retrieval_interpretation(result.output),
+        "remediation_summary": _remediation_summary(result.output),
+        "trace": _compact_mapping(result.output.get("trace")),
+        "coverage": _compact_mapping(result.output.get("coverage")),
+        "validation_report": _compact_mapping(result.output.get("validation_report")),
+    }
+    if evidence_items:
+        compact_result.update(
+            {
+                "evidence_buckets": _evidence_buckets(result.output),
+                "standard_search_plan": _standard_search_plan(result.output),
+                "medical_search_hints": _compact_medical_search_hints(result.output),
+                "diversity": _compact_retrieval_diversity(result.output),
+            }
+        )
+    return compact_result
 
 
 def _evidence_summary_for_llm(
@@ -1747,6 +1721,40 @@ def _evidence_summary_for_llm(
             )
         summaries.append(item)
     return summaries
+
+
+def _grounded_refusal_when_no_evidence(
+    message_text: str,
+    *,
+    user_message: str,
+    evidence_summary: list[AssistantEvidenceSummary],
+) -> str:
+    if evidence_summary or not _requests_grounded_answer(user_message):
+        return message_text
+    lower_text = message_text.lower()
+    has_refusal = "can't answer" in lower_text or "cannot answer" in lower_text
+    if has_refusal and "invent" in lower_text:
+        return message_text
+    return (
+        "I can't answer from trusted documents because no relevant retrieved evidence "
+        "was found. I won't invent citations or requirements."
+    )
+
+
+def _requests_grounded_answer(message: str) -> bool:
+    lower_message = message.lower()
+    grounded_phrases = (
+        "trusted document",
+        "trusted documents",
+        "retrieved evidence",
+        "retrieved context",
+        "citations",
+        "cite",
+        "answer only from",
+        "from the evidence",
+        "from evidence",
+    )
+    return any(phrase in lower_message for phrase in grounded_phrases)
 
 
 def _arguments_for_llm(
@@ -1987,143 +1995,8 @@ def _suggestions(tool_results: list) -> list[str]:
     return _dedupe(suggestions)
 
 
-def _context_text(context: dict[str, Any], key: str) -> str:
-    value = context.get(key)
-    if isinstance(value, str) and value.strip():
-        return value
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False)
-    return ""
-
-
-def _context_optional_text(context: dict[str, Any], key: str) -> str | None:
-    value = context.get(key)
-    return value.strip() if isinstance(value, str) and value.strip() else None
-
-
-def _review_task_context(context: dict[str, Any]) -> dict[str, Any]:
-    value = context.get("assistant_review_task")
-    return value if isinstance(value, dict) else {}
-
-
-def _mapping_draft_context(context: dict[str, Any]) -> dict[str, Any]:
-    value = context.get("assistant_mapping_draft")
-    return value if isinstance(value, dict) else {}
-
-
-def _wants_create_review_task(
-    normalized_message: str,
-    review_task: dict[str, Any],
-) -> bool:
-    if _optional_text(review_task.get("action")) == "create_review_task":
-        return True
-    create_terms = ("create", "open", "raise", "file", "make", "escalate")
-    review_terms = ("review task", "review ticket", "human review", "manual review")
-    return any(term in normalized_message for term in create_terms) and any(
-        term in normalized_message for term in review_terms
-    )
-
-
-def _wants_generate_mapping_draft(
-    normalized_message: str,
-    mapping_draft: dict[str, Any],
-) -> bool:
-    if _optional_text(mapping_draft.get("action")) == "generate_mapping_draft":
-        return True
-    draft_terms = ("mapping draft", "draft mapping", "draft transform", "transform plan")
-    action_terms = ("generate", "create", "draft", "make", "prepare")
-    return any(term in normalized_message for term in draft_terms) and any(
-        term in normalized_message for term in action_terms
-    )
-
-
-def _mapping_draft_instruction(
-    message: str,
-    context: dict[str, Any],
-    mapping_draft: dict[str, Any],
-) -> str:
-    return (
-        _context_optional_text(context, "mapping_instruction")
-        or _optional_text(mapping_draft.get("instruction"))
-        or _optional_text(mapping_draft.get("question"))
-        or message.strip()
-        or "Draft a review-gated mapping and transformation plan."
-    )
-
-
-def _review_task_question(
-    message: str,
-    context: dict[str, Any],
-    review_task: dict[str, Any],
-) -> str:
-    return (
-        _context_optional_text(context, "review_question")
-        or _optional_text(review_task.get("question"))
-        or _optional_text(review_task.get("title"))
-        or message.strip()
-        or "Review unresolved data quality or terminology decision."
-    )
-
-
-def _review_task_string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
-
-
 def _optional_text(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
-
-
-def _workflow_id_from_message(message: str) -> str | None:
-    match = re.search(r"\bwf_[A-Za-z0-9_-]+\b", message)
-    return match.group(0) if match else None
-
-
-def _has_retrieval_intent(normalized_message: str, context: dict[str, Any]) -> bool:
-    if any(
-        context.get(key)
-        for key in ("schema_id", "fields", "clinical_domain", "standard_system")
-    ):
-        return True
-    operation_terms = {
-        "evidence",
-        "standard",
-        "standards",
-        "search",
-        "find",
-        "retrieve",
-        "ground",
-        "explain",
-        "source",
-        "sources",
-        "citation",
-        "citations",
-    }
-    healthcare_terms = {
-        "clinical",
-        "healthcare",
-        "medical",
-        "fhir",
-        "observation",
-        "patient",
-        "lab",
-        "laboratory",
-        "hba1c",
-        "glucose",
-        "unit",
-        "ucum",
-        "loinc",
-        "snomed",
-        "rxnorm",
-        "pubmed",
-        "mesh",
-        "medication",
-        "drug",
-        "phi",
-    }
-    tokens = set(re.findall(r"[a-z0-9_]+", normalized_message))
-    return bool(tokens & operation_terms) and bool(tokens & healthcare_terms)
 
 
 def _dedupe(values: list[str]) -> list[str]:

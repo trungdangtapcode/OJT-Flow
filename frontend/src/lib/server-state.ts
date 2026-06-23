@@ -23,6 +23,9 @@ import {
   getAssistantMemoryPolicy,
   getAssistantMcpPrompts,
   getAssistantMcpResources,
+  getGraphMedStatus,
+  getKnowledgeGraphNeighborhood,
+  getKnowledgeGraphStats,
   getJob,
   getExtractorInventory,
   getRetrievalJudgmentSummary,
@@ -45,9 +48,12 @@ import {
   getRuntimeOwaspLlmThreatModel,
   getRuntimeReadiness,
   getWorkflow,
+  getWorkflowInputPreview,
   getWorkflowOutput,
   getWorkflowStats,
   ingestPrivateCorpus,
+  importKnowledgeGraph,
+  importKnowledgeGraphFile,
   listAssistantTools,
   listAssistantAnswerTemplates,
   listAssistantExamples,
@@ -67,6 +73,7 @@ import {
   reindexRetrieval,
   renameAssistantSession,
   searchRetrieval,
+  searchKnowledgeGraph,
   streamAssistantChat,
   submitReview,
   updateRuntimeAssistantSettings,
@@ -98,6 +105,8 @@ import type {
   OcrEvidenceResponse,
   UploadParseJobResponse,
   RetrievalGraphNeighborhoodQuery,
+  KnowledgeGraphImportPayload,
+  KnowledgeGraphImportResult,
   PrivateCorpusIngestPayload,
   RetrievalActiveLearningCandidatePayload,
   RetrievalActiveLearningCandidateUpdatePayload,
@@ -154,6 +163,7 @@ export const queryKeys = {
   workflowSummaries: (params: Record<string, unknown>) => ["workflow-summaries", params] as const,
   reviewSummaries: (params: Record<string, unknown>) => ["review-summaries", params] as const,
   workflow: (workflowId: string | null) => ["workflow", workflowId] as const,
+  inputPreview: (workflowId: string | null) => ["workflow-input-preview", workflowId] as const,
   output: (workflowId: string | null) => ["workflow-output", workflowId] as const,
   events: (workflowId: string | null) => ["workflow-events", workflowId] as const,
   schemas: ["schemas"] as const,
@@ -179,6 +189,12 @@ export const queryKeys = {
     ["retrieval-graph-contexts", params] as const,
   retrievalGraphNeighborhood: (params: RetrievalGraphNeighborhoodQuery | null) =>
     ["retrieval-graph-neighborhood", params] as const,
+  knowledgeGraphStats: ["knowledge-graph-stats"] as const,
+  graphMedStatus: ["graph-med-status"] as const,
+  knowledgeGraphSearch: (params: Record<string, unknown>) =>
+    ["knowledge-graph-search", params] as const,
+  knowledgeGraphNeighborhood: (params: Record<string, unknown> | null) =>
+    ["knowledge-graph-neighborhood", params] as const,
   retrievalPlan: (payload: RetrievalSearchPayload | null) => ["retrieval-plan", payload] as const,
   retrievalIntegrity: (params: Record<string, unknown>) => ["retrieval-integrity", params] as const,
   retrievalFreshness: ["retrieval-freshness"] as const,
@@ -258,6 +274,14 @@ export function useWorkflowEventsQuery(workflowId: string | null) {
     enabled: Boolean(workflowId),
     queryKey: queryKeys.events(workflowId),
     queryFn: () => listWorkflowEvents(workflowId!),
+  });
+}
+
+export function useWorkflowInputPreviewQuery(workflowId: string | null, enabled: boolean) {
+  return useQuery({
+    enabled: Boolean(workflowId) && enabled,
+    queryKey: queryKeys.inputPreview(workflowId),
+    queryFn: () => getWorkflowInputPreview(workflowId!),
   });
 }
 
@@ -473,6 +497,79 @@ export function useRetrievalGraphNeighborhoodQuery(
     enabled: Boolean(params),
     queryKey: queryKeys.retrievalGraphNeighborhood(params),
     queryFn: () => getRetrievalGraphNeighborhood(params!),
+  });
+}
+
+export function useKnowledgeGraphStatsQuery() {
+  return useQuery({
+    queryKey: queryKeys.knowledgeGraphStats,
+    queryFn: getKnowledgeGraphStats,
+  });
+}
+
+export function useGraphMedStatusQuery() {
+  return useQuery({
+    queryKey: queryKeys.graphMedStatus,
+    queryFn: getGraphMedStatus,
+  });
+}
+
+export function useKnowledgeGraphSearchQuery(
+  params: { q?: string | null; limit?: number },
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: queryKeys.knowledgeGraphSearch(params),
+    queryFn: () => searchKnowledgeGraph(params),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useKnowledgeGraphNeighborhoodQuery(
+  params: { node_id?: string | null; q?: string | null; depth?: number; limit?: number } | null,
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    enabled: (options.enabled ?? true) && Boolean(params),
+    queryKey: queryKeys.knowledgeGraphNeighborhood(params),
+    queryFn: () => getKnowledgeGraphNeighborhood(params!),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useKnowledgeGraphImportMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: KnowledgeGraphImportPayload) => importKnowledgeGraph(payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeGraphStats }),
+        queryClient.invalidateQueries({ queryKey: ["knowledge-graph-search"] }),
+        queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood"] }),
+      ]);
+    },
+  });
+}
+
+export function useKnowledgeGraphFileImportMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      file: File;
+      document_id?: string | null;
+      source_id?: string | null;
+      patient_id?: string | null;
+      encounter_id?: string | null;
+    }): Promise<KnowledgeGraphImportResult> => importKnowledgeGraphFile(payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeGraphStats }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.graphMedStatus }),
+        queryClient.invalidateQueries({ queryKey: ["knowledge-graph-search"] }),
+        queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood"] }),
+      ]);
+    },
   });
 }
 

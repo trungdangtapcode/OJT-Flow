@@ -60,6 +60,21 @@ class WorkflowOutputArtifact(ContractModel):
     diff_summary: dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkflowInputPreview(ContractModel):
+    """Bounded source/extracted text preview for human review before approval."""
+
+    workflow_id: str
+    declared_format: DataFormat | None = None
+    detected_format: DataFormat = DataFormat.UNKNOWN
+    input_hash: str
+    byte_size: int
+    content: str
+    truncated: bool
+    max_chars: int
+    source_filename: str | None = None
+    extraction: dict[str, Any] | None = None
+
+
 class WorkflowStep(ContractModel):
     """UI/progress-oriented workflow step separate from append-only audit events."""
 

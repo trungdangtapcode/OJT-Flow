@@ -41,7 +41,7 @@ Each case declares:
 Add cases when a new Assistant capability changes tool selection, evidence
 grounding, or write-gate behavior. Keep fixture payloads small and synthetic.
 Do not store real PHI. Use `forbidden_answer_terms` for common hallucination or
-unsafe-clinical-advice patterns that should never appear in deterministic
+unsafe-clinical-advice patterns that should never appear in rule-based
 answers.
 
 Use the safety suite, not the general evaluation suite, for prompt-injection

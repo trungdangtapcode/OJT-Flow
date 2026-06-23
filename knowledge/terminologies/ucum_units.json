@@ -1,7 +1,7 @@
 {
   "version": "ucum_seed.v0",
   "source": "https://ucum.nlm.nih.gov/ucum-service.html",
-  "source_note": "Small UCUM seed list for deterministic validation scaffolding. Use the official UCUM service or a full UCUM library before production clinical validation.",
+  "source_note": "Small UCUM seed list for rule-based validation scaffolding. Use the official UCUM service or a full UCUM library before production clinical validation.",
   "units": [
     {
       "code": "%",

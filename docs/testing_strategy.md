@@ -4,11 +4,11 @@ OJTFlow uses layered tests because the backend has separate risks at each bounda
 
 ## Test Layers
 
-1. Unit tests validate deterministic domain behavior without network or database state:
+1. Unit tests validate rule-based domain behavior without network or database state:
    parser/converter behavior, validation issues, retrieval ranking contracts, settings parsing,
    service state transitions, and storage adapter invariants.
 2. Integration tests validate real adapter wiring:
-   Postgres migrations, SQLite restart behavior, repository persistence, API response envelopes,
+   Postgres migrations, repository persistence, API response envelopes,
    auth session storage, and workflow/review round trips.
    Frontend architecture tests also run here because they validate source-level
    boundaries that keep features behind the API/server-state layer and prevent
@@ -85,7 +85,7 @@ Run the full local release check:
 PYTHON_BIN=python scripts/release-check.sh
 ```
 
-The script runs backend tests, deterministic retrieval quality evaluation,
+The script runs backend tests, rule-based retrieval quality evaluation,
 frontend build, Docker stack rebuild, runtime asset freshness, browser E2E,
 E2E cleanup, a Postgres residue assertion for Playwright test users/workflows,
 successful-run local Playwright report cleanup, and both `git diff --check` and
@@ -122,7 +122,7 @@ npm run e2e
 
 `runtime:assert-current` compares the built `med-frontend` Docker image with
 the index served by the Docker frontend at `OJT_RUNTIME_BASE_URL` or
-`http://localhost:5173`. It catches stale nginx containers whose hashed asset
+`http://localhost:15173`. It catches stale nginx containers whose hashed asset
 names no longer match the image produced by the current Docker build. Rebuild
 with `docker compose up -d --build frontend` when this check fails. Override
 the expected image with `OJT_EXPECTED_FRONTEND_IMAGE`, or compare against a
@@ -154,7 +154,7 @@ cd frontend
 npm run e2e:headed
 ```
 
-`OJT_E2E_BASE_URL` defaults to `http://localhost:5173` so the browser callback
+`OJT_E2E_BASE_URL` defaults to `http://localhost:15173` so the browser callback
 matches the local Google OAuth redirect URI. `OJT_E2E_SESSION_TOKEN`
 can be supplied to reuse an existing backend session; otherwise the E2E helper
 creates a temporary Postgres-backed session through the API container. Reused

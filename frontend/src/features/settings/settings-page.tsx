@@ -24,6 +24,7 @@ import { Input, Label, Select } from "../../components/ui/form";
 import { Notice } from "../../components/ui/notice";
 import { PageHeader } from "../../components/layout/page-header";
 import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-strip";
+import { WorkspacesPanel } from "./workspaces-panel";
 import {
   runtimeConfig,
   useExtractorInventoryQuery,
@@ -74,16 +75,30 @@ export function SettingsPage() {
   const readinessCounts = countReadinessChecks(readiness?.checks ?? []);
   const cookieEffectiveSecure =
     runtime?.auth.cookie_effective_secure ?? runtime?.auth.cookie_secure ?? false;
+  const authConfigured =
+    runtime?.auth.auth_configured ?? runtime?.auth.google_oauth_configured ?? false;
+  const authProviderLabel =
+    runtime?.auth.provider === "keycloak" ? "Keycloak SSO" : "Google OAuth";
+  const productionLikeMode =
+    runtime?.product_mode === "production" || runtime?.product_mode === "pilot";
+  const dataPolicyNeedsAttention =
+    productionLikeMode && runtime?.policy.effective_no_mock_data === false;
+  const llmPolicyNeedsAttention =
+    productionLikeMode && runtime?.policy.requires_real_llm === false;
+  const cookieNeedsAttention =
+    productionLikeMode && !runtimeConfigQuery.isLoading && !cookieEffectiveSecure;
   const securityAttentionCount =
     (user ? 0 : 1) +
-    (runtime?.auth.google_oauth_configured || runtimeConfigQuery.isLoading ? 0 : 1) +
-    (runtimeConfigQuery.isLoading || cookieEffectiveSecure ? 0 : 1);
+    (authConfigured || runtimeConfigQuery.isLoading ? 0 : 1) +
+    (dataPolicyNeedsAttention ? 1 : 0) +
+    (llmPolicyNeedsAttention ? 1 : 0) +
+    (cookieNeedsAttention ? 1 : 0);
 
   return (
     <div className="grid gap-5">
       <PageHeader
         title="Settings"
-        description="Runtime readiness, security posture, and integration scope for the local enterprise backend."
+        description="Runtime configuration and security posture."
       />
 
       <RuntimeStatusStrip
@@ -100,14 +115,16 @@ export function SettingsPage() {
         userEmail={user?.email ?? null}
       />
 
+      <WorkspacesPanel />
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70">
+          <CardHeader className="border-b border-border/60 bg-muted/30">
             <CardTitle className="flex items-center gap-2">
               <Server className="h-5 w-5 text-primary" />
               Runtime configuration
             </CardTitle>
-            <CardDescription>Runtime facts, backend dependencies, and configured data limits.</CardDescription>
+            <CardDescription>Backend dependencies and data limits.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-5 pt-4 sm:pt-5">
             <div className="grid gap-3 lg:grid-cols-2">
@@ -313,7 +330,7 @@ export function SettingsPage() {
 
             <div className="border-t border-border pt-5">
               <SectionTitle
-                description="Sanitized backend checks for storage, artifacts, retrieval, and governance inventory."
+                description="Backend readiness checks."
                 icon={CheckCircle2}
                 title="Readiness checks"
               />
@@ -335,16 +352,14 @@ export function SettingsPage() {
 
         <div className="grid min-w-0 gap-4">
           <Card className="min-w-0 overflow-hidden">
-            <CardHeader className="border-b border-border bg-card/70">
+            <CardHeader className="border-b border-border/60 bg-muted/30">
               <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <CardTitle className="flex items-center gap-2">
                     <KeyRound className="h-5 w-5 text-primary" />
                     Security posture
                   </CardTitle>
-                  <CardDescription>
-                    Controls that protect healthcare data workflow decisions.
-                  </CardDescription>
+                  <CardDescription>Active security controls.</CardDescription>
                 </div>
                 <Badge variant={securityAttentionCount ? "warning" : "success"}>
                   {securityAttentionCount ? `${securityAttentionCount} attention` : "all active"}
@@ -352,80 +367,122 @@ export function SettingsPage() {
               </div>
             </CardHeader>
             <CardContent className="grid gap-2 pt-4 sm:pt-5">
-              <ControlStatus title="Google OAuth session" status={user ? "active" : "attention"}>
-                Session identity is attached to review decisions and audit events.
+              <ControlStatus
+                title={`${authProviderLabel} session`}
+                status={user ? "active" : "attention"}
+              >
+                Identity for reviews and audit.
               </ControlStatus>
               <ControlStatus
-                title="OAuth client configuration"
+                title={`${authProviderLabel} config`}
+                badgeLabel={runtimeConfigQuery.isLoading ? "checking" : undefined}
                 status={
-                  runtime?.auth.google_oauth_configured
+                  authConfigured
                     ? "active"
                     : runtimeConfigQuery.isLoading
                       ? "planned"
                       : "attention"
                 }
               >
-                Backend reports only whether OAuth credentials are configured; client secrets are never exposed.
+                OAuth credentials configured.
               </ControlStatus>
               <ControlStatus title="Human review gate" status="active">
-                Meaning-changing transformations remain blocked until a reviewer approves them.
+                Blocks meaning-changing transforms.
               </ControlStatus>
-              <ControlStatus title="User ownership scope" status="active">
-                Workflow, review, retrieval, and output reads are scoped to the authenticated owner.
+              <ControlStatus title="Ownership scope" status="active">
+                Data scoped to authenticated owner.
               </ControlStatus>
               <ControlStatus
-                title="No-mock runtime policy"
+                title="Production data policy"
                 status={
                   runtimeConfigQuery.isLoading
                     ? "planned"
                     : runtime?.policy.effective_no_mock_data
                       ? "active"
-                      : "attention"
+                      : dataPolicyNeedsAttention
+                        ? "attention"
+                        : "planned"
+                }
+                badgeLabel={
+                  runtimeConfigQuery.isLoading
+                    ? "checking"
+                    : runtime?.policy.effective_no_mock_data
+                      ? "enforced"
+                      : dataPolicyNeedsAttention
+                        ? "required"
+                        : "dev mode"
                 }
               >
-                Effective no-mock mode is{" "}
                 {runtimeConfigQuery.isLoading
-                  ? "checking"
+                  ? "Checking runtime data policy."
                   : runtime?.policy.effective_no_mock_data
-                    ? "on"
-                    : "off"}{" "}
-                for {runtime?.product_mode ?? "unknown"} mode.
+                    ? "Mock/demo data is blocked for this runtime."
+                    : "Local development may use sample data; pilot and production block it."}
               </ControlStatus>
               <ControlStatus
-                title="Real assistant AI requirement"
+                title="AI provider enforcement"
                 status={
                   runtimeConfigQuery.isLoading
                     ? "planned"
                     : runtime?.policy.requires_real_llm
                       ? "active"
-                      : "planned"
+                      : llmPolicyNeedsAttention
+                        ? "attention"
+                        : "planned"
+                }
+                badgeLabel={
+                  runtimeConfigQuery.isLoading
+                    ? "checking"
+                    : runtime?.policy.requires_real_llm
+                      ? "enforced"
+                      : llmPolicyNeedsAttention
+                        ? "required"
+                        : "dev mode"
                 }
               >
-                Pilot and production modes reject disabled LLM configuration during settings load.
+                {runtimeConfigQuery.isLoading
+                  ? "Checking Assistant provider policy."
+                  : runtime?.policy.requires_real_llm
+                    ? "Assistant startup requires a configured real LLM."
+                    : "Local development may run without an LLM; pilot and production fail startup without one."}
               </ControlStatus>
               <ControlStatus
-                title="Cookie policy"
+                title="Browser session cookie"
                 status={
                   runtimeConfigQuery.isLoading
                     ? "planned"
                     : cookieEffectiveSecure
                       ? "active"
-                      : "attention"
+                      : cookieNeedsAttention
+                        ? "attention"
+                        : "planned"
+                }
+                badgeLabel={
+                  runtimeConfigQuery.isLoading
+                    ? "checking"
+                    : cookieEffectiveSecure
+                      ? "secure"
+                      : cookieNeedsAttention
+                        ? "required"
+                        : "localhost"
                 }
               >
-                SameSite is {runtime?.auth.cookie_samesite ?? "unknown"}; effective Secure is{" "}
-                {runtimeConfigQuery.isLoading ? "checking" : cookieEffectiveSecure ? "on" : "off"}.
+                {runtimeConfigQuery.isLoading
+                  ? "Checking cookie security."
+                  : cookieEffectiveSecure
+                    ? "Secure cookies are active for this browser session."
+                    : "Secure cookies are off for localhost; production should run behind HTTPS."}
               </ControlStatus>
             </CardContent>
           </Card>
 
           <Card className="min-w-0 overflow-hidden">
-            <CardHeader className="border-b border-border bg-card/70">
+            <CardHeader className="border-b border-border/60 bg-muted/30">
               <CardTitle className="flex items-center gap-2">
                 <Database className="h-5 w-5 text-primary" />
                 Governance inventory
               </CardTitle>
-              <CardDescription>Validation and retrieval grounding assets currently available.</CardDescription>
+              <CardDescription>Schemas, extractors, and upload formats.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 pt-4 sm:pt-5">
               <InventoryGroup count={schemaCount} title="Schema profiles">
@@ -513,16 +570,14 @@ function AiRiskRegisterPanel({
 
   return (
     <Card className="min-w-0 overflow-hidden xl:col-span-2">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/60 bg-muted/30">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-primary" />
               AI risk register
             </CardTitle>
-            <CardDescription>
-              NIST AI RMF-aligned intended use, limitations, monitoring, and human oversight.
-            </CardDescription>
+            <CardDescription>NIST AI RMF risk controls.</CardDescription>
           </div>
           {register ? <Badge variant="success">{register.version}</Badge> : null}
         </div>
@@ -563,13 +618,13 @@ function AiRiskRegisterPanel({
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
               <div className="grid gap-3">
-                <div className="rounded-md border border-border bg-muted/20 p-3">
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
                   <div className="text-sm font-bold text-foreground">Intended system use</div>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
                     {register.intended_system_use}
                   </p>
                 </div>
-                <div className="rounded-md border border-border bg-card p-3">
+                <div className="rounded-lg border border-border/60 bg-card p-3">
                   <div className="text-sm font-bold text-foreground">Prohibited uses</div>
                   <ul className="mt-2 grid gap-2 text-sm leading-6 text-muted-foreground">
                     {register.prohibited_uses.map((use) => (
@@ -596,7 +651,7 @@ function AiRiskRegisterPanel({
               <div className="grid max-h-[540px] gap-3 overflow-y-auto pr-1">
                 {register.risks.map((risk) => (
                   <details
-                    className="group rounded-md border border-border bg-card p-3 text-sm"
+                    className="group rounded-lg border border-border/60 bg-card p-3 text-sm"
                     key={risk.risk_id}
                     open={risk.severity === "critical"}
                   >
@@ -641,7 +696,7 @@ function AiRiskRegisterPanel({
                         <div className="grid gap-2">
                           {risk.controls.map((control) => (
                             <div
-                              className="rounded-md border border-border bg-muted/20 p-2"
+                              className="rounded-lg border border-border/60 bg-muted/20 p-2"
                               key={control.control_id}
                             >
                               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -703,16 +758,14 @@ function OwaspLlmThreatModelPanel({
 
   return (
     <Card className="min-w-0 overflow-hidden xl:col-span-2">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/60 bg-muted/30">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-primary" />
               OWASP LLM threat model
             </CardTitle>
-            <CardDescription>
-              Concrete mitigations mapped to code, tests, monitoring signals, and residual risk.
-            </CardDescription>
+            <CardDescription>Mitigations and residual risk.</CardDescription>
           </div>
           {model ? <Badge variant="success">{model.standard_ref}</Badge> : null}
         </div>
@@ -754,7 +807,7 @@ function OwaspLlmThreatModelPanel({
             <div className="grid gap-2">
               {model.categories.map((category) => (
                 <details
-                  className="rounded-md border border-border bg-card p-3 text-sm"
+                  className="rounded-lg border border-border/60 bg-card p-3 text-sm"
                   key={category.category_id}
                   open={category.residual_risk === "high" || category.category_id === "LLM01"}
                 >
@@ -791,7 +844,7 @@ function OwaspLlmThreatModelPanel({
                     <div className="grid gap-2 lg:grid-cols-2">
                       {category.mitigations.map((mitigation) => (
                         <div
-                          className="grid gap-2 rounded-md border border-border bg-muted/20 p-3"
+                          className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3"
                           key={mitigation.mitigation_id}
                         >
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -863,16 +916,14 @@ function MigrationAdminPanel({
         : "destructive";
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/60 bg-muted/30">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5 text-primary" />
               Schema migrations
             </CardTitle>
-            <CardDescription>
-              Applied, pending, and drift diagnostics for the Postgres schema ledger.
-            </CardDescription>
+            <CardDescription>Migration state and drift.</CardDescription>
           </div>
           {diagnostics ? (
             <Badge variant={statusVariant}>{diagnostics.status}</Badge>
@@ -912,7 +963,7 @@ function MigrationAdminPanel({
                 value={diagnostics.unknown_applied_count}
               />
             </div>
-            <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+            <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-sm">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Badge variant={diagnostics.connection_ok === false ? "warning" : "muted"}>
                   {diagnostics.bootstrap_code ?? "unknown"}
@@ -929,7 +980,7 @@ function MigrationAdminPanel({
             <div className="grid max-h-80 gap-2 overflow-y-auto pr-1">
               {diagnostics.migrations.map((migration) => (
                 <div
-                  className="grid gap-2 rounded-md border border-border bg-card p-3"
+                  className="grid gap-2 rounded-lg border border-border/60 bg-card p-3"
                   key={`${migration.status}-${migration.version}`}
                 >
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -1005,16 +1056,14 @@ function AdminPolicyPanel({
 
   return (
     <Card className="min-w-0 overflow-hidden xl:col-span-2">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/60 bg-muted/30">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5 text-primary" />
               Admin policy controls
             </CardTitle>
-            <CardDescription>
-              Review gates, PHI handling, provider boundaries, retention, and tool approvals.
-            </CardDescription>
+            <CardDescription>Review gates and PHI handling.</CardDescription>
           </div>
           <Badge variant={phiAllowedCount ? "warning" : "success"}>
             {phiAllowedCount ? `${phiAllowedCount} PHI exceptions` : "PHI blocked externally"}
@@ -1067,7 +1116,7 @@ function AdminPolicyPanel({
           <div className="grid gap-2">
             {providerPolicies.map((policy) => (
               <div
-                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2"
                 key={policy.label}
               >
                 <span className="font-semibold">{policy.label}</span>
@@ -1094,7 +1143,7 @@ function AdminPolicyPanel({
 }
 
 type RetrievalSettingsFormState = {
-  embeddingProvider: "deterministic" | "openai" | "huggingface";
+  embeddingProvider: "openai" | "huggingface";
   embeddingModel: string;
   embeddingDimensions: string;
   framework: "custom" | "llamaindex";
@@ -1189,14 +1238,14 @@ function AssistantSettingsForm({
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/60 bg-muted/30">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
               Assistant runtime
             </CardTitle>
-            <CardDescription>Operator-tuned planner mode and governed tool-call limits.</CardDescription>
+            <CardDescription>LLM planner and tool limits.</CardDescription>
           </div>
           {runtime?.llm?.runtime_settings_configured ? (
             <Badge variant="success">reloadable</Badge>
@@ -1245,7 +1294,7 @@ function AssistantSettingsForm({
                   }
                   value={form.provider}
                 >
-                  <option value="disabled">Deterministic</option>
+                  <option value="disabled">Unavailable</option>
                   <option value="openai">OpenAI</option>
                 </Select>
               </Label>
@@ -1330,69 +1379,57 @@ function AssistantSettingsForm({
               </Label>
             </div>
 
-            <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-3">
+            <div className="grid gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-foreground">
                   External provider policy
                 </div>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Controls what backend surfaces may send data to OpenAI-compatible
-                  services or external medical search.
+                  Decide which external services are allowed, and whether each service
+                  may receive sensitive clinical data.
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <PolicyToggle
-                  checked={form.externalOpenAiLlmEnabled}
-                  label="OpenAI LLM calls"
-                  onChange={(checked) => updateField("externalOpenAiLlmEnabled", checked)}
+              <div className="grid gap-2">
+                <ProviderPolicyRow
+                  description="Planner and answer generation."
+                  enabled={form.externalOpenAiLlmEnabled}
+                  label="OpenAI LLM"
+                  onEnabledChange={(checked) => updateField("externalOpenAiLlmEnabled", checked)}
+                  onPhiChange={(checked) => updateField("externalOpenAiLlmAllowPhi", checked)}
+                  phiAllowed={form.externalOpenAiLlmAllowPhi}
                 />
-                <PolicyToggle
-                  checked={form.externalOpenAiLlmAllowPhi}
-                  label="Allow PHI to OpenAI LLM"
-                  onChange={(checked) => updateField("externalOpenAiLlmAllowPhi", checked)}
-                  tone={form.externalOpenAiLlmAllowPhi ? "danger" : "default"}
-                />
-                <PolicyToggle
-                  checked={form.externalOpenAiOcrEnabled}
+                <ProviderPolicyRow
+                  description="Image and scanned-PDF OCR."
+                  enabled={form.externalOpenAiOcrEnabled}
                   label="OpenAI vision OCR"
-                  onChange={(checked) => updateField("externalOpenAiOcrEnabled", checked)}
-                />
-                <PolicyToggle
-                  checked={form.externalOpenAiOcrAllowPhi}
-                  label="Allow PHI to vision OCR"
-                  onChange={(checked) => updateField("externalOpenAiOcrAllowPhi", checked)}
-                  tone={form.externalOpenAiOcrAllowPhi ? "danger" : "default"}
+                  onEnabledChange={(checked) => updateField("externalOpenAiOcrEnabled", checked)}
+                  onPhiChange={(checked) => updateField("externalOpenAiOcrAllowPhi", checked)}
+                  phiAllowed={form.externalOpenAiOcrAllowPhi}
                 />
                 <PolicyToggle
                   checked={form.externalOpenAiOcrAllowUnknown}
-                  label="Allow unknown image text to OCR"
+                  label="Allow OCR before PHI classification is known"
                   onChange={(checked) => updateField("externalOpenAiOcrAllowUnknown", checked)}
                 />
-                <PolicyToggle
-                  checked={form.externalOpenAiEmbeddingsEnabled}
+                <ProviderPolicyRow
+                  description="Semantic vector indexing and query embeddings."
+                  enabled={form.externalOpenAiEmbeddingsEnabled}
                   label="OpenAI embeddings"
-                  onChange={(checked) =>
+                  onEnabledChange={(checked) =>
                     updateField("externalOpenAiEmbeddingsEnabled", checked)
                   }
-                />
-                <PolicyToggle
-                  checked={form.externalOpenAiEmbeddingsAllowPhi}
-                  label="Allow PHI to embeddings"
-                  onChange={(checked) =>
+                  onPhiChange={(checked) =>
                     updateField("externalOpenAiEmbeddingsAllowPhi", checked)
                   }
-                  tone={form.externalOpenAiEmbeddingsAllowPhi ? "danger" : "default"}
+                  phiAllowed={form.externalOpenAiEmbeddingsAllowPhi}
                 />
-                <PolicyToggle
-                  checked={form.externalMedicalSearchEnabled}
-                  label="External medical search"
-                  onChange={(checked) => updateField("externalMedicalSearchEnabled", checked)}
-                />
-                <PolicyToggle
-                  checked={form.externalMedicalSearchAllowPhi}
-                  label="Allow PHI to external search"
-                  onChange={(checked) => updateField("externalMedicalSearchAllowPhi", checked)}
-                  tone={form.externalMedicalSearchAllowPhi ? "danger" : "default"}
+                <ProviderPolicyRow
+                  description="External medical web/API search surfaces."
+                  enabled={form.externalMedicalSearchEnabled}
+                  label="Medical search"
+                  onEnabledChange={(checked) => updateField("externalMedicalSearchEnabled", checked)}
+                  onPhiChange={(checked) => updateField("externalMedicalSearchAllowPhi", checked)}
+                  phiAllowed={form.externalMedicalSearchAllowPhi}
                 />
               </div>
             </div>
@@ -1471,14 +1508,14 @@ function RetrievalSettingsForm({
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/60 bg-muted/30">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <SlidersHorizontal className="h-5 w-5 text-primary" />
               Retrieval runtime
             </CardTitle>
-            <CardDescription>Operator-tuned search framework and ranking controls.</CardDescription>
+            <CardDescription>Search and ranking controls.</CardDescription>
           </div>
           {runtime?.retrieval?.runtime_settings_configured ? (
             <Badge variant="success">reloadable</Badge>
@@ -1520,7 +1557,6 @@ function RetrievalSettingsForm({
                   }}
                   value={form.embeddingProvider}
                 >
-                  <option value="deterministic">Deterministic</option>
                   <option value="openai">OpenAI</option>
                   <option value="huggingface">Hugging Face</option>
                 </Select>
@@ -1626,7 +1662,7 @@ function RetrievalSettingsForm({
                   0 favors source novelty; 1 favors raw relevance. Default 0.72 keeps relevance primary while reducing repeated-source evidence.
                 </span>
               </Label>
-              <label className="flex min-h-9 items-center gap-2 rounded-md border border-border bg-muted/20 px-3 text-sm font-semibold">
+              <label className="flex min-h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 text-sm font-semibold">
                 <input
                   checked={form.diversityEnabled}
                   className="h-4 w-4 accent-primary"
@@ -1635,7 +1671,7 @@ function RetrievalSettingsForm({
                 />
                 Source diversity
               </label>
-              <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground sm:col-span-2 xl:col-span-3">
+              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground sm:col-span-2 xl:col-span-3">
                 Embedding changes require retrieval reindexing before vector search is fully aligned. Source diversity changes final evidence selection after hybrid retrieval and reranking. Disable it only when strict score order is required.
               </div>
             </div>
@@ -1667,7 +1703,7 @@ function RetrievalRulePackInventory({ packs }: { packs: RuntimeRetrievalRulePack
   }
   const issueCount = packs.filter((pack) => pack.status !== "ok").length;
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-bold uppercase text-muted-foreground">
           Retrieval rule packs
@@ -1679,7 +1715,7 @@ function RetrievalRulePackInventory({ packs }: { packs: RuntimeRetrievalRulePack
       <div className="grid gap-2 sm:grid-cols-2">
         {packs.map((pack) => (
           <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card p-2 text-xs"
+            className="grid min-w-0 gap-1 rounded-lg border border-border/60 bg-card p-2 text-xs"
             key={`${pack.name}-${pack.env_var}`}
           >
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -1754,9 +1790,9 @@ function runtimeRetrievalSettingsFromRuntime(
 
 function retrievalEmbeddingProvider(
   value: string,
-): "deterministic" | "openai" | "huggingface" {
+): "openai" | "huggingface" {
   if (value === "openai" || value === "huggingface") return value;
-  return "deterministic";
+  return "openai";
 }
 
 function runtimeAssistantSettingsFromRuntime(
@@ -2244,7 +2280,7 @@ function ReadinessRulePackDetails({ check }: { check: ReadinessCheck }) {
   if (!packs.length) return null;
   const issueCount = packs.filter((pack) => pack.status !== "ok").length;
   return (
-    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 p-2">
+    <div className="grid gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-bold uppercase text-muted-foreground">
           Rule pack readiness
@@ -2256,7 +2292,7 @@ function ReadinessRulePackDetails({ check }: { check: ReadinessCheck }) {
       <div className="grid gap-1.5 sm:grid-cols-2">
         {packs.map((pack) => (
           <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-[11px]"
+            className="grid min-w-0 gap-1 rounded-lg border border-border/60 bg-card px-2 py-1.5 text-[11px]"
             key={`${pack.name}-${pack.env_var}`}
           >
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -2346,15 +2382,19 @@ function formatBytes(bytes: number) {
 }
 
 function ControlStatus({
+  badgeLabel,
   children,
   status,
   title,
 }: {
+  badgeLabel?: string;
   children: React.ReactNode;
   status: "active" | "attention" | "planned";
   title: string;
 }) {
   const Icon = status === "active" ? CheckCircle2 : Clock3;
+  const label =
+    badgeLabel ?? (status === "active" ? "active" : status === "attention" ? "attention" : "not required");
   return (
     <div className="grid grid-cols-[24px_minmax(0,1fr)] gap-3 border-b border-border py-3 last:border-b-0">
       <Icon
@@ -2370,7 +2410,7 @@ function ControlStatus({
           <Badge
             variant={status === "active" ? "success" : status === "attention" ? "warning" : "muted"}
           >
-            {status}
+            {label}
           </Badge>
         </div>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{children}</p>
@@ -2395,7 +2435,7 @@ function PolicyToggle({
       className={
         tone === "danger"
           ? "flex min-w-0 items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950"
-          : "flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground"
+          : "flex min-w-0 items-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm font-semibold text-foreground"
       }
     >
       <input
@@ -2404,8 +2444,46 @@ function PolicyToggle({
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />
-      <span className="min-w-0 truncate">{label}</span>
+      <span className="min-w-0 leading-5">{label}</span>
     </label>
+  );
+}
+
+function ProviderPolicyRow({
+  description,
+  enabled,
+  label,
+  onEnabledChange,
+  onPhiChange,
+  phiAllowed,
+}: {
+  description: string;
+  enabled: boolean;
+  label: string;
+  onEnabledChange: (checked: boolean) => void;
+  onPhiChange: (checked: boolean) => void;
+  phiAllowed: boolean;
+}) {
+  return (
+    <div className="grid gap-3 rounded-lg border border-border/60 bg-card p-3">
+      <div className="min-w-0">
+        <div className="font-bold text-foreground">{label}</div>
+        <p className="mt-1 text-sm leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <PolicyToggle
+          checked={enabled}
+          label={enabled ? "Service enabled" : "Service disabled"}
+          onChange={onEnabledChange}
+        />
+        <PolicyToggle
+          checked={phiAllowed}
+          label={phiAllowed ? "PHI allowed" : "PHI blocked"}
+          onChange={onPhiChange}
+          tone={phiAllowed ? "danger" : "default"}
+        />
+      </div>
+    </div>
   );
 }
 

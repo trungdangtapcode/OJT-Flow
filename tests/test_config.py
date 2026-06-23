@@ -52,8 +52,8 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
         clear_settings_cache()
 
     assert settings.storage_backend == "postgres"
-    assert settings.postgres_dsn == "postgresql://ojtflow:ojtflow@localhost:5432/ojtflow"
-    assert settings.redis_url == "redis://localhost:6379/0"
+    assert settings.postgres_dsn == "postgresql://ojtflow:ojtflow@localhost:15432/ojtflow"
+    assert settings.redis_url == "redis://localhost:16379/0"
     assert settings.audit_hash_chain_required is False
     assert settings.effective_audit_hash_chain_required is False
     assert settings.rate_limit_enabled is True
@@ -75,15 +75,24 @@ def test_env_example_is_secret_safe_and_loadable(monkeypatch) -> None:
     )
     assert settings.google_client_id == ""
     assert settings.google_client_secret == ""
-    assert settings.google_redirect_uri == "http://localhost:8000/api/v1/auth/google/callback"
-    assert settings.google_frontend_redirect_uri == "http://localhost:5173/auth/callback"
+    assert settings.google_redirect_uri == "http://localhost:18000/api/v1/auth/google/callback"
+    assert settings.google_frontend_redirect_uri == "http://localhost:15173/auth/callback"
+    assert settings.auth_provider == "keycloak"
+    assert settings.keycloak_base_url == "http://localhost:18080"
+    assert settings.keycloak_realm == "ojtflow"
+    assert settings.keycloak_client_id == "ojtflow-api"
+    assert settings.keycloak_client_secret == "ojtflow-local-secret"
+    assert settings.frontend_base_url == "http://localhost:15173"
     assert settings.max_inline_data_bytes == 1048576
-    assert settings.embedding_model == "deterministic-hash-v0"
-    assert settings.llm_provider == "disabled"
+    assert settings.embedding_provider == "openai"
+    assert settings.embedding_model == "text-embedding-3-small"
+    assert settings.embedding_dimensions == 384
+    assert settings.llm_provider == "openai"
     assert settings.llm_model == "chat-latest"
     assert settings.llm_planning_model == "chat-latest"
     assert settings.llm_synthesis_model == "chat-latest"
     assert settings.llm_vision_model == "gpt-4.1-mini"
+    assert settings.llm_timeout_seconds == 90.0
     assert settings.llm_max_tool_calls == 4
     assert settings.retrieval_hnsw_ef_search == 100
     assert settings.retrieval_candidate_multiplier == 4
@@ -438,11 +447,11 @@ def test_upload_extensions_must_be_supported_simple_suffixes(
 def test_oauth_redirect_uri_settings_allow_local_http_and_https(monkeypatch) -> None:
     monkeypatch.setenv(
         "OJT_GOOGLE_REDIRECT_URI",
-        " http://127.0.0.1:8000/api/v1/auth/google/callback ",
+        " http://127.0.0.1:18000/api/v1/auth/google/callback ",
     )
     monkeypatch.setenv(
         "OJT_GOOGLE_FRONTEND_REDIRECT_URI",
-        " http://[::1]:5173/auth/callback ",
+        " http://[::1]:15173/auth/callback ",
     )
     monkeypatch.setenv(
         "OJT_ALLOWED_AUTH_REDIRECT_URIS",
@@ -455,12 +464,12 @@ def test_oauth_redirect_uri_settings_allow_local_http_and_https(monkeypatch) -> 
     finally:
         clear_settings_cache()
 
-    assert settings.google_redirect_uri == "http://127.0.0.1:8000/api/v1/auth/google/callback"
-    assert settings.google_frontend_redirect_uri == "http://[::1]:5173/auth/callback"
+    assert settings.google_redirect_uri == "http://127.0.0.1:18000/api/v1/auth/google/callback"
+    assert settings.google_frontend_redirect_uri == "http://[::1]:15173/auth/callback"
     assert settings.allowed_auth_redirect_uris == ("https://app.example.com/auth/callback",)
     assert settings.resolved_allowed_auth_redirect_uris == {
-        "http://127.0.0.1:8000/api/v1/auth/google/callback",
-        "http://[::1]:5173/auth/callback",
+        "http://127.0.0.1:18000/api/v1/auth/google/callback",
+        "http://[::1]:15173/auth/callback",
         "https://app.example.com/auth/callback",
     }
 
@@ -589,20 +598,17 @@ def test_auth_cookie_domain_must_be_dns_domain(monkeypatch, bad_domain) -> None:
         clear_settings_cache()
 
 
-def test_embedding_settings_accept_deterministic_provider(monkeypatch) -> None:
+def test_embedding_settings_reject_fake_provider(monkeypatch) -> None:
     monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", " DETERMINISTIC ")
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", " deterministic-hash-v0 ")
     monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", " 64 ")
     clear_settings_cache()
 
     try:
-        settings = get_settings()
+        with pytest.raises(ValueError, match="real semantic embedding provider"):
+            get_settings()
     finally:
         clear_settings_cache()
-
-    assert settings.embedding_provider == "deterministic"
-    assert settings.embedding_model == "deterministic-hash-v0"
-    assert settings.embedding_dimensions == 64
 
 
 def test_embedding_settings_accept_openai_provider(monkeypatch) -> None:
@@ -760,29 +766,35 @@ def test_embedding_provider_must_match_implemented_adapter(monkeypatch, bad_prov
     clear_settings_cache()
 
     try:
-        with pytest.raises(ValueError, match="Invalid embedding provider"):
+        with pytest.raises(ValueError, match="Invalid embedding provider|not configured"):
             get_settings()
     finally:
         clear_settings_cache()
 
 
 @pytest.mark.parametrize("bad_model", ["", "   ", "hash-v1"])
-def test_deterministic_embedding_model_must_match_adapter(monkeypatch, bad_model) -> None:
+def test_embedding_model_must_match_provider(monkeypatch, bad_model) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "openai")
     monkeypatch.setenv("OJT_EMBEDDING_MODEL", bad_model)
     clear_settings_cache()
 
     try:
-        with pytest.raises(ValueError, match="Invalid embedding model"):
+        with pytest.raises(
+            ValueError,
+            match="Invalid embedding model|not configured|real semantic embedding model",
+        ):
             get_settings()
     finally:
         clear_settings_cache()
 
 
-@pytest.mark.parametrize("bad_dimensions", ["", "   ", "0", "1", "128", "not-a-number"])
-def test_deterministic_embedding_dimensions_must_match_adapter(
+@pytest.mark.parametrize("bad_dimensions", ["", "   ", "0", "not-a-number"])
+def test_openai_embedding_dimensions_must_match_adapter(
     monkeypatch,
     bad_dimensions,
 ) -> None:
+    monkeypatch.setenv("OJT_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("OJT_EMBEDDING_MODEL", "text-embedding-3-small")
     monkeypatch.setenv("OJT_EMBEDDING_DIMENSIONS", bad_dimensions)
     clear_settings_cache()
 
@@ -1018,7 +1030,6 @@ def test_runtime_docs_explain_embedding_provider_validation() -> None:
     assert "OJT_RETRIEVAL_DIVERSITY_LAMBDA=0.72" in docs
     assert "OJT_RETRIEVAL_HNSW_EF_SEARCH" in docs
     assert "source-aware MMR" in docs
-    assert "deterministic-hash-v0" in docs
     assert "OJT_EMBEDDING_DIMENSIONS=384" in docs
     assert "vector(384)" in docs
 

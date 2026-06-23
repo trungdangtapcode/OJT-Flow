@@ -21,7 +21,7 @@ export function StandardSearchPlanPanel({
     return null;
   }
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-3 rounded-lg border border-border/60 bg-card p-3">
       <StandardSearchPlanHeader plan={plan} />
       <div className="grid gap-2 lg:grid-cols-2">
         {plan.steps.slice(0, 4).map((step) => (

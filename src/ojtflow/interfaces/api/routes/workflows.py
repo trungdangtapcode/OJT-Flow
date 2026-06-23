@@ -147,6 +147,24 @@ async def get_workflow_events(
     return ok(service.list_events(workflow_id, owner_user_id=authenticated.user.user_id))
 
 
+@router.get("/workflows/{workflow_id}/input-preview")
+async def get_workflow_input_preview(
+    workflow_id: NonBlankStr,
+    max_chars: int = Query(default=12_000, ge=1_000, le=50_000),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    service: WorkflowService = Depends(get_workflow_service),
+) -> dict:
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
+    return ok(
+        service.get_workflow_input_preview(
+            workflow_id,
+            owner_user_id=authenticated.user.user_id,
+            max_chars=max_chars,
+        )
+    )
+
+
 @router.get("/workflows/{workflow_id}/output")
 async def get_workflow_output(
     workflow_id: NonBlankStr,

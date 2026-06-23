@@ -20,7 +20,7 @@ export function SearchPlanTaskRemaining({
   if (!remainingTasks.length) return null;
 
   return (
-    <details className="group rounded-md border border-border bg-background">
+    <details className="group rounded-lg border border-border/60 bg-background">
       <summary
         aria-label={`Show remaining ${label.toLowerCase()}`}
         className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-xs font-black uppercase text-muted-foreground"

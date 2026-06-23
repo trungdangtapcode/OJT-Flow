@@ -29,7 +29,7 @@ Authorization: Bearer <access_token>
 
 The auth bootstrap exceptions are `GET /api/v1/auth/google/url` and
 `GET /api/v1/auth/google/callback`, which are used to obtain the token.
-Direct deterministic tool endpoints such as `POST /api/v1/convert`,
+Direct rule-based tool endpoints such as `POST /api/v1/convert`,
 `POST /api/v1/validate`, `POST /api/v1/fhir/profile`, and
 `POST /api/v1/ocr/evidence` are authenticated by router-level dependency in
 v0 but do not yet have fine-grained RBAC scopes.
@@ -86,8 +86,8 @@ Default persistence uses Postgres plus local file-backed artifacts:
 OJT_STORAGE_BACKEND=postgres
 OJT_PRODUCT_MODE=local_dev
 OJT_NO_MOCK_DATA=false
-OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:5432/ojtflow
-OJT_REDIS_URL=redis://localhost:6379/0
+OJT_DATABASE_URL=postgresql://ojtflow:ojtflow@localhost:15432/ojtflow
+OJT_REDIS_URL=redis://localhost:16379/0
 OJT_DATA_DIR=var
 OJT_KNOWLEDGE_DIR=knowledge
 OJT_MIGRATIONS_DIR=sql/postgres/migrations
@@ -99,9 +99,11 @@ OJT_MAX_UPLOAD_BYTES=26214400
 OJT_MAX_INLINE_DATA_BYTES=1048576
 OJT_UPLOAD_READ_CHUNK_BYTES=1048576
 OJT_ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml
-OJT_EMBEDDING_PROVIDER=deterministic
-OJT_EMBEDDING_MODEL=deterministic-hash-v0
-OJT_EMBEDDING_DIMENSIONS=64
+OJT_RETRIEVAL_MODE=semantic_vector
+OJT_RETRIEVAL_FRAMEWORK=custom
+OJT_EMBEDDING_PROVIDER=openai
+OJT_EMBEDDING_MODEL=text-embedding-3-small
+OJT_EMBEDDING_DIMENSIONS=384
 OJT_OPENAI_API_KEY=
 OJT_OPENAI_EMBEDDING_BASE_URL=https://api.openai.com/v1
 OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS=20.0
@@ -134,8 +136,10 @@ OJT_RETRIEVAL_EVALUATION_POLICY_PATH=
 `OJT_LLM_PROVIDER=disabled` during settings load. `OJT_NO_MOCK_DATA=true` blocks
 demo/mock data paths explicitly; it is also effectively enabled in `pilot` and
 `production`.
-`OJT_STORAGE_BACKEND` must be `postgres`, `sqlite`, or `memory`. Invalid values
-are rejected during settings load before API services are constructed.
+`OJT_STORAGE_BACKEND=postgres` is the supported runtime storage configuration.
+The in-memory backend is reserved for isolated in-process tests. Invalid values,
+including `sqlite`, are rejected during settings load before API services are
+constructed.
 `OJT_DATABASE_URL` must use `postgres://` or `postgresql://` syntax with a host,
 optional numeric port, and database name. Unsupported schemes, blank values,
 missing hosts, missing database names, invalid ports, and fragments are rejected
@@ -194,17 +198,17 @@ Values may include or omit the leading dot and are normalized to lowercase.
 Unsupported or unsafe values such as `.exe`, `.tar.gz`, path-like values,
 wildcards, or extensions containing spaces are rejected during settings load.
 
-`OJT_EMBEDDING_PROVIDER` supports `deterministic`, `openai`, and `huggingface`.
-Deterministic mode is for offline tests and demos. OpenAI mode uses
+`OJT_EMBEDDING_PROVIDER` supports `rule-based`, `openai`, and `huggingface`.
+Rule-based mode is for offline tests and demos. OpenAI mode uses
 `OJT_OPENAI_API_KEY` or, when that is blank, `OPENAI_API_KEY`. Hugging Face mode
 uses SentenceTransformers and can run on GPU with `OJT_HF_EMBEDDING_DEVICE=cuda`.
 The recommended semantic retrieval dimension is `384`, matching the Postgres
-`embedding vector(384)` schema. Other provider names, incompatible deterministic
+`embedding vector(384)` schema. Other provider names, incompatible rule-based
 model IDs, invalid device values, and invalid dimension values are rejected
 during settings load.
 
 `OJT_LLM_PROVIDER` supports `disabled` and `openai`. Disabled mode keeps the
-assistant deterministic and token-free. OpenAI mode uses the Responses API to
+assistant rule-based and token-free. OpenAI mode uses the Responses API to
 produce a strict structured tool plan, but the backend still executes only known
 allowlisted tools. `OJT_LLM_MODEL` defaults to `chat-latest` and remains the
 compatibility fallback. `OJT_LLM_PLANNING_MODEL`, `OJT_LLM_SYNTHESIS_MODEL`, and
@@ -268,7 +272,7 @@ Retrieval hits expose `score_components` as the score explanation contract.
 Custom/static/Postgres retrieval emits lexical RRF, vector RRF, policy boost,
 and optional external reranker contribution rows. Framework adapters emit their
 own framework score row while preserving the same field shape.
-Retrieval packages also expose `quality_summary`, a deterministic aggregate of
+Retrieval packages also expose `quality_summary`, a rule-based aggregate of
 `quality_signals[]` with status, 0-100 score, severity counts, blocker/warning
 codes, and the top recommended action. This gives operators and assistant tools
 a quick readiness signal without hiding the underlying quality signals. The
@@ -531,7 +535,7 @@ The corresponding `WorkflowState.failure` stores `code`, `message`,
 `handoff_context.retrieval_trace` records retrieval strategy, query variants,
 filters, candidate count, selected evidence IDs, safety flags, and retrieval
 warnings. Retrieval packages also expose
-`handoff_context.query_analysis`, which records deterministic clinical query
+`handoff_context.query_analysis`, which records rule-based clinical query
 expansion metadata: strategy, detected concepts, expanded terms, healthcare
 standard cues, rule IDs, and final query variants.
 
@@ -654,7 +658,7 @@ rehydrated `clinical_package`, and the supplied or rebuilt `fhir_like_bundle`.
 Review approval uses the same integrity rule for stored input. An input hash
 mismatch during `POST /api/v1/review/{review_id}` returns HTTP `409`, records a
 `workflow.failed` audit event, and leaves `output` unset. If the input still
-passes integrity checks but a deterministic resume tool fails, for example the
+passes integrity checks but a rule-based resume tool fails, for example the
 stored content cannot be parsed with the workflow's declared format, the review
 route returns the same persisted-failure error envelope with
 `error.workflow_id` and `WorkflowState.failure`.
@@ -762,7 +766,7 @@ Allowed decisions:
 - `cancel`
 
 `approve_with_edits` is available for structured API clients only when the
-request includes explicit deterministic edit actions:
+request includes explicit rule-based edit actions:
 
 ```json
 {
@@ -971,9 +975,9 @@ LLM-bound surfaces. Tool metadata is scanned before Assistant service
 construction and cannot grant permissions or override backend policy.
 
 Assistant LLM-generated plans and answer summaries are validated before
-execution/display. Failed generated plans fall back to deterministic planning;
-failed generated summaries keep the deterministic answer fallback. Streaming
-answers validate cumulative output before emitting each delta. See
+execution/display. Failed generated plans and summaries fail the request with
+a structured validation error; no local answer or plan is substituted.
+Streaming answers validate cumulative output before emitting each delta. See
 `docs/generated_output_validation_v0.md`.
 
 `GET /api/v1/assistant/mcp/resources`
@@ -1121,9 +1125,9 @@ Appends a persisted message or tool artifact:
 }
 ```
 
-Session and message records are stored through the configured backend: memory
-for tests, SQLite for local development, and Postgres for production-like
-deployments. Session access is owner-scoped by authenticated user ID. Messages
+Session and message records are stored in Postgres for runtime deployments.
+Memory storage is reserved for isolated in-process tests. Session access is
+owner-scoped by authenticated user ID. Messages
 include `workflow_refs` so the UI can deep-link chat turns to workflow runs.
 If `workflow_refs` is omitted, the backend extracts common workflow reference
 fields such as `workflow_id`, `workflow_ids`, `workflow_ref`, and
@@ -1196,7 +1200,7 @@ backend bypasses the LLM planner and executes that exact allowlisted tool plan:
 ```
 
 To continue without re-running failed tools, use `continue_after_failure`. This
-produces a deterministic continuation response with no backend tool execution
+produces a rule-based continuation response with no backend tool execution
 and keeps the failed step unresolved for review:
 
 ```json
@@ -1238,7 +1242,7 @@ review. Response data includes:
   returns `recommended_actions[]`
 - retrieval remediation appears as a `Retrieval remediation` finding and
   `Next retrieval step` suggestion when a retrieval package returns
-  `remediation_summary`; direct retrieval-only deterministic answers also use
+  `remediation_summary`; direct retrieval-only rule-based answers also use
   that remediation as the top-level `message`, while validation-first answers
   continue to lead with validation findings
 - `evidence_summary[].source_id`
@@ -1531,7 +1535,7 @@ warnings.
 
 `POST /api/v1/interoperability/external/cache/metadata`
 
-Builds deterministic cache metadata for an external API response without
+Builds rule-based cache metadata for an external API response without
 persisting the response. Request:
 
 ```json
@@ -2373,7 +2377,7 @@ configuration is an error because the login path cannot work with only one of
 client ID or client secret.
 `embedding_configuration` and `llm_configuration` verify that selected providers
 are internally consistent. Selecting OpenAI mode without an API key is an error;
-deterministic embeddings or disabled LLM mode are valid for local/dev mode and
+rule-based embeddings or disabled LLM mode are valid for local/dev mode and
 are reported explicitly.
 `mcp_tool_registry` checks that tool metadata has unique names and scoped
 allowed-agent metadata before those tools are exposed to MCP clients.
@@ -2576,7 +2580,7 @@ Example:
         "details": {
           "source_count": 5,
           "probe_hit_count": 3,
-          "probe_strategy": "postgres_fts_vector_rrf",
+          "probe_strategy": "semantic_vector",
           "probe_candidates_seen": 5,
           "probe_warning_count": 0
         }
@@ -2605,14 +2609,14 @@ Returns:
 The frontend passes:
 
 ```text
-redirect_uri=http://localhost:5173/auth/callback
+redirect_uri=http://localhost:15173/auth/callback
 ```
 
 Swagger/API-only testing can omit `redirect_uri`, which uses the backend
 callback:
 
 ```text
-http://localhost:8000/api/v1/auth/google/callback
+http://localhost:18000/api/v1/auth/google/callback
 ```
 
 `GET /api/v1/auth/google/callback?code=...&state=...`
@@ -2659,6 +2663,28 @@ Request:
   "slug": "nightly-ingestion",
   "display_name": "Nightly Ingestion",
   "role_key": "operator",
+  "token_ttl_seconds": 3600
+}
+```
+
+Response data includes:
+
+- `service_account`
+- `token_type`
+- `access_token`
+- `expires_at`
+
+`POST /api/v1/auth/service-accounts/{account_id}/tokens`
+
+Requires `users:write` when called by a human user or by another service
+account. A service account may call this route for its own `account_id` while
+its current token is still valid; that self-rotation path cannot request a TTL
+longer than `OJT_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS`.
+
+Request:
+
+```json
+{
   "token_ttl_seconds": 3600
 }
 ```
@@ -2805,7 +2831,7 @@ hints before running a full search.
 Response data is a `RetrievalPlan`:
 
 - `query`: normalized `RetrievalQuery`
-- `query_analysis`: the same deterministic analysis later used by retrieval,
+- `query_analysis`: the same rule-based analysis later used by retrieval,
   including `query_profile`, `query_aspects`, `query_variant_details`,
   `retrieval_tasks`, `filter_suggestions`, `diagnostics`, and `search_hints`
 - `coverage_summary`: backend-owned pre-search readiness summary for local
@@ -2852,7 +2878,7 @@ Example response envelope:
       }
     },
     "query_analysis": {
-      "strategy": "postgres_fts_vector_rrf",
+      "strategy": "semantic_vector",
       "query_profile": {
         "intent": "schema_validation",
         "clinical_domain": "laboratory",
@@ -3056,13 +3082,13 @@ PDF pages, and internal policy or knowledge sections.
 for downstream agents. Current values include
 `prompt_injection_pattern_in_query` and `sensitive_field_context`.
 `handoff_context.graph_context` uses contract `graph_ner_handoff.v0`. It is a
-deterministic GraphRAG-lite handoff with query/evidence/standard/field/concept
+rule-based GraphRAG-lite handoff with query/evidence/standard/field/concept
 nodes, `supports`, `mentions_entity`, `requests_resource`,
 `has_search_parameter`, `uses_standard`, and `normalizes_to` edges, plus
 summary counts. Nodes, edges, and triples include `provenance` with
 `extractor`, `extractor_version`, extraction `source`, `review_state`,
 `confidence`, source evidence/chunk refs when available, and
-`normalized_code_candidates` for deterministic terminology candidates.
+`normalized_code_candidates` for rule-based terminology candidates.
 `normalizes_to` provenance is marked `candidate_requires_review` because these
 are reviewable coding hints rather than automatic clinical coding decisions.
 Entity rules come from
@@ -3073,7 +3099,7 @@ search-parameter expansion comes from
 grounding and audit metadata, not an autonomous clinical coding decision.
 `handoff_context.graph_conflict_report` uses contract
 `graph_conflict_report.v1` and is produced from the graph/evidence handoff
-before answer synthesis. It reports deterministic conflict records for
+before answer synthesis. It reports rule-based conflict records for
 contradictory source claims, deprecated terminology mappings, conflicting UCUM
 unit candidates, and version-mismatched standard guidance. Each record includes
 `conflict_id`, `kind`, `severity`, `rule_id`, `message`, `suggested_action`,
@@ -3091,9 +3117,9 @@ produced expanded query variants. It includes `concept_candidates`, a list of
 controlled-vocabulary candidates with `concept_id`, `display_name`,
 `standard_system`, `code`, `clinical_domain`, `matched_aliases`, `confidence`,
 `source`, and `metadata`. It also includes `filter_suggestions`, a list of
-deterministic metadata filter recommendations with `field`, `value`, `reason`,
+rule-based metadata filter recommendations with `field`, `value`, `reason`,
 `rule_id`, `confidence`, and `applied`. It also includes `diagnostics`, a list
-of deterministic query-quality checks with `code`, `severity`, `message`, and
+of rule-based query-quality checks with `code`, `severity`, `message`, and
 `suggested_action`; each diagnostic also includes structured `metadata` such as
 query token count, active metadata filters, applied standard, suggested
 standards, detected concepts, and schema/format/resource context when relevant.
@@ -3117,7 +3143,7 @@ can include `query_profile`, a data-driven route hint with `profile_id`,
 `label`, `route`, `complexity`, `retrieval_mode`, `description`,
 `suggested_filters`, and contributing `rule_ids`; this is operator-visible
 guidance for adaptive retrieval, not a hidden automatic route change. It can
-include `query_aspects`, deterministic query-decomposition rows with
+include `query_aspects`, rule-based query-decomposition rows with
 `aspect_id`, `label`, review `question`, `rationale`, `priority`, contributing
 `rule_id`, `suggested_terms`, and `suggested_filters`; these rows help users
 verify which medical evidence aspects the search should cover without silently
@@ -3128,7 +3154,7 @@ plan transparently. Ranked hits may include
 `source_locator.query_aspect_matches[]` with aspect ID, label, rule ID,
 priority, matched filters, matched terms, and reason, allowing clients to show
 which evidence supports which decomposed search aspect. It
-also includes `search_hints`, deterministic external medical search syntax
+also includes `search_hints`, rule-based external medical search syntax
 scaffolds with `target`, `query`, optional `url`, `rationale`, and `warnings`
 for workflows such as PubMed/MeSH literature search, FHIR resource search
 templates, ClinicalTrials.gov API v2 study search, and openFDA drug
@@ -3170,7 +3196,7 @@ aspect's metadata criteria and expose the same explicit remediation filter
 contract when coverage is missing.
 `facets` summarizes the final selected hits into buckets for `source_type`,
 `clinical_domain`, `standard_system`, and `trust_level`.
-`quality_signals` is a deterministic retrieval-quality checklist for operator
+`quality_signals` is a rule-based retrieval-quality checklist for operator
 review. It summarizes whether the package has hits, whether expected standard
 coverage is complete, whether query-context safety flags were detected, and
 whether selected evidence is source-diverse. These signals are observability and
@@ -3278,7 +3304,7 @@ review requirement, and retention policy. Retrieval search filters support
 executing search.
 
 `POST /api/v1/retrieval/private-corpus/ingest` ingests tenant-private text into
-retrieval after deterministic redaction. The request accepts either inline
+retrieval after rule-based redaction. The request accepts either inline
 `data` or an existing parsed `artifact_id`, plus optional `title`, `source_ref`,
 `input_format`, and `redaction_action`. The backend:
 
@@ -3615,7 +3641,7 @@ Example response:
       "include_corpus": true,
       "request_id": "web_123"
     },
-    "output": {"repository": "postgres_fts_vector_rrf", "chunks_indexed": 42},
+    "output": {"repository": "postgres_pgvector", "chunks_indexed": 42},
     "error": null,
     "progress": {"current": 1, "total": 1, "message": "Completed"},
     "attempts": 1,
@@ -3651,7 +3677,7 @@ Form fields:
 
 Structured text uploads (`.csv`, `.json`, `.yaml`, `.md`, `.txt`) do not require
 optional document extraction packages. They are decoded as UTF-8, stored as
-derived text artifacts, and parsed with the deterministic parser for the
+derived text artifacts, and parsed with the rule-based parser for the
 detected file type.
 
 `POST /api/v1/parse/extract`
@@ -3711,7 +3737,7 @@ document context into chat.
 
 `POST /api/v1/parse/redaction-preview`
 
-Returns a deterministic PHI-like redaction preview for submitted text,
+Returns a rule-based PHI-like redaction preview for submitted text,
 including structured CSV sensitive-column masking and span-level findings for
 patterns such as SSNs, emails, and phone numbers. This route is intended to run
 before external OCR/LLM handoff.

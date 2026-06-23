@@ -1,6 +1,7 @@
 import * as React from "react";
 import {
   CheckCircle2,
+  CircleMinus,
   Loader2,
   MessageSquareText,
   Route,
@@ -62,6 +63,9 @@ function chronologicalTimelineItems(
   const completedToolResults = completedToolResultByIndex(streamEvents, response);
   const hasPlanReady = streamEvents.some((event) => event.type === "plan_ready");
   const hasFinal = streamEvents.some((event) => event.type === "final") || Boolean(response);
+  const hasStreamError = streamEvents.some((event) => event.type === "error");
+  const hasCancelled = streamEvents.some((event) => event.type === "cancelled");
+  const terminalNonFinalStatus = hasStreamError ? "failed" : hasCancelled ? "warning" : null;
   let planningDeltas: Extract<AssistantStreamEvent, { type: "planning_delta" }>[] = [];
   let answerDeltas: Extract<AssistantStreamEvent, { type: "answer_delta" }>[] = [];
 
@@ -174,7 +178,7 @@ function chronologicalTimelineItems(
           <LiveTimelineRow
             detail={event.message}
             label="LLM text"
-            status={hasFinal ? "completed" : "running"}
+            status={hasFinal ? "completed" : terminalNonFinalStatus ?? "running"}
           />
         ),
       });
@@ -231,7 +235,7 @@ function PlannerStreamPreview({
   const text = deltas.map((event) => event.delta).join("");
   const plannerPlan = plannerStreamPlan(text);
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       <div className="flex min-w-0 items-start gap-2">
         {completed ? (
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -262,7 +266,7 @@ function PlannerStructuredPreview({ plan }: { plan: PlannerStreamPlan }) {
   return (
     <div className="mt-2 grid gap-2">
       {plan.message ? (
-        <div className="rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold leading-6">
+        <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-sm font-semibold leading-6">
           {plan.message}
         </div>
       ) : null}
@@ -270,7 +274,7 @@ function PlannerStructuredPreview({ plan }: { plan: PlannerStreamPlan }) {
         <div className="grid gap-2">
           {plan.toolCalls.map((toolCall, index) => (
             <div
-              className="grid gap-2 rounded-md border border-border bg-card px-3 py-2"
+              className="grid gap-2 rounded-lg border border-border/60 bg-card px-3 py-2"
               key={`${toolCall.toolName}-${index}`}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -289,7 +293,7 @@ function PlannerStructuredPreview({ plan }: { plan: PlannerStreamPlan }) {
           ))}
         </div>
       ) : (
-        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
+        <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
           No backend tool call selected yet.
         </div>
       )}
@@ -310,13 +314,13 @@ function PlannerArgumentSummary({ arguments: args }: { arguments: Record<string,
   const entries = Object.entries(args);
   if (!entries.length) {
     return (
-      <div className="rounded-md border border-border bg-muted/35 px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+      <div className="rounded-lg border border-border/60 bg-muted/35 px-2 py-1.5 text-xs font-semibold text-muted-foreground">
         No arguments
       </div>
     );
   }
   return (
-    <details className="rounded-md border border-border bg-muted/20">
+    <details className="rounded-lg border border-border/60 bg-muted/20">
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 px-2 py-1.5 text-xs font-black">
         Arguments
         <Badge variant="muted">{formatCount(entries.length, "field")}</Badge>
@@ -392,11 +396,14 @@ function ToolTimelineCard({
   const name = result?.tool_name ?? toolCall?.tool_name ?? "tool";
   const status = result?.status ?? "running";
   const summary = result?.summary || toolCall?.rationale || "Waiting for backend result.";
+  const skipped = status === "skipped";
   return (
-    <details className="group rounded-md border border-border bg-muted/20 text-sm" open={!result}>
+    <details className="group rounded-lg border border-border/60 bg-muted/20 text-sm" open={!result}>
       <summary className="flex cursor-pointer list-none flex-wrap items-start gap-2 px-3 py-2">
         {status === "running" ? (
           <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+        ) : skipped ? (
+          <CircleMinus className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
         ) : status === "failed" ? (
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
         ) : (
@@ -450,7 +457,7 @@ function ToolProgressRow({
       ? Math.max(0, Math.min(100, event.progress))
       : null;
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm">
       <div className="flex min-w-0 items-start gap-2">
         <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
         <div className="min-w-0 flex-1">
@@ -483,7 +490,7 @@ function PlanReadyPreview({
   event: Extract<AssistantStreamEvent, { type: "plan_ready" }>;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       <div className="flex min-w-0 items-start gap-2">
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
         <div className="min-w-0 flex-1">
@@ -503,7 +510,7 @@ function PlanReadyPreview({
         <div className="grid gap-1.5">
           {event.plan.tool_calls.map((toolCall, index) => (
             <div
-              className="grid gap-1 rounded-md border border-border bg-card px-3 py-2"
+              className="grid gap-1 rounded-lg border border-border/60 bg-card px-3 py-2"
               key={`${toolCall.tool_name}-${index}`}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -524,7 +531,7 @@ function PlanReadyPreview({
           ))}
         </div>
       ) : (
-        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
+        <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
           No backend tool call was selected.
         </div>
       )}
@@ -543,9 +550,11 @@ function LiveTimelineRow({
 }) {
   const running = status === "running";
   return (
-    <div className="flex min-w-0 items-start gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+    <div className="flex min-w-0 items-start gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {running ? (
         <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+      ) : status === "skipped" ? (
+        <CircleMinus className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       ) : status === "failed" || status === "warning" ? (
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
       ) : (

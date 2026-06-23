@@ -37,7 +37,6 @@ from ojtflow.infrastructure.retrieval.corpus_partitions import (
     metadata_visibility,
 )
 from ojtflow.infrastructure.retrieval.engine import (
-    DeterministicEmbeddingProvider,
     KnowledgeChunk,
     active_quality_policy,
     attach_hit_match_explanations,
@@ -99,7 +98,12 @@ class LlamaIndexRetrievalRepository:
         bm25_weight: float = 0.38,
     ) -> None:
         self.knowledge_root = Path(knowledge_root)
-        self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        if embedding_provider is None:
+            raise DependencyUnavailableError(
+                "LlamaIndex retrieval requires an explicit semantic embedding provider.",
+                details={"code": "EMBEDDING_PROVIDER_NOT_CONFIGURED"},
+            )
+        self.embedding_provider = embedding_provider
         self.corpus_dirs = corpus_dirs or (self.knowledge_root / "corpus",)
         self.chunk_max_chars = chunk_max_chars
         self.chunk_overlap_chars = chunk_overlap_chars

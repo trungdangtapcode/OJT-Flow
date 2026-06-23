@@ -18,6 +18,48 @@ export type AuthUser = {
   email_verified: boolean;
   display_name?: string | null;
   avatar_url?: string | null;
+  identity_provider?: string | null;
+};
+
+export type WorkspaceOrganization = {
+  organization_id: string;
+  slug: string;
+  display_name: string;
+  status: string;
+};
+
+export type WorkspaceMembership = {
+  membership_id: string;
+  organization_id: string;
+  user_id: string;
+  role_key: string;
+  status: string;
+};
+
+export type Workspace = {
+  organization: WorkspaceOrganization;
+  membership: WorkspaceMembership;
+  effective_role_keys: string[];
+  effective_permission_scopes: string[];
+};
+
+export type WorkspaceInvitation = {
+  invitation_id: string;
+  organization_id: string;
+  email: string;
+  role_key: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  invited_by_user_id: string;
+  created_at: string;
+  expires_at: string;
+  accepted_at?: string | null;
+  accepted_by_user_id?: string | null;
+};
+
+export type CreateInvitationResponse = {
+  invitation: WorkspaceInvitation;
+  invite_url: string;
+  token: string;
 };
 
 export type AuthLoginResponse = {
@@ -550,6 +592,112 @@ export type RetrievalGraphNeighborhood = {
   triples: Array<Record<string, unknown>>;
   warnings: string[];
   generated_at: string;
+};
+
+export type KnowledgeGraphReviewState = "accepted" | "pending" | "rejected";
+
+export type KnowledgeGraphNode = {
+  node_id: string;
+  scope: "global" | "organization";
+  organization_id: string;
+  node_type: string;
+  label: string;
+  normalized_code?: string | null;
+  code_system?: string | null;
+  aliases: string[];
+  attributes?: Record<string, unknown>;
+  confidence: number;
+  review_state: KnowledgeGraphReviewState;
+  created_at: string;
+  updated_at: string;
+  source_chunk_ids: string[];
+};
+
+export type KnowledgeGraphEdge = {
+  source_node_id: string;
+  target_node_id: string;
+  relation: string;
+  confidence: number;
+  review_state: KnowledgeGraphReviewState;
+  created_at: string;
+  source_chunk_ids: string[];
+  source_snippets: string[];
+};
+
+export type KnowledgeGraphStats = {
+  node_count: number;
+  edge_count: number;
+  chunk_count: number;
+  nodes_by_type: Record<string, number>;
+  nodes_by_scope: Record<string, number>;
+  generated_at: string;
+};
+
+export type GraphMedStatus = {
+  enabled: boolean;
+  available: boolean;
+  ontology_loaded: boolean;
+  gpu_required: boolean;
+  gpu_available: boolean;
+  gnn_endpoint_configured: boolean;
+  gnn_endpoint_reachable: boolean;
+  embedding_endpoint_configured: boolean;
+  llm_endpoint_configured: boolean;
+  embedding_endpoint_reachable: boolean;
+  llm_endpoint_reachable: boolean;
+  icd_vector_index: string;
+  icd_disease_count: number;
+  hpo_phenotype_count: number;
+  umls_count: number;
+  message: string;
+};
+
+export type GraphMedLinkedEntity = {
+  source: "concat" | "narrative";
+  start: number;
+  end: number;
+  text: string;
+  label: string;
+  assertion: "present" | "negated" | "uncertain";
+  temporality: "acute" | "chronic" | "recurrent" | "history" | "unspecified";
+  rationale: string;
+  icd_id?: string | null;
+  icd_label?: string | null;
+  confidence: number;
+  linking_rationale: string;
+};
+
+export type KnowledgeGraphImportResult = {
+  backend: "graph-med";
+  status: "imported" | "unavailable";
+  chunks: number;
+  nodes: number;
+  edges: number;
+  entities: number;
+  linked_entities: number;
+  message: string;
+  graph_med_status: GraphMedStatus;
+  annotations: GraphMedLinkedEntity[];
+};
+
+export type KnowledgeGraphView = {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  seed_node_ids: string[];
+  node_count: number;
+  edge_count: number;
+  depth: number;
+  generated_at: string;
+};
+
+export type KnowledgeGraphImportPayload = {
+  text?: string | null;
+  document_id?: string | null;
+  source_id?: string | null;
+  patient_id?: string | null;
+  encounter_id?: string | null;
+  concat_text?: string | null;
+  narrative_text?: string | null;
 };
 
 export type RetrievalQueryAnalysis = {
@@ -1571,8 +1719,8 @@ export type AssistantEvidenceSummary = {
 
 export type AssistantResponse = {
   message: string;
-  mode: "deterministic" | "llm";
-  synthesis_mode: "deterministic" | "llm";
+  mode: "llm" | "recovery";
+  synthesis_mode: "llm";
   model?: string | null;
   findings: AssistantFinding[];
   evidence_summary: AssistantEvidenceSummary[];
@@ -1639,7 +1787,7 @@ export type AssistantStreamEvent =
     }
   | {
       type: "planning_started";
-      mode: "deterministic" | "llm";
+      mode: "llm" | "recovery" | "unavailable";
       model?: string | null;
       available_tool_count?: number;
       max_tool_calls?: number;
@@ -1647,24 +1795,24 @@ export type AssistantStreamEvent =
     }
   | {
       type: "planning_progress";
-      mode: "deterministic" | "llm";
+      mode: "llm" | "recovery" | "unavailable";
       elapsed_seconds: number;
       message: string;
     }
   | {
       type: "planning_step";
-      mode: "deterministic" | "llm";
+      mode: "llm" | "recovery" | "unavailable";
       label: string;
       message: string;
     }
   | {
       type: "planning_delta";
-      mode: "deterministic" | "llm";
+      mode: "llm" | "recovery" | "unavailable";
       delta: string;
     }
   | {
       type: "plan_ready";
-      mode: "deterministic" | "llm";
+      mode: "llm" | "recovery" | "unavailable";
       plan: AssistantPlan;
     }
   | {
@@ -1688,7 +1836,7 @@ export type AssistantStreamEvent =
     }
   | {
       type: "synthesis_started";
-      mode: "deterministic" | "llm";
+      mode: "llm";
       message: string;
     }
   | {
@@ -1971,6 +2119,19 @@ export type WorkflowOutputArtifact = {
   diff_summary: Record<string, unknown>;
 };
 
+export type WorkflowInputPreview = {
+  workflow_id: string;
+  declared_format?: string | null;
+  detected_format: string;
+  input_hash: string;
+  byte_size: number;
+  content: string;
+  truncated: boolean;
+  max_chars: number;
+  source_filename?: string | null;
+  extraction?: Record<string, unknown> | null;
+};
+
 export type SchemaEntry = {
   schema_id: string;
   title: string;
@@ -2101,6 +2262,7 @@ export type ArtifactRetentionPolicy = {
 export type UploadedArtifact = {
   artifact_id: string;
   owner_user_id: string;
+  organization_id?: string | null;
   filename: string;
   mime_type: string;
   extension: string;
@@ -2113,6 +2275,17 @@ export type UploadedArtifact = {
   retention_policy: ArtifactRetentionPolicy;
   metadata: Record<string, unknown>;
   created_at: string;
+};
+
+export type ArtifactAccessEvent = {
+  event_id: string;
+  artifact_id: string;
+  owner_user_id: string;
+  actor_user_id: string;
+  action: string;
+  request_id?: string | null;
+  timestamp: string;
+  metadata: Record<string, unknown>;
 };
 
 export type ExtractionStepTrace = {
@@ -2157,6 +2330,22 @@ export type UploadParseJobResponse = {
   artifact: UploadedArtifact;
   trace?: ParsingPipelineTrace | null;
   extracted_document?: ExtractedDocument | null;
+};
+
+export type ArtifactScope = "workspace" | "mine";
+
+export type ArtifactListResponse = {
+  items: UploadedArtifact[];
+  scope: ArtifactScope;
+  organization_id: string;
+  storage_backend: string;
+  object_storage_backend: string;
+};
+
+export type ArtifactDetailResponse = {
+  artifact: UploadedArtifact;
+  traces: ParsingPipelineTrace[];
+  access_events: ArtifactAccessEvent[];
 };
 
 export type RetrievalReindexJobPayload = RetrievalReindexPayload & {
@@ -2206,7 +2395,7 @@ export type MigrationDiagnostics = {
 };
 
 export type RuntimeRetrievalSettings = {
-  embedding_provider: "deterministic" | "openai" | "huggingface";
+  embedding_provider: "openai" | "huggingface";
   embedding_model: string;
   embedding_dimensions: number;
   retrieval_framework: "custom" | "llamaindex";
@@ -2388,8 +2577,11 @@ export type RuntimeConfig = {
   status: string;
   product_mode: "local_dev" | "demo" | "pilot" | "production";
   storage_backend: string;
+  object_storage_backend?: string;
   persistent_storage: boolean;
   postgres_configured: boolean;
+  minio_configured?: boolean;
+  minio_bucket_configured?: boolean;
   redis_configured: boolean;
   data_dir_configured: boolean;
   audit?: {
@@ -2398,7 +2590,10 @@ export type RuntimeConfig = {
     hash_chain_required_configured: boolean;
   };
   auth: {
+    provider?: "google" | "keycloak" | string;
+    auth_configured?: boolean;
     google_oauth_configured: boolean;
+    keycloak_configured?: boolean;
     hosted_domain_restricted: boolean;
     cookie_secure: boolean;
     cookie_effective_secure: boolean;

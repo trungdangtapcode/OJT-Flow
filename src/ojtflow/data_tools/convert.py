@@ -1,4 +1,4 @@
-"""Deterministic conversions."""
+"""Rule-based conversions."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def convert_data(
     target_format: DataFormat,
     plan: TransformationPlan | None = None,
 ) -> tuple[str, TransformationOutput]:
-    """Convert parsed data to target format using approved deterministic actions."""
+    """Convert parsed data to target format using approved rule-based actions."""
 
     normalized = _apply_plan(parsed.records, plan) if parsed.records else parsed.content
     warnings: list[str] = []

@@ -2,7 +2,7 @@
 
 OJTFlow classifies PHI and sensitive healthcare data as a governance signal across
 the backend. The classifier is not a HIPAA de-identification engine and does not
-certify data as safe to disclose. It provides deterministic risk metadata so
+certify data as safe to disclose. It provides rule-based risk metadata so
 workflow, review, assistant, retrieval, and export surfaces can make consistent
 decisions before content leaves the system boundary.
 

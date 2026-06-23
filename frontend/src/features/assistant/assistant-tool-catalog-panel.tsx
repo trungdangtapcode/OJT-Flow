@@ -17,7 +17,7 @@ export function ToolCatalogPanel({
 }) {
   return (
     <details className="group relative">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-black shadow-sm transition hover:border-primary">
+      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-border/60 bg-card px-3 text-sm font-black shadow-sm transition hover:border-primary">
         <MessageSquareText className="h-4 w-4 text-primary" />
         Tool catalog
         <HelpTooltip label="Tool catalog help">
@@ -25,7 +25,7 @@ export function ToolCatalogPanel({
         </HelpTooltip>
         <Badge variant="muted">{isLoading ? "loading" : `${tools.length}`}</Badge>
       </summary>
-      <div className="absolute bottom-12 right-0 z-20 grid max-h-[560px] w-[min(720px,calc(100vw-2rem))] gap-3 overflow-auto rounded-md border border-border bg-card p-4 shadow-lg max-sm:left-0 max-sm:right-auto">
+      <div className="absolute bottom-12 right-0 z-20 grid max-h-[560px] w-[min(720px,calc(100vw-2rem))] gap-3 overflow-auto rounded-lg border border-border/60 bg-card p-4 shadow-lg max-sm:left-0 max-sm:right-auto">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <div className="text-sm font-black">Assistant tool catalog</div>
@@ -45,7 +45,7 @@ export function ToolCatalogPanel({
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 aria-hidden="true"
-                className="h-16 rounded-md border border-border bg-muted/35"
+                className="h-16 rounded-lg border border-border/60 bg-muted/35"
                 key={index}
               />
             ))}
@@ -54,7 +54,7 @@ export function ToolCatalogPanel({
         {!error && !isLoading ? (
           <div className="grid gap-2">
             {tools.map((tool) => (
-              <div className="rounded-md border border-border bg-muted/20 p-3" key={tool.name}>
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-3" key={tool.name}>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="min-w-0 flex-1 break-words font-mono text-sm font-black">
                     {tool.name}

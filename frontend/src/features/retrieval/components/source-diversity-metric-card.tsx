@@ -6,7 +6,7 @@ export function SourceDiversityMetricCard({
   value: number | string;
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+    <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
       <div className="text-xs font-black uppercase text-muted-foreground">
         {label}
       </div>

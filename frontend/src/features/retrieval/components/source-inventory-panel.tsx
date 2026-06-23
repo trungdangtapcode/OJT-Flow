@@ -86,20 +86,20 @@ function CorpusPartitionPolicySummary({
 }) {
   if (isLoading) {
     return (
-      <div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
         Loading corpus partition policy.
       </div>
     );
   }
   if (!catalog?.partitions.length) {
     return (
-      <div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
         No corpus partition policy is configured.
       </div>
     );
   }
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-bold">Corpus partition policy</div>
         <div className="text-xs font-bold text-muted-foreground">
@@ -117,7 +117,7 @@ function CorpusPartitionPolicySummary({
 
 function CorpusPartitionPolicyCard({ partition }: { partition: CorpusPartitionPolicy }) {
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-card p-2 text-xs">
       <div className="font-bold">{partition.label}</div>
       <div className="text-muted-foreground">{humanize(partition.purpose)}</div>
       <div className="flex min-w-0 flex-wrap gap-1">

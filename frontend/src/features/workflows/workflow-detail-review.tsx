@@ -1,8 +1,11 @@
 import {
   AlertTriangle,
   Check,
+  Database,
+  FileText,
   HelpCircle,
   MessageSquareText,
+  ShieldCheck,
   X,
 } from "lucide-react";
 
@@ -15,8 +18,17 @@ import {
   CardTitle,
 } from "../../components/ui/card";
 import { Notice } from "../../components/ui/notice";
+import {
+  useWorkflowInputPreviewQuery,
+  workflowErrorMessage,
+} from "../../lib/server-state";
 import { cn, formatDate, humanize } from "../../lib/utils";
-import type { HumanReview } from "../../types";
+import type {
+  HumanReview,
+  ValidationIssue,
+  WorkflowInputPreview,
+  WorkflowState,
+} from "../../types";
 
 export function ReviewTab({
   error,
@@ -24,38 +36,228 @@ export function ReviewTab({
   isReviewActive,
   onDecision,
   review,
+  workflow,
 }: {
   error: string | null;
   isPending: boolean;
   isReviewActive: boolean;
   onDecision: (decision: string) => void;
   review: HumanReview | null;
+  workflow: WorkflowState;
 }) {
+  const inputPreviewQuery = useWorkflowInputPreviewQuery(workflow.workflow_id, Boolean(review));
+
   if (review && isReviewActive) {
     return (
-      <PendingReviewGate
-        compact
-        error={error}
-        isPending={isPending}
-        onDecision={onDecision}
-        review={review}
-      />
+      <div className="grid gap-4">
+        <ReviewEvidenceBeforeDecision
+          inputPreview={inputPreviewQuery.data ?? null}
+          inputPreviewError={inputPreviewQuery.isError ? workflowErrorMessage(inputPreviewQuery.error) : null}
+          inputPreviewLoading={inputPreviewQuery.isLoading}
+          workflow={workflow}
+        />
+        <PendingReviewGate
+          error={error}
+          isPending={isPending}
+          onDecision={onDecision}
+          review={review}
+        />
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Human review</CardTitle>
+    <div className="grid gap-4">
+      {review ? (
+        <ReviewEvidenceBeforeDecision
+          inputPreview={inputPreviewQuery.data ?? null}
+          inputPreviewError={inputPreviewQuery.isError ? workflowErrorMessage(inputPreviewQuery.error) : null}
+          inputPreviewLoading={inputPreviewQuery.isLoading}
+          workflow={workflow}
+        />
+      ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>Human review</CardTitle>
+          <CardDescription>
+            {review ? `${review.trigger} / ${review.review_id}` : "No review gate is attached."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm text-muted-foreground">
+          <div>{review ? `Review status: ${humanize(review.status)}` : "No review required."}</div>
+          {review ? <ReviewClarificationHistory review={review} /> : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function ReviewEvidenceBeforeDecision({
+  inputPreview,
+  inputPreviewError,
+  inputPreviewLoading,
+  workflow,
+}: {
+  inputPreview: WorkflowInputPreview | null;
+  inputPreviewError: string | null;
+  inputPreviewLoading: boolean;
+  workflow: WorkflowState;
+}) {
+  const issues = workflow.validation_report?.issues ?? [];
+  const evidence = workflow.retrieved_context ?? [];
+  return (
+    <Card className="min-w-0 overflow-hidden border-blue-200">
+      <CardHeader className="border-b border-blue-100 bg-blue-50/70">
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-blue-700" />
+          Read before approval
+        </CardTitle>
         <CardDescription>
-          {review ? `${review.trigger} / ${review.review_id}` : "No review gate is attached."}
+          Review the source/extracted text, validation issues, and evidence before approving the
+          transformation.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 text-sm text-muted-foreground">
-        <div>{review ? `Review status: ${humanize(review.status)}` : "No review required."}</div>
-        {review ? <ReviewClarificationHistory review={review} /> : null}
+      <CardContent className="grid gap-4 pt-4">
+        <InputPreviewPanel
+          error={inputPreviewError}
+          loading={inputPreviewLoading}
+          preview={inputPreview}
+        />
+        <div className="grid gap-3 lg:grid-cols-2">
+          <ReviewIssueSummary issues={issues} />
+          <ReviewEvidenceSummary evidence={evidence} />
+        </div>
       </CardContent>
     </Card>
+  );
+}
+
+function InputPreviewPanel({
+  error,
+  loading,
+  preview,
+}: {
+  error: string | null;
+  loading: boolean;
+  preview: WorkflowInputPreview | null;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm font-semibold text-muted-foreground">
+        Loading source preview...
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <Notice title="Source preview could not be loaded" tone="danger">
+        {error}
+      </Notice>
+    );
+  }
+  if (!preview) {
+    return (
+      <Notice title="No source preview">
+        The workflow has no readable input preview. Do not approve until source data is available.
+      </Notice>
+    );
+  }
+  const extractor = preview.extraction ? stringifyDisplayValue(preview.extraction.extractor_used) : "";
+  return (
+    <section className="grid gap-3 rounded-lg border border-border/60 bg-card p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 font-bold">
+          <FileText className="h-4 w-4 text-primary" />
+          Source / extracted input
+        </div>
+        <div className="flex flex-wrap gap-1.5 text-xs font-bold text-muted-foreground">
+          <span className="rounded-full bg-muted px-2 py-0.5">
+            {preview.source_filename || preview.detected_format}
+          </span>
+          <span className="rounded-full bg-muted px-2 py-0.5">
+            {formatBytes(preview.byte_size)}
+          </span>
+          {extractor ? (
+            <span className="rounded-full bg-muted px-2 py-0.5">{extractor}</span>
+          ) : null}
+        </div>
+      </div>
+      <pre className="max-h-[26rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-50">
+        {preview.content || "No extracted/source text available."}
+      </pre>
+      <div className="grid gap-1 text-xs text-muted-foreground">
+        {preview.truncated ? (
+          <div className="font-semibold text-amber-700">
+            Preview truncated to {preview.max_chars.toLocaleString()} characters.
+          </div>
+        ) : null}
+        <div>Input hash: {preview.input_hash}</div>
+      </div>
+    </section>
+  );
+}
+
+function ReviewIssueSummary({ issues }: { issues: ValidationIssue[] }) {
+  const visibleIssues = issues.slice(0, 6);
+  return (
+    <section className="grid content-start gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+      <div className="flex items-center gap-2 font-bold">
+        <AlertTriangle className="h-4 w-4 text-amber-600" />
+        Validation issues
+      </div>
+      {visibleIssues.length ? (
+        <div className="grid gap-2">
+          {visibleIssues.map((issue) => (
+            <div className="rounded-md bg-card p-2 text-sm" key={issue.issue_id}>
+              <div className="font-bold">{humanize(issue.kind)}</div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">{issue.message}</div>
+            </div>
+          ))}
+          {issues.length > visibleIssues.length ? (
+            <div className="text-xs font-semibold text-muted-foreground">
+              {issues.length - visibleIssues.length} more issue
+              {issues.length - visibleIssues.length === 1 ? "" : "s"} in the Issues tab.
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No validation issues recorded.</p>
+      )}
+    </section>
+  );
+}
+
+function ReviewEvidenceSummary({ evidence }: { evidence: WorkflowState["retrieved_context"] }) {
+  const visibleEvidence = evidence.slice(0, 5);
+  return (
+    <section className="grid content-start gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+      <div className="flex items-center gap-2 font-bold">
+        <Database className="h-4 w-4 text-primary" />
+        Evidence
+      </div>
+      {visibleEvidence.length ? (
+        <div className="grid gap-2">
+          {visibleEvidence.map((item) => (
+            <div className="rounded-md bg-card p-2 text-sm" key={item.evidence_id}>
+              <div className="break-all font-mono text-xs text-muted-foreground">
+                {item.source_id}
+              </div>
+              <div className="mt-1 line-clamp-2 text-xs leading-5">{item.claim}</div>
+            </div>
+          ))}
+          {evidence.length > visibleEvidence.length ? (
+            <div className="text-xs font-semibold text-muted-foreground">
+              {evidence.length - visibleEvidence.length} more evidence item
+              {evidence.length - visibleEvidence.length === 1 ? "" : "s"} in the Evidence tab.
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No evidence attached. Do not approve evidence-dependent transformations without context.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -145,7 +347,7 @@ export function ReviewClarificationHistory({ review }: { review: HumanReview }) 
       <ol className="grid gap-2">
         {requests.map((request, index) => (
           <li
-            className="grid gap-1 rounded-md border border-border bg-muted/20 p-2"
+            className="grid gap-1 rounded-lg border border-border/60 bg-muted/20 p-2"
             key={`${request.requested_at ?? "clarification"}-${index}`}
           >
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
@@ -191,7 +393,7 @@ function ReviewActionSummary({ review }: { review: HumanReview }) {
       </div>
       {actions.length ? (
         <>
-          <div className="overflow-hidden rounded-md border border-border bg-card">
+          <div className="overflow-hidden rounded-lg border border-border/60 bg-card">
             {visibleActions.map((action, index) => (
               <div
                 className="grid gap-2 border-t border-border p-3 first:border-t-0 lg:grid-cols-[8rem_minmax(10rem,0.9fr)_minmax(0,1.4fr)]"
@@ -222,7 +424,7 @@ function ReviewActionSummary({ review }: { review: HumanReview }) {
           Review the proposed transformation payload before approving execution.
         </p>
       )}
-      <details className="group rounded-md border border-border bg-muted/25">
+      <details className="group rounded-lg border border-border/60 bg-muted/25">
         <summary className="cursor-pointer px-3 py-2 text-xs font-bold uppercase text-muted-foreground">
           Raw action payload
         </summary>
@@ -307,4 +509,11 @@ function stringifyDisplayValue(value: unknown) {
   } catch {
     return String(value);
   }
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes)) return "n/a";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

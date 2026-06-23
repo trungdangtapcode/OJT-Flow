@@ -28,7 +28,7 @@ export function SearchRunHistory<TRun extends SearchRunHistoryRun>({
   if (!runs.length) return null;
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b border-border bg-card/70">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-muted/30">
         <div>
           <CardTitle className="flex items-center gap-2">
             <History className="h-5 w-5 text-primary" />

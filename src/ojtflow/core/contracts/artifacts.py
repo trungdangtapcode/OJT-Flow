@@ -52,6 +52,7 @@ class UploadedArtifact(ContractModel):
 
     artifact_id: str = Field(default_factory=lambda: new_id("art"))
     owner_user_id: str
+    organization_id: str | None = None
     filename: str
     mime_type: str
     extension: str

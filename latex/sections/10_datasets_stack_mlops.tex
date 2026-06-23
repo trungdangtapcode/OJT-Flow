@@ -138,7 +138,7 @@ Graph machine learning & Node embeddings, link prediction, GNN reranking, graph 
 \addlinespace
 Foundation AI & LLMs, medical-tuned LLMs, embedding models, rerankers, VLMs for future imaging/report workflows. & Intent interpretation, workflow planning, explanation generation, evidence-grounded QA, multimodal future research. \\
 \addlinespace
-Neuro-symbolic layer & Deterministic validators, JSON Schema, FHIR profiles, OMOP constraints, rule engines, ontology/vocabulary checks. & Guardrails around all ML/DL/foundation-model outputs. This is required for medical reliability. \\
+Neuro-symbolic layer & Rule-based validators, JSON Schema, FHIR profiles, OMOP constraints, rule engines, ontology/vocabulary checks. & Guardrails around all ML/DL/foundation-model outputs. This is required for medical reliability. \\
 \bottomrule
 \end{longtable}
 
@@ -316,7 +316,7 @@ Cost and capacity & Token cost, GPU utilization, vector DB storage, BigQuery que
 \midrule
 Simple conversion latency & p95 under 3 seconds. & p95 exceeds target for 15 minutes. \\
 Complex medical workflow latency & p95 under 30 seconds for demo-sized datasets. & p95 exceeds target or queue delay grows. \\
-Validation coverage & 100\% of returned transformed outputs pass deterministic validation. & Any output bypasses validation. \\
+Validation coverage & 100\% of returned transformed outputs pass rule-based validation. & Any output bypasses validation. \\
 Evidence support & >= 95\% of clinical explanation claims are source-supported in reviewed samples. & Unsupported-claim rate exceeds threshold. \\
 PHI protection & No raw PHI in logs, prompts, or exported artifacts. & Any PHI detector hit in restricted sink. \\
 Human review safety & 100\% of medically consequential or low-confidence actions require review. & Any review gate bypass event. \\

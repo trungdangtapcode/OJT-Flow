@@ -17,10 +17,11 @@ import io
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import Field
+from starlette.concurrency import run_in_threadpool
 
 from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.application.governance_service import GovernanceService
@@ -36,7 +37,7 @@ from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 from ojtflow.core.contracts.enums import DataFormat
 from ojtflow.core.contracts.jobs import BackgroundJob
 from ojtflow.core.contracts.redaction import RedactionPreview
-from ojtflow.core.errors import UnsupportedUploadError, UploadTooLargeError
+from ojtflow.core.errors import NotFoundError, UnsupportedUploadError, UploadTooLargeError
 from ojtflow.core.ids import new_id
 from ojtflow.core.policy.abuse_cost_policy import (
     load_abuse_cost_policy,
@@ -98,6 +99,11 @@ class UploadParseJobResponse(ContractModel):
 
 class UploadParseJobEnvelope(ContractModel):
     data: UploadParseJobResponse
+    error: None = None
+
+
+class ExtractedDocumentEnvelope(ContractModel):
+    data: ExtractedDocumentResponse
     error: None = None
 
 
@@ -333,11 +339,15 @@ async def create_upload_parse_job(
 ) -> dict:
     """Persist an upload as an artifact and create a traceable file-parse job."""
 
-    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="data:profile",
+    )
     extractor = validate_extractor_choice(extractor)
     file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
     artifact = intake.register_upload(
         owner_user_id=authenticated.user.user_id,
+        organization_id=workspace.organization.organization_id,
         filename=filename,
         mime_type=file.content_type or "application/octet-stream",
         data=file_bytes,
@@ -384,7 +394,10 @@ async def create_batch_upload_parse_jobs(
 ) -> dict:
     """Persist multiple related uploads and create parse jobs under one batch ID."""
 
-    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="data:profile",
+    )
     extractor = validate_extractor_choice(extractor)
     if not files:
         raise UnsupportedUploadError("Batch upload must include at least one file.")
@@ -408,6 +421,7 @@ async def create_batch_upload_parse_jobs(
     for item, (file_bytes, filename, _source_format) in zip(files, uploaded_files, strict=True):
         artifact = intake.register_upload(
             owner_user_id=authenticated.user.user_id,
+            organization_id=workspace.organization.organization_id,
             filename=filename,
             mime_type=item.content_type or "application/octet-stream",
             data=file_bytes,
@@ -448,11 +462,15 @@ async def create_clipboard_image_parse_job(
 ) -> dict:
     """Persist a pasted clipboard image as an artifact and create a parse job."""
 
-    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="data:profile",
+    )
     extractor = validate_extractor_choice(request.extractor)
     image_bytes, filename, mime_type = _read_clipboard_image_bytes(request, settings)
     artifact = intake.register_upload(
         owner_user_id=authenticated.user.user_id,
+        organization_id=workspace.organization.organization_id,
         filename=filename,
         mime_type=mime_type,
         data=image_bytes,
@@ -614,6 +632,77 @@ async def list_uploaded_artifact_traces(
 
 
 @router.get(
+    "/parse/artifacts/{artifact_id}/extracted-document",
+    response_model=ExtractedDocumentEnvelope,
+)
+async def get_uploaded_artifact_extracted_document(
+    http_request: Request,
+    artifact_id: NonBlankStr,
+    job_id: str | None = Query(default=None),
+    trace_id: str | None = Query(default=None),
+    authenticated: AuthenticatedSession = Depends(require_authentication),
+    governance: GovernanceService = Depends(get_governance_service),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+) -> dict:
+    """Return extracted text for a completed parse trace of one uploaded artifact."""
+
+    governance.require_permission(user=authenticated.user, permission_scope="data:read")
+    artifact = intake.get_artifact(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact_id,
+    )
+    traces = intake.list_traces(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+    )
+    candidates = [
+        trace
+        for trace in traces
+        if (job_id is None or trace.job_id == job_id)
+        and (trace_id is None or trace.trace_id == trace_id)
+        and trace.text_storage_ref
+    ]
+    candidates.sort(key=lambda trace: trace.completed_at or trace.started_at, reverse=True)
+    if not candidates:
+        raise NotFoundError(
+            "Extracted document text is not available yet for this artifact.",
+            details={
+                "artifact_id": artifact.artifact_id,
+                "job_id": job_id,
+                "trace_id": trace_id,
+                "trace_count": len(traces),
+            },
+        )
+    extracted = intake.extracted_document_from_trace(
+        artifact=artifact,
+        trace=candidates[0],
+    )
+    if extracted is None:
+        raise NotFoundError(
+            "Extracted document text is not available yet for this artifact.",
+            details={
+                "artifact_id": artifact.artifact_id,
+                "job_id": job_id,
+                "trace_id": trace_id,
+            },
+        )
+    intake.record_artifact_access(
+        owner_user_id=authenticated.user.user_id,
+        artifact_id=artifact.artifact_id,
+        actor_user_id=authenticated.user.user_id,
+        action="view_metadata",
+        request_id=getattr(http_request.state, "request_id", None),
+        metadata={
+            "route": "get_uploaded_artifact_extracted_document",
+            "trace_id": candidates[0].trace_id,
+            "job_id": candidates[0].job_id,
+            "char_count": extracted.get("char_count"),
+        },
+    )
+    return ok(ExtractedDocumentResponse.model_validate(extracted))
+
+
+@router.get(
     "/parse/artifacts/{artifact_id}/access-events",
     response_model=ArtifactAccessEventsEnvelope,
 )
@@ -641,7 +730,7 @@ async def preview_redaction(
     governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    """Preview deterministic sensitive-data redaction before external provider use."""
+    """Preview rule-based sensitive-data redaction before external provider use."""
 
     governance.require_permission(user=authenticated.user, permission_scope="data:profile")
     enforce_inline_text_limit(request.data, settings)
@@ -685,6 +774,7 @@ async def upload_and_start_workflow(
     governance: GovernanceService = Depends(get_governance_service),
     service: WorkflowService = Depends(get_workflow_service),
     settings: Settings = Depends(get_api_settings),
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
 ) -> dict:
     """Upload a document file and start a full workflow.
 
@@ -693,11 +783,25 @@ async def upload_and_start_workflow(
 
     Returns the same `WorkflowState` envelope as `POST /api/v1/workflows`.
     """
-    governance.require_permission(user=authenticated.user, permission_scope="data:transform")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="data:transform",
+    )
     instruction = _required_form_text("instruction", instruction)
     extractor = validate_extractor_choice(extractor)
     schema_id = _optional_form_text(schema_id)
     file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
+    request_id = getattr(http_request.state, "request_id", None)
+    intake.register_upload(
+        owner_user_id=authenticated.user.user_id,
+        organization_id=workspace.organization.organization_id,
+        filename=filename,
+        mime_type=file.content_type or "application/octet-stream",
+        data=file_bytes,
+        source="upload",
+        request_id=request_id,
+        metadata={"route": "parse_upload_workflow"},
+    )
 
     workflow = _call_start_workflow_from_file(
         service,
@@ -709,7 +813,7 @@ async def upload_and_start_workflow(
         require_human_review=require_human_review,
         prefer_extractor=extractor,
         owner_user_id=authenticated.user.user_id,
-        request_id=getattr(http_request.state, "request_id", None),
+        request_id=request_id,
     )
     raise_for_failed_workflow(workflow)
     return ok(workflow)
@@ -717,6 +821,7 @@ async def upload_and_start_workflow(
 
 @router.post("/parse/extract")
 async def extract_only(
+    http_request: Request,
     file: UploadFile = File(..., description="Document file to extract text from."),
     extractor: str = Form(
         default=Extractor.AUTO,
@@ -728,7 +833,8 @@ async def extract_only(
     authenticated: AuthenticatedSession = Depends(require_authentication),
     governance: GovernanceService = Depends(get_governance_service),
     settings: Settings = Depends(get_api_settings),
-) -> dict:
+    intake: DocumentIntakeService = Depends(get_document_intake_service),
+):
     """Extract text from a document without running the full workflow.
 
     Useful for previewing what the extraction pipeline produces before
@@ -743,9 +849,48 @@ async def extract_only(
     """
     from ojtflow.data_tools.extract import extract_document
 
-    governance.require_permission(user=authenticated.user, permission_scope="data:profile")
+    workspace = governance.require_permission(
+        user=authenticated.user,
+        permission_scope="data:profile",
+    )
     extractor = validate_extractor_choice(extractor)
-    file_bytes, filename, _source_format = await _read_upload_bytes(file, settings)
+    file_bytes, filename, source_format = await _read_upload_bytes(file, settings)
+    request_id = getattr(http_request.state, "request_id", None)
+    artifact = await run_in_threadpool(
+        intake.register_upload,
+        owner_user_id=authenticated.user.user_id,
+        organization_id=workspace.organization.organization_id,
+        filename=filename,
+        mime_type=file.content_type or "application/octet-stream",
+        data=file_bytes,
+        source="api",
+        request_id=request_id,
+        metadata={"route": "parse_extract_preview"},
+    )
+
+    if _should_queue_extract_preview(settings=settings, source_format=source_format, extractor=extractor):
+        job = intake.create_parse_job(
+            owner_user_id=authenticated.user.user_id,
+            artifact_id=artifact.artifact_id,
+            prefer_extractor=extractor,
+            execute_now=False,
+            request_id=request_id,
+        )
+        return JSONResponse(
+            status_code=202,
+            content=ok(
+                _upload_parse_job_response(
+                    intake=intake,
+                    job=job,
+                    artifact=artifact,
+                ),
+                meta={
+                    "status": "queued",
+                    "reason": "OCR-heavy extraction runs in background workers.",
+                    "poll": f"/api/v1/jobs/{job.job_id}",
+                },
+            ),
+        )
 
     result = extract_document(file_bytes, filename, prefer=extractor)
     return ok(
@@ -758,8 +903,23 @@ async def extract_only(
             "word_count": len(result.text.split()),
             "text": result.text,
             "warnings": result.warnings,
+            "artifact_id": artifact.artifact_id,
+            "source": artifact.source,
         }
     )
+
+
+def _should_queue_extract_preview(
+    *,
+    settings: Settings,
+    source_format: str,
+    extractor: str,
+) -> bool:
+    if settings.queue_backend != "rabbitmq":
+        return False
+    if source_format in {"pdf", "image"}:
+        return True
+    return extractor in {Extractor.OPENAI_VISION, Extractor.TESSERACT, Extractor.MINERU}
 
 
 @router.get("/parse/extractors")

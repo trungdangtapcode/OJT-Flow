@@ -10,10 +10,10 @@ export function PageHeader({
   description: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
-        <h1 className="text-2xl font-black leading-tight tracking-normal sm:text-[1.75rem]">{title}</h1>
-        <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 pb-1">
+      <div className="flex min-w-0 items-baseline gap-3">
+        <h1 className="text-xl font-bold leading-tight tracking-tight text-foreground">{title}</h1>
+        <p className="hidden text-sm text-muted-foreground sm:block">{description}</p>
       </div>
       {action}
     </div>

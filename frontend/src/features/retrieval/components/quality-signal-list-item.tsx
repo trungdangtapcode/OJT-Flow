@@ -13,7 +13,7 @@ export function QualitySignalListItem({
 }) {
   const warning = signal.severity === "warning" || signal.severity === "destructive";
   return (
-    <div className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs">
+    <div className="grid gap-1.5 rounded-lg border border-border/60 bg-card p-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
           {warning ? (

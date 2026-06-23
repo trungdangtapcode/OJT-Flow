@@ -1,4 +1,4 @@
-"""Deterministic hash-chain helpers for generic audit records."""
+"""Rule-based hash-chain helpers for generic audit records."""
 
 from __future__ import annotations
 

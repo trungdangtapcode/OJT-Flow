@@ -11,7 +11,7 @@ export function SearchPlanRewritePreview({
   if (!variants.length) return null;
 
   return (
-    <details className="rounded-md border border-border bg-card">
+    <details className="rounded-lg border border-border/60 bg-card">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-2">
         <span className="text-xs font-black uppercase text-muted-foreground">
           Query rewrites

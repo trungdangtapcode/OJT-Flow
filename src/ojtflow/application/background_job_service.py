@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 from ojtflow.application.ports import BackgroundJobRepository
 from ojtflow.core.contracts.jobs import BackgroundJob, JobError, JobType
 
 
 JobHandler = Callable[[BackgroundJob], dict[str, Any]]
+
+
+class JobDispatcher(Protocol):
+    """Dispatch durable jobs to an external worker queue."""
+
+    queue_backed: bool
+
+    def enqueue(self, job: BackgroundJob) -> None: ...
 
 
 class SyncJobRunner:
@@ -26,9 +34,15 @@ class BackgroundJobService:
         self,
         repository: BackgroundJobRepository,
         runner: SyncJobRunner | None = None,
+        dispatcher: JobDispatcher | None = None,
     ) -> None:
         self.repository = repository
         self.runner = runner or SyncJobRunner()
+        self.dispatcher = dispatcher
+
+    @property
+    def queue_backed(self) -> bool:
+        return bool(self.dispatcher and self.dispatcher.queue_backed)
 
     def create_job(
         self,
@@ -75,6 +89,15 @@ class BackgroundJobService:
                 message="Job was cancelled by the user.",
             ),
         )
+
+    def enqueue(self, *, owner_user_id: str, job_id: str) -> BackgroundJob:
+        job = self.repository.get(owner_user_id=owner_user_id, job_id=job_id)
+        if job.status in {"succeeded", "failed", "cancelled", "running"}:
+            return job
+        if self.dispatcher is None:
+            return job
+        self.dispatcher.enqueue(job)
+        return self.repository.get(owner_user_id=owner_user_id, job_id=job_id)
 
     def run_sync(self, *, owner_user_id: str, job_id: str, handler: JobHandler) -> BackgroundJob:
         current = self.repository.get(owner_user_id=owner_user_id, job_id=job_id)

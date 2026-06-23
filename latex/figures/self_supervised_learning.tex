@@ -24,7 +24,7 @@
 \draw[arrow, sfdark] (encoder) |- (eval);
 \draw[arrow, sfdark] (eval) -| (deploy);
 
-\node[box, fill=sfred!7, draw=sfred, text width=3.4cm, below=0.75cm of train] (guard) {Guardrail: do not replace deterministic validation or source-grounded evidence};
+\node[box, fill=sfred!7, draw=sfred, text width=3.4cm, below=0.75cm of train] (guard) {Guardrail: do not replace rule-based validation or source-grounded evidence};
 \draw[arrow, sfred] (guard) -- (train);
 
 \end{tikzpicture}

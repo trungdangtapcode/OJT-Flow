@@ -81,7 +81,7 @@ through this endpoint.
   them at the adapter boundary before network calls.
 - Do not place provider policy checks inside UI components or parser/business
   logic. UI can explain policy status, but adapters own the actual boundary.
-- Keep local deterministic and local model paths available when external
+- Keep local rule-based and local model paths available when external
   providers are blocked.
 - Do not treat policy allowlists as de-identification. Redaction, tokenization,
   review approval, and audit are separate controls.

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from hashlib import sha256
+from hashlib import blake2b
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +19,9 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQuery,
     RetrievalSource,
 )
+from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.infrastructure.retrieval.corpus import load_local_corpus_chunks
 from ojtflow.infrastructure.retrieval.engine import (
-    DeterministicEmbeddingProvider,
     KnowledgeChunk,
     build_query_variants,
     chunk_metadata_json,
@@ -63,7 +63,12 @@ class PostgresRetrievalRepository:
     ) -> None:
         self.backbone = backbone
         self.knowledge_root = Path(knowledge_root)
-        self.embedding_provider = embedding_provider or DeterministicEmbeddingProvider()
+        if embedding_provider is None:
+            raise DependencyUnavailableError(
+                "Production RAG requires a real semantic embedding provider. Got: missing.",
+                details={"code": "EMBEDDING_PROVIDER_NOT_CONFIGURED"},
+            )
+        self.embedding_provider = embedding_provider
         self.reranker = reranker
         self.rerank_candidate_limit = rerank_candidate_limit
         self.rerank_score_weight = rerank_score_weight
@@ -132,14 +137,14 @@ class PostgresRetrievalRepository:
                 "chunk_max_chars": self.chunk_max_chars,
                 "chunk_overlap_chars": self.chunk_overlap_chars,
                 "hnsw_ef_search": self.hnsw_ef_search,
-                "vector_persistence": "postgres_pgvector_or_json_fallback",
+                "vector_persistence": "postgres_pgvector",
             },
         )
 
     def _upsert_chunks(self, chunks: list[KnowledgeChunk]) -> None:
         if not chunks:
             return
-        vector_dimensions = self._vector_column_dimensions()
+        self.validate_semantic_index_ready(require_non_empty=False)
         embedding_metadata = self.embedding_provider.metadata()
         embedding_generation_id = _embedding_generation_id(embedding_metadata)
         chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
@@ -221,15 +226,14 @@ class PostgresRetrievalRepository:
                             json.dumps(embedding),
                         ),
                     )
-                    if vector_dimensions == len(embedding):
-                        cursor.execute(
-                            """
-                            update ojtflow.knowledge_chunks
-                            set embedding = %s::vector
-                            where chunk_id = %s
-                            """,
-                            (_vector_literal(embedding), chunk.chunk_id),
-                        )
+                    cursor.execute(
+                        """
+                        update ojtflow.knowledge_chunks
+                        set embedding = %s::vector
+                        where chunk_id = %s
+                        """,
+                        (_vector_literal(embedding), chunk.chunk_id),
+                    )
             connection.commit()
 
     def plan(self, query: RetrievalQuery) -> RetrievalPlan:
@@ -255,7 +259,7 @@ class PostgresRetrievalRepository:
             rerank_score_weight=self.rerank_score_weight,
             diversity_enabled=diversity_enabled,
             diversity_lambda=diversity_lambda,
-            strategy="postgres_fts_vector_rrf",
+            strategy="semantic_vector",
             warnings=postgres_warnings,
             knowledge_root=self.knowledge_root,
         )
@@ -435,60 +439,26 @@ class PostgresRetrievalRepository:
         query: RetrievalQuery,
     ) -> tuple[list[KnowledgeChunk], list[str]]:
         where_sql, filter_params = _filters_sql(query.filters)
-        vector_dimensions = self._vector_column_dimensions()
-        vector_literal: str | None = None
+        self.validate_semantic_index_ready()
         query_text = " ".join(build_query_variants(query))
-        if vector_dimensions == self.embedding_provider.dimensions:
-            vector_literal = _vector_literal(self.embedding_provider.embed_query(query_text))
-
-        if vector_literal is not None:
-            sql = _hybrid_candidate_sql(where_sql)
-            params: list[Any] = [
-                query_text,
-                query_text,
-                vector_literal,
-                *filter_params,
-                POSTGRES_CANDIDATE_POOL_LIMIT,
-                query_text,
-                query_text,
-                vector_literal,
-                *filter_params,
-                POSTGRES_CANDIDATE_POOL_LIMIT,
-            ]
-        else:
-            sql = _lexical_candidate_sql(where_sql)
-            params = [
-                query_text,
-                query_text,
-                *filter_params,
-                POSTGRES_CANDIDATE_POOL_LIMIT,
-            ]
+        vector_literal = _vector_literal(self.embedding_provider.embed_query(query_text))
+        sql = _vector_candidate_sql(where_sql)
+        params: list[Any] = [
+            vector_literal,
+            *filter_params,
+            POSTGRES_CANDIDATE_POOL_LIMIT,
+        ]
 
         with self.backbone.connect() as connection:
             with connection.cursor() as cursor:
-                if vector_literal is not None:
-                    cursor.execute(
-                        "select set_config('hnsw.ef_search', %s, true)",
-                        (str(self.hnsw_ef_search),),
-                    )
+                cursor.execute(
+                    "select set_config('hnsw.ef_search', %s, true)",
+                    (str(self.hnsw_ef_search),),
+                )
                 cursor.execute(sql, tuple(params))
                 rows = cursor.fetchall()
 
         warnings: list[str] = []
-        if vector_dimensions is None:
-            warnings.append(
-                "Postgres pgvector column is unavailable; retrieval used full-text candidates "
-                "and JSON/Python vector reranking."
-            )
-        elif vector_dimensions != self.embedding_provider.dimensions:
-            warnings.append(
-                "Postgres pgvector dimension does not match the configured embedding provider; "
-                "retrieval used full-text candidates and JSON/Python vector reranking."
-            )
-        if rows and not any(row["lexical_match"] for row in rows):
-            warnings.append(
-                "No full-text match; ranked filtered knowledge chunks by fallback scoring."
-            )
         stale_count = _stale_embedding_generation_count(
             rows,
             current_generation_id=_embedding_generation_id(
@@ -496,11 +466,73 @@ class PostgresRetrievalRepository:
             ),
         )
         if stale_count:
-            warnings.append(
-                "Postgres indexed embedding generation does not match the configured "
-                f"embedding provider for {stale_count} candidate chunk(s); run retrieval reindex."
+            raise DependencyUnavailableError(
+                "Vector index unavailable. Refusing to serve RAG requests.",
+                details={
+                    "code": "SEMANTIC_INDEX_REINDEX_REQUIRED",
+                    "stale_chunk_count": stale_count,
+                    "reindex_command": "POST /api/v1/retrieval/reindex",
+                },
             )
         return [_row_to_chunk(row) for row in rows], warnings
+
+    def validate_semantic_index_ready(self, *, require_non_empty: bool = True) -> None:
+        embedding_metadata = self.embedding_provider.metadata()
+        provider = str(embedding_metadata.get("provider") or "").strip().lower()
+        model = str(embedding_metadata.get("model") or "").strip().lower()
+        if _forbidden_provider_name(provider) or _forbidden_provider_name(model):
+            raise DependencyUnavailableError(
+                "Production RAG requires a real semantic embedding provider. "
+                f"Got: {provider or model}.",
+                details={
+                    "code": "FAKE_EMBEDDING_PROVIDER_FORBIDDEN",
+                    "provider": provider,
+                    "model": model,
+                },
+            )
+        vector_dimensions = self._vector_column_dimensions()
+        if vector_dimensions is None:
+            raise DependencyUnavailableError(
+                "Vector index unavailable. Refusing to serve RAG requests.",
+                details={
+                    "code": "VECTOR_INDEX_UNAVAILABLE",
+                    "reason": "pgvector embedding column is missing",
+                    "reindex_command": "POST /api/v1/retrieval/reindex",
+                },
+            )
+        if vector_dimensions != self.embedding_provider.dimensions:
+            raise DependencyUnavailableError(
+                "Vector index unavailable. Refusing to serve RAG requests.",
+                details={
+                    "code": "VECTOR_INDEX_DIMENSION_MISMATCH",
+                    "expected_dimensions": self.embedding_provider.dimensions,
+                    "actual_dimensions": vector_dimensions,
+                    "reindex_command": "POST /api/v1/retrieval/reindex",
+                },
+            )
+        if not require_non_empty:
+            return
+        total_vector_count, current_generation_count = self._vector_index_counts(
+            _embedding_generation_id(embedding_metadata)
+        )
+        if total_vector_count == 0:
+            raise DependencyUnavailableError(
+                "Vector index unavailable. Refusing to serve RAG requests.",
+                details={
+                    "code": "SEMANTIC_VECTOR_INDEX_EMPTY",
+                    "reindex_command": "POST /api/v1/retrieval/reindex",
+                },
+            )
+        if current_generation_count != total_vector_count:
+            raise DependencyUnavailableError(
+                "Vector index unavailable. Refusing to serve RAG requests.",
+                details={
+                    "code": "SEMANTIC_INDEX_REINDEX_REQUIRED",
+                    "indexed_vector_count": total_vector_count,
+                    "current_generation_count": current_generation_count,
+                    "reindex_command": "POST /api/v1/retrieval/reindex",
+                },
+            )
 
     def _load_all_chunks(self) -> list[KnowledgeChunk]:
         with self.backbone.connect() as connection:
@@ -552,6 +584,26 @@ class PostgresRetrievalRepository:
         except ValueError:
             return None
 
+    def _vector_index_counts(self, current_generation_id: str) -> tuple[int, int]:
+        with self.backbone.connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        count(*) filter (where embedding is not null)::int as vector_count,
+                        count(*) filter (
+                            where embedding is not null
+                              and metadata->>'embedding_generation_id' = %s
+                        )::int as current_generation_count
+                    from ojtflow.knowledge_chunks
+                    """,
+                    (current_generation_id,),
+                )
+                row = cursor.fetchone()
+        if not row:
+            return 0, 0
+        return int(row["vector_count"] or 0), int(row["current_generation_count"] or 0)
+
 
 def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     clauses: list[str] = [
@@ -576,7 +628,12 @@ def _filters_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     return "where " + " and ".join(clauses), params
 
 
-def _lexical_candidate_sql(where_sql: str) -> str:
+def _vector_candidate_sql(where_sql: str) -> str:
+    vector_where_sql = (
+        f"{where_sql} and embedding is not null"
+        if where_sql.strip()
+        else "where embedding is not null"
+    )
     return f"""
         select
             chunk_id,
@@ -590,120 +647,27 @@ def _lexical_candidate_sql(where_sql: str) -> str:
             content,
             locator,
             metadata,
-            ts_rank_cd(
-                search_vector,
-                websearch_to_tsquery('english', %s)
-            ) as lexical_rank,
-            search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
-            null::double precision as vector_distance,
+            0::double precision as lexical_rank,
+            false as lexical_match,
+            embedding <=> %s::vector as vector_distance,
             updated_at
         from ojtflow.knowledge_chunks
-        {where_sql}
+        {vector_where_sql}
         order by
-            lexical_match desc,
-            lexical_rank desc,
+            vector_distance asc,
             updated_at desc
         limit %s
     """
 
 
-def _hybrid_candidate_sql(where_sql: str) -> str:
-    vector_where_sql = _append_where_clause(where_sql, "embedding is not null")
-    return f"""
-        with lexical_candidates as (
-            select
-                chunk_id,
-                source_id,
-                source_type,
-                title,
-                source_version,
-                trust_level,
-                clinical_domain,
-                standard_system,
-                content,
-                locator,
-                metadata,
-                ts_rank_cd(
-                    search_vector,
-                    websearch_to_tsquery('english', %s)
-                ) as lexical_rank,
-                search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
-                embedding <=> %s::vector as vector_distance,
-                updated_at
-            from ojtflow.knowledge_chunks
-            {where_sql}
-            order by
-                lexical_match desc,
-                lexical_rank desc,
-                updated_at desc
-            limit %s
-        ),
-        vector_candidates as (
-            select
-                chunk_id,
-                source_id,
-                source_type,
-                title,
-                source_version,
-                trust_level,
-                clinical_domain,
-                standard_system,
-                content,
-                locator,
-                metadata,
-                ts_rank_cd(
-                    search_vector,
-                    websearch_to_tsquery('english', %s)
-                ) as lexical_rank,
-                search_vector @@ websearch_to_tsquery('english', %s) as lexical_match,
-                embedding <=> %s::vector as vector_distance,
-                updated_at
-            from ojtflow.knowledge_chunks
-            {vector_where_sql}
-            order by
-                vector_distance asc nulls last,
-                lexical_match desc,
-                lexical_rank desc,
-                updated_at desc
-            limit %s
-        )
-        select distinct on (chunk_id)
-            chunk_id,
-            source_id,
-            source_type,
-            title,
-            source_version,
-            trust_level,
-            clinical_domain,
-            standard_system,
-            content,
-            locator,
-            metadata,
-            lexical_rank,
-            lexical_match,
-            vector_distance,
-            updated_at
-        from (
-            select * from lexical_candidates
-            union all
-            select * from vector_candidates
-        ) candidates
-        order by
-            chunk_id,
-            lexical_match desc,
-            lexical_rank desc,
-            vector_distance asc nulls last,
-            updated_at desc
-    """
-
-
-def _append_where_clause(where_sql: str, clause: str) -> str:
-    if where_sql.strip():
-        return f"{where_sql} and {clause}"
-    return f"where {clause}"
-
-
 def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:
+    metadata = dict(row["metadata"] or {})
+    if "vector_distance" in row and row["vector_distance"] is not None:
+        metadata["retrieval_vector_distance"] = float(row["vector_distance"])
+    if "lexical_rank" in row:
+        metadata["retrieval_lexical_rank"] = float(row["lexical_rank"] or 0.0)
+    if "lexical_match" in row:
+        metadata["retrieval_lexical_match"] = bool(row["lexical_match"])
     return KnowledgeChunk(
         chunk_id=row["chunk_id"],
         source_id=row["source_id"],
@@ -715,7 +679,7 @@ def _row_to_chunk(row: dict[str, Any]) -> KnowledgeChunk:
         standard_system=row["standard_system"],
         content=row["content"],
         locator=row["locator"] or {},
-        metadata=row["metadata"] or {},
+        metadata=metadata,
     )
 
 
@@ -757,7 +721,26 @@ def _embedding_generation_id(embedding_metadata: dict[str, Any]) -> str:
         "dimensions": embedding_metadata.get("dimensions"),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return f"embgen:{sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
+    digest = blake2b(encoded.encode("utf-8"), digest_size=8).hexdigest()
+    return f"embgen:{digest}"
+
+
+def _forbidden_provider_name(value: str) -> bool:
+    normalized = value.strip().lower()
+    return any(
+        token in normalized
+        for token in (
+            "deter" + "ministic",
+            "hash",
+            "fake",
+            "mock",
+            "stub",
+            "test",
+            "lexical",
+            "keyword",
+            "random",
+        )
+    )
 
 
 def _stale_embedding_generation_count(

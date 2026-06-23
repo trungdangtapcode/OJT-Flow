@@ -166,7 +166,7 @@ def build_extraction_quality(
     workbook: WorkbookParsingProfile | None,
     pdf: PdfContentProfile | None,
 ) -> ExtractionQualityReport:
-    """Score extraction quality from deterministic signals."""
+    """Score extraction quality from rule-based signals."""
 
     score = 1.0
     factors: list[str] = []

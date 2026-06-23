@@ -28,7 +28,7 @@ export function SearchPlanTaskPreview({
 }) {
   if (!tasks.length) {
     return (
-      <div className="rounded-md border border-border bg-card p-3">
+      <div className="rounded-lg border border-border/60 bg-card p-3">
         <div className="text-xs font-black uppercase text-muted-foreground">
           Execution tasks
         </div>
@@ -42,7 +42,7 @@ export function SearchPlanTaskPreview({
   const externalTasks = tasks.filter((task) => task.target === "external_medical_index");
 
   return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid min-w-0 gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
           Execution tasks

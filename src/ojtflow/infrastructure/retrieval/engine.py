@@ -1,4 +1,4 @@
-"""Deterministic retrieval utilities shared by retrieval adapters."""
+"""Retrieval utilities shared by retrieval adapters."""
 
 from __future__ import annotations
 
@@ -6,14 +6,16 @@ import json
 import math
 import os
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import lru_cache
-from hashlib import sha256
+from hashlib import blake2b
 from pathlib import Path
 from typing import Any
 
+from ojtflow.core.errors import DependencyUnavailableError
 from ojtflow.core.contracts.enums import EvidenceSourceType, TrustLevel
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.retrieval import (
@@ -62,8 +64,77 @@ from ojtflow.infrastructure.retrieval.source_governance import (
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./%-]*", re.IGNORECASE)
 SNIPPET_SEGMENT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n{2,}|\r\n{2,}")
-DEFAULT_EMBEDDING_DIMENSIONS = 64
 RRF_K = 60
+SEMANTIC_VECTOR_POLICY_BOOST_WEIGHT = 0.2
+SUPPORT_MATCH_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "be",
+        "can",
+        "cho",
+        "cua",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "i",
+        "in",
+        "is",
+        "needed",
+        "of",
+        "on",
+        "or",
+        "should",
+        "the",
+        "to",
+        "toi",
+        "what",
+        "where",
+        "which",
+        "with",
+    }
+)
+HEALTHCARE_RETRIEVAL_INTENT_TOKENS = frozenset(
+    {
+        "a1c",
+        "allergy",
+        "benh",
+        "blood",
+        "clinical",
+        "code",
+        "condition",
+        "diagnosis",
+        "don",
+        "duong",
+        "effective",
+        "fhir",
+        "glucose",
+        "hba1c",
+        "hl7",
+        "huyet",
+        "lab",
+        "laboratory",
+        "loinc",
+        "medication",
+        "nghiem",
+        "observation",
+        "patient",
+        "phi",
+        "result",
+        "rxnorm",
+        "snomed",
+        "test",
+        "ucum",
+        "unit",
+        "value",
+        "vi",
+        "xet",
+    }
+)
 SNIPPET_MAX_CHARS = 280
 DEFAULT_RANKING_BOOST_RULE_REGISTRY = (
     Path(__file__).resolve().parents[4] / "knowledge" / "retrieval" / "ranking_boost_rules.json"
@@ -130,7 +201,7 @@ class RankingBoostCondition:
 
 @dataclass(frozen=True)
 class RankingBoostRule:
-    """One auditable deterministic ranking boost rule."""
+    """One auditable ranking boost rule."""
 
     rule_id: str
     weight: float
@@ -190,11 +261,11 @@ class CorrectiveActionRule:
     description: str | None = None
     title_template: str | None = None
     title_prefix: str | None = None
-    fallback_title: str | None = None
+    empty_match_title: str | None = None
     title_from_signal: str | None = None
     description_from_signal: str | None = None
-    fallback_action_type: str | None = None
-    fallback_description: str | None = None
+    empty_match_action_type: str | None = None
+    empty_match_description: str | None = None
     metadata_list_path: str | None = None
     suggested_filter_path: str | None = None
     suggested_filter_from_metadata: dict[str, str] = field(default_factory=dict)
@@ -293,85 +364,22 @@ class RetrievalQualityPolicy:
         }
 
 
-class DeterministicEmbeddingProvider:
-    """Stable local embedding provider for tests, demos, and lexical fallback.
-
-    This is not a semantic model. It gives the retrieval pipeline a deterministic
-    vector signal so fusion, tracing, and provider boundaries can be tested
-    without external credentials.
-    """
-
-    def __init__(self, dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS) -> None:
-        self.dimensions = dimensions
-        self.provider_name = "deterministic"
-        self.model = "deterministic-hash-v0"
-
-    def embed(self, text: str) -> list[float]:
-        vector = [0.0] * self.dimensions
-        for token in tokenize(text):
-            digest = sha256(token.encode("utf-8")).digest()
-            index = int.from_bytes(digest[:2], "big") % self.dimensions
-            weight = 1.0 + (digest[2] / 255.0)
-            vector[index] += weight
-        magnitude = math.sqrt(sum(value * value for value in vector))
-        if magnitude == 0:
-            return vector
-        return [value / magnitude for value in vector]
-
-    def embed_query(self, text: str) -> list[float]:
-        return self.embed(text)
-
-    def embed_document(self, text: str) -> list[float]:
-        return self.embed(text)
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self.embed_document(text) for text in texts]
-
-    def metadata(self) -> dict[str, Any]:
-        return {
-            "provider": self.provider_name,
-            "model": self.model,
-            "dimensions": self.dimensions,
-            "normalized": True,
-        }
-
-
-class NullEmbeddingProvider:
-    """Embedding provider used when vector retrieval is disabled."""
-
-    dimensions = DEFAULT_EMBEDDING_DIMENSIONS
-    provider_name = "none"
-    model = "none"
-
-    def embed(self, text: str) -> list[float]:
-        return [0.0] * self.dimensions
-
-    def embed_query(self, text: str) -> list[float]:
-        return self.embed(text)
-
-    def embed_document(self, text: str) -> list[float]:
-        return self.embed(text)
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self.embed_document(text) for text in texts]
-
-    def metadata(self) -> dict[str, Any]:
-        return {
-            "provider": self.provider_name,
-            "model": self.model,
-            "dimensions": self.dimensions,
-            "normalized": False,
-        }
-
-
 def tokenize(text: str) -> list[str]:
     """Return normalized searchable tokens."""
 
     return [match.group(0).lower() for match in TOKEN_PATTERN.finditer(text)]
 
 
+def _support_matched_terms(query_tokens: set[str], chunk_tokens: set[str]) -> set[str]:
+    return {
+        token
+        for token in query_tokens.intersection(chunk_tokens)
+        if token not in SUPPORT_MATCH_STOPWORDS and len(token) > 1
+    }
+
+
 def build_query_variants(query: RetrievalQuery) -> list[str]:
-    """Create deterministic query variants inspired by practical RAG routing."""
+    """Create auditable query variants inspired by practical RAG routing."""
 
     return analyze_query(query).query_variants
 
@@ -404,13 +412,13 @@ def rank_chunks(
     rerank_score_weight: float = 0.08,
     diversity_enabled: bool = True,
     diversity_lambda: float = 0.72,
-    strategy: str = "deterministic_hybrid",
+    strategy: str = "semantic_vector",
     warnings: list[str] | None = None,
     knowledge_root: Path | str | None = None,
 ) -> RetrievalPackage:
-    """Rank chunks using lexical overlap, vectors, optional reranking, and traceable boosts."""
+    """Rank chunks using semantic vectors, optional reranking, and traceable boosts."""
 
-    provider = embedding_provider or DeterministicEmbeddingProvider()
+    provider = _require_real_embedding_provider(embedding_provider)
     reranker_metadata = _reranker_metadata(reranker)
     query_analysis = analyze_query(query)
     route_budget = query_analysis.query_route.budget if query_analysis.query_route else None
@@ -439,20 +447,33 @@ def rank_chunks(
         )
     query_text = " ".join(variants)
     query_tokens = set(tokenize(query_text))
-    query_vector = provider.embed_query(query_text)
-    chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
-    document_vectors = provider.embed_documents(chunk_texts)
+    use_precomputed_vector_distances = bool(chunks) and all(
+        isinstance(chunk.metadata.get("retrieval_vector_distance"), (int, float))
+        for chunk in chunks
+    )
+    if use_precomputed_vector_distances:
+        query_vector = []
+        document_vectors = []
+    else:
+        query_vector = provider.embed_query(query_text)
+        chunk_texts = [f"{chunk.title}\n{chunk.content}" for chunk in chunks]
+        document_vectors = provider.embed_documents(chunk_texts)
 
     lexical_ranked: list[tuple[KnowledgeChunk, float, list[str]]] = []
     vector_ranked: list[tuple[KnowledgeChunk, float]] = []
-    for chunk, document_vector in zip(chunks, document_vectors, strict=True):
+    for index, chunk in enumerate(chunks):
         chunk_tokens = set(tokenize(f"{chunk.title} {chunk.content} {chunk.source_id}"))
-        matched = sorted(query_tokens.intersection(chunk_tokens))
+        matched = sorted(_support_matched_terms(query_tokens, chunk_tokens))
         lexical_score = _lexical_score(query_tokens, chunk_tokens, query.query, chunk)
-        vector_score = cosine_similarity(
-            query_vector,
-            document_vector,
-        )
+        if use_precomputed_vector_distances:
+            vector_score = _vector_score_from_distance(
+                float(chunk.metadata["retrieval_vector_distance"])
+            )
+        else:
+            vector_score = cosine_similarity(
+                query_vector,
+                document_vectors[index],
+            )
         lexical_ranked.append((chunk, lexical_score, matched))
         vector_ranked.append((chunk, vector_score))
 
@@ -472,15 +493,22 @@ def rank_chunks(
 
     ranked_hits: list[tuple[KnowledgeChunk, RetrievalHit]] = []
     for chunk in chunks:
-        lexical_rrf = 1.0 / (RRF_K + lexical_positions[chunk.chunk_id])
+        lexical_rrf = 0.0 if strategy == "semantic_vector" else 1.0 / (
+            RRF_K + lexical_positions[chunk.chunk_id]
+        )
         vector_rrf = 1.0 / (RRF_K + vector_positions[chunk.chunk_id])
-        rerank, applied_boost_rules = _ranking_boost(
+        raw_policy_boost, applied_boost_rules = _ranking_boost(
             chunk,
             query,
             matched_terms[chunk.chunk_id],
             query_analysis=query_analysis,
         )
-        score = lexical_rrf + vector_rrf + rerank
+        if strategy == "semantic_vector":
+            rerank = raw_policy_boost * SEMANTIC_VECTOR_POLICY_BOOST_WEIGHT
+            score = vector_scores[chunk.chunk_id] + vector_rrf + rerank
+        else:
+            rerank = raw_policy_boost
+            score = lexical_rrf + vector_rrf + rerank
         evidence = evidence_from_chunk(chunk, confidence=min(0.99, 0.55 + score * 8))
         score_components = _score_components(
             lexical_rrf=lexical_rrf,
@@ -555,6 +583,25 @@ def rank_chunks(
         enabled=effective_budget["source_diversity_enabled"],
         lambda_mult=effective_budget["diversity_lambda"],
     )
+    if strategy == "semantic_vector":
+        selected_ranked_hits, unsupported_semantic_hit_count = (
+            _filter_unsupported_semantic_hits(
+                selected_ranked_hits,
+                query=query,
+                query_analysis=query_analysis,
+            )
+        )
+        if unsupported_semantic_hit_count:
+            trace_warnings.append(
+                "Filtered unsupported semantic vector neighbor(s) with no matched "
+                "terms, concepts, or query aspects."
+            )
+            if "unsupported_semantic_vector_neighbors_filtered" not in safety_flags:
+                safety_flags.append("unsupported_semantic_vector_neighbors_filtered")
+            diversity_metadata = _diversity_metadata_for_filtered_selection(
+                diversity_metadata,
+                selected_ranked_hits,
+            )
     diversity_summary = diversity_summary_from_metadata(diversity_metadata)
     if (
         route_budget is not None
@@ -898,7 +945,7 @@ def hit_match_explanation(
     hit: RetrievalHit,
     evidence_buckets: list[RetrievalEvidenceBucket],
 ) -> dict[str, Any]:
-    """Build a deterministic explanation for why one hit was selected."""
+    """Build an auditable explanation for why one hit was selected."""
 
     concept_matches = _locator_concept_matches(hit.source_locator)
     aspect_matches = _locator_query_aspect_matches(hit.source_locator)
@@ -1022,9 +1069,11 @@ def _hit_support_status(
     concept_matches: list[dict[str, Any]],
     aspect_matches: list[dict[str, Any]],
 ) -> str:
+    if not matched_terms and not concept_matches and not aspect_matches:
+        return "weak"
     if matched_terms and provenance_fields and (concept_matches or aspect_matches):
         return "strong"
-    if matched_terms or provenance_fields:
+    if matched_terms or concept_matches or aspect_matches:
         return "partial"
     return "weak"
 
@@ -1153,7 +1202,7 @@ def quality_signals_from_results(
     query_analysis: RetrievalQueryAnalysis | None = None,
     source_governance: dict[str, SourceGovernanceDecision] | None = None,
 ) -> list[RetrievalQualitySignal]:
-    """Build deterministic package-level retrieval quality signals."""
+    """Build package-level retrieval quality signals."""
 
     active_policy = policy or active_quality_policy()
     evidence_ids = [hit.evidence.evidence_id for hit in hits]
@@ -2230,8 +2279,8 @@ def _actions_from_metadata_items(
                 signal=signal,
                 rule=rule,
                 action_type=rule.action_type
-                if suggested_filter or not rule.fallback_action_type
-                else rule.fallback_action_type,
+                if suggested_filter or not rule.empty_match_action_type
+                else rule.empty_match_action_type,
                 priority=rule.priority,
                 title=_rule_title(signal, rule, item, suggested_filter=suggested_filter),
                 description=_rule_description(signal, rule, item),
@@ -2239,16 +2288,16 @@ def _actions_from_metadata_items(
                 metadata=metadata,
             )
         )
-    if actions or not rule.fallback_action_type:
+    if actions or not rule.empty_match_action_type:
         return actions
     return [
         _recommended_action(
             signal=signal,
             rule=rule,
-            action_type=rule.fallback_action_type,
+            action_type=rule.empty_match_action_type,
             priority=rule.priority,
-            title=rule.fallback_title or _rule_title(signal, rule, {}),
-            description=rule.fallback_description or _rule_description(signal, rule, {}),
+            title=rule.empty_match_title or _rule_title(signal, rule, {}),
+            description=rule.empty_match_description or _rule_description(signal, rule, {}),
         )
     ]
 
@@ -2408,7 +2457,8 @@ def _stable_action_id(
         sort_keys=True,
         separators=(",", ":"),
     )
-    return f"retrieval_action:{sha256(payload.encode('utf-8')).hexdigest()[:12]}"
+    digest = blake2b(payload.encode("utf-8"), digest_size=6).hexdigest()
+    return f"retrieval_action:{digest}"
 
 
 def _metadata_list(value: Any) -> list[dict[str, Any]]:
@@ -2425,9 +2475,9 @@ def _metadata_string_map(value: Any) -> dict[str, str]:
     }
 
 
-def _metadata_text(value: Any, fallback: str) -> str:
+def _metadata_text(value: Any, default: str) -> str:
     text = str(value).strip() if value is not None else ""
-    return text or fallback
+    return text or default
 
 
 def _filter_label(suggested_filter: dict[str, str]) -> str:
@@ -2901,10 +2951,10 @@ def _corrective_action_rule(value: Any, *, path: Path) -> CorrectiveActionRule:
     if not isinstance(value, dict):
         raise ValueError(f"Invalid corrective action registry at {path}: rule must be an object")
     action_type = _required_quality_policy_text(value.get("action_type"), path=path)
-    fallback_action_type = _optional_quality_policy_text(value.get("fallback_action_type"))
+    empty_match_action_type = _optional_quality_policy_text(value.get("empty_match_action_type"))
     for field_name, candidate in {
         "action_type": action_type,
-        "fallback_action_type": fallback_action_type,
+        "empty_match_action_type": empty_match_action_type,
     }.items():
         if candidate and candidate not in _allowed_recommended_action_types():
             raise ValueError(
@@ -2932,13 +2982,13 @@ def _corrective_action_rule(value: Any, *, path: Path) -> CorrectiveActionRule:
         description=_optional_quality_policy_text(value.get("description")),
         title_template=_optional_quality_policy_text(value.get("title_template")),
         title_prefix=_optional_quality_policy_text(value.get("title_prefix")),
-        fallback_title=_optional_quality_policy_text(value.get("fallback_title")),
+        empty_match_title=_optional_quality_policy_text(value.get("empty_match_title")),
         title_from_signal=_optional_quality_policy_text(value.get("title_from_signal")),
         description_from_signal=_optional_quality_policy_text(
             value.get("description_from_signal")
         ),
-        fallback_action_type=fallback_action_type,
-        fallback_description=_optional_quality_policy_text(value.get("fallback_description")),
+        empty_match_action_type=empty_match_action_type,
+        empty_match_description=_optional_quality_policy_text(value.get("empty_match_description")),
         metadata_list_path=_optional_quality_policy_text(value.get("metadata_list_path")),
         suggested_filter_path=_optional_quality_policy_text(value.get("suggested_filter_path")),
         suggested_filter_from_metadata={
@@ -3019,7 +3069,7 @@ def _default_corrective_action_rules() -> list[CorrectiveActionRule]:
             "signal_code": "missing_required_evidence_buckets",
             "priority": 20,
             "action_type": "apply_filter",
-            "fallback_action_type": "add_source",
+            "empty_match_action_type": "add_source",
             "title_template": "Recover {label} evidence",
             "description": (
                 "Run a targeted remediation search or add an approved source for this "
@@ -3034,9 +3084,9 @@ def _default_corrective_action_rules() -> list[CorrectiveActionRule]:
             "signal_code": "missing_standard_coverage",
             "priority": 30,
             "action_type": "apply_filter",
-            "fallback_action_type": "broaden_query",
+            "empty_match_action_type": "broaden_query",
             "title_prefix": "Recover standard coverage",
-            "fallback_title": "Broaden standard search",
+            "empty_match_title": "Broaden standard search",
             "description_from_signal": "suggested_action",
             "metadata_list_path": "suggested_filters",
         },
@@ -3045,14 +3095,14 @@ def _default_corrective_action_rules() -> list[CorrectiveActionRule]:
             "signal_code": "missing_concept_grounding",
             "priority": 35,
             "action_type": "apply_filter",
-            "fallback_action_type": "add_source",
+            "empty_match_action_type": "add_source",
             "title_template": "Recover concept grounding: {display_name}",
-            "fallback_title": "Add terminology-backed evidence",
+            "empty_match_title": "Add terminology-backed evidence",
             "description": (
                 "Run a terminology-focused search so selected evidence grounds this "
                 "detected medical concept before downstream use."
             ),
-            "fallback_description": (
+            "empty_match_description": (
                 "Add or reindex approved terminology sources that ground the detected "
                 "medical concepts."
             ),
@@ -3065,9 +3115,9 @@ def _default_corrective_action_rules() -> list[CorrectiveActionRule]:
             "signal_code": "missing_query_aspect_coverage",
             "priority": 38,
             "action_type": "apply_filter",
-            "fallback_action_type": "broaden_query",
+            "empty_match_action_type": "broaden_query",
             "title_prefix": "Recover aspect coverage",
-            "fallback_title": "Broaden aspect search",
+            "empty_match_title": "Broaden aspect search",
             "description_from_signal": "suggested_action",
             "metadata_list_path": "suggested_filters",
         },
@@ -3591,7 +3641,7 @@ def facets_from_chunks(chunks: list[KnowledgeChunk]) -> RetrievalFacets:
 
 
 def retrieval_safety_flags(query: RetrievalQuery) -> list[str]:
-    """Return deterministic safety flags for user-controlled retrieval context."""
+    """Return safety flags for user-controlled retrieval context."""
 
     inspected_text = " ".join(
         value
@@ -3636,6 +3686,7 @@ def evidence_from_chunk(chunk: KnowledgeChunk, *, confidence: float) -> Evidence
         source_version=chunk.source_version,
         claim=chunk.content,
         locator=locator,
+        source_locator=locator,
         confidence=round(confidence, 4),
         trust_level=chunk.trust_level,
     )
@@ -4272,6 +4323,66 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return sum(a * b for a, b in zip(left, right, strict=True))
 
 
+def _vector_score_from_distance(distance: float) -> float:
+    if distance < 0:
+        return 0.0
+    return 1.0 / (1.0 + distance)
+
+
+def _require_real_embedding_provider(provider: Any | None) -> Any:
+    if provider is None:
+        raise DependencyUnavailableError(
+            "Production RAG requires a real semantic embedding provider. Got: missing.",
+            details={"code": "EMBEDDING_PROVIDER_NOT_CONFIGURED"},
+        )
+    provider_name = str(getattr(provider, "provider_name", "") or "").strip().lower()
+    model = str(getattr(provider, "model", "") or "").strip().lower()
+    if not provider_name or not model:
+        raise DependencyUnavailableError(
+            "Production RAG requires a real semantic embedding provider. Got: missing.",
+            details={"code": "EMBEDDING_PROVIDER_NOT_CONFIGURED"},
+        )
+    if _is_fake_embedding_identifier(provider_name) or _is_fake_embedding_identifier(model):
+        raise DependencyUnavailableError(
+            "Production RAG requires a real semantic embedding provider. "
+            f"Got: {provider_name or model}.",
+            details={
+                "code": "FAKE_EMBEDDING_PROVIDER_FORBIDDEN",
+                "provider": provider_name,
+                "model": model,
+            },
+        )
+    for method_name in ("embed_query", "embed_documents", "metadata"):
+        if not callable(getattr(provider, method_name, None)):
+            raise DependencyUnavailableError(
+                "Production RAG requires a complete semantic embedding provider.",
+                details={
+                    "code": "EMBEDDING_PROVIDER_INCOMPLETE",
+                    "provider": provider_name,
+                    "model": model,
+                },
+            )
+    return provider
+
+
+def _is_fake_embedding_identifier(value: str) -> bool:
+    normalized = value.strip().lower()
+    return any(
+        token in normalized
+        for token in (
+            "deter" + "ministic",
+            "hash",
+            "fake",
+            "mock",
+            "stub",
+            "test",
+            "lexical",
+            "keyword",
+            "random",
+        )
+    )
+
+
 def _lexical_score(
     query_tokens: set[str],
     chunk_tokens: set[str],
@@ -4578,7 +4689,7 @@ def _score_components(
                 component="policy_boost",
                 label="Policy boost",
                 value=round(policy_boost, 6),
-                description="Sum of applied deterministic ranking boost policy weights.",
+                description="Sum of applied ranking boost policy weights.",
                 metadata={
                     "rule_ids": [rule.rule_id for rule in applied_boost_rules],
                 },
@@ -5347,6 +5458,93 @@ def _select_diverse_hits(
         lambda_mult=clamped_lambda,
         selection_details=selection_details,
     )
+
+
+def _filter_unsupported_semantic_hits(
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]],
+    *,
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+) -> tuple[list[tuple[KnowledgeChunk, RetrievalHit]], int]:
+    if not _has_healthcare_retrieval_intent(query, query_analysis):
+        return [], len(selected)
+    supported: list[tuple[KnowledgeChunk, RetrievalHit]] = []
+    unsupported_count = 0
+    for candidate in selected:
+        _, hit = candidate
+        if _semantic_hit_has_query_support(hit):
+            supported.append(candidate)
+        else:
+            unsupported_count += 1
+    return supported, unsupported_count
+
+
+def _has_healthcare_retrieval_intent(
+    query: RetrievalQuery,
+    query_analysis: RetrievalQueryAnalysis,
+) -> bool:
+    if query.schema_id or query.resource_type or query.fields:
+        return True
+    filters = query.filters or {}
+    if any(
+        filters.get(key)
+        for key in ("clinical_domain", "standard_system", "source_id")
+    ):
+        return True
+    if (
+        query_analysis.detected_concepts
+        or query_analysis.standards
+        or query_analysis.query_aspects
+    ):
+        return True
+    normalized_query = _ascii_fold(query.query)
+    return bool(
+        set(tokenize(normalized_query)).intersection(HEALTHCARE_RETRIEVAL_INTENT_TOKENS)
+    )
+
+
+def _ascii_fold(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value)
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
+def _semantic_hit_has_query_support(hit: RetrievalHit) -> bool:
+    if hit.matched_terms:
+        return True
+    if _locator_concept_matches(hit.source_locator):
+        return True
+    if _locator_query_aspect_matches(hit.source_locator):
+        return True
+    explanation = hit.match_explanation if isinstance(hit.match_explanation, dict) else {}
+    return bool(
+        _nonblank_strings(explanation.get("matched_terms"), limit=1)
+        or _nonblank_strings(explanation.get("concept_labels"), limit=1)
+        or _nonblank_strings(explanation.get("aspect_labels"), limit=1)
+    )
+
+
+def _diversity_metadata_for_filtered_selection(
+    metadata: dict[str, Any],
+    selected: list[tuple[KnowledgeChunk, RetrievalHit]],
+) -> dict[str, Any]:
+    selected_evidence_ids = {
+        hit.evidence.evidence_id
+        for _, hit in selected
+    }
+    selected_sources = [chunk.source_id for chunk, _ in selected]
+    selected_hit_details = [
+        item
+        for item in metadata.get("selected_hits", [])
+        if isinstance(item, dict) and item.get("evidence_id") in selected_evidence_ids
+    ]
+    return {
+        **metadata,
+        "selected_source_count": len(set(selected_sources)),
+        "duplicate_selected_source_count": (
+            len(selected_sources) - len(set(selected_sources))
+        ),
+        "selected_hits": selected_hit_details,
+    }
 
 
 def _score_order_selection_details(

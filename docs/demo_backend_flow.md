@@ -12,12 +12,12 @@ Use `docker-compose up --build` if your machine has Docker Compose v1.
 
 Default backend storage:
 
-- Postgres: `postgresql://ojtflow:ojtflow@localhost:5432/ojtflow`
-- Redis session cache for Postgres deployments: `redis://localhost:6379/0`
+- Postgres: `postgresql://ojtflow:ojtflow@localhost:15432/ojtflow`
+- Redis session cache for Postgres deployments: `redis://localhost:16379/0`
 - input files: `var/datasets/`
 - generated outputs: `var/outputs/`
 
-This starts the API on `http://127.0.0.1:8000`.
+This starts the API on `http://127.0.0.1:18000`.
 
 ## Start Local API Against Docker Postgres
 
@@ -39,19 +39,13 @@ PYTHONPATH=src python -m ojtflow.infrastructure.storage.migrate
 Run API:
 
 ```bash
-PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 8000
+PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 18000
 ```
 
 To force memory storage for temporary demos:
 
 ```bash
-OJT_STORAGE_BACKEND=memory PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 8000
-```
-
-To use the SQLite fallback:
-
-```bash
-OJT_STORAGE_BACKEND=sqlite PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 8000
+OJT_STORAGE_BACKEND=memory PYTHONPATH=src python -m uvicorn ojtflow.interfaces.api.app:app --host 127.0.0.1 --port 18000
 ```
 
 ## Scenario
@@ -93,7 +87,7 @@ Expected behavior:
 7. Transformation plan is created.
 8. Safety gate pauses the workflow for human review.
 9. Review approval resumes the workflow even after service restart.
-10. Deterministic conversion creates JSON output under `var/outputs/`.
+10. Rule-based conversion creates JSON output under `var/outputs/`.
 11. `GET /api/v1/workflows/{workflow_id}/output` returns the generated
     content, hash, byte size, warnings, and conversion metadata for UI preview
     and download.
@@ -117,14 +111,14 @@ not disclose the workflow.
 
 ## Demo Talking Points
 
-- The LLM is not required for deterministic conversion.
+- The LLM is not required for rule-based conversion.
 - Review gates block semantic changes.
 - Workflow queues, reviews, stats, events, and output artifacts are scoped to
   the authenticated user.
 - Events are append-only audit trace.
 - Steps are UI/progress state.
-- Postgres/local files make the backend restart-safe; SQLite remains a local fallback
-  with the same workflow and auth repository contracts.
+- Postgres/local files make the backend restart-safe; no SQLite runtime fallback is
+  supported.
 - FHIR and OCR are hook points, not overclaimed medical automation.
 - FHIR-like JSON workflow inputs are profiled inside the main workflow path and
   emit `handoff_context.fhir_profile` plus `handoff_context.fhir_handoff`.

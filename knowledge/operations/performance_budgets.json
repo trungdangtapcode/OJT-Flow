@@ -41,7 +41,7 @@
       "budget_ms": 900,
       "blocking": true,
       "measurement": "scripts/performance-smoke.py retrieval_search scenario",
-      "notes": ["Uses deterministic/static retrieval in CI. Postgres/vector production budgets should be tightened after load testing on target hardware."]
+      "notes": ["Uses rule-based/static retrieval in CI. Postgres/vector production budgets should be tightened after load testing on target hardware."]
     },
     {
       "metric_id": "perf_assistant_first_event_p50",
@@ -61,7 +61,7 @@
       "budget_ms": 1800,
       "blocking": true,
       "measurement": "scripts/performance-smoke.py assistant_stream scenario",
-      "notes": ["Measures first event in deterministic local mode; external LLM first-token budgets are tracked separately by deployment telemetry."]
+      "notes": ["Measures first event with the configured assistant provider; external LLM first-token budgets are tracked separately by deployment telemetry."]
     },
     {
       "metric_id": "perf_upload_parse_p95",

@@ -13,7 +13,7 @@ ServiceAccountStatus = Literal["active", "disabled"]
 
 @dataclass(frozen=True)
 class GoogleIdentityProfile:
-    """Identity claims returned after Google OAuth verification."""
+    """Identity claims returned after OIDC verification (Google or Keycloak)."""
 
     google_sub: str
     email: str
@@ -21,6 +21,7 @@ class GoogleIdentityProfile:
     display_name: str | None = None
     avatar_url: str | None = None
     hosted_domain: str | None = None
+    identity_provider: str | None = None
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class UserRecord:
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None
+    identity_provider: str | None = None
 
 
 @dataclass(frozen=True)

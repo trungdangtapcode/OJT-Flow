@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ojtflow.application.ports import GovernanceRepository
@@ -11,6 +14,8 @@ from ojtflow.core.contracts.auth import UserRecord
 from ojtflow.core.contracts.governance import (
     OrganizationGroupMembershipRecord,
     OrganizationGroupRecord,
+    OrganizationInvitationRecord,
+    OrganizationInvitationView,
     OrganizationMembershipRecord,
     OrganizationRecord,
     RbacPolicy,
@@ -20,7 +25,7 @@ from ojtflow.core.contracts.governance import (
     WorkspaceDetail,
     WorkspaceSettingsRecord,
 )
-from ojtflow.core.errors import NotFoundError, PolicyBlockedError
+from ojtflow.core.errors import NotFoundError, OJTFlowError, PolicyBlockedError
 from ojtflow.core.ids import new_id
 from ojtflow.core.time import utc_now
 
@@ -34,10 +39,12 @@ class GovernanceService:
         *,
         defaults: WorkspaceDefaults,
         rbac_policy: RbacPolicy,
+        invitation_ttl_seconds: int = 7 * 24 * 60 * 60,
     ) -> None:
         self.repository = repository
         self.defaults = defaults
         self.rbac_policy = rbac_policy
+        self.invitation_ttl_seconds = invitation_ttl_seconds
         self._roles_by_key = {role.role_key: role for role in rbac_policy.roles}
         self._permissions_by_scope = {
             permission.permission_scope: permission for permission in rbac_policy.permissions
@@ -155,6 +162,63 @@ class GovernanceService:
         )
         return self._with_effective_permissions(workspace, user_id=user.user_id)
 
+    def create_workspace(
+        self,
+        *,
+        user: UserRecord,
+        display_name: str,
+        slug: str | None = None,
+    ) -> WorkspaceDetail:
+        """Create a new organization workspace owned by the requesting user."""
+
+        display_name = display_name.strip()
+        if not display_name:
+            raise PolicyBlockedError("Workspace display name is required.")
+        now = utc_now().isoformat()
+        organization = OrganizationRecord(
+            organization_id=new_id("org"),
+            slug=_normalize_slug(slug or display_name),
+            display_name=display_name,
+            created_by_user_id=user.user_id,
+            created_at=now,
+            updated_at=now,
+            attributes={"defaults_version": self.defaults.version},
+        )
+        membership = OrganizationMembershipRecord(
+            membership_id=new_id("mem"),
+            organization_id=organization.organization_id,
+            user_id=user.user_id,
+            role_key=self.defaults.default_role_key,
+            created_at=now,
+            updated_at=now,
+        )
+        group = _group_record(
+            organization_id=organization.organization_id,
+            default_group=self.defaults.default_group,
+            now=now,
+        )
+        group_membership = OrganizationGroupMembershipRecord(
+            group_id=group.group_id,
+            organization_id=organization.organization_id,
+            user_id=user.user_id,
+            created_at=now,
+        )
+        settings = WorkspaceSettingsRecord(
+            organization_id=organization.organization_id,
+            settings=deepcopy(self.defaults.settings),
+            version=1,
+            updated_by_user_id=user.user_id,
+            updated_at=now,
+        )
+        workspace = self.repository.create_workspace(
+            organization=organization,
+            membership=membership,
+            group=group,
+            group_membership=group_membership,
+            settings=settings,
+        )
+        return self._with_effective_permissions(workspace, user_id=user.user_id)
+
     def list_workspaces(self, user: UserRecord) -> list[WorkspaceDetail]:
         """List workspaces visible to a user, bootstrapping the default if absent."""
 
@@ -243,6 +307,117 @@ class GovernanceService:
         )
         return self._with_effective_permissions(workspace, user_id=user.user_id)
 
+    def invite_member(
+        self,
+        *,
+        user: UserRecord,
+        organization_id: str,
+        email: str,
+        role_key: str,
+    ) -> tuple[OrganizationInvitationView, str]:
+        """Create a workspace invitation and return its view plus the one-time token."""
+
+        self.require_permission(user=user, permission_scope="users:write")
+        self.require_workspace_membership(user=user, organization_id=organization_id)
+        normalized_email = _normalize_email(email)
+        validated_role = self.validate_assignable_role(role_key)
+        raw_token = secrets.token_urlsafe(48)
+        now = utc_now()
+        invitation = OrganizationInvitationRecord(
+            invitation_id=new_id("inv"),
+            organization_id=organization_id,
+            email=normalized_email,
+            role_key=validated_role,
+            status="pending",
+            token_hash=_hash_token(raw_token),
+            invited_by_user_id=user.user_id,
+            created_at=now.isoformat(),
+            expires_at=(now + timedelta(seconds=self.invitation_ttl_seconds)).isoformat(),
+        )
+        stored = self.repository.create_invitation(invitation=invitation)
+        return _invitation_view(stored), raw_token
+
+    def list_invitations(
+        self,
+        *,
+        user: UserRecord,
+        organization_id: str,
+    ) -> list[OrganizationInvitationView]:
+        """List invitations for a workspace the user can administer."""
+
+        self.require_permission(user=user, permission_scope="users:read")
+        self.require_workspace_membership(user=user, organization_id=organization_id)
+        return [
+            _invitation_view(invitation)
+            for invitation in self.repository.list_invitations(
+                organization_id=organization_id
+            )
+        ]
+
+    def accept_invitation(self, *, user: UserRecord, token: str) -> WorkspaceDetail:
+        """Accept a pending invitation matching the current user's email."""
+
+        invitation = self.repository.get_invitation_by_token_hash(
+            token_hash=_hash_token(token)
+        )
+        if invitation is None:
+            raise NotFoundError("Invitation token is invalid.")
+        if invitation.status != "pending":
+            raise PolicyBlockedError(
+                "Invitation is no longer pending.",
+                details={"status": invitation.status},
+            )
+        if _parse_datetime(invitation.expires_at) <= _now():
+            raise PolicyBlockedError("Invitation has expired.")
+        if _normalize_email(user.email) != _normalize_email(invitation.email):
+            raise PolicyBlockedError(
+                "Invitation was issued to a different email address.",
+            )
+        now = utc_now().isoformat()
+        membership = OrganizationMembershipRecord(
+            membership_id=new_id("mem"),
+            organization_id=invitation.organization_id,
+            user_id=user.user_id,
+            role_key=self.validate_assignable_role(invitation.role_key),
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            self.repository.add_membership(
+                organization_id=invitation.organization_id,
+                actor_user_id=invitation.invited_by_user_id,
+                membership=membership,
+            )
+        except OJTFlowError:
+            # Already a member: still mark the invitation resolved below.
+            pass
+        self.repository.mark_invitation_accepted(
+            invitation_id=invitation.invitation_id,
+            accepted_by_user_id=user.user_id,
+        )
+        # Return the invitee's own workspace view with their effective permissions.
+        return self.require_workspace_membership(
+            user=user,
+            organization_id=invitation.organization_id,
+        )
+
+    def revoke_invitation(
+        self,
+        *,
+        user: UserRecord,
+        organization_id: str,
+        invitation_id: str,
+    ) -> OrganizationInvitationView:
+        """Revoke a pending invitation."""
+
+        self.require_permission(user=user, permission_scope="users:write")
+        self.require_workspace_membership(user=user, organization_id=organization_id)
+        revoked = self.repository.revoke_invitation(
+            organization_id=organization_id,
+            invitation_id=invitation_id,
+        )
+        return _invitation_view(revoked)
+
     def _require_workspace(
         self,
         *,
@@ -274,6 +449,40 @@ class GovernanceService:
                 "effective_permission_scopes": permission_scopes,
             }
         )
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _normalize_email(email: str) -> str:
+    normalized = (email or "").strip().lower()
+    if not normalized or "@" not in normalized:
+        raise PolicyBlockedError("A valid email address is required.")
+    return normalized
+
+
+def _parse_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _invitation_view(invitation: OrganizationInvitationRecord) -> OrganizationInvitationView:
+    return OrganizationInvitationView(
+        invitation_id=invitation.invitation_id,
+        organization_id=invitation.organization_id,
+        email=invitation.email,
+        role_key=invitation.role_key,
+        status=invitation.status,
+        invited_by_user_id=invitation.invited_by_user_id,
+        created_at=invitation.created_at,
+        expires_at=invitation.expires_at,
+        accepted_at=invitation.accepted_at,
+        accepted_by_user_id=invitation.accepted_by_user_id,
+    )
 
 
 def _workspace_slug(user: UserRecord) -> str:

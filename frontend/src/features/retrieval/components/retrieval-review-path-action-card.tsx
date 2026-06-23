@@ -10,7 +10,7 @@ export function RetrievalReviewPathActionCard({
   reviewPath: RetrievalReviewPath;
 }) {
   return (
-    <div className="grid content-start gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid content-start gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex items-center gap-2 text-sm font-black">
         <ListFilter className="h-4 w-4 text-primary" />
         Next operator action

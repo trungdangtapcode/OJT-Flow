@@ -12,12 +12,14 @@ from ojtflow.application.auth_service import AuthService
 from ojtflow.application.assistant_memory_service import AssistantMemoryService
 from ojtflow.application.assistant_service import AssistantService
 from ojtflow.application.assistant_session_service import AssistantSessionService
-from ojtflow.application.ports import AuditRepository
+from ojtflow.application.ports import AuditRepository, KnowledgeGraphRepository
 from ojtflow.application.background_job_service import BackgroundJobService
 from ojtflow.application.assistant_tools import OJTFlowToolExecutor
 from ojtflow.application.document_intake_service import DocumentIntakeService
 from ojtflow.application.governance_service import GovernanceService
+from ojtflow.application.graph_med_service import GraphMedService
 from ojtflow.application.medical_evidence_service import MedicalEvidenceService
+from ojtflow.application.medsiglip_service import MedSiglipService
 from ojtflow.application.retrieval_active_learning_service import (
     RetrievalActiveLearningService,
 )
@@ -29,7 +31,9 @@ from ojtflow.core.errors import AuthenticationError
 from ojtflow.core.policy.abuse_cost_policy import load_abuse_cost_policy
 from ojtflow.core.policy.external_provider_policy import external_provider_policy_from_settings
 from ojtflow.infrastructure.auth.google import GoogleOAuthClient
+from ojtflow.infrastructure.auth.keycloak import KeycloakOIDCClient
 from ojtflow.infrastructure.cache.session_cache import InMemorySessionCache, RedisSessionCache
+from ojtflow.infrastructure.queue.dispatcher import CeleryJobDispatcher
 from ojtflow.infrastructure.assistant.memory import load_assistant_memory_policy
 from ojtflow.infrastructure.assistant.policies import load_assistant_tool_permission_policies
 from ojtflow.infrastructure.assistant.prompt_injection import (
@@ -37,6 +41,7 @@ from ojtflow.infrastructure.assistant.prompt_injection import (
 )
 from ojtflow.infrastructure.assistant.progress import load_assistant_tool_progress_policies
 from ojtflow.infrastructure.llm.openai import OpenAIResponsesPlanner
+from ojtflow.infrastructure.medsiglip.client import MedSiglipClient, MedSiglipClientConfig
 from ojtflow.infrastructure.retrieval.embeddings import build_embedding_provider
 from ojtflow.infrastructure.retrieval.evaluation_policy import (
     load_retrieval_evaluation_policy,
@@ -51,11 +56,14 @@ from ojtflow.infrastructure.extraction.document import LocalDocumentExtractor
 from ojtflow.infrastructure.governance_defaults import load_workspace_defaults
 from ojtflow.infrastructure.governance_rbac import load_rbac_policy
 from ojtflow.infrastructure.storage.auth_memory import InMemoryAuthRepository
+from ojtflow.application.knowledge_graph_service import KnowledgeGraphService
+from ojtflow.infrastructure.storage.knowledge_graph_memory import (
+    InMemoryKnowledgeGraphRepository,
+)
+from ojtflow.infrastructure.storage.object_store import build_object_store
 from ojtflow.infrastructure.storage.auth_postgres import PostgresAuthRepository
-from ojtflow.infrastructure.storage.auth_sqlite import SQLiteAuthRepository
 from ojtflow.infrastructure.storage.governance_memory import InMemoryGovernanceRepository
 from ojtflow.infrastructure.storage.governance_postgres import PostgresGovernanceRepository
-from ojtflow.infrastructure.storage.governance_sqlite import SQLiteGovernanceRepository
 from ojtflow.infrastructure.storage.in_memory import (
     InMemoryAuditRepository,
     InMemoryAssistantMemoryRepository,
@@ -83,20 +91,6 @@ from ojtflow.infrastructure.storage.postgres import (
     PostgresRetrievalJudgmentRepository,
     PostgresWorkflowRepository,
 )
-from ojtflow.infrastructure.storage.sqlite import (
-    SQLiteAuditRepository,
-    SQLiteAssistantMemoryRepository,
-    SQLiteAssistantSessionRepository,
-    SQLiteUploadedArtifactRepository,
-    SQLiteBackboneStore,
-    SQLiteBackgroundJobRepository,
-    SQLiteDatasetStore,
-    SQLiteEventRepository,
-    SQLiteGraphRepository,
-    SQLiteRetrievalActiveLearningRepository,
-    SQLiteRetrievalJudgmentRepository,
-    SQLiteWorkflowRepository,
-)
 bearer_scheme = HTTPBearer(auto_error=False)
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -109,30 +103,35 @@ def _build_auth_service() -> AuthService:
     if settings.storage_backend == "memory":
         repository = InMemoryAuthRepository()
         cache = InMemorySessionCache()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        repository = SQLiteAuthRepository(backbone)
-        cache = InMemorySessionCache()
     elif settings.storage_backend == "postgres":
         repository = PostgresAuthRepository(settings.postgres_dsn)
-        cache = RedisSessionCache(settings.redis_url, allow_fallback=False)
+        cache = RedisSessionCache(settings.redis_url)
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
 
-    google_client = GoogleOAuthClient(
-        client_id=settings.google_client_id,
-        client_secret=settings.google_client_secret,
-        timeout_seconds=settings.google_oauth_timeout_seconds,
-        allowed_hosted_domains=set(settings.allowed_google_hosted_domains),
-    )
+    if settings.auth_provider == "keycloak":
+        identity_provider = KeycloakOIDCClient(
+            base_url=settings.keycloak_base_url,
+            realm=settings.keycloak_realm,
+            client_id=settings.keycloak_client_id,
+            client_secret=settings.keycloak_client_secret,
+            timeout_seconds=settings.keycloak_oauth_timeout_seconds,
+            public_base_url=settings.keycloak_public_base_url or settings.keycloak_base_url,
+        )
+        default_redirect_uri = settings.keycloak_redirect_uri or settings.google_redirect_uri
+    else:
+        identity_provider = GoogleOAuthClient(
+            client_id=settings.google_client_id,
+            client_secret=settings.google_client_secret,
+            timeout_seconds=settings.google_oauth_timeout_seconds,
+            allowed_hosted_domains=set(settings.allowed_google_hosted_domains),
+        )
+        default_redirect_uri = settings.google_redirect_uri
     return AuthService(
         repository=repository,
         cache=cache,
-        identity_provider=google_client,
-        google_redirect_uri=settings.google_redirect_uri,
+        identity_provider=identity_provider,
+        google_redirect_uri=default_redirect_uri,
         allowed_redirect_uris=settings.resolved_allowed_auth_redirect_uris,
         session_ttl_seconds=settings.auth_session_ttl_seconds,
         state_ttl_seconds=settings.auth_state_ttl_seconds,
@@ -160,27 +159,13 @@ def _build_workflow_service() -> WorkflowService:
             embedding_provider,
             reranker,
         )
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        datasets = SQLiteDatasetStore(backbone)
-        workflows = SQLiteWorkflowRepository(backbone)
-        events = SQLiteEventRepository(backbone)
-        graph_repository = SQLiteGraphRepository(backbone)
-        retrieval = _build_retrieval_repository(
-            settings,
-            knowledge_root,
-            embedding_provider,
-            reranker,
-        )
     elif settings.storage_backend == "postgres":
+        object_store = build_object_store(settings)
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
             settings.resolved_data_dir,
         )
-        datasets = PostgresDatasetStore(backbone)
+        datasets = PostgresDatasetStore(backbone, object_store=object_store)
         workflows = PostgresWorkflowRepository(backbone)
         events = PostgresEventRepository(backbone)
         graph_repository = PostgresGraphRepository(backbone)
@@ -207,18 +192,89 @@ def _build_workflow_service() -> WorkflowService:
 
 
 @lru_cache(maxsize=1)
+def _build_knowledge_graph_repository() -> KnowledgeGraphRepository:
+    """Build the persistent corpus knowledge-graph repository (§9 of the design doc).
+
+    Selected by ``knowledge_graph_backend`` (independent of ``storage_backend``). Neo4j is
+    the default so the API can read a graph-med ontology graph directly; optional graph
+    adapters are imported lazily so tests can use ``memory`` without extra dependencies.
+    ``bootstrap()`` is idempotent.
+    """
+
+    settings = get_settings()
+    if settings.knowledge_graph_backend == "neo4j":
+        from ojtflow.infrastructure.storage.knowledge_graph_neo4j import (
+            Neo4jKnowledgeGraphRepository,
+        )
+
+        repository: KnowledgeGraphRepository = Neo4jKnowledgeGraphRepository(
+            settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+            database=settings.neo4j_database,
+        )
+    elif settings.knowledge_graph_backend == "memory":
+        repository = InMemoryKnowledgeGraphRepository()
+    elif settings.knowledge_graph_backend == "kuzu":
+        from ojtflow.infrastructure.storage.knowledge_graph_kuzu import (
+            KuzuKnowledgeGraphRepository,
+        )
+
+        repository = KuzuKnowledgeGraphRepository(settings.kuzu_db_path)
+    else:
+        raise ValueError(
+            f"Unsupported knowledge graph backend: {settings.knowledge_graph_backend}"
+        )
+    repository.bootstrap()
+    return repository
+
+
+def get_knowledge_graph_repository() -> KnowledgeGraphRepository:
+    """FastAPI-injectable accessor for the corpus knowledge-graph repository."""
+
+    return _build_knowledge_graph_repository()
+
+
+@lru_cache(maxsize=1)
+def _build_knowledge_graph_service() -> KnowledgeGraphService:
+    return KnowledgeGraphService(_build_knowledge_graph_repository())
+
+
+async def get_knowledge_graph_service() -> KnowledgeGraphService:
+    """FastAPI-injectable accessor for the corpus knowledge-graph service."""
+
+    return _build_knowledge_graph_service()
+
+
+@lru_cache(maxsize=1)
+def _build_graph_med_service() -> GraphMedService:
+    settings = get_settings()
+    graph_med_annotator = None
+    if settings.knowledge_graph_backend == "neo4j":
+        from ojtflow.infrastructure.graph_med.factory import (
+            build_graph_med_annotation_port,
+        )
+
+        graph_med_annotator = build_graph_med_annotation_port(settings)
+    return GraphMedService(
+        _build_knowledge_graph_repository(),
+        graph_med_annotator=graph_med_annotator,
+    )
+
+
+async def get_graph_med_service() -> GraphMedService:
+    """FastAPI-injectable accessor for graph-med status/import orchestration."""
+
+    return _build_graph_med_service()
+
+
+@lru_cache(maxsize=1)
 def _build_retrieval_active_learning_service() -> RetrievalActiveLearningService:
     """Build durable retrieval active-learning queue services."""
 
     settings = get_settings()
     if settings.storage_backend == "memory":
         repository = InMemoryRetrievalActiveLearningRepository()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        repository = SQLiteRetrievalActiveLearningRepository(backbone)
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -237,12 +293,6 @@ def _build_retrieval_judgment_service() -> RetrievalJudgmentService:
     settings = get_settings()
     if settings.storage_backend == "memory":
         repository = InMemoryRetrievalJudgmentRepository()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        repository = SQLiteRetrievalJudgmentRepository(backbone)
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -314,12 +364,6 @@ def _build_audit_repository() -> AuditRepository:
     settings = get_settings()
     if settings.storage_backend == "memory":
         return InMemoryAuditRepository()
-    if settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        return SQLiteAuditRepository(backbone)
     if settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -332,6 +376,21 @@ def _build_audit_repository() -> AuditRepository:
 @lru_cache(maxsize=1)
 def _build_medical_evidence_service() -> MedicalEvidenceService:
     return MedicalEvidenceService()
+
+
+@lru_cache(maxsize=1)
+def _build_medsiglip_service() -> MedSiglipService:
+    settings = get_settings()
+    return MedSiglipService(
+        MedSiglipClient(
+            MedSiglipClientConfig(
+                enabled=settings.medsiglip_enabled,
+                base_url=settings.medsiglip_base_url,
+                model=settings.medsiglip_model,
+                timeout_seconds=settings.medsiglip_timeout_seconds,
+            )
+        )
+    )
 
 
 @lru_cache(maxsize=1)
@@ -377,12 +436,6 @@ def _build_assistant_session_service() -> AssistantSessionService:
     settings = get_settings()
     if settings.storage_backend == "memory":
         repository = InMemoryAssistantSessionRepository()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        repository = SQLiteAssistantSessionRepository(backbone)
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -399,12 +452,6 @@ def _build_assistant_memory_service() -> AssistantMemoryService:
     settings = get_settings()
     if settings.storage_backend == "memory":
         repository = InMemoryAssistantMemoryRepository()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        repository = SQLiteAssistantMemoryRepository(backbone)
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -424,12 +471,6 @@ def _build_background_job_service() -> BackgroundJobService:
     settings = get_settings()
     if settings.storage_backend == "memory":
         repository = InMemoryBackgroundJobRepository()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        repository = SQLiteBackgroundJobRepository(backbone)
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -438,7 +479,8 @@ def _build_background_job_service() -> BackgroundJobService:
         repository = PostgresBackgroundJobRepository(backbone)
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
-    return BackgroundJobService(repository)
+    dispatcher = CeleryJobDispatcher(settings) if settings.queue_backend == "rabbitmq" else None
+    return BackgroundJobService(repository, dispatcher=dispatcher)
 
 
 @lru_cache(maxsize=1)
@@ -447,20 +489,14 @@ def _build_document_intake_service() -> DocumentIntakeService:
     if settings.storage_backend == "memory":
         artifacts = InMemoryUploadedArtifactRepository()
         datasets = InMemoryDatasetStore()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        artifacts = SQLiteUploadedArtifactRepository(backbone)
-        datasets = SQLiteDatasetStore(backbone)
     elif settings.storage_backend == "postgres":
+        object_store = build_object_store(settings)
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
             settings.resolved_data_dir,
         )
-        artifacts = PostgresUploadedArtifactRepository(backbone)
-        datasets = PostgresDatasetStore(backbone)
+        artifacts = PostgresUploadedArtifactRepository(backbone, object_store=object_store)
+        datasets = PostgresDatasetStore(backbone, object_store=object_store)
     else:
         raise ValueError(f"Unsupported storage backend: {settings.storage_backend}")
     return DocumentIntakeService(
@@ -478,12 +514,6 @@ def _build_governance_service() -> GovernanceService:
     settings = get_settings()
     if settings.storage_backend == "memory":
         repository = InMemoryGovernanceRepository()
-    elif settings.storage_backend == "sqlite":
-        backbone = SQLiteBackboneStore(
-            settings.resolved_database_path,
-            settings.resolved_data_dir,
-        )
-        repository = SQLiteGovernanceRepository(backbone)
     elif settings.storage_backend == "postgres":
         backbone = PostgresBackboneStore(
             settings.postgres_dsn,
@@ -496,6 +526,7 @@ def _build_governance_service() -> GovernanceService:
         repository,
         defaults=load_workspace_defaults(settings.resolved_knowledge_dir),
         rbac_policy=load_rbac_policy(settings.resolved_knowledge_dir),
+        invitation_ttl_seconds=settings.invitation_ttl_seconds,
     )
 
 
@@ -509,6 +540,12 @@ async def get_medical_evidence_service() -> MedicalEvidenceService:
     """Return healthcare evidence service."""
 
     return _build_medical_evidence_service()
+
+
+async def get_medsiglip_service() -> MedSiglipService:
+    """Return local MedSigLIP inference service."""
+
+    return _build_medsiglip_service()
 
 
 async def get_retrieval_judgment_service() -> RetrievalJudgmentService:
@@ -643,6 +680,8 @@ def _allowed_cookie_origins(request: Request, settings: Settings) -> set[str]:
             _origin_from_header(str(request.base_url)),
             _origin_from_header(settings.google_redirect_uri),
             _origin_from_header(settings.google_frontend_redirect_uri),
+            _origin_from_header(settings.keycloak_redirect_uri),
+            _origin_from_header(settings.frontend_base_url),
             *(
                 _origin_from_header(uri)
                 for uri in settings.allowed_auth_redirect_uris
@@ -683,6 +722,7 @@ def clear_workflow_service_cache() -> None:
     _build_workflow_service.cache_clear()
     _build_auth_service.cache_clear()
     _build_medical_evidence_service.cache_clear()
+    _build_medsiglip_service.cache_clear()
     _build_retrieval_judgment_service.cache_clear()
     _build_audit_repository.cache_clear()
     _build_assistant_service.cache_clear()

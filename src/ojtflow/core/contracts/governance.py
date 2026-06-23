@@ -11,6 +11,7 @@ from ojtflow.core.contracts.base import ContractModel, NonBlankStr
 
 OrganizationStatus = Literal["active", "disabled"]
 MembershipStatus = Literal["active", "disabled", "invited"]
+InvitationStatus = Literal["pending", "accepted", "revoked", "expired"]
 RbacRiskLevel = Literal["low", "medium", "high", "critical"]
 
 
@@ -107,6 +108,37 @@ class OrganizationGroupMembershipRecord(ContractModel):
     organization_id: NonBlankStr
     user_id: NonBlankStr
     created_at: NonBlankStr
+
+
+class OrganizationInvitationRecord(ContractModel):
+    """Pending or resolved invitation to join an organization workspace."""
+
+    invitation_id: NonBlankStr
+    organization_id: NonBlankStr
+    email: NonBlankStr
+    role_key: NonBlankStr
+    status: InvitationStatus = "pending"
+    token_hash: NonBlankStr
+    invited_by_user_id: NonBlankStr
+    created_at: NonBlankStr
+    expires_at: NonBlankStr
+    accepted_at: str | None = None
+    accepted_by_user_id: str | None = None
+
+
+class OrganizationInvitationView(ContractModel):
+    """Invitation projection safe to return over the API (no token hash)."""
+
+    invitation_id: NonBlankStr
+    organization_id: NonBlankStr
+    email: NonBlankStr
+    role_key: NonBlankStr
+    status: InvitationStatus
+    invited_by_user_id: NonBlankStr
+    created_at: NonBlankStr
+    expires_at: NonBlankStr
+    accepted_at: str | None = None
+    accepted_by_user_id: str | None = None
 
 
 class WorkspaceSettingsRecord(ContractModel):

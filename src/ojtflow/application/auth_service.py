@@ -236,6 +236,7 @@ def _public_user(user: UserRecord) -> dict[str, Any]:
         "email_verified": user.email_verified,
         "display_name": user.display_name,
         "avatar_url": user.avatar_url,
+        "identity_provider": user.identity_provider,
     }
 
 
@@ -287,6 +288,7 @@ def _session_payload(authenticated: AuthenticatedSession) -> dict[str, Any]:
             "email_verified": user.email_verified,
             "display_name": user.display_name,
             "avatar_url": user.avatar_url,
+            "identity_provider": user.identity_provider,
             "created_at": user.created_at.isoformat(),
             "updated_at": user.updated_at.isoformat(),
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
@@ -319,6 +321,7 @@ def _session_from_payload(payload: dict[str, Any]) -> AuthenticatedSession:
             created_at=_parse_datetime(user["created_at"]),
             updated_at=_parse_datetime(user["updated_at"]),
             last_login_at=_parse_optional_datetime(user.get("last_login_at")),
+            identity_provider=user.get("identity_provider"),
         ),
         session=SessionRecord(
             session_id=session["session_id"],

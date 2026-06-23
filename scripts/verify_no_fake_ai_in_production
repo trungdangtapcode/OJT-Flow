@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Fail if production AI/RAG code contains fake providers or lexical fallback."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PRODUCTION_FILES = [
+    ROOT / ".env.example",
+    ROOT / "docker-compose.yml",
+    ROOT / "README.md",
+    ROOT / "knowledge" / "retrieval" / "corrective_action_rules.json",
+    ROOT / "src" / "ojtflow" / "config.py",
+    ROOT / "src" / "ojtflow" / "application" / "assistant_service.py",
+    ROOT / "src" / "ojtflow" / "application" / "graph_conflict_service.py",
+    ROOT / "src" / "ojtflow" / "application" / "graph_ner_service.py",
+    ROOT / "src" / "ojtflow" / "application" / "retrieval_answer_service.py",
+    ROOT / "src" / "ojtflow" / "data_tools" / "extract.py",
+    ROOT / "src" / "ojtflow" / "interfaces" / "api" / "deps.py",
+    ROOT / "src" / "ojtflow" / "interfaces" / "api" / "rate_limit.py",
+    ROOT / "src" / "ojtflow" / "interfaces" / "api" / "routes" / "runtime.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "cache" / "session_cache.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "llm" / "openai.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "engine.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "embeddings.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "postgres.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "static.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "llamaindex_adapter.py",
+]
+
+SUSPECT_TOKEN = "deter" + "ministic"
+SUSPECT_TOKEN_TITLE = SUSPECT_TOKEN[:1].upper() + SUSPECT_TOKEN[1:]
+FORBIDDEN_EXACT = (
+    f"{SUSPECT_TOKEN_TITLE}EmbeddingProvider",
+    f"{SUSPECT_TOKEN_TITLE}LLM",
+    "FakeLLM",
+    "FakeEmbedding",
+    "MockLLM",
+    "MockEmbedding",
+    "StubLLM",
+    "StubEmbedding",
+    "HashEmbedding",
+    f"allow_{SUSPECT_TOKEN}_fallback",
+    f"_{SUSPECT_TOKEN}_plan",
+    f"{SUSPECT_TOKEN}_plan",
+    f"{SUSPECT_TOKEN}-hash-v0",
+    "_lexical_candidate_sql",
+    "_hybrid_candidate_sql",
+)
+
+POSTGRES_FORBIDDEN_SQL = (
+    "websearch_to_tsquery",
+    "plainto_tsquery",
+    "to_tsvector",
+    "ts_rank",
+    "ts_rank_cd",
+    " ilike ",
+    " like ",
+    "pg_trgm",
+    "trigram",
+)
+
+PROVIDER_FILES_FORBID_SHA256 = (
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "engine.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "embeddings.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "postgres.py",
+)
+
+FALLBACK_SENSITIVE_FILES = (
+    ROOT / "knowledge" / "retrieval" / "corrective_action_rules.json",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "engine.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "embeddings.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "postgres.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "static.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "retrieval" / "llamaindex_adapter.py",
+    ROOT / "src" / "ojtflow" / "application" / "graph_conflict_service.py",
+    ROOT / "src" / "ojtflow" / "application" / "graph_ner_service.py",
+    ROOT / "src" / "ojtflow" / "application" / "retrieval_answer_service.py",
+    ROOT / "src" / "ojtflow" / "data_tools" / "extract.py",
+    ROOT / "src" / "ojtflow" / "interfaces" / "api" / "rate_limit.py",
+    ROOT / "src" / "ojtflow" / "interfaces" / "api" / "routes" / "runtime.py",
+    ROOT / "src" / "ojtflow" / "infrastructure" / "cache" / "session_cache.py",
+)
+
+
+def main() -> int:
+    failures: list[str] = []
+    for path in PRODUCTION_FILES:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        relative = path.relative_to(ROOT)
+        for term in FORBIDDEN_EXACT:
+            if term in text:
+                failures.append(f"{relative}: forbidden production term {term!r}")
+        if path.name == "postgres.py":
+            lowered = text.lower()
+            for term in POSTGRES_FORBIDDEN_SQL:
+                if term in lowered:
+                    failures.append(f"{relative}: forbidden production RAG SQL {term!r}")
+        if path in PROVIDER_FILES_FORBID_SHA256 and "sha256" in text.lower():
+            failures.append(f"{relative}: sha256 is forbidden in embedding/retrieval providers")
+        if path in FALLBACK_SENSITIVE_FILES:
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                lowered = line.lower()
+                if "fallback" in lowered and "forbidden" not in lowered:
+                    failures.append(
+                        f"{relative}:{line_number}: fallback reference in production retrieval"
+                    )
+
+    if failures:
+        print("verify_no_fake_ai_in_production failed:")
+        for failure in failures:
+            print(f"- {failure}")
+        return 1
+    print("verify_no_fake_ai_in_production passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

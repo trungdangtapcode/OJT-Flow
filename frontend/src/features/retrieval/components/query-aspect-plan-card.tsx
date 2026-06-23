@@ -18,7 +18,7 @@ export function QueryAspectPlanCard({
   onApplyFilter: QueryAspectFilterApplyHandler;
 }) {
   return (
-    <div className="grid gap-1.5 rounded-md border border-border bg-card p-2 text-xs">
+    <div className="grid gap-1.5 rounded-lg border border-border/60 bg-card p-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="break-words font-bold">{aspect.label}</span>
         <Badge variant="muted">priority {aspect.priority}</Badge>

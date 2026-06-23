@@ -9,7 +9,7 @@ export function QueryDiagnosticRow({
   diagnostic: QueryDiagnosticListItem;
 }) {
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-card p-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="break-words font-bold">{humanize(diagnostic.code)}</span>
         <Badge variant={diagnosticBadgeVariant(diagnostic.severity)}>

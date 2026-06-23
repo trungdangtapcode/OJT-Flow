@@ -34,7 +34,7 @@ export function SearchRunEvidenceSummary({ run }: { run: SearchRunEvidenceSummar
   const searchAspectBadge = searchAspectSummaryBadgeView(run.summary.queryAspects.length);
 
   return (
-    <span className="grid min-w-0 gap-1 rounded-md border border-border/70 bg-background/55 p-2">
+    <span className="grid min-w-0 gap-1 rounded-lg border border-border/60/70 bg-background/55 p-2">
       <span className="text-xs font-bold uppercase text-muted-foreground">
         Run scope
       </span>

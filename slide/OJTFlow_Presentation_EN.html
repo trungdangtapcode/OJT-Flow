@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OJTFlow — Project Presentation</title>
+<style>
+  :root {
+    --primary: #0891b2;
+    --primary-dark: #0e7490;
+    --bg: #f0f4f8;
+    --card: #ffffff;
+    --sidebar: #0f172a;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+
+  .slide {
+    width: 960px; height: 540px; margin: 40px auto;
+    background: var(--card); border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    overflow: hidden; position: relative;
+    page-break-after: always;
+  }
+
+  /* Title slide */
+  .slide-title {
+    background: linear-gradient(135deg, var(--sidebar) 0%, #1e293b 100%);
+    color: white; display: flex; flex-direction: column;
+    justify-content: center; padding: 60px 80px;
+  }
+  .slide-title h1 { font-size: 42px; font-weight: 700; letter-spacing: -0.5px; }
+  .slide-title .subtitle { font-size: 18px; color: #94a3b8; margin-top: 12px; line-height: 1.6; }
+  .slide-title .meta { position: absolute; bottom: 40px; left: 80px; font-size: 13px; color: #64748b; }
+  .slide-title .logo { position: absolute; top: 40px; right: 60px; width: 48px; height: 48px;
+    background: var(--primary); border-radius: 12px; display: flex; align-items: center;
+    justify-content: center; font-weight: 800; font-size: 18px; color: white; }
+
+  /* Content slides */
+  .slide-content { padding: 48px 60px; display: flex; flex-direction: column; height: 100%; }
+  .slide-content .slide-header { margin-bottom: 28px; }
+  .slide-content .slide-header h2 { font-size: 28px; font-weight: 700; color: var(--text); }
+  .slide-content .slide-header .accent-bar { width: 48px; height: 4px; background: var(--primary); border-radius: 2px; margin-top: 8px; }
+  .slide-content .slide-header p { font-size: 14px; color: var(--muted); margin-top: 6px; }
+
+  .cols { display: flex; gap: 32px; flex: 1; }
+  .col { flex: 1; }
+  .col-wide { flex: 1.5; }
+
+  .card-box {
+    background: #f8fafc; border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 12px;
+  }
+  .card-box h4 { font-size: 14px; font-weight: 700; color: var(--primary-dark); margin-bottom: 4px; }
+  .card-box p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  ul { padding-left: 20px; }
+  ul li { font-size: 14px; line-height: 1.8; color: var(--text); }
+  ul li strong { color: var(--primary-dark); }
+
+  .tag { display: inline-block; background: #ecfeff; color: var(--primary-dark); font-size: 11px;
+    font-weight: 600; padding: 3px 10px; border-radius: 6px; margin: 2px 4px 2px 0; }
+  .tag-green { background: #ecfdf5; color: #065f46; }
+  .tag-amber { background: #fffbeb; color: #92400e; }
+  .tag-red { background: #fef2f2; color: #991b1b; }
+
+  .arch-box {
+    background: linear-gradient(135deg, #f0f9ff, #ecfeff);
+    border: 1px solid #bae6fd; border-radius: 12px;
+    padding: 20px; text-align: center; margin-bottom: 10px;
+  }
+  .arch-box .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--primary); font-weight: 700; margin-bottom: 4px; }
+  .arch-box .value { font-size: 14px; font-weight: 600; color: var(--text); }
+
+  .metric-row { display: flex; gap: 16px; margin-bottom: 14px; }
+  .metric {
+    flex: 1; background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; text-align: center;
+  }
+  .metric .num { font-size: 26px; font-weight: 800; color: var(--primary); }
+  .metric .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .flow-arrow { text-align: center; font-size: 20px; color: var(--primary); margin: 4px 0; }
+
+  .footer-tag { position: absolute; bottom: 20px; right: 40px; font-size: 11px; color: #cbd5e1; }
+  .slide-num { position: absolute; bottom: 20px; left: 40px; font-size: 11px; color: #cbd5e1; }
+
+  .timeline { display: flex; gap: 6px; }
+  .tl-item { flex: 1; text-align: center; border-radius: 10px; padding: 10px 6px;
+    background: #f8fafc; border: 1px solid var(--border); }
+  .tl-item .wk { font-size: 10px; color: var(--primary); font-weight: 700; text-transform: uppercase; }
+  .tl-item .desc { font-size: 11px; color: var(--text); font-weight: 600; margin-top: 4px; }
+
+  @media print { .slide { margin: 0; box-shadow: none; } }
+</style>
+</head>
+<body>
+
+<!-- Slide 1: Title -->
+<div class="slide slide-title">
+  <div class="logo">OJT</div>
+  <h1>OJTFlow</h1>
+  <div class="subtitle">
+    A Foundation-Model, RAG, MCP, and Multi-Agent System<br>
+    for Governed Healthcare Data Operations
+  </div>
+  <div class="meta">
+    HuReDee-IoYou AI OJT Program &nbsp;|&nbsp; June 2026
+  </div>
+</div>
+
+<!-- Slide 2: Problem & Opportunity -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>Problem & Opportunity</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h4 style="font-size:15px; margin-bottom:12px; color:var(--accent-red);">Pain Points</h4>
+        <ul>
+          <li>Healthcare data conversion is <strong>manual and error-prone</strong></li>
+          <li>Non-technical users struggle with JSON, YAML, CSV structures</li>
+          <li>LLM-only systems produce <strong>plausible but invalid</strong> outputs</li>
+          <li>No traceability, approvals, or audit trail in existing tools</li>
+          <li>Schema drift and PHI exposure risks</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h4 style="font-size:15px; margin-bottom:12px; color:var(--accent-green);">Our Solution</h4>
+        <ul>
+          <li><strong>AI middleware</strong> for healthcare data collaboration</li>
+          <li>Natural language interface with <strong>rule-based execution</strong></li>
+          <li>Human-in-the-loop review for risky transformations</li>
+          <li>RAG-grounded explanations with provenance</li>
+          <li>Full audit trail and governance controls</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">2</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 3: System Architecture -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>System Architecture</h2>
+      <div class="accent-bar"></div>
+      <p>Clean architecture with dependency inversion — all integrations are replaceable</p>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="arch-box">
+          <div class="label">User Layer</div>
+          <div class="value">React UI &nbsp;|&nbsp; REST API &nbsp;|&nbsp; Assistant Chat</div>
+        </div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="arch-box">
+          <div class="label">Orchestration</div>
+          <div class="value">FastAPI &nbsp;|&nbsp; Workflow Engine &nbsp;|&nbsp; Multi-Agent</div>
+        </div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="arch-box">
+          <div class="label">Core Domain</div>
+          <div class="value">Contracts &nbsp;|&nbsp; Policies &nbsp;|&nbsp; Data Tools</div>
+        </div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="arch-box">
+          <div class="label">Infrastructure</div>
+          <div class="value">Postgres + pgvector &nbsp;|&nbsp; Redis &nbsp;|&nbsp; MCP Servers</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box"><h4>Core Contracts</h4><p>Typed workflow state, events, issues, evidence, reviews, and audit entries</p></div>
+        <div class="card-box"><h4>Data Tools</h4><p>Rule-based parse, profile, validate, convert — no LLM guessing for data ops</p></div>
+        <div class="card-box"><h4>Agent Layer</h4><p>Parser, Validator, Transformer, Explanation, Safety agents with shared state</p></div>
+        <div class="card-box"><h4>RAG Retrieval</h4><p>pgvector semantic search, source-aware MMR, optional CrossEncoder reranking</p></div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">3</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 4: Key Features -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>Key Features</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box">
+          <h4>Workbench</h4>
+          <p>Upload messy healthcare CSV/JSON/YAML. Parse, profile, and validate in one step.</p>
+        </div>
+        <div class="card-box">
+          <h4>AI Assistant</h4>
+          <p>Natural language access to retrieval, validation, conversion, FHIR profiling, and workflow creation.</p>
+        </div>
+        <div class="card-box">
+          <h4>Workflow Engine</h4>
+          <p>Status transitions, step tracking, issue flagging, evidence attachment, and explanation reports.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box">
+          <h4>Review Queue</h4>
+          <p>Human-in-the-loop decisions for risky transformations. Approve, edit, reject, or request clarification.</p>
+        </div>
+        <div class="card-box">
+          <h4>Retrieval Console</h4>
+          <p>Trusted healthcare search with ranking trace, source inventory, graph handoff, and regression dashboard.</p>
+        </div>
+        <div class="card-box">
+          <h4>Governance & Audit</h4>
+          <p>Append-only event stream, hash chain integrity, schema registry, and B2B settings.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">4</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 5: Tech Stack -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>Technology Stack</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div style="margin-bottom: 20px;">
+      <h4 style="font-size: 13px; color: var(--muted); margin-bottom: 8px;">BACKEND</h4>
+      <span class="tag">Python 3.12</span>
+      <span class="tag">FastAPI</span>
+      <span class="tag">Pydantic</span>
+      <span class="tag">PostgreSQL + pgvector</span>
+      <span class="tag">Redis</span>
+      <span class="tag">OpenAI Embeddings</span>
+      <span class="tag">SentenceTransformers</span>
+      <span class="tag">MCP Python SDK</span>
+    </div>
+    <div style="margin-bottom: 20px;">
+      <h4 style="font-size: 13px; color: var(--muted); margin-bottom: 8px;">FRONTEND</h4>
+      <span class="tag">React 18</span>
+      <span class="tag">TypeScript</span>
+      <span class="tag">Vite</span>
+      <span class="tag">Tailwind CSS v4</span>
+      <span class="tag">TanStack Router</span>
+      <span class="tag">TanStack Query</span>
+      <span class="tag">Radix UI</span>
+    </div>
+    <div style="margin-bottom: 20px;">
+      <h4 style="font-size: 13px; color: var(--muted); margin-bottom: 8px;">INFRASTRUCTURE</h4>
+      <span class="tag">Docker Compose</span>
+      <span class="tag">nginx</span>
+      <span class="tag">Playwright E2E</span>
+      <span class="tag">Google OAuth</span>
+      <span class="tag">FHIR Profiling</span>
+      <span class="tag">OCR/DICOM Evidence</span>
+    </div>
+    <div class="metric-row" style="margin-top: auto;">
+      <div class="metric"><div class="num">9</div><div class="lbl">Frontend Modules</div></div>
+      <div class="metric"><div class="num">5</div><div class="lbl">Agent Roles</div></div>
+      <div class="metric"><div class="num">30+</div><div class="lbl">API Endpoints</div></div>
+      <div class="metric"><div class="num">6</div><div class="lbl">MCP Servers</div></div>
+    </div>
+  </div>
+  <span class="slide-num">5</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 6: RAG & Retrieval -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>RAG & Healthcare Retrieval</h2>
+      <div class="accent-bar"></div>
+      <p>Production-grade semantic search with trusted healthcare knowledge</p>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box">
+          <h4>Knowledge Sources</h4>
+          <p>Schemas, data dictionaries, governance rules, transformation examples, FHIR profiles, clinical terminologies</p>
+        </div>
+        <div class="card-box">
+          <h4>Semantic Vector Search</h4>
+          <p>OpenAI text-embedding-3-small (384d) stored in Postgres pgvector. Real cosine similarity — no keyword fallback.</p>
+        </div>
+        <div class="card-box">
+          <h4>Source-Aware MMR</h4>
+          <p>Maximal Marginal Relevance with source diversity to avoid near-duplicate chunks from one document.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box">
+          <h4>Optional Reranking</h4>
+          <p>CrossEncoder (BAAI/bge-reranker-base) second-stage reranking when GPU is available.</p>
+        </div>
+        <div class="card-box">
+          <h4>Graph Handoff</h4>
+          <p>Entity recognition, terminology grounding, FHIR search hooks, and evidence triples for Graph-NER/RAG.</p>
+        </div>
+        <div class="card-box">
+          <h4>Quality Controls</h4>
+          <p>Freshness gates, integrity checksums, source inventory, regression dashboard, and active-learning queue.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">6</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 7: Security & Governance -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>Security & Governance</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box" style="border-left: 3px solid var(--accent-red);">
+          <h4>Threat Model</h4>
+          <p>OWASP LLM Top 10 aligned. Prompt injection defense, output validation, least-privilege MCP tools.</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--accent-amber);">
+          <h4>PHI Protection</h4>
+          <p>Sensitive field detection, redaction policies, no raw PHI logging, masking before export.</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--accent-green);">
+          <h4>Audit Trail</h4>
+          <p>Append-only event stream with hash chain integrity verification. Every action is recorded.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box" style="border-left: 3px solid var(--primary);">
+          <h4>Authentication</h4>
+          <p>Google OAuth, HTTP-only session cookies, Postgres session storage, Redis cache, service accounts with API tokens.</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--primary);">
+          <h4>Human Review Gates</h4>
+          <p>Semantic changes, low confidence, PHI detection, and destructive ops all pause for human approval.</p>
+        </div>
+        <div class="card-box" style="border-left: 3px solid var(--primary);">
+          <h4>Deployment Modes</h4>
+          <p>local_dev, demo, pilot, production — each with enforced capability requirements.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">7</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 8: Demo Flow -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>Demo Workflow</h2>
+      <div class="accent-bar"></div>
+      <p>End-to-end: messy healthcare CSV to validated, reviewed, converted JSON with explanation</p>
+    </div>
+    <div class="timeline" style="margin-bottom: 16px;">
+      <div class="tl-item" style="border-top: 3px solid var(--primary);">
+        <div class="wk">Step 1</div><div class="desc">Upload messy CSV</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--primary);">
+        <div class="wk">Step 2</div><div class="desc">Parse & Profile</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-amber);">
+        <div class="wk">Step 3</div><div class="desc">Validate against schema</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-red);">
+        <div class="wk">Step 4</div><div class="desc">Flag issues & PHI</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-amber);">
+        <div class="wk">Step 5</div><div class="desc">Human Review</div>
+      </div>
+      <div class="tl-item" style="border-top: 3px solid var(--accent-green);">
+        <div class="wk">Step 6</div><div class="desc">Convert to JSON</div>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div class="card-box">
+          <h4>Input</h4>
+          <p>lab_results_messy.csv — inconsistent dates, missing values, PHI-like fields, malformed rows</p>
+        </div>
+        <div class="card-box">
+          <h4>Validation</h4>
+          <p>Checked against lab_result_v1.schema.json. Issues flagged with severity. Evidence attached.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card-box">
+          <h4>Review Gate</h4>
+          <p>Transformation plan pauses for human approval. Reviewer sees issues, evidence, output preview.</p>
+        </div>
+        <div class="card-box">
+          <h4>Output</h4>
+          <p>Clean JSON + explanation report + audit events. Every decision traceable.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">8</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 9: Implementation Timeline -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="slide-header">
+      <h2>Implementation Roadmap</h2>
+      <div class="accent-bar"></div>
+    </div>
+    <div class="timeline" style="margin-bottom: 20px;">
+      <div class="tl-item" style="background: #ecfeff; border: 1px solid #bae6fd;">
+        <div class="wk">W 1</div><div class="desc">Research & Design</div>
+      </div>
+      <div class="tl-item" style="background: #ecfeff; border: 1px solid #bae6fd;">
+        <div class="wk">W 2-3</div><div class="desc">Core API & Data Tools</div>
+      </div>
+      <div class="tl-item" style="background: #ecfdf5; border: 1px solid #a7f3d0;">
+        <div class="wk">W 3-4</div><div class="desc">Agent Orchestration</div>
+      </div>
+      <div class="tl-item" style="background: #ecfdf5; border: 1px solid #a7f3d0;">
+        <div class="wk">W 4-5</div><div class="desc">RAG Layer</div>
+      </div>
+      <div class="tl-item" style="background: #fffbeb; border: 1px solid #fde68a;">
+        <div class="wk">W 5-6</div><div class="desc">MCP Integration</div>
+      </div>
+      <div class="tl-item" style="background: #fffbeb; border: 1px solid #fde68a;">
+        <div class="wk">W 6-7</div><div class="desc">HITL & Safety</div>
+      </div>
+      <div class="tl-item" style="background: #fef2f2; border: 1px solid #fecaca;">
+        <div class="wk">W 7-8</div><div class="desc">UI & Deploy</div>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h4 style="font-size:13px; color:var(--muted); margin-bottom:8px;">COMPLETED</h4>
+        <ul style="font-size:12px;">
+          <li>FastAPI backend with 30+ endpoints</li>
+          <li>Full workflow engine with review gates</li>
+          <li>5 rule-based agents with shared state</li>
+          <li>pgvector semantic RAG with MMR</li>
+          <li>6 MCP server wrappers</li>
+          <li>Google OAuth + session management</li>
+          <li>React product console (9 modules)</li>
+          <li>Docker Compose deployment</li>
+          <li>Playwright E2E test suite</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h4 style="font-size:13px; color:var(--muted); margin-bottom:8px;">STATUS</h4>
+        <div class="card-box" style="border-left: 3px solid var(--accent-green);">
+          <h4>Release Candidate v0</h4>
+          <p>Full local release gate passed. Backend, API, retrieval, auth, storage, and frontend hardened for demo.</p>
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag-green tag">Tests Passing</span>
+          <span class="tag-green tag">E2E Passing</span>
+          <span class="tag-green tag">Docker Ready</span>
+          <span class="tag-green tag">Build Clean</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-num">9</span>
+  <span class="footer-tag">OJTFlow</span>
+</div>
+
+<!-- Slide 10: Thank You -->
+<div class="slide slide-title">
+  <div class="logo">OJT</div>
+  <h1>Thank You</h1>
+  <div class="subtitle">
+    OJTFlow — Governed Healthcare Data Operations<br>
+    <span style="color:#67e8f9;">Foundation Model + RAG + MCP + Multi-Agent</span>
+  </div>
+  <div class="meta">
+    Questions? &nbsp;|&nbsp; github.com/ojtflow &nbsp;|&nbsp; HuReDee-IoYou AI OJT
+  </div>
+</div>
+
+</body>
+</html>

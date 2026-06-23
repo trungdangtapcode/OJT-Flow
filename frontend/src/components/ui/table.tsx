@@ -23,18 +23,18 @@ export function TBody({ className, ...props }: React.HTMLAttributes<HTMLTableSec
 }
 
 export function TR({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn("border-b border-border transition-colors hover:bg-muted/60", className)} {...props} />;
+  return <tr className={cn("border-b border-border/40 transition-colors hover:bg-muted/30", className)} {...props} />;
 }
 
 export function TH({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
-      className={cn("h-10 bg-muted/45 px-3 text-left align-middle text-xs font-bold uppercase text-muted-foreground", className)}
+      className={cn("h-11 bg-muted/30 px-4 text-left align-middle text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", className)}
       {...props}
     />
   );
 }
 
 export function TD({ className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("px-3 py-3 align-middle", className)} {...props} />;
+  return <td className={cn("px-4 py-3.5 align-middle", className)} {...props} />;
 }

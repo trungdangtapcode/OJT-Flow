@@ -14,7 +14,7 @@
       "condition": "no_healthcare_concept_detected",
       "code": "no_healthcare_concept_detected",
       "severity": "info",
-      "message": "No healthcare retrieval concept matched deterministic query rules.",
+      "message": "No healthcare retrieval concept matched rule-based query rules.",
       "suggested_action": "Use explicit terms such as FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, lab, unit, medication, literature, or patient identifier when relevant."
     },
     {

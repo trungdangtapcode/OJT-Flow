@@ -1,4 +1,4 @@
-"""Deterministic tool registry metadata before MCP wrapping."""
+"""Rule-based tool registry metadata before MCP wrapping."""
 
 from __future__ import annotations
 

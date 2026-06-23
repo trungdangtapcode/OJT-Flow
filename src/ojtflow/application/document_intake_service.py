@@ -47,6 +47,7 @@ class DocumentIntakeService:
         self,
         *,
         owner_user_id: str,
+        organization_id: str | None = None,
         filename: str,
         mime_type: str,
         data: bytes,
@@ -71,6 +72,7 @@ class DocumentIntakeService:
         )
         return self.artifacts.put_bytes(
             owner_user_id=owner_user_id,
+            organization_id=organization_id,
             filename=filename,
             mime_type=mime_type,
             data=data,
@@ -90,15 +92,21 @@ class DocumentIntakeService:
     ) -> BackgroundJob:
         """Create a durable parse job; optionally execute it in sync local mode."""
 
+        artifact = self.artifacts.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
         job = self.jobs.create_job(
             owner_user_id=owner_user_id,
             job_type="file_parse",
             input={
                 "artifact_id": artifact_id,
+                "filename": artifact.filename,
+                "mime_type": artifact.mime_type,
+                "source_format": artifact.metadata.get("source_format"),
                 "prefer_extractor": prefer_extractor,
                 "request_id": request_id,
             },
         )
+        if self.jobs.queue_backed:
+            return self.jobs.enqueue(owner_user_id=owner_user_id, job_id=job.job_id)
         if not execute_now:
             return job
         return self.jobs.run_sync(
@@ -110,11 +118,52 @@ class DocumentIntakeService:
     def list_artifacts(self, *, owner_user_id: str, limit: int = 100) -> list[UploadedArtifact]:
         return self.artifacts.list(owner_user_id=owner_user_id, limit=limit)
 
+    def list_workspace_artifacts(
+        self,
+        *,
+        organization_id: str,
+        owner_user_id: str | None = None,
+        limit: int = 100,
+        q: str | None = None,
+        mime_type: str | None = None,
+        source: str | None = None,
+    ) -> list[UploadedArtifact]:
+        return self.artifacts.list_for_workspace(
+            organization_id=organization_id,
+            owner_user_id=owner_user_id,
+            limit=limit,
+            q=q,
+            mime_type=mime_type,
+            source=source,
+        )
+
     def get_artifact(self, *, owner_user_id: str, artifact_id: str) -> UploadedArtifact:
         return self.artifacts.get(owner_user_id=owner_user_id, artifact_id=artifact_id)
 
     def get_artifact_bytes(self, *, owner_user_id: str, artifact_id: str) -> bytes:
         return self.artifacts.get_bytes(owner_user_id=owner_user_id, artifact_id=artifact_id)
+
+    def get_workspace_artifact(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> UploadedArtifact:
+        return self.artifacts.get_for_workspace(
+            organization_id=organization_id,
+            artifact_id=artifact_id,
+        )
+
+    def get_workspace_artifact_bytes(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> bytes:
+        return self.artifacts.get_bytes_for_workspace(
+            organization_id=organization_id,
+            artifact_id=artifact_id,
+        )
 
     def record_artifact_access(
         self,
@@ -228,7 +277,7 @@ class DocumentIntakeService:
         text = result.text or ""
         dataset = self.datasets.put_text(
             text,
-            source_kind="extracted_text",
+            source_kind="uploaded_file_extracted_text",
             declared_format="text",
             detected_format=result.source_format,
         )

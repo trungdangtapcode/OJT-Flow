@@ -1,4 +1,4 @@
-"""Deterministic Graph-NER handoff for retrieval packages."""
+"""Rule-based Graph-NER handoff for retrieval packages."""
 
 from __future__ import annotations
 
@@ -20,9 +20,10 @@ from ojtflow.core.contracts.retrieval import (
     RetrievalQuery,
     RetrievalScoreComponent,
 )
+from ojtflow.core.errors import DependencyUnavailableError
 
 
-# Reuse the same seed registry (and path override) as deterministic query
+# Reuse the same seed registry (and path override) as rule-based query
 # normalization in ojtflow.infrastructure.retrieval.query_analysis, so both
 # consumers stay aligned with one source of truth for concept-to-code mapping.
 DEFAULT_CONCEPT_REGISTRY = (
@@ -47,8 +48,8 @@ CONCEPT_REGISTRY_ENV_VAR = "OJT_MEDICAL_CONCEPT_REGISTRY_PATH"
 GRAPH_NER_RULES_ENV_VAR = "OJT_GRAPH_NER_RULES_PATH"
 GRAPH_RAG_POLICY_ENV_VAR = "OJT_GRAPH_RAG_POLICY_PATH"
 FHIR_SEARCH_PARAMETERS_ENV_VAR = "OJT_FHIR_SEARCH_PARAMETERS_PATH"
-GRAPH_NER_EXTRACTOR_NAME = "deterministic_graph_ner"
-GRAPH_NER_EXTRACTOR_VERSION = "deterministic_graph_ner.v1"
+GRAPH_NER_EXTRACTOR_NAME = "rule_based_graph_ner"
+GRAPH_NER_EXTRACTOR_VERSION = "rule_based_graph_ner.v1"
 
 
 class AliasRule(NamedTuple):
@@ -138,10 +139,16 @@ def _graph_ner_rules_path() -> str:
 def _load_graph_rag_policy(path_text: str) -> GraphRAGPolicy:
     path = Path(path_text)
     if not path.exists():
-        return _fallback_graph_rag_policy()
+        raise DependencyUnavailableError(
+            "GraphRAG policy is not configured.",
+            details={"code": "GRAPH_RAG_POLICY_UNAVAILABLE", "path": str(path)},
+        )
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        return _fallback_graph_rag_policy()
+        raise DependencyUnavailableError(
+            "GraphRAG policy is invalid.",
+            details={"code": "GRAPH_RAG_POLICY_INVALID", "path": str(path)},
+        )
     ranking = raw.get("ranking") if isinstance(raw.get("ranking"), dict) else {}
     promotion = (
         raw.get("support_promotion")
@@ -194,22 +201,6 @@ def _graph_rag_policy_path() -> str:
 
 def _active_graph_rag_policy() -> GraphRAGPolicy:
     return _load_graph_rag_policy(_graph_rag_policy_path())
-
-
-def _fallback_graph_rag_policy() -> GraphRAGPolicy:
-    return GraphRAGPolicy(
-        version="graph_rag_policy.fallback",
-        enabled=True,
-        shared_query_target_weight=0.055,
-        evidence_edge_weight=0.012,
-        evidence_triple_weight=0.01,
-        normalized_code_weight=0.018,
-        max_score_boost=0.12,
-        promote_weak_to_partial_min_boost=0.04,
-        promote_partial_to_strong_min_boost=0.07,
-        query_relations=("mentions_entity", "mentions_field", "requests_resource"),
-        evidence_relations=("supports",),
-    )
 
 
 @lru_cache(maxsize=4)
@@ -725,12 +716,14 @@ def _graph_support_by_evidence(
 
     for item in support.values():
         shared = sorted(query_targets.intersection(item["evidence_targets"]))
-        raw_score = (
-            len(shared) * policy.shared_query_target_weight
-            + item["edge_count"] * policy.evidence_edge_weight
-            + item["triple_count"] * policy.evidence_triple_weight
-            + item["normalized_code_count"] * policy.normalized_code_weight
-        )
+        raw_score = 0.0
+        if shared:
+            raw_score = (
+                len(shared) * policy.shared_query_target_weight
+                + item["edge_count"] * policy.evidence_edge_weight
+                + item["triple_count"] * policy.evidence_triple_weight
+                + item["normalized_code_count"] * policy.normalized_code_weight
+            )
         item["shared_query_targets"] = shared
         item["score_boost"] = round(min(policy.max_score_boost, raw_score), 6)
         item["evidence_targets"] = sorted(item["evidence_targets"])

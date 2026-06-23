@@ -1,0 +1,117 @@
+{
+  "case_id": "real-smoke-diabetes-followup-visit-v1",
+  "description": "Synthetic hospital/portal diabetes follow-up visit summary for OCR and clinical extraction smoke tests.",
+  "documents": {
+    "digital_text_pdf": "real-smoke-digital-diabetes-followup-visit.pdf",
+    "scanned_pdf": "real-smoke-scanned-diabetes-followup-visit.pdf",
+    "scanned_png": "real-smoke-scanned-diabetes-followup-visit.png",
+    "bad_scan_pdf": "real-smoke-bad-scan-diabetes-followup-visit.pdf",
+    "patient_portal_pdf": "real-smoke-patient-portal-diabetes-followup-summary.pdf"
+  },
+  "expected_document_type": "diabetes_followup_visit_summary",
+  "expected_header": {
+    "organization": "RIVER CITY HOSPITAL",
+    "document_title": "DIABETES FOLLOW-UP VISIT SUMMARY"
+  },
+  "expected_patient_context": {
+    "patient_name": "MAYA TRAN",
+    "date_of_birth": "1978-04-12",
+    "mrn": "MRN-004219",
+    "accept_redaction": true
+  },
+  "expected_provider_context": {
+    "provider_name": "DR AMY LEE",
+    "signature": "SIGNED DR AMY LEE",
+    "accept_redaction": true
+  },
+  "expected_visit": {
+    "visit_date": "2026-06-11",
+    "reason": "DIABETES FOLLOW-UP",
+    "problem_list": [
+      "TYPE 2 DIABETES",
+      "HYPERLIPIDEMIA"
+    ]
+  },
+  "expected_lab_results": [
+    {
+      "test": "HBA1C",
+      "value": "7.4",
+      "unit": "%",
+      "flag": "HIGH"
+    },
+    {
+      "test": "GLUCOSE",
+      "value": "182",
+      "unit": "MG/DL",
+      "flag": "HIGH"
+    },
+    {
+      "test": "CREATININE",
+      "value": "0.9",
+      "unit": "MG/DL",
+      "flag": "NORMAL"
+    },
+    {
+      "test": "LDL",
+      "value": "138",
+      "unit": "MG/DL",
+      "flag": "HIGH"
+    }
+  ],
+  "expected_medications": [
+    "METFORMIN 1000 MG BID",
+    "ATORVASTATIN 20 MG NIGHTLY",
+    "LISINOPRIL 10 MG DAILY"
+  ],
+  "expected_assessment_plan": {
+    "assessment": "A1C ABOVE GOAL",
+    "plan": [
+      "REVIEW MEDS",
+      "DIET AND EXERCISE"
+    ],
+    "follow_up": "FOLLOW UP 3 MONTHS"
+  },
+  "expected_phi_policy": {
+    "acceptable_patient_name_outputs": [
+      "PATIENT MAYA TRAN",
+      "PATIENT REDACTED",
+      "PATIENT NAME REDACTED"
+    ],
+    "acceptable_dob_outputs": [
+      "DOB 1978-04-12",
+      "DOB REDACTED"
+    ],
+    "acceptable_mrn_outputs": [
+      "MRN MRN-004219",
+      "MRN REDACTED"
+    ],
+    "acceptable_provider_outputs": [
+      "PROVIDER DR AMY LEE",
+      "PROVIDER REDACTED",
+      "PROVIDER NAME REDACTED"
+    ],
+    "acceptable_signature_outputs": [
+      "SIGNED DR AMY LEE",
+      "SIGNED REDACTED",
+      "SIGNED PROVIDER REDACTED"
+    ]
+  },
+  "forbidden_ocr_confusions": {
+    "RIVER C1TY": "RIVER CITY",
+    "MAYA TRAM": "MAYA TRAN",
+    "AMV LEE": "AMY LEE",
+    "HBALC": "HBA1C",
+    "HBAIC": "HBA1C",
+    "CREATINLNE": "CREATININE",
+    "AT0RVASTATIN": "ATORVASTATIN",
+    "LISIN0PRIL": "LISINOPRIL"
+  },
+  "minimum_pass_criteria": [
+    "The parser must identify the document as a diabetes follow-up visit summary.",
+    "All four lab results must be extracted with correct test name, value, unit, and flag.",
+    "Medication list must include metformin, atorvastatin, and lisinopril with dose/frequency.",
+    "Assessment, plan, and follow-up must be present.",
+    "Patient/provider identifiers must either be preserved exactly or explicitly redacted.",
+    "The output must not contain any forbidden OCR confusion listed in forbidden_ocr_confusions."
+  ]
+}

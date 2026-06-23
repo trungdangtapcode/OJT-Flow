@@ -222,7 +222,7 @@ class RetrievalSnippet(ContractModel):
     start_char: int = Field(ge=0)
     end_char: int = Field(ge=0)
     matched_terms: list[str] = Field(default_factory=list)
-    extraction_strategy: str = "deterministic_sentence_window_v0"
+    extraction_strategy: str = "extractive_sentence_window_v0"
 
 
 class RetrievalQueryVariant(ContractModel):
@@ -509,7 +509,7 @@ class RetrievalExternalQueryTransparency(ContractModel):
 
 
 class RetrievalFilterSuggestion(ContractModel):
-    """Metadata filter suggested by deterministic self-query analysis."""
+    """Metadata filter suggested by rule-based self-query analysis."""
 
     field: NonBlankStr
     value: NonBlankStr
@@ -530,7 +530,7 @@ class RetrievalQueryDiagnostic(ContractModel):
 
 
 class RetrievalSearchHint(ContractModel):
-    """External medical search syntax hint derived from deterministic analysis."""
+    """External medical search syntax hint derived from rule-based analysis."""
 
     target: NonBlankStr
     query: NonBlankStr
@@ -1194,7 +1194,7 @@ class RetrievalConceptCandidate(ContractModel):
 class RetrievalQueryAnalysis(ContractModel):
     """Auditable query understanding used before first-stage retrieval."""
 
-    strategy: str = "deterministic_clinical_expansion_v0"
+    strategy: str = "clinical_expansion_rules_v0"
     detected_concepts: list[str] = Field(default_factory=list)
     concept_candidates: list[RetrievalConceptCandidate] = Field(default_factory=list)
     expanded_terms: list[str] = Field(default_factory=list)
@@ -1399,7 +1399,7 @@ class GraphConflictEvidenceRef(ContractModel):
 
 
 class GraphConflictRecord(ContractModel):
-    """One deterministic conflict detected across graph/evidence context."""
+    """One rule-based conflict detected across graph/evidence context."""
 
     conflict_id: NonBlankStr
     kind: GraphConflictKind
@@ -1429,7 +1429,7 @@ class GraphConflictSummary(ContractModel):
 
 
 class GraphConflictReport(ContractModel):
-    """Deterministic graph/evidence conflict report for RAG guardrails."""
+    """Rule-based graph/evidence conflict report for RAG guardrails."""
 
     version: NonBlankStr = "graph_conflict_report.v1"
     policy_version: NonBlankStr

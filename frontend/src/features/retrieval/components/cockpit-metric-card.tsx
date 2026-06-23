@@ -15,7 +15,7 @@ export function CockpitMetricCard({
   value: string;
 }) {
   return (
-    <div className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2">
+    <div className="grid min-w-0 gap-1 rounded-lg border border-border/60 bg-card px-3 py-2">
       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
         {label}
         <HelpTooltip label={`${label} help`}>{helpText}</HelpTooltip>

@@ -6,16 +6,14 @@ import { PageHeader } from "../../components/layout/page-header";
 import { StatusBadge } from "../../components/domain/workflow-badges";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Input, Label, Select } from "../../components/ui/form";
-import { GuideChecklist, GuideGrid, GuideItem, GuidePanel } from "../../components/ui/guide-panel";
-import { HelpTooltip } from "../../components/ui/help-tooltip";
+import { Input, Select } from "../../components/ui/form";
 import { Notice } from "../../components/ui/notice";
 import { PaginationFooter } from "../../components/ui/pagination";
 import { Skeleton } from "../../components/ui/skeleton";
 import { SummaryStrip, SummaryStripItem } from "../../components/ui/summary-strip";
 import { Table, TBody, TD, TH, THead, TR } from "../../components/ui/table";
 import { useReviewSummariesQuery, workflowErrorMessage } from "../../lib/server-state";
-import { formatCompactDate } from "../../lib/utils";
+import { cn, formatCompactDate } from "../../lib/utils";
 import { useResponsivePageSize } from "../../lib/use-responsive-page-size";
 
 export function ReviewsPage() {
@@ -46,27 +44,8 @@ export function ReviewsPage() {
   const isFiltered = Boolean(q.trim() || status !== "pending");
 
   return (
-    <div className="grid gap-5">
-      <PageHeader title="Review queue" description="Human decisions for risky transformations and healthcare-sensitive changes." />
-      <GuidePanel title="How to handle a review gate">
-        <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
-          <GuideGrid columns="md:grid-cols-1">
-            <GuideItem title="Why it appears">
-              The workflow paused because validation, evidence, PHI, low confidence, or meaning-changing transformations require a human decision.
-            </GuideItem>
-            <GuideItem title="What to inspect">
-              Open the workflow, read issues first, then evidence, output preview, and audit events before approving.
-            </GuideItem>
-          </GuideGrid>
-          <GuideChecklist
-            items={[
-              { label: "Approve", text: "Use when output is acceptable as generated." },
-              { label: "Edit", text: "Use when the output is close but needs a controlled correction." },
-              { label: "Reject or clarify", text: "Use when evidence is weak, data is unsafe, or the request is ambiguous." },
-            ]}
-          />
-        </div>
-      </GuidePanel>
+    <div className="grid gap-6">
+      <PageHeader title="Review queue" description="Approve or reject pending workflows." />
       <ReviewSummaryStrip
         loading={reviewsQuery.isLoading}
         maxIssueCount={maxIssueCount}
@@ -76,22 +55,19 @@ export function ReviewsPage() {
         visibleIssueCount={visibleIssueCount}
       />
       <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border bg-card/70 p-4">
+        <CardHeader className="border-b border-border/40 bg-muted/20 p-4">
           <div className="grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2">
                 <ClipboardCheck className="h-5 w-5 text-primary" />
                 Pending decisions
-                <HelpTooltip label="Pending decisions help">
-                  These rows are workflows waiting for a human decision. Open the workflow to review issues and evidence before choosing an action.
-                </HelpTooltip>
               </CardTitle>
-              <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground">
-                {reviewsQuery.isLoading ? "loading reviews" : formatReviewCount(total)}
+              <span className="rounded-full border border-border/50 bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                {reviewsQuery.isLoading ? "loading" : formatReviewCount(total)}
               </span>
             </div>
-            <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(14rem,1fr)_minmax(9rem,0.5fr)] xl:grid-cols-[minmax(16rem,1fr)_minmax(10rem,0.45fr)_minmax(8rem,0.35fr)_7rem]">
-              <div className="relative">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="relative min-w-0 flex-1 max-sm:w-full">
                 <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   aria-label="Search reviews"
@@ -106,7 +82,7 @@ export function ReviewsPage() {
               </div>
               <Select
                 aria-label="Review status"
-                className="w-full"
+                className="w-auto min-w-[10rem]"
                 onChange={(event) => {
                   setPage(1);
                   setStatus(event.target.value);
@@ -121,48 +97,34 @@ export function ReviewsPage() {
                 <option value="clarification_requested">Clarification requested</option>
                 <option value="cancelled">Cancelled</option>
               </Select>
-              <Label className="gap-1 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  Sort
-                  <HelpTooltip label="Review sort help">
-                    Sort by issues when triaging risk, evidence when checking grounding coverage, or updated time for recent work.
-                  </HelpTooltip>
-                </span>
-                <Select
-                  className="w-full"
-                  onChange={(event) => {
-                    setPage(1);
-                    setSort(event.target.value);
-                  }}
-                  value={sort}
-                >
-                  <option value="updated_at">Updated</option>
-                  <option value="created_at">Created</option>
-                  <option value="workflow_id">Workflow ID</option>
-                  <option value="issue_count">Issues</option>
-                  <option value="evidence_count">Evidence</option>
-                  <option value="status">Status</option>
-                </Select>
-              </Label>
-              <Label className="gap-1 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  Direction
-                  <HelpTooltip label="Review direction help">
-                    Desc shows newest or highest values first. Asc shows oldest or lowest values first.
-                  </HelpTooltip>
-                </span>
-                <Select
-                  className="w-full"
-                  onChange={(event) => {
-                    setPage(1);
-                    setDirection(event.target.value);
-                  }}
-                  value={direction}
-                >
-                  <option value="desc">Desc</option>
-                  <option value="asc">Asc</option>
-                </Select>
-              </Label>
+              <Select
+                aria-label="Sort by"
+                className="w-auto min-w-[7rem]"
+                onChange={(event) => {
+                  setPage(1);
+                  setSort(event.target.value);
+                }}
+                value={sort}
+              >
+                <option value="updated_at">Updated</option>
+                <option value="created_at">Created</option>
+                <option value="workflow_id">Workflow ID</option>
+                <option value="issue_count">Issues</option>
+                <option value="evidence_count">Evidence</option>
+                <option value="status">Status</option>
+              </Select>
+              <Select
+                aria-label="Sort direction"
+                className="w-auto min-w-[5.5rem]"
+                onChange={(event) => {
+                  setPage(1);
+                  setDirection(event.target.value);
+                }}
+                value={direction}
+              >
+                <option value="desc">Desc</option>
+                <option value="asc">Asc</option>
+              </Select>
             </div>
           </div>
         </CardHeader>
@@ -178,7 +140,7 @@ export function ReviewsPage() {
               <div className="grid gap-3">
                 <p>
                   {isFiltered
-                    ? "Adjust the review filters or search terms to widen the queue."
+                    ? "Adjust the filters or search terms to widen the queue."
                     : "Review-gated workflows will appear here when a transformation needs a human decision."}
                 </p>
                 {!isFiltered ? (
@@ -195,40 +157,40 @@ export function ReviewsPage() {
             </Notice>
           ) : (
             <>
-              <div className="grid gap-3 md:hidden">
+              <div className="grid gap-2 md:hidden">
                 {items.map((item) => (
                   <button
-                    className="grid gap-2 rounded-md border border-border bg-card p-2.5 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/30 focus-ring"
+                    className="grid gap-2 rounded-xl border border-border/50 bg-card p-3 text-left transition-all duration-150 list-item-hover focus-ring"
                     key={item.workflow_id}
                     onClick={() => void navigate({ to: "/workflows/$workflowId", params: { workflowId: item.workflow_id } })}
                     type="button"
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="break-all font-bold leading-tight">{item.workflow_id}</div>
-                        <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.instruction}</div>
+                        <div className="break-all font-semibold leading-tight">{item.workflow_id}</div>
+                        <div className="mt-1.5 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.instruction}</div>
                       </div>
                       <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge className="max-w-full whitespace-normal leading-tight" status={item.status} />
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                         {item.issue_count} issues
                       </span>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                         {item.evidence_count} evidence
                       </span>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                         {item.review_status ?? "pending"}
                       </span>
                     </div>
-                    <div className="text-[11px] font-semibold uppercase text-muted-foreground">
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                       Updated {formatCompactDate(item.updated_at)}
                     </div>
                   </button>
                 ))}
               </div>
-              <Table className="table-fixed" wrapperClassName="hidden max-h-[calc(100vh-18rem)] rounded-md border border-border md:block">
+              <Table className="table-fixed" wrapperClassName="hidden max-h-[calc(100vh-18rem)] rounded-xl border border-border/50 md:block">
                 <THead className="sticky top-0 z-[1] bg-card">
                   <TR>
                     <TH className="w-[40%]">Workflow</TH>
@@ -244,9 +206,9 @@ export function ReviewsPage() {
                   {items.map((item) => (
                     <TR key={item.workflow_id}>
                       <TD className="min-w-0">
-                        <div className="truncate font-bold">{item.workflow_id}</div>
+                        <div className="truncate font-semibold">{item.workflow_id}</div>
                         <div className="truncate text-xs text-muted-foreground">{item.instruction}</div>
-                        <div className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[11px] font-bold uppercase text-muted-foreground">
+                        <div className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[11px] font-medium uppercase text-muted-foreground">
                           <span className="truncate">{item.schema_id ?? "no schema"}</span>
                           {item.review_id ? <span className="truncate">{item.review_id}</span> : null}
                         </div>
@@ -306,32 +268,32 @@ function ReviewSummaryStrip({
     <SummaryStrip>
       <SummaryStripItem
         icon={ClipboardCheck}
-        label="Matching reviews"
+        label="Reviews"
         loading={loading}
-        supporting="Current filter result"
+        supporting="Current filter"
         value={total}
       />
       <SummaryStripItem
         icon={AlertTriangle}
-        label="Visible pending"
+        label="Pending"
         loading={loading}
-        supporting="Requires decision"
+        supporting="Needs decision"
         tone="warning"
         value={pendingVisible}
       />
       <SummaryStripItem
         icon={Scale}
-        label="Issue load"
+        label="Issues"
         loading={loading}
-        supporting="Visible page total"
+        supporting="Page total"
         tone="warning"
         value={visibleIssueCount}
       />
       <SummaryStripItem
         icon={FileSearch}
-        label="Evidence refs"
+        label="Evidence"
         loading={loading}
-        supporting={loading ? "Loading review evidence" : `Max issues ${maxIssueCount}`}
+        supporting={loading ? "Loading" : `Max ${maxIssueCount} issues`}
         tone="info"
         value={visibleEvidenceCount}
       />
@@ -342,10 +304,10 @@ function ReviewSummaryStrip({
 function ReviewQueueSkeleton() {
   return (
     <div aria-label="Loading review queue" className="grid gap-3" role="status">
-      <div className="grid gap-3 md:hidden">
+      <div className="grid gap-2 md:hidden">
         {Array.from({ length: 3 }).map((_, index) => (
           <div
-            className="grid gap-3 rounded-md border border-border bg-card p-3 shadow-sm"
+            className="grid gap-3 rounded-xl border border-border/50 bg-card p-3"
             data-testid="review-queue-skeleton-card"
             key={index}
           >
@@ -368,7 +330,7 @@ function ReviewQueueSkeleton() {
       </div>
       <Table
         className="table-fixed"
-        wrapperClassName="hidden max-h-[calc(100vh-18rem)] rounded-md border border-border md:block"
+        wrapperClassName="hidden max-h-[calc(100vh-18rem)] rounded-xl border border-border/50 md:block"
       >
         <THead className="sticky top-0 z-[1] bg-card">
           <TR>
@@ -420,5 +382,5 @@ function ReviewQueueSkeleton() {
 }
 
 function formatReviewCount(count: number) {
-  return `${count} review ${count === 1 ? "item" : "items"}`;
+  return `${count} review${count === 1 ? "" : "s"}`;
 }

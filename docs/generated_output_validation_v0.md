@@ -10,7 +10,7 @@ displayed, or persisted through Assistant stream replay.
 - `assistant_stream_summary`: streamed LLM answer text, validated cumulatively
   before each delta is emitted.
 - `export_description`: generated export labels/descriptions for future export
-  workflows. Current artifact/workflow exports are deterministic, but the policy
+  workflows. Current artifact/workflow exports are rule-based, but the policy
   helper is available before LLM-authored export descriptions are introduced.
 
 ## Behavior
@@ -18,13 +18,13 @@ displayed, or persisted through Assistant stream replay.
 - Assistant plans are already parsed into `AssistantPlan`; F128 adds a second
   output-validation pass that rejects prompt-injection text in generated plan
   messages/rationales and unknown tool names outside the backend allowlist.
-- If an LLM plan fails validation, Assistant falls back to deterministic
-  planning and records a warning.
-- If an LLM answer fails validation, Assistant keeps the deterministic answer
-  fallback instead of replacing it with model text.
+- If an LLM plan fails validation, Assistant returns a structured error and
+  does not execute a substitute plan.
+- If an LLM answer fails validation, Assistant returns a structured error and
+  does not substitute local answer text.
 - Streaming synthesis validates the cumulative generated answer before emitting
   each delta. If validation blocks, the unsafe delta is not emitted and the
-  final response keeps the deterministic fallback.
+  request fails with a structured validation error.
 
 ## Contract
 

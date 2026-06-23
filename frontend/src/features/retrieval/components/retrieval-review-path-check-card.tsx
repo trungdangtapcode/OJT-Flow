@@ -23,7 +23,7 @@ export function RetrievalReviewPathCheckCard({
 }) {
   const Icon = checkIcons[item.code];
   return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid min-w-0 gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex min-w-0 items-start gap-2">
         <Icon
           className={cn(

@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from ojtflow.core.contracts.base import ContractModel, NonBlankStr, NonBlankText
 from ojtflow.core.contracts.clinical import ClinicalPackage
+from ojtflow.core.contracts.medsiglip import MedSiglipClassificationRequest
 from ojtflow.core.contracts.enums import (
     DataFormat,
     EvidenceSourceType,
@@ -489,6 +490,34 @@ class OcrEvidenceRequest(ContractModel):
     }
 
 
+class MedSiglipClassificationJobRequest(MedSiglipClassificationRequest):
+    """Create a durable MedSigLIP classification job."""
+
+    execute_now: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "images": [
+                        {
+                            "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...",
+                            "mime_type": "image/png",
+                            "source_ref": "upload://demo/chest-xray.png",
+                        }
+                    ],
+                    "candidate_labels": [
+                        "a chest x-ray with cardiomegaly",
+                        "a chest x-ray without cardiomegaly",
+                    ],
+                    "include_embeddings": False,
+                    "execute_now": True,
+                }
+            ]
+        }
+    }
+
+
 class RetrievalSearchFilters(ContractModel):
     trust_level: TrustLevel | None = None
     clinical_domain: NonBlankStr | None = None
@@ -745,7 +774,7 @@ class EmbeddingReindexJobRequest(RetrievalReindexRequest):
 
 class RuntimeRetrievalSettingsRequest(ContractModel):
     change_reason: NonBlankStr | None = None
-    embedding_provider: Literal["deterministic", "openai", "huggingface"] | None = None
+    embedding_provider: Literal["openai", "huggingface"] | None = None
     embedding_model: NonBlankStr | None = None
     embedding_dimensions: int | None = Field(default=None, ge=1, le=4096)
     retrieval_framework: Literal["custom", "llamaindex"] | None = None

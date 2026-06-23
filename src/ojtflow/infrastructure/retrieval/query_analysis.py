@@ -1,4 +1,4 @@
-"""Deterministic clinical query analysis for retrieval."""
+"""Rule-based clinical query analysis for retrieval."""
 
 from __future__ import annotations
 
@@ -278,7 +278,7 @@ class FhirSearchResource:
 
 
 def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
-    """Return deterministic query analysis and healthcare-aware variants."""
+    """Return rule-based query analysis and healthcare-aware variants."""
 
     base_variants = _base_query_variant_details(query)
     haystack = _query_haystack(query)
@@ -415,7 +415,7 @@ def analyze_query(query: RetrievalQuery) -> RetrievalQueryAnalysis:
 
 
 def build_retrieval_plan(query: RetrievalQuery) -> RetrievalPlan:
-    """Build a plan-only retrieval response from deterministic query analysis."""
+    """Build a plan-only retrieval response from rule-based query analysis."""
 
     analysis = analyze_query(query)
     profile_label = analysis.query_profile.label if analysis.query_profile else "standard retrieval"
@@ -1037,7 +1037,7 @@ def _default_query_diagnostic_rules() -> tuple[QueryDiagnosticRule, ...]:
             condition="no_healthcare_concept_detected",
             code="no_healthcare_concept_detected",
             severity="info",
-            message="No healthcare retrieval concept matched deterministic query rules.",
+            message="No healthcare retrieval concept matched rule-based query rules.",
             suggested_action=(
                 "Use explicit terms such as FHIR, LOINC, UCUM, RxNorm, OMOP, MeSH, "
                 "lab, unit, medication, literature, or patient identifier when relevant."

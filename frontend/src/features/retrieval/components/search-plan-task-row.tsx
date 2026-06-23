@@ -22,7 +22,7 @@ export function SearchPlanTaskRow({
     markCopied(copyKey);
   };
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 rounded-md border border-border bg-muted/20 p-2 text-xs">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-2 text-xs">
       <SearchPlanTaskBadges task={task} />
       <div className="break-words text-muted-foreground">{task.rationale}</div>
       <SearchPlanTaskActionSummary task={task} />

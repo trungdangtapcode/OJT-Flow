@@ -1,7 +1,7 @@
 {
   "version": "FHIR R4 curated seed v0",
   "source": "https://hl7.org/fhir/R4/search.html",
-  "purpose": "FHIR search parameter seed for deterministic medical retrieval hints. This is not a complete FHIR CapabilityStatement.",
+  "purpose": "FHIR search parameter seed for rule-based medical retrieval hints. This is not a complete FHIR CapabilityStatement.",
   "resources": [
     {
       "resource_type": "Observation",

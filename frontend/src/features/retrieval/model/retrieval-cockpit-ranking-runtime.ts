@@ -56,7 +56,7 @@ export function fusionDiagnosticsFromPackage(packageData: RetrievalPackage): {
 
 export function hybridStackValue(ranking: RetrievalCockpitRankingStack): string {
   const lexical = ranking.framework.bm25Enabled ? "BM25" : "FTS";
-  const vector = ranking.embedding.provider === "deterministic" ? "hash" : "vector";
+  const vector = "vector";
   const rerank = ranking.reranker.enabled ? "+ rerank" : "";
   return `${lexical} + ${vector} ${rerank}`.trim();
 }

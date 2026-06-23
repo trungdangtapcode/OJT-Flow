@@ -37,7 +37,7 @@ export function SearchPlanTaskGroup({
   const copyKey = `task-group:${label}`;
   const copied = copiedKey === copyKey;
   return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 p-2">
+    <div className="grid min-w-0 gap-2 rounded-lg border border-border/60 bg-muted/20 p-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="break-words text-xs font-black uppercase text-muted-foreground">

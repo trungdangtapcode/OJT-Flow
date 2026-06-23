@@ -78,14 +78,12 @@ class RedisRateLimitStore:
         redis_url: str,
         *,
         prefix: str,
-        fallback: RateLimitStore | None = None,
     ) -> None:
         if redis is None:
             raise RuntimeError("redis package is not installed")
         self.client = redis.from_url(redis_url, decode_responses=True)
         self.client.ping()
         self.prefix = prefix.strip(":") or "ojtflow:rate_limit"
-        self.fallback = fallback
 
     def increment(
         self,
@@ -104,12 +102,6 @@ class RedisRateLimitStore:
             count, _ = pipe.execute()
             return int(count), reset_at
         except RedisError:
-            if self.fallback is not None:
-                return self.fallback.increment(
-                    key,
-                    window_seconds=window_seconds,
-                    now=now,
-                )
             raise
 
 
@@ -173,15 +165,10 @@ def build_rate_limiter(settings: Settings) -> RateLimiter:
             prefix=settings.rate_limit_redis_prefix,
         )
     elif settings.rate_limit_backend == "auto" and settings.storage_backend == "postgres":
-        fallback = InMemoryRateLimitStore()
-        try:
-            store = RedisRateLimitStore(
-                settings.redis_url,
-                prefix=settings.rate_limit_redis_prefix,
-                fallback=fallback,
-            )
-        except (RedisError, RuntimeError, ValueError):
-            store = fallback
+        store = RedisRateLimitStore(
+            settings.redis_url,
+            prefix=settings.rate_limit_redis_prefix,
+        )
     else:
         store = InMemoryRateLimitStore()
     return RateLimiter(policy=policy, store=store)

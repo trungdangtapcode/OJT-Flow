@@ -25,7 +25,7 @@
       "signals": ["chat_requests", "first_event_latency_ms", "tool_call_count", "tool_error_count", "cancelled_streams", "llm_provider_errors"],
       "source": "assistant stream replay artifacts, tool audit records, LLM adapter diagnostics",
       "alert_thresholds": ["first event p95 above budget", "tool error ratio above 2%", "LLM provider unavailable"],
-      "notes": ["External LLM cost and first-token latency must be separated from deterministic local mode."]
+      "notes": ["External LLM cost and first-token latency must be separated from local tool execution telemetry."]
     },
     {
       "panel_id": "retrieval_quality",

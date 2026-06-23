@@ -21,7 +21,7 @@ def build_embedding_reindex_safety_report(
     include_seeded: bool = True,
     include_corpus: bool = True,
 ) -> EmbeddingReindexSafetyReport:
-    """Build a deterministic dry-run report for an approval-gated reindex."""
+    """Build a rule-based dry-run report for an approval-gated reindex."""
 
     payload = _approval_payload(
         current_manifest=current_manifest,

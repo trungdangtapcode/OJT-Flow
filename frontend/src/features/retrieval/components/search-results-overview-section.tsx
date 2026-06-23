@@ -11,7 +11,6 @@ import { RankedEvidenceTriage } from "./ranked-evidence-triage";
 import { RecommendedActionsPanel } from "./recommended-actions-panel";
 import { RetrievalReviewPathPanel } from "./retrieval-review-path";
 import { RetrievalSearchCockpit } from "./retrieval-search-cockpit";
-import { SearchAnswerCard } from "./search-answer-card";
 import type { SearchResultsSharedProps } from "./search-results-section-types";
 import { SubmittedSearchSummary } from "./submitted-search-summary";
 
@@ -51,10 +50,6 @@ export function SearchResultsOverviewSection({
         onClearSourceScope={() => onClearFilter("source_id")}
         reportJson={view.cockpitReportJson}
         view={view.cockpitView}
-      />
-      <SearchAnswerCard
-        packageData={packageData}
-        submittedSearchPayload={submittedSearchPayload}
       />
       <RetrievalReviewPathPanel packageData={packageData} />
       <EvidenceInterpretationPanel packageData={packageData} />

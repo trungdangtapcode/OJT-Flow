@@ -21,6 +21,7 @@ import { Notice } from "../../components/ui/notice";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Table, TBody, TD, TH, THead, TR } from "../../components/ui/table";
 import {
+  useWorkflowInputPreviewQuery,
   useWorkflowOutputQuery,
   workflowErrorMessage,
 } from "../../lib/server-state";
@@ -38,7 +39,10 @@ import type {
   WorkflowProvenanceRecord,
   WorkflowState,
 } from "../../types";
-import { PendingReviewGate } from "./workflow-detail-review";
+import {
+  PendingReviewGate,
+  ReviewEvidenceBeforeDecision,
+} from "./workflow-detail-review";
 
 export function Overview({
   compactReview,
@@ -55,20 +59,30 @@ export function Overview({
   reviewIsPending: boolean;
   workflow: WorkflowState;
 }) {
+  const inputPreviewQuery = useWorkflowInputPreviewQuery(workflow.workflow_id, Boolean(review));
+
   return (
     <div className="grid min-w-0 max-w-full gap-4">
       {review ? (
-        <PendingReviewGate
-          compact={compactReview}
-          error={reviewError}
-          isPending={reviewIsPending}
-          onDecision={onReviewDecision}
-          review={review}
-        />
+        <div className="grid gap-4">
+          <ReviewEvidenceBeforeDecision
+            inputPreview={inputPreviewQuery.data ?? null}
+            inputPreviewError={inputPreviewQuery.isError ? workflowErrorMessage(inputPreviewQuery.error) : null}
+            inputPreviewLoading={inputPreviewQuery.isLoading}
+            workflow={workflow}
+          />
+          <PendingReviewGate
+            compact={compactReview}
+            error={reviewError}
+            isPending={reviewIsPending}
+            onDecision={onReviewDecision}
+            review={review}
+          />
+        </div>
       ) : null}
       <div className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[minmax(280px,0.78fr)_minmax(0,1.22fr)]">
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70 p-4">
+          <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
             <CardTitle>Steps</CardTitle>
           </CardHeader>
           <CardContent className="pt-4">
@@ -100,7 +114,7 @@ export function Issues({ workflow, compact = false }: { workflow: WorkflowState;
     const visibleIssues = issues.slice(0, 5);
     return (
       <Card className="min-w-0 overflow-hidden">
-        <CardHeader className="border-b border-border bg-card/70 p-4">
+        <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
           <CardTitle>Validation issues</CardTitle>
           <CardDescription>{formatCount(issues.length, "issue")} found</CardDescription>
         </CardHeader>
@@ -137,7 +151,7 @@ export function Issues({ workflow, compact = false }: { workflow: WorkflowState;
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <CardTitle>Validation issues</CardTitle>
         <CardDescription>{formatCount(issues.length, "issue")} found</CardDescription>
       </CardHeader>
@@ -145,7 +159,7 @@ export function Issues({ workflow, compact = false }: { workflow: WorkflowState;
         <div className="grid gap-3 md:hidden">
           {issues.map((issue) => (
             <div
-              className="grid scroll-mt-24 gap-2 rounded-md border border-border bg-muted/20 p-3"
+              className="grid scroll-mt-24 gap-2 rounded-lg border border-border/60 bg-muted/20 p-3"
               id={validationIssueAnchorId(issue.issue_id)}
               key={issue.issue_id}
             >
@@ -159,7 +173,7 @@ export function Issues({ workflow, compact = false }: { workflow: WorkflowState;
             </div>
           ))}
           {!issues.length ? (
-            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-border/60 p-3 text-sm text-muted-foreground">
               No validation issues recorded.
             </div>
           ) : null}
@@ -202,7 +216,7 @@ export function Evidence({ workflow }: { workflow: WorkflowState }) {
     : undefined;
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border bg-card/70 p-4">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border/60 bg-muted/30 p-4">
         <div className="min-w-0">
           <CardTitle>Retrieval evidence</CardTitle>
           <CardDescription>{formatCount(workflow.retrieved_context.length, "evidence item")}</CardDescription>
@@ -297,7 +311,7 @@ function RetrievalTraceSummary({
 
 function GraphContextSummary({ graphContext }: { graphContext: RetrievalGraphContext }) {
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex min-w-0 items-start gap-3">
         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
           <Network className="h-4 w-4" />
@@ -333,7 +347,7 @@ function GraphContextSummary({ graphContext }: { graphContext: RetrievalGraphCon
 
 function GraphMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-border bg-card p-2">
+    <div className="rounded-lg border border-border/60 bg-card p-2">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-black tabular-nums">{value}</div>
     </div>
@@ -391,11 +405,11 @@ export function Output({ workflow }: { workflow: WorkflowState }) {
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle>Output artifact</CardTitle>
-            <CardDescription>Generated artifact, deterministic metadata, and explanation package</CardDescription>
+            <CardDescription>Generated artifact, stable metadata, and explanation package</CardDescription>
           </div>
           {hasGeneratedOutput ? (
             <div className="flex flex-wrap gap-2">
@@ -421,7 +435,7 @@ export function Output({ workflow }: { workflow: WorkflowState }) {
             {workflowErrorMessage(outputQuery.error)}
           </Notice>
         ) : (
-          <div className="min-w-0 rounded-md border border-border bg-muted/20">
+          <div className="min-w-0 rounded-lg border border-border/60 bg-muted/20">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
               <div className="text-sm font-bold">Artifact preview</div>
               <div className="text-xs font-semibold text-muted-foreground">
@@ -441,20 +455,20 @@ export function Output({ workflow }: { workflow: WorkflowState }) {
         )}
 
         <div className="grid gap-4">
-          <div className="grid gap-2 rounded-md border border-border p-3 text-sm">
+          <div className="grid gap-2 rounded-lg border border-border/60 p-3 text-sm">
             <Row label="Format" value={output?.output_format ?? "not generated"} />
             <Row label="Output ref" value={displayArtifactRef(output?.output_ref)} />
             <Row label="Output hash" value={artifact?.output_hash ?? output?.output_hash ?? "not generated"} />
             <Row label="Byte size" value={artifact ? formatBytes(artifact.byte_size) : "not loaded"} />
             <Row label="Warnings" value={output?.warnings.length ? output.warnings.join(", ") : "none"} />
           </div>
-          <div className="rounded-md border border-border p-3 text-sm">
+          <div className="rounded-lg border border-border/60 p-3 text-sm">
             <h4 className="mb-2 font-bold">Conversion metadata</h4>
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs text-muted-foreground">
               {JSON.stringify(artifact?.diff_summary ?? output?.diff_summary ?? {}, null, 2)}
             </pre>
           </div>
-          <div className="rounded-md border border-border p-3 text-sm">
+          <div className="rounded-lg border border-border/60 p-3 text-sm">
             <h4 className="mb-2 font-bold">Explanation</h4>
             <p className="text-muted-foreground">{workflow.explanation?.summary ?? "Explanation is not generated yet."}</p>
             {workflow.explanation?.limitations.length ? (
@@ -480,7 +494,7 @@ export function Audit({
   return (
     <div className="grid gap-4">
       <Card className="min-w-0 overflow-hidden">
-        <CardHeader className="border-b border-border bg-card/70 p-4">
+        <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
           <div className="flex min-w-0 items-start gap-3">
             <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
               <GitBranch className="h-4 w-4" />
@@ -522,7 +536,7 @@ export function Audit({
       </Card>
 
       <Card className="min-w-0 overflow-hidden">
-        <CardHeader className="border-b border-border bg-card/70 p-4">
+        <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
           <CardTitle>Audit timeline</CardTitle>
           <CardDescription>{formatCount(events.length, "append-only event")}</CardDescription>
         </CardHeader>
@@ -639,7 +653,7 @@ function issueRow(issue: ValidationIssue) {
 function EvidenceCard({ evidence }: { evidence: WorkflowState["retrieved_context"][number] }) {
   return (
     <article
-      className="grid min-w-0 scroll-mt-24 gap-3 rounded-md border border-border bg-card p-3 shadow-sm"
+      className="grid min-w-0 scroll-mt-24 gap-3 rounded-lg border border-border/60 bg-card p-3 shadow-sm"
       id={evidenceAnchorId(evidence.evidence_id)}
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">

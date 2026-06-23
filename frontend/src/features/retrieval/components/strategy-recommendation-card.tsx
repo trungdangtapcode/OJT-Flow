@@ -23,7 +23,7 @@ export function StrategyRecommendationCard({
 }) {
   const filterAction = getSuggestedFilterAction(recommendation.suggested_filters);
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <Badge variant={strategyRecommendationVariant(recommendation.status)}>
           {humanize(recommendation.status)}

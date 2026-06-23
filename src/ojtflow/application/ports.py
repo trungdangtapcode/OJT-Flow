@@ -33,9 +33,20 @@ from ojtflow.core.contracts.audit import AuditRecord
 from ojtflow.core.contracts.events import WorkflowEvent
 from ojtflow.core.contracts.evidence import Evidence
 from ojtflow.core.contracts.enums import WorkflowStatus
+from ojtflow.core.contracts.knowledge_graph import (
+    GraphMedLinkedEntity,
+    GraphMedStatus,
+    KnowledgeGraphChunk,
+    KnowledgeGraphEdge,
+    KnowledgeGraphMention,
+    KnowledgeGraphNode,
+    KnowledgeGraphStats,
+    KnowledgeGraphView,
+)
 from ojtflow.core.contracts.governance import (
     OrganizationGroupMembershipRecord,
     OrganizationGroupRecord,
+    OrganizationInvitationRecord,
     OrganizationMembershipRecord,
     OrganizationRecord,
     WorkspaceDetail,
@@ -96,6 +107,7 @@ class UploadedArtifactRepository(Protocol):
         self,
         *,
         owner_user_id: str,
+        organization_id: str | None = None,
         filename: str,
         mime_type: str,
         data: bytes,
@@ -114,6 +126,31 @@ class UploadedArtifactRepository(Protocol):
         owner_user_id: str,
         limit: int = 100,
     ) -> list[UploadedArtifact]: ...
+
+    def list_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        owner_user_id: str | None = None,
+        limit: int = 100,
+        q: str | None = None,
+        mime_type: str | None = None,
+        source: str | None = None,
+    ) -> list[UploadedArtifact]: ...
+
+    def get_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> UploadedArtifact: ...
+
+    def get_bytes_for_workspace(
+        self,
+        *,
+        organization_id: str,
+        artifact_id: str,
+    ) -> bytes: ...
 
     def append_trace(self, trace: ParsingPipelineTrace) -> ParsingPipelineTrace: ...
 
@@ -149,6 +186,16 @@ class GovernanceRepository(Protocol):
         settings: WorkspaceSettingsRecord,
     ) -> WorkspaceDetail: ...
 
+    def create_workspace(
+        self,
+        *,
+        organization: OrganizationRecord,
+        membership: OrganizationMembershipRecord,
+        group: OrganizationGroupRecord,
+        group_membership: OrganizationGroupMembershipRecord,
+        settings: WorkspaceSettingsRecord,
+    ) -> WorkspaceDetail: ...
+
     def update_workspace_settings(
         self,
         *,
@@ -173,6 +220,39 @@ class GovernanceRepository(Protocol):
         actor_user_id: str,
         membership: OrganizationMembershipRecord,
     ) -> WorkspaceDetail: ...
+
+    def create_invitation(
+        self,
+        *,
+        invitation: OrganizationInvitationRecord,
+    ) -> OrganizationInvitationRecord: ...
+
+    def list_invitations(
+        self,
+        *,
+        organization_id: str,
+        status: str | None = None,
+    ) -> list[OrganizationInvitationRecord]: ...
+
+    def get_invitation_by_token_hash(
+        self,
+        *,
+        token_hash: str,
+    ) -> OrganizationInvitationRecord | None: ...
+
+    def mark_invitation_accepted(
+        self,
+        *,
+        invitation_id: str,
+        accepted_by_user_id: str,
+    ) -> OrganizationInvitationRecord: ...
+
+    def revoke_invitation(
+        self,
+        *,
+        organization_id: str,
+        invitation_id: str,
+    ) -> OrganizationInvitationRecord: ...
 
 
 class DocumentExtractor(Protocol):
@@ -588,3 +668,81 @@ class AssistantPlanner(Protocol):
         findings: list[dict[str, Any]],
         evidence_summary: list[dict[str, Any]],
     ) -> AsyncIterator[str]: ...
+
+
+class KnowledgeGraphRepository(Protocol):
+    """Persistent corpus knowledge graph (§4 of the design doc).
+
+    The only engine-specific seam: ``Neo4j`` (graph-med/default), ``InMemory`` (tests),
+    and optional embedded adapters implement it, so services/API/frontend never import a
+    graph engine directly. Reads are scoped — passing ``organization_id`` returns
+    ``global ∪ that org``; ``None`` returns ``global`` only. Writes carry their own scope
+    on the node/edge/chunk. All upserts are idempotent (``MERGE`` semantics): re-running on
+    a chunk updates confidence/provenance, never duplicates.
+    """
+
+    def bootstrap(self) -> None:
+        """Idempotently create the schema (node/rel tables). Safe to call repeatedly."""
+        ...
+
+    def upsert_concepts(self, concepts: list[KnowledgeGraphNode]) -> None: ...
+
+    def upsert_relations(
+        self,
+        relations: list[KnowledgeGraphEdge],
+        *,
+        source_chunk_id: str | None = None,
+    ) -> None:
+        """Merge relations, stamping ``source_chunk_id`` into each edge's provenance."""
+        ...
+
+    def append_provenance(
+        self,
+        chunk: KnowledgeGraphChunk,
+        mentions: list[KnowledgeGraphMention],
+    ) -> None: ...
+
+    def get_concept(
+        self,
+        *,
+        node_id: str,
+        organization_id: str | None,
+    ) -> KnowledgeGraphNode | None: ...
+
+    def neighborhood(
+        self,
+        *,
+        seeds: list[str],
+        depth: int = 1,
+        limit: int = 100,
+        organization_id: str | None,
+    ) -> KnowledgeGraphView: ...
+
+    def search_concepts(
+        self,
+        *,
+        q: str,
+        organization_id: str | None,
+        limit: int = 50,
+    ) -> list[KnowledgeGraphNode]: ...
+
+    def stats(self, *, organization_id: str | None) -> KnowledgeGraphStats: ...
+
+
+class GraphMedAnnotationPort(Protocol):
+    """External graph-med annotation service boundary.
+
+    Implementations can be an internal HTTP client for a separate graph-med service or a
+    direct adapter used by that service. Application code only sees status + annotation.
+    """
+
+    def status(self) -> GraphMedStatus: ...
+
+    def annotate_text(
+        self,
+        *,
+        patient_id: str,
+        encounter_id: str,
+        concat_text: str,
+        narrative_text: str,
+    ) -> list[GraphMedLinkedEntity]: ...

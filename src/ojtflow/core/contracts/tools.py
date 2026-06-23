@@ -12,7 +12,7 @@ from ojtflow.core.contracts.issue import Issue
 
 
 class ToolSpec(ContractModel):
-    """Declarative metadata for deterministic tool access."""
+    """Declarative metadata for rule-based tool access."""
 
     name: str
     version: str = "0.1.0"
@@ -26,7 +26,7 @@ class ToolSpec(ContractModel):
 
 
 class ToolResult(ContractModel):
-    """Generic deterministic tool result wrapper."""
+    """Generic rule-based tool result wrapper."""
 
     tool_name: str
     status: str

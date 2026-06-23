@@ -1,4 +1,4 @@
-"""Redis-backed session cache with a local fallback for development."""
+"""Redis-backed session cache plus explicit process-local cache adapters."""
 
 from __future__ import annotations
 
@@ -23,24 +23,24 @@ class InMemorySessionCache:
     """Process-local cache for tests and single-process development."""
 
     def __init__(self) -> None:
-        self._fallback_sessions: dict[str, tuple[float, dict[str, Any]]] = {}
-        self._fallback_states: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._sessions: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._states: dict[str, tuple[float, dict[str, Any]]] = {}
 
     def set_session(self, token_hash: str, payload: dict[str, Any], ttl_seconds: int) -> None:
-        self._fallback_sessions[token_hash] = (time.time() + ttl_seconds, deepcopy(payload))
+        self._sessions[token_hash] = (time.time() + ttl_seconds, deepcopy(payload))
 
     def get_session(self, token_hash: str) -> dict[str, Any] | None:
-        item = self._fallback_sessions.get(token_hash)
+        item = self._sessions.get(token_hash)
         if not item:
             return None
         expires_at, payload = item
         if expires_at <= time.time():
-            self._fallback_sessions.pop(token_hash, None)
+            self._sessions.pop(token_hash, None)
             return None
         return deepcopy(payload)
 
     def delete_session(self, token_hash: str) -> None:
-        self._fallback_sessions.pop(token_hash, None)
+        self._sessions.pop(token_hash, None)
 
     def set_oauth_state(
         self,
@@ -48,10 +48,10 @@ class InMemorySessionCache:
         ttl_seconds: int,
         payload: dict[str, Any] | None = None,
     ) -> None:
-        self._fallback_states[state] = (time.time() + ttl_seconds, payload or {})
+        self._states[state] = (time.time() + ttl_seconds, payload or {})
 
     def consume_oauth_state(self, state: str) -> dict[str, Any] | None:
-        item = self._fallback_states.pop(state, None)
+        item = self._states.pop(state, None)
         if not item:
             return None
         expires_at, payload = item
@@ -61,7 +61,7 @@ class InMemorySessionCache:
 class RedisSessionCache:
     """Caches active sessions and short-lived OAuth state values."""
 
-    def __init__(self, redis_url: str, *, allow_fallback: bool = True) -> None:
+    def __init__(self, redis_url: str) -> None:
         self.redis_url = redis_url
         self._client_error: Exception | None = None
         if not redis_url:
@@ -72,8 +72,6 @@ class RedisSessionCache:
             except (RedisError, ValueError) as exc:
                 self._client = None
                 self._client_error = exc
-        self.allow_fallback = allow_fallback
-        self._fallback = InMemorySessionCache()
 
     def set_session(self, token_hash: str, payload: dict[str, Any], ttl_seconds: int) -> None:
         key = self._session_key(token_hash)
@@ -82,9 +80,8 @@ class RedisSessionCache:
                 self._client.setex(key, ttl_seconds, json.dumps(payload))
                 return
         except RedisError as exc:
-            self._raise_or_fallback("set_session", exc)
-        self._raise_or_fallback("set_session")
-        self._fallback.set_session(token_hash, payload, ttl_seconds)
+            self._raise_unavailable("set_session", exc)
+        self._raise_unavailable("set_session")
 
     def get_session(self, token_hash: str) -> dict[str, Any] | None:
         key = self._session_key(token_hash)
@@ -97,9 +94,8 @@ class RedisSessionCache:
                     self._delete_corrupt_key(key)
                     return None
         except RedisError as exc:
-            self._raise_or_fallback("get_session", exc)
-        self._raise_or_fallback("get_session")
-        return self._fallback.get_session(token_hash)
+            self._raise_unavailable("get_session", exc)
+        self._raise_unavailable("get_session")
 
     def delete_session(self, token_hash: str) -> None:
         key = self._session_key(token_hash)
@@ -107,10 +103,9 @@ class RedisSessionCache:
             if self._client:
                 self._client.delete(key)
         except RedisError as exc:
-            self._raise_or_fallback("delete_session", exc)
+            self._raise_unavailable("delete_session", exc)
         if self._client is None:
-            self._raise_or_fallback("delete_session")
-        self._fallback.delete_session(token_hash)
+            self._raise_unavailable("delete_session")
 
     def set_oauth_state(
         self,
@@ -125,9 +120,8 @@ class RedisSessionCache:
                 self._client.setex(key, ttl_seconds, value)
                 return
         except RedisError as exc:
-            self._raise_or_fallback("set_oauth_state", exc)
-        self._raise_or_fallback("set_oauth_state")
-        self._fallback.set_oauth_state(state, ttl_seconds, payload)
+            self._raise_unavailable("set_oauth_state", exc)
+        self._raise_unavailable("set_oauth_state")
 
     def consume_oauth_state(self, state: str) -> dict[str, Any] | None:
         key = self._state_key(state)
@@ -142,16 +136,13 @@ class RedisSessionCache:
                     return json.loads(raw)
                 return None
         except RedisError as exc:
-            self._raise_or_fallback("consume_oauth_state", exc)
+            self._raise_unavailable("consume_oauth_state", exc)
         except json.JSONDecodeError:
             self._delete_corrupt_key(key)
             return None
-        self._raise_or_fallback("consume_oauth_state")
-        return self._fallback.consume_oauth_state(state)
+        self._raise_unavailable("consume_oauth_state")
 
-    def _raise_or_fallback(self, operation: str, exc: Exception | None = None) -> None:
-        if self.allow_fallback:
-            return
+    def _raise_unavailable(self, operation: str, exc: Exception | None = None) -> None:
         cause = exc or self._client_error
         details = {
             "dependency": "redis",

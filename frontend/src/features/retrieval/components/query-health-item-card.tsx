@@ -21,7 +21,7 @@ export function QueryHealthItemCard({
 }) {
   const sourceFilter = activeFilters.find((filter) => filter.field === "source_id");
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="break-words font-black">{item.label}</span>
         <Badge variant={queryHealthBadgeVariant(item.status)}>

@@ -27,7 +27,7 @@ export function GraphPanel({
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70">
+      <CardHeader className="border-b border-border/40 bg-muted/20">
         <CardTitle className="flex items-center gap-2">
           <Network className="h-5 w-5 text-primary" />
           Graph handoff
@@ -77,10 +77,10 @@ export function GraphPanel({
                 title="Terminology grounding"
               >
                 {normalizedConcepts.slice(0, 6).map((node) => (
-                  <div className="rounded-md border border-border bg-muted/20 p-2" key={node.id}>
+                  <div className="rounded-xl border border-border/50 bg-muted/20 p-2" key={node.id}>
                     <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="break-words text-sm font-black">
+                        <div className="break-words text-sm font-semibold">
                           {node.normalized_display ?? node.label}
                         </div>
                         <div className="mt-0.5 break-words font-mono text-xs text-muted-foreground">
@@ -111,9 +111,9 @@ export function GraphPanel({
               {fhirSearchParameters.length ? (
                 <div className="grid gap-2 md:grid-cols-2">
                   {fhirSearchParameters.slice(0, 8).map((node) => (
-                    <div className="rounded-md border border-border bg-muted/20 p-2 text-sm" key={node.id}>
+                    <div className="rounded-xl border border-border/50 bg-muted/20 p-2 text-sm" key={node.id}>
                       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                        <div className="break-words font-black">{node.label}</div>
+                        <div className="break-words font-semibold">{node.label}</div>
                         {node.search_type ? <Badge variant="muted">{node.search_type}</Badge> : null}
                       </div>
                       {node.target_field ? (
@@ -143,7 +143,7 @@ export function GraphPanel({
               </div>
               {graphContext.triples.slice(0, 8).map((triple, index) => (
                 <div
-                  className="grid gap-1 rounded-md border border-border bg-muted/20 p-2 text-sm"
+                  className="grid gap-1 rounded-xl border border-border/50 bg-muted/20 p-2 text-sm"
                   key={`${triple.subject}-${triple.object}-${index}`}
                 >
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -179,7 +179,7 @@ function GraphSection({
 }) {
   const childArray = React.Children.toArray(children);
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card/60 p-3">
+    <div className="grid gap-2 rounded-xl border border-border/50 bg-card/60 p-3">
       <div>
         <div className="text-xs font-bold uppercase text-muted-foreground">{title}</div>
         <SectionHelpText>{description}</SectionHelpText>
@@ -191,10 +191,10 @@ function GraphSection({
 
 function GraphEntityRow({ node }: { node: RetrievalGraphContext["nodes"][number] }) {
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-2">
+    <div className="rounded-xl border border-border/50 bg-muted/20 p-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="break-words text-sm font-black">{node.label}</div>
+          <div className="break-words text-sm font-semibold">{node.label}</div>
           <div className="mt-0.5 break-all font-mono text-[11px] text-muted-foreground">
             {node.id}
           </div>

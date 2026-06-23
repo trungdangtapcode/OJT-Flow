@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any, Callable
 
@@ -12,7 +13,12 @@ from ojtflow.core.contracts.assistant import (
     AssistantToolResult,
     AssistantToolSpec,
 )
-from ojtflow.core.contracts.enums import DataFormat, ToolPermission, WorkflowStatus
+from ojtflow.core.contracts.enums import (
+    DataFormat,
+    EvidenceSourceType,
+    ToolPermission,
+    WorkflowStatus,
+)
 from ojtflow.core.contracts.retrieval import RetrievalQuery
 from ojtflow.core.errors import OJTFlowError
 
@@ -96,7 +102,11 @@ ASSISTANT_TOOL_SPECS: dict[str, AssistantToolSpec] = {
     ),
     "fhir_profile": AssistantToolSpec(
         name="fhir_profile",
-        description="Profile FHIR-like JSON and emit resource/schema evidence.",
+        description=(
+            "Profile FHIR-like JSON and emit resource/schema evidence. Use only when "
+            "the submitted data is JSON with a FHIR resourceType or Bundle shape; do "
+            "not use for PDF/OCR/plain text content."
+        ),
         permission_scope=ToolPermission.DATA_PROFILE.value,
         input_schema={
             "type": "object",
@@ -330,6 +340,16 @@ class OJTFlowToolExecutor:
                 owner_user_id,
                 request_id,
             )
+            if output.get("assistant_tool_status") == "skipped":
+                return AssistantToolResult(
+                    tool_name=plan.tool_name,
+                    status="skipped",
+                    arguments=plan.arguments,
+                    output=output,
+                    summary=str(output.get("message") or "Tool was skipped."),
+                    error=str(output.get("code") or "not_applicable"),
+                    requires_approval=spec.requires_approval,
+                )
             return AssistantToolResult(
                 tool_name=plan.tool_name,
                 status="completed",
@@ -385,25 +405,33 @@ class OJTFlowToolExecutor:
         filters = {
             key: value
             for key, value in {
-                "clinical_domain": _optional_str(args.get("clinical_domain")),
-                "standard_system": _optional_str(args.get("standard_system")),
-                "source_type": _optional_str(args.get("source_type")),
-                "source_id": _optional_str(args.get("source_id")),
-                "trust_level": _optional_str(args.get("trust_level")) or "approved",
+                "clinical_domain": _clinical_domain_filter(args.get("clinical_domain")),
+                "standard_system": _standard_system_filter(args.get("standard_system")),
+                "source_type": _source_type_filter(args.get("source_type")),
+                "source_id": _source_id_filter(args.get("source_id")),
+                "trust_level": _trust_level_filter(args.get("trust_level")),
             }.items()
             if value
         }
+        query = RetrievalQuery(
+            query=_required_str(args, "query"),
+            top_k=_bounded_int(args.get("top_k"), default=5, minimum=1, maximum=20),
+            schema_id=_optional_str(args.get("schema_id")),
+            fields=_str_list(args.get("fields")),
+            filters=filters,
+        )
         package = self.workflow_service.search_retrieval(
-            RetrievalQuery(
-                query=_required_str(args, "query"),
-                top_k=_bounded_int(args.get("top_k"), default=5, minimum=1, maximum=20),
-                schema_id=_optional_str(args.get("schema_id")),
-                fields=_str_list(args.get("fields")),
-                filters=filters,
-            ),
+            query,
             owner_user_id=owner_user_id,
             request_id=request_id,
         )
+        relaxed_filters = _relaxed_retrieval_filters(filters)
+        if not package.evidence and relaxed_filters != filters:
+            package = self.workflow_service.search_retrieval(
+                query.model_copy(update={"filters": relaxed_filters}),
+                owner_user_id=owner_user_id,
+                request_id=request_id,
+            )
         return package.model_dump(mode="json")
 
     def _validate_data(
@@ -449,7 +477,7 @@ class OJTFlowToolExecutor:
                 "fields": fields,
                 "clinical_domain": _optional_str(args.get("clinical_domain")) or "laboratory",
                 "standard_system": _optional_str(args.get("standard_system")),
-                "source_type": _optional_str(args.get("source_type")),
+                "source_type": _source_type_filter(args.get("source_type")),
                 "source_id": _optional_str(args.get("source_id")),
                 "trust_level": "approved",
             },
@@ -492,7 +520,23 @@ class OJTFlowToolExecutor:
     ) -> dict:
         del owner_user_id
         del request_id
-        return self.medical_evidence_service.profile_fhir_like(_required_str(args, "data"))
+        data = _required_str(args, "data")
+        if not _looks_like_json(data):
+            return _skipped_fhir_profile(
+                "FHIR_PROFILE_NOT_JSON",
+                "FHIR profile skipped: the submitted content is not JSON.",
+                "Input is plain text, CSV, OCR text, or another non-JSON format.",
+            )
+        try:
+            return self.medical_evidence_service.profile_fhir_like(data)
+        except OJTFlowError as exc:
+            if not _is_json_parse_error(exc):
+                raise
+            return _skipped_fhir_profile(
+                "FHIR_PROFILE_INVALID_JSON",
+                "FHIR profile skipped: the submitted JSON could not be parsed.",
+                str(exc),
+            )
 
     def _list_workflows(
         self,
@@ -703,6 +747,41 @@ def _missing_required_arguments(
     return missing
 
 
+def _looks_like_json(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped or stripped[0] not in "{[":
+        return False
+    try:
+        json.loads(stripped)
+    except json.JSONDecodeError:
+        return True
+    return True
+
+
+def _is_json_parse_error(exc: OJTFlowError) -> bool:
+    return str(exc).startswith("Invalid FHIR-like JSON:")
+
+
+def _skipped_fhir_profile(code: str, message: str, issue: str) -> dict[str, Any]:
+    return {
+        "assistant_tool_status": "skipped",
+        "code": code,
+        "message": message,
+        "profile": {
+            "is_fhir_like": False,
+            "resource_type": None,
+            "resource_counts": {},
+            "issues": [issue],
+            "handoff_context": {
+                "resource_types": [],
+                "graphner_ready": False,
+                "rag_query_terms": [],
+            },
+        },
+        "evidence": [],
+    }
+
+
 def _tool_summary(tool_name: str, output: dict[str, Any]) -> str:
     if tool_name == "retrieval_search":
         evidence_count = len(output.get("evidence") or [])
@@ -768,6 +847,142 @@ def _optional_str(value: Any) -> str | None:
     return normalized or None
 
 
+def _trust_level_filter(value: Any) -> str:
+    normalized = (_optional_str(value) or "approved").lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "trusted": "approved",
+        "trustworthy": "approved",
+        "authoritative": "approved",
+        "approved": "approved",
+        "internal": "internal",
+        "user_provided": "user_provided",
+        "untrusted": "untrusted",
+    }
+    return aliases.get(normalized, "approved")
+
+
+def _source_type_filter(value: Any) -> str | None:
+    normalized = (_optional_str(value) or "").lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "data_dictionary": EvidenceSourceType.DATA_DICTIONARY.value,
+        "dictionary": EvidenceSourceType.DATA_DICTIONARY.value,
+        "healthcare_standard": EvidenceSourceType.HEALTHCARE_STANDARD.value,
+        "healthcare_standards": EvidenceSourceType.HEALTHCARE_STANDARD.value,
+        "standard": EvidenceSourceType.HEALTHCARE_STANDARD.value,
+        "standards": EvidenceSourceType.HEALTHCARE_STANDARD.value,
+        "schema": EvidenceSourceType.SCHEMA.value,
+        "terminology": EvidenceSourceType.TERMINOLOGY_SYSTEM.value,
+        "terminology_system": EvidenceSourceType.TERMINOLOGY_SYSTEM.value,
+        "transformation_example": EvidenceSourceType.TRANSFORMATION_EXAMPLE.value,
+        "example": EvidenceSourceType.TRANSFORMATION_EXAMPLE.value,
+        "validation_report": EvidenceSourceType.VALIDATION_REPORT.value,
+        "tool_output": EvidenceSourceType.TOOL_OUTPUT.value,
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    valid_values = {item.value for item in EvidenceSourceType}
+    if normalized in valid_values:
+        return normalized
+    return None
+
+
+def _clinical_domain_filter(value: Any) -> str | None:
+    raw = _optional_str(value)
+    if raw is None:
+        return None
+    lowered = raw.lower()
+    if any(separator in lowered for separator in ("/", ",", ";", "|", "&")):
+        return None
+    normalized = lowered.replace("-", " ").replace("_", " ").strip()
+    aliases = {
+        "lab": "laboratory",
+        "labs": "laboratory",
+        "laboratory": "laboratory",
+        "clinical laboratory": "laboratory",
+        "laboratory medicine": "laboratory",
+        "medication": "medication",
+        "medications": "medication",
+        "drug": "medication",
+        "drugs": "medication",
+        "allergy": "allergy",
+        "allergies": "allergy",
+        "problem list": "problem_list",
+        "condition": "problem_list",
+        "diagnosis": "problem_list",
+        "diagnoses": "problem_list",
+        "privacy": "privacy",
+        "phi": "privacy",
+        "literature": "literature",
+        "clinical trial": "literature",
+        "clinical trials": "literature",
+        "analytics": "analytics",
+    }
+    return aliases.get(normalized)
+
+
+def _standard_system_filter(value: Any) -> str | None:
+    raw = _optional_str(value)
+    if raw is None:
+        return None
+    lowered = raw.lower()
+    if any(separator in lowered for separator in ("/", ",", ";", "|", "&")):
+        return None
+    if " and " in lowered or " or " in lowered:
+        return None
+    normalized = lowered.replace("-", " ").replace("_", " ").strip()
+    aliases = {
+        "fhir": "FHIR",
+        "hl7 fhir": "FHIR",
+        "hl7 fhir r4": "FHIR",
+        "loinc": "LOINC",
+        "ucum": "UCUM",
+        "rxnorm": "RxNorm",
+        "rx norm": "RxNorm",
+        "snomed": "SNOMED CT",
+        "snomed ct": "SNOMED CT",
+        "icd10": "ICD-10-CM",
+        "icd 10": "ICD-10-CM",
+        "icd 10 cm": "ICD-10-CM",
+        "mesh": "MeSH",
+        "openfda": "openFDA",
+        "clinicaltrials.gov": "ClinicalTrials.gov",
+        "clinicaltrials gov": "ClinicalTrials.gov",
+    }
+    return aliases.get(normalized)
+
+
+def _source_id_filter(value: Any) -> str | None:
+    raw = _optional_str(value)
+    if raw is None:
+        return None
+    normalized = raw.strip()
+    if " " in normalized or ":" not in normalized:
+        return None
+    allowed_prefixes = {
+        "catalog",
+        "corpus",
+        "dictionary",
+        "example",
+        "governance",
+        "schema",
+        "standard",
+        "terminology",
+    }
+    prefix = normalized.split(":", 1)[0].lower()
+    if prefix not in allowed_prefixes:
+        return None
+    return normalized
+
+
+def _relaxed_retrieval_filters(filters: dict[str, str]) -> dict[str, str]:
+    relaxed: dict[str, str] = {}
+    if filters.get("clinical_domain"):
+        relaxed["clinical_domain"] = filters["clinical_domain"]
+    if filters.get("trust_level"):
+        relaxed["trust_level"] = filters["trust_level"]
+    return relaxed
+
+
 def _str_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -793,7 +1008,25 @@ def _data_format(value: Any, *, default: DataFormat | None) -> DataFormat:
         if default is None:
             raise ValueError("Data format is required.")
         return default
-    return DataFormat(normalized.lower())
+    normalized_key = normalized.lower().replace("-", "_")
+    # Assistant attachments carry extraction-source labels; validation needs parser formats.
+    source_label_aliases = {
+        "text": DataFormat.MARKDOWN,
+        "txt": DataFormat.MARKDOWN,
+        "plain_text": DataFormat.MARKDOWN,
+        "plaintext": DataFormat.MARKDOWN,
+        "document_text": DataFormat.MARKDOWN,
+        "source_text": DataFormat.MARKDOWN,
+        "ocr": DataFormat.MARKDOWN,
+        "ocr_text": DataFormat.MARKDOWN,
+        "pdf_ocr": DataFormat.MARKDOWN,
+        "image_ocr": DataFormat.MARKDOWN,
+        "scanned_pdf": DataFormat.MARKDOWN,
+        "multi_context": DataFormat.MARKDOWN,
+    }
+    if normalized_key in source_label_aliases:
+        return source_label_aliases[normalized_key]
+    return DataFormat(normalized_key)
 
 
 def _optional_workflow_status(value: Any) -> WorkflowStatus | None:

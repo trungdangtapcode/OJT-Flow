@@ -34,7 +34,7 @@
         },
         {
           "control_id": "AIR-001-C2",
-          "title": "Generated output validation keeps deterministic fallback on unsafe output",
+          "title": "Generated output validation blocks unsafe output without substitution",
           "implementation_ref": "src/ojtflow/core/policy/generated_output_policy.py",
           "status": "implemented"
         }

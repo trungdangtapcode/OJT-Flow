@@ -55,7 +55,7 @@ export function WorkbenchControlPlane({
   targetFormat: string;
 }) {
   return (
-    <section className="rounded-md border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,0.045)]">
+    <section className="rounded-lg border border-border/60 bg-card shadow-[0_1px_2px_rgba(16,24,40,0.045)]">
       <div className="flex items-start justify-between gap-3 border-b border-border p-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-extrabold">
@@ -102,7 +102,7 @@ export function WorkbenchControlPlane({
 
 export function WorkbenchExecutionPath() {
   return (
-    <section className="rounded-md border border-border bg-card p-4 shadow-[0_1px_2px_rgba(16,24,40,0.045)]">
+    <section className="rounded-lg border border-border/60 bg-card p-4 shadow-[0_1px_2px_rgba(16,24,40,0.045)]">
       <div className="flex items-center gap-2 font-extrabold">
         <FileUp className="h-4 w-4 text-primary" />
         Execution path
@@ -199,7 +199,7 @@ export function ReviewGateControl({
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="grid cursor-pointer gap-2 rounded-md border border-border bg-card p-3 transition-colors hover:border-primary/40">
+    <label className="grid cursor-pointer gap-2 rounded-lg border border-border/60 bg-card p-3 transition-colors hover:border-primary/40">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-extrabold">Human review</div>
@@ -278,8 +278,8 @@ export function InputExampleSelector({
           <button
             className={
               example.id === selectedExampleId
-                ? "rounded-md border border-primary bg-emerald-50 px-3 py-2 text-left text-sm font-bold text-primary shadow-[inset_3px_0_0_#0b7a75] focus-ring"
-                : "rounded-md border border-border bg-muted/20 px-3 py-2 text-left text-sm font-bold text-foreground hover:bg-muted/60 focus-ring"
+                ? "rounded-lg border border-primary/30 bg-primary/[0.04] px-3 py-2 text-left text-sm font-bold text-primary shadow-[inset_3px_0_0_theme(--color-primary)] focus-ring"
+                : "rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-left text-sm font-bold text-foreground transition-colors hover:bg-muted/50 focus-ring"
             }
             key={example.id}
             onClick={() => onSelect(example)}

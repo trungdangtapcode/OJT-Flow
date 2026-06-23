@@ -183,10 +183,10 @@ The workflow detail implementation keeps this split visible in code:
 responsibilities back into the shell; add another sibling section component when
 a new workflow-detail surface needs meaningful logic.
 
-The workbench remains the intake route for starting deterministic parse,
+The workbench remains the intake route for starting rule-based parse,
 validation, retrieval, conversion, and review-gated workflows. It supports both
 pasted structured data and multipart file upload. Structured file uploads such
-as CSV/JSON/YAML use deterministic parsing directly; document-like uploads use
+as CSV/JSON/YAML use rule-based parsing directly; document-like uploads use
 the backend extraction hook when optional extractor packages are installed.
 Workbench should expose the active intake mode, source format, target format,
 schema/profile, and review-gate state before the form so users understand the
@@ -646,7 +646,7 @@ owns target and required/optional badge policy. `search-plan-task-action-summary
 owns the What happens explanation. `search-plan-task-filter-chips.tsx` owns
 suggested-filter chips, and `search-plan-task-actions.tsx` owns copy-query
 controls, local task execution buttons, and external follow-up links.
-`frontend/src/features/retrieval/model/search-plan-tasks.ts` owns deterministic
+`frontend/src/features/retrieval/model/search-plan-tasks.ts` owns rule-based
 task ordering, clipboard text, action labels, action descriptions, and external
 URL extraction. `frontend/src/features/retrieval/hooks/use-retrieval-search-actions.ts`
 is only the public retrieval search-action composition surface.
@@ -672,7 +672,7 @@ only the public summary-panel export surface.
 `search-plan-task-summary-panel.tsx` owns the execution-summary shell and metric
 cards. `search-plan-run-order.tsx` owns run-order guidance.
 `search-plan-task-summary-actions.tsx` owns first-action and external-follow-up
-buttons, while `search-plan-task-summary-actions.ts` owns deterministic task
+buttons, while `search-plan-task-summary-actions.ts` owns rule-based task
 selection for those actions. `search-plan-risk-signals-panel.tsx` owns risk
 signal rows and severity badges. `search-plan-summary-types.ts` owns shared
 summary view contracts used by model and presentation code. The retrieval plan
@@ -772,7 +772,7 @@ searches from searches refined by second-stage reranking. It must render
 `hits[].score_components` as a compact score explanation so operators can see
 the final score contributions without opening raw JSON. The trace must render
 `trace.query_variant_details` as query rewrite cards with source and reason,
-including `query_aspect_rule` variants from the deterministic aspect plan, and
+including `query_aspect_rule` variants from the rule-based aspect plan, and
 falling back to `trace.query_variants` for older payloads. It must also surface
 Query rewrite rendering should stay outside the page shell:
 `frontend/src/features/retrieval/components/query-variant-list.tsx` owns the
@@ -889,7 +889,7 @@ support-status derivation so evidence policy remains centralized.
 Corrective-action type chips should stay outside the page shell:
 `frontend/src/features/retrieval/components/corrective-action-type-count-chips.tsx`
 owns the compact count chip rendering, while
-`frontend/src/features/retrieval/model/corrective-actions.ts` owns deterministic
+`frontend/src/features/retrieval/model/corrective-actions.ts` owns rule-based
 action-type count sorting shared by search-run summaries and chip display.
 Section help copy should use the local primitive
 `frontend/src/features/retrieval/components/section-help-text.tsx` instead of
@@ -904,7 +904,7 @@ Retrieval quality-signal rendering should stay split by responsibility:
 `quality-signal-list-item.tsx` owns the individual signal card and evidence-id
 chips; `quality-signal-metadata-details.tsx` owns metadata detail display;
 `quality-signal-metadata.ts` owns metadata detail assembly,
-`quality-signal-metadata-sections.ts` owns deterministic concept/provenance/filter
+`quality-signal-metadata-sections.ts` owns rule-based concept/provenance/filter
 metadata extraction, `quality-signal-metadata-values.ts` owns primitive metadata
 coercion, and
 `quality-signal-variants.ts` owns severity badge policy reused by other panels.
@@ -987,7 +987,7 @@ The ranked-result panel must also render an evidence support matrix before the
 long card list. Each row should summarize rank, source, standard system,
 package evidence buckets, matched-term count, provenance count, concept
 grounding count, query-aspect count, persisted judgment state, final score, and
-a deterministic support status. The matrix must derive from `RetrievalPackage`
+a rule-based support status. The matrix must derive from `RetrievalPackage`
 hits, `evidence_buckets[]`, `source_locator` metadata, and persisted judgments;
 it must not create hidden clinical claims or browser-only relevance scores. The
 matrix must explain how to interpret weak rows, missing provenance, and missing
@@ -1287,7 +1287,7 @@ coercion lives in `retrieval-report-values.ts`. Components may pass current
 package/plan state into these builders, but should not assemble those report
 schemas inline.
 `frontend/src/features/retrieval/model/retrieval-format.ts` owns shared
-deterministic formatting helpers for claims, confidence, scores, counts,
+rule-based formatting helpers for claims, confidence, scores, counts,
 percentages, nullable metrics, and search signatures. The page and components
 may pass those helpers into child components, but should not redefine local
 copies.
@@ -1311,7 +1311,7 @@ owns the title/status/readiness/hit-count/copy action row. `search-answer-metric
 owns answer metric rows, `search-answer-warning-panel.tsx` owns bounded warning
 display, and `search-answer-format.ts` owns small answer display formatting.
 `frontend/src/features/retrieval/model/search-answer.ts` is only the public
-model export surface. `search-answer-view-model.ts` owns deterministic summary
+model export surface. `search-answer-view-model.ts` owns rule-based summary
 assembly and metric rows. `search-answer-status.ts` owns status and remediation
 fallback policy. `search-answer-report.ts` owns only the copyable
 `retrieval_search_answer` JSON report assembly. `search-answer-interpretation.ts`
@@ -1341,7 +1341,7 @@ belongs in `retrieval-review-path-format.ts`; the panel shell should not carry
 icon maps, count formatting, or card-level status styling. The model barrel
 `frontend/src/features/retrieval/model/retrieval-review-path.ts` is only the
 public review-path export surface. `retrieval-review-path-builder.ts` owns path
-assembly, `retrieval-review-checklist.ts` owns deterministic checklist policy,
+assembly, `retrieval-review-checklist.ts` owns rule-based checklist policy,
 `retrieval-review-guidance.ts` owns ready/review/blocked operator guidance,
 `retrieval-review-warnings.ts` owns warning extraction/count labels, and
 `retrieval-review-actions.ts` owns primary-action selection. The page shell
@@ -1361,7 +1361,7 @@ owns the section shell, status badges, help tooltip, and card grid composition.
 `frontend/src/features/retrieval/model/evidence-interpretation.ts`
 is only the public model export surface. `evidence-interpretation-view-model.ts`
 owns package-level status, summary, support-status, and card-context assembly.
-`evidence-interpretation-cards.ts` is the deterministic interpretation card
+`evidence-interpretation-cards.ts` is the rule-based interpretation card
 orchestrator. `evidence-interpretation-top-match-card.ts`,
 `evidence-interpretation-coverage-card.ts`, and
 `evidence-interpretation-next-action-card.ts` own top-match, required-bucket
@@ -1645,7 +1645,7 @@ keys.
 `run-comparison-rule-packs.tsx` owns rule-pack change detail cards. Shared view
 contracts live in `run-comparison-detail-types.ts`. The retrieval page owns the
 comparison models and passes formatting helpers where the presentation needs
-human-readable count labels. Deterministic comparison labels and delta badges
+human-readable count labels. Rule-based comparison labels and delta badges
 belong in `search-run-quality.ts`. The comparison panel should render the
 active-vs-baseline query-profile comparison directly, including profile label,
 route, retrieval mode, complexity, and stable/changed status. It should compare
@@ -1737,7 +1737,7 @@ warning, and lineage section presentation; and
 `search-hint-metadata.ts` owns route metadata view construction for endpoint
 scope, parameter examples, selected terminology or unit candidates, capability
 warnings, and lineage follow-up. `search-hint-metadata-values.ts` owns
-deterministic metadata value coercion for arrays, optional strings, parameter
+rule-based metadata value coercion for arrays, optional strings, parameter
 examples, and lineage follow-up.
 The retrieval page composes current package/plan state from the run-session and
 plan-session hooks; preview and hint components pass that state into

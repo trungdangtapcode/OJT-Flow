@@ -412,10 +412,10 @@ export function HelpPage({ mode = "overview" }: { mode?: HelpMode }) {
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {roleGuides.map((guide) => (
-            <div className="rounded-md border border-border bg-muted/20 p-3" key={guide.role}>
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3" key={guide.role}>
               <div className="font-black">{guide.role}</div>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">{guide.goal}</p>
-              <div className="mt-3 rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold leading-6">
+              <div className="mt-3 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm font-semibold leading-6">
                 Start with: {guide.start}
               </div>
             </div>
@@ -484,7 +484,7 @@ export function HelpPage({ mode = "overview" }: { mode?: HelpMode }) {
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {inputFormatGuide.map((item) => (
-            <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3" key={item.format}>
+            <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3" key={item.format}>
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-primary" />
                 <span className="font-black">{item.format}</span>
@@ -526,10 +526,10 @@ export function HelpPage({ mode = "overview" }: { mode?: HelpMode }) {
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {explanationGuide.map((item) => (
-            <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3" key={item.label}>
+            <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3" key={item.label}>
               <div className="font-black">{item.label}</div>
               <p className="text-sm leading-6 text-muted-foreground">{item.meaning}</p>
-              <div className="rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold leading-6">
+              <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-sm font-semibold leading-6">
                 Next: {item.next}
               </div>
             </div>
@@ -561,7 +561,7 @@ export function HelpPage({ mode = "overview" }: { mode?: HelpMode }) {
         </CardHeader>
         <CardContent className="grid gap-2 md:grid-cols-2">
           {glossary.map((item) => (
-            <div className="rounded-md border border-border bg-muted/20 p-3" key={item.term}>
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3" key={item.term}>
               <div className="flex items-center gap-2">
                 <HelpCircle className="h-4 w-4 text-primary" />
                 <span className="font-black">{item.term}</span>
@@ -579,10 +579,10 @@ export function HelpPage({ mode = "overview" }: { mode?: HelpMode }) {
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {issueGuide.map((item) => (
-            <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3" key={item.issue}>
+            <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3" key={item.issue}>
               <div className="font-black">{item.issue}</div>
               <p className="text-sm leading-6 text-muted-foreground">{item.meaning}</p>
-              <div className="rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold leading-6">
+              <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-sm font-semibold leading-6">
                 Action: {item.action}
               </div>
             </div>
@@ -608,13 +608,13 @@ export function HelpPage({ mode = "overview" }: { mode?: HelpMode }) {
 
 function HelpModeNav({ activeMode }: { activeMode: HelpMode }) {
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-3 md:grid-cols-3">
+    <div className="grid gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 md:grid-cols-3">
       {helpModes.map((item) => (
         <Link
           className={
             activeMode === item.mode
               ? "rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-bold text-primary"
-              : "rounded-md border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-muted/50"
+              : "rounded-lg border border-border/60 bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-muted/50"
           }
           key={item.mode}
           to={item.to}
@@ -641,7 +641,7 @@ function DecisionGuideCard({
   to: "/assistant" | "/workbench" | "/reviews" | "/retrieval";
 }) {
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-3 rounded-lg border border-border/60 bg-card p-3">
       <div>
         <div className="text-xs font-black uppercase text-muted-foreground">Situation</div>
         <div className="mt-1 font-black leading-6">{situation}</div>
@@ -688,7 +688,7 @@ function HelpRouteCard({
 
 function GuideStep({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <li className="rounded-md border border-border bg-muted/20 p-3">
+    <li className="rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="font-black">{title}</div>
       <div className="mt-1 text-muted-foreground">{children}</div>
     </li>
@@ -697,7 +697,7 @@ function GuideStep({ children, title }: { children: React.ReactNode; title: stri
 
 function OutputMeaning({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+    <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-sm">
       <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <div>
         <div className="font-black">{label}</div>
@@ -717,13 +717,13 @@ function RetrievalManualItem({
   title: string;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex items-center gap-2">
         <Search className="h-4 w-4 text-primary" />
         <span className="font-black">{title}</span>
       </div>
       <p className="text-sm leading-6 text-muted-foreground">{meaning}</p>
-      <div className="rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold leading-6">
+      <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-sm font-semibold leading-6">
         {action}
       </div>
     </div>
@@ -732,7 +732,7 @@ function RetrievalManualItem({
 
 function SafetyItem({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-emerald-600" />
       <span>{children}</span>
     </div>

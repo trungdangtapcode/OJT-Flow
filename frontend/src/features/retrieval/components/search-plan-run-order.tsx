@@ -2,7 +2,7 @@ import { HelpTooltip } from "../../../components/ui/help-tooltip";
 
 export function SearchPlanRunOrder() {
   return (
-    <div className="grid gap-1.5 rounded-md border border-border bg-background px-2 py-1.5 text-xs">
+    <div className="grid gap-1.5 rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <span className="font-black uppercase text-muted-foreground">Run order</span>
         <HelpTooltip label="Retrieval task order help">

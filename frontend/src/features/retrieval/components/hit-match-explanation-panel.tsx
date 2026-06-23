@@ -16,7 +16,7 @@ export function HitMatchExplanationPanel({
   return (
     <div
       aria-label="Why this evidence matched"
-      className="grid gap-2 rounded-md border border-border bg-muted/20 p-2"
+      className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-2"
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase text-muted-foreground">

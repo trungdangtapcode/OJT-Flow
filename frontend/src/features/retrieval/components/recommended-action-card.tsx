@@ -37,7 +37,7 @@ export function RecommendedActionCard({
   const isBroadeningAction = action.action_type === "broaden_query";
 
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <RecommendedActionCardHeader action={action} sourceLabel={sourceLabel} />
         {filterAction ? (

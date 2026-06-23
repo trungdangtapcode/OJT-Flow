@@ -6,7 +6,7 @@ import type { QueryAspectStack } from "./search-plan-detail-types";
 export function SearchPlanAspectPreview({ aspects }: { aspects: QueryAspectStack[] }) {
   if (!aspects.length) {
     return (
-      <div className="rounded-md border border-border bg-card p-3">
+      <div className="rounded-lg border border-border/60 bg-card p-3">
         <div className="text-xs font-black uppercase text-muted-foreground">
           Search aspects
         </div>
@@ -18,7 +18,7 @@ export function SearchPlanAspectPreview({ aspects }: { aspects: QueryAspectStack
   }
 
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-black uppercase text-muted-foreground">
           Search aspects

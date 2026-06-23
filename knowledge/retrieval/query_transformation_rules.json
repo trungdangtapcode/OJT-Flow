@@ -42,7 +42,7 @@
     {
       "rule_id": "hyde_optional_healthcare_evidence",
       "strategy": "hyde",
-      "reason": "Optional deterministic HyDE-style hypothetical evidence document for recall experiments.",
+      "reason": "Optional rule-based HyDE-style hypothetical evidence document for recall experiments.",
       "variant_template": "hypothetical trusted healthcare evidence document: query {query}; standards {standards}; fields {fields}; route {profile_route}; expected evidence should cite source requirements and limitations",
       "priority": 90,
       "enabled": false,

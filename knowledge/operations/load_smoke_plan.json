@@ -39,7 +39,7 @@
       "max_p95_ms": 1800,
       "max_error_ratio": 0,
       "description": "Open an assistant stream and read the first live event.",
-      "notes": ["CI smoke mode uses deterministic local assistant behavior unless LLM is configured."]
+      "notes": ["CI smoke mode requires the configured assistant provider or expects an explicit unavailable response."]
     },
     {
       "scenario_id": "upload_parse",
@@ -82,7 +82,7 @@
     }
   ],
   "warnings": [
-    "The smoke plan is deterministic and bounded. It is not a replacement for sustained load testing.",
+    "The smoke plan is bounded and repeatable. It is not a replacement for sustained load testing.",
     "HTTP mode requires a running API and a bearer token or authenticated cookie when auth is enabled."
   ]
 }

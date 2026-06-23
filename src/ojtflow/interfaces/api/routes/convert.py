@@ -1,4 +1,4 @@
-"""Direct deterministic conversion routes."""
+"""Direct rule-based conversion routes."""
 
 from __future__ import annotations
 

@@ -358,6 +358,7 @@ function extensionFromFilename(filename: string) {
 }
 
 function documentAttachment(document: ExtractedDocument) {
+  const text = typeof document.text === "string" ? document.text : "";
   return {
     filename: document.filename,
     source_format: document.source_format,
@@ -372,7 +373,7 @@ function documentAttachment(document: ExtractedDocument) {
     job_id: document.job_id ?? null,
     text_dataset_id: document.text_dataset_id ?? null,
     text_storage_ref: document.text_storage_ref ?? null,
-    text: document.text,
+    text,
   };
 }
 
@@ -388,10 +389,12 @@ function combinedContextData({
       (snippet) =>
         `BEGIN TEXT SNIPPET ${snippet.label}\n${snippet.text}\nEND TEXT SNIPPET ${snippet.label}`,
     ),
-    ...attachments.map(
+    ...attachments
+      .filter((attachment) => attachment.text.trim())
+      .map(
       (attachment) =>
         `BEGIN ATTACHMENT ${attachment.filename} (${attachment.source_format})\n${attachment.text}\nEND ATTACHMENT ${attachment.filename}`,
-    ),
+      ),
   ];
   return sections.join("\n\n");
 }
@@ -400,9 +403,19 @@ function inferredInputFormat(
   documents: ExtractedDocument[],
   snippets: AssistantTextSnippet[],
 ) {
-  if (documents.length === 1 && snippets.length === 0) return documents[0].source_format;
-  if (!documents.length && snippets.length === 1) return "text";
-  return documents.length || snippets.length ? "multi_context" : undefined;
+  if (documents.length === 1 && snippets.length === 0) {
+    return assistantParserFormatForDocument(documents[0].source_format);
+  }
+  if (!documents.length && snippets.length === 1) return "markdown";
+  return documents.length || snippets.length ? "markdown" : undefined;
+}
+
+function assistantParserFormatForDocument(sourceFormat: string) {
+  const normalized = sourceFormat.trim().toLowerCase().replaceAll("-", "_");
+  if (["json", "yaml", "csv", "ndjson", "markdown"].includes(normalized)) {
+    return normalized;
+  }
+  return "markdown";
 }
 
 function compactRefs(record: Record<string, unknown>) {

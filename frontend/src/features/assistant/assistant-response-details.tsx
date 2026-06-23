@@ -236,7 +236,7 @@ function EvidenceSummaryPanel({
     <div className="grid gap-2">
       <div className="text-xs font-black uppercase text-muted-foreground">Evidence summary</div>
       {evidence.map((item) => (
-        <div className="rounded-md border border-border bg-muted/35 p-3" key={`${item.source_id}-${item.claim}`}>
+        <div className="rounded-lg border border-border/60 bg-muted/35 p-3" key={`${item.source_id}-${item.claim}`}>
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-sm font-black">{item.source_id}</div>
             <Badge variant="muted">{humanize(item.trust_level)}</Badge>
@@ -259,7 +259,7 @@ function AssistantEvidenceMatchStrip({ item }: { item: AssistantEvidenceSummary 
   const explanation = assistantEvidenceMatchExplanation(item);
   if (!explanation) return null;
   return (
-    <div className="mt-2 grid gap-2 rounded-md border border-border bg-card/70 px-2 py-2 text-xs">
+    <div className="mt-2 grid gap-2 rounded-lg border border-border/60 bg-card/70 px-2 py-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <Badge variant={matchSupportBadgeVariant(explanation.supportStatus)}>
           {humanize(explanation.supportStatus)}
@@ -300,9 +300,16 @@ function AssistantEvidenceMatchStrip({ item }: { item: AssistantEvidenceSummary 
 export function AssistantStatus({ response }: { response: AssistantResponse }) {
   const blocked = response.tool_calls.some((call) => call.status === "requires_approval");
   const failed = response.tool_calls.some((call) => call.status === "failed");
+  const skipped = response.tool_calls.some((call) => call.status === "skipped");
   return (
-    <Badge variant={failed ? "destructive" : blocked ? "warning" : "success"}>
-      {failed ? "failed" : blocked ? "approval required" : "completed"}
+    <Badge variant={failed ? "destructive" : blocked ? "warning" : skipped ? "muted" : "success"}>
+      {failed
+        ? "failed"
+        : blocked
+          ? "approval required"
+          : skipped
+            ? "completed with skipped tools"
+            : "completed"}
     </Badge>
   );
 }
@@ -315,7 +322,7 @@ function ToolResultCard({ call }: { call: AssistantToolResult }) {
   const diversity = toolDiversitySummary(call);
   const workflowId = workflowIdForToolCall(call);
   return (
-    <details className="overflow-hidden rounded-md border border-border bg-muted/20">
+    <details className="overflow-hidden rounded-lg border border-border/60 bg-muted/20">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/35 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Settings2 className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -360,7 +367,7 @@ function ToolResultCard({ call }: { call: AssistantToolResult }) {
           <div className="grid gap-2">
             {evidence.slice(0, 5).map((item) => (
               <div
-                className="grid scroll-mt-24 gap-2 rounded-md border border-border bg-card p-3"
+                className="grid scroll-mt-24 gap-2 rounded-lg border border-border/60 bg-card p-3"
                 id={assistantEvidenceAnchorId(item.evidence_id)}
                 key={item.evidence_id}
               >
@@ -429,7 +436,7 @@ function AssistantStandardSearchPlan({
   plan: RetrievalStandardSearchPlan;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2 text-xs font-black uppercase text-muted-foreground">
@@ -473,7 +480,7 @@ function AssistantStandardSearchStep({
   step: RetrievalStandardSearchStep;
 }) {
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <Badge variant="muted">P{step.priority}</Badge>
         <Badge variant="success">{step.standard_system}</Badge>
@@ -512,7 +519,7 @@ function AssistantStandardSearchMatchReasons({
 
 function AssistantMedicalSearchHints({ hints }: { hints: AssistantSearchHint[] }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2 text-xs font-black uppercase text-muted-foreground">
@@ -552,7 +559,7 @@ function AssistantMedicalSearchHintCard({ hint }: { hint: AssistantSearchHint })
     }
   };
   return (
-    <div className="grid gap-1.5 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+    <div className="grid gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <Badge variant={launchable ? "success" : "muted"}>
@@ -610,7 +617,7 @@ function AssistantSourceDiversity({
     .filter((selection) => selection.evidence_id && selection.source_id)
     .slice(0, 3);
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2 text-xs font-black uppercase text-muted-foreground">
@@ -637,7 +644,7 @@ function AssistantSourceDiversity({
         <div className="grid gap-1.5">
           {visibleSelections.map((selection) => (
             <div
-              className="grid gap-1 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"
+              className="grid gap-1 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs"
               key={`${selection.selected_rank}:${selection.evidence_id}`}
             >
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
@@ -675,7 +682,7 @@ function AssistantEvidencePack({
   );
   const available = buckets.filter((bucket) => bucket.hit_count > 0);
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-xs font-black uppercase text-muted-foreground">
@@ -694,7 +701,7 @@ function AssistantEvidencePack({
       <div className="grid gap-1.5 sm:grid-cols-2">
         {buckets.map((bucket) => (
           <div
-            className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs"
+            className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-2.5 py-2 text-xs"
             key={bucket.bucket_id}
           >
             <div className="min-w-0">

@@ -2,7 +2,7 @@ import type { RetrievalRankingStack } from "./retrieval-runtime-ranking-types";
 
 export function hybridStackValue(ranking: RetrievalRankingStack): string {
   const lexical = ranking.framework.bm25Enabled ? "BM25" : "FTS";
-  const vector = ranking.embedding.provider === "deterministic" ? "hash" : "vector";
+  const vector = "vector";
   const rerank = ranking.reranker.enabled ? "+ rerank" : "";
   return `${lexical} + ${vector} ${rerank}`.trim();
 }

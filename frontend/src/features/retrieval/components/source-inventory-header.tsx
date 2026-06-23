@@ -23,7 +23,7 @@ export function SourceInventoryHeader({
   sourceCount: number;
 }) {
   return (
-    <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border bg-card/70">
+    <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b border-border/60 bg-muted/30">
       <div className="min-w-0">
         <CardTitle className="flex items-center gap-2">
           Trusted sources

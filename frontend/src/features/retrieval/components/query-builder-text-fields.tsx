@@ -1,5 +1,6 @@
-import { Label, Textarea } from "../../../components/ui/form";
-import { HelpTooltip } from "../../../components/ui/help-tooltip";
+import { Search } from "lucide-react";
+
+import { Textarea } from "../../../components/ui/form";
 import type {
   RetrievalQueryBuilderActions,
   RetrievalQueryBuilderValue,
@@ -14,38 +15,25 @@ export function QueryBuilderTextFields({
 }) {
   return (
     <>
-      <Label>
-        <span className="inline-flex items-center gap-1.5">
-          Query
-          <HelpTooltip label="Retrieval query help">
-            Ask for the evidence you need, not a diagnosis. Include the data operation, field names, standard, or validation issue when known.
-          </HelpTooltip>
-        </span>
+      <div className="relative w-full">
+        <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
         <Textarea
-          className="min-h-24 resize-y"
+          className="w-full min-h-[2.75rem] resize-y pl-9 text-sm"
           onChange={(event) => {
             actions.onSetQuery(event.target.value);
             if (value.formError) actions.onClearFieldError();
           }}
-          placeholder="Example: explain missing units for lab_result_v1 glucose CSV fields"
+          placeholder="Search evidence... e.g. missing units for lab_result glucose"
           value={value.query}
         />
-      </Label>
+      </div>
 
-      <Label>
-        <span className="inline-flex items-center gap-1.5">
-          Fields
-          <HelpTooltip label="Retrieval fields help">
-            Optional comma-separated dataset fields. Field names help retrieval match schema rules and PHI-sensitive columns.
-          </HelpTooltip>
-        </span>
-        <Textarea
-          className="min-h-16 resize-y"
-          onChange={(event) => actions.onSetFields(event.target.value)}
-          placeholder="date, patient_id, lab_name, value, unit"
-          value={value.fields}
-        />
-      </Label>
+      <Textarea
+        className="w-full min-h-[2.25rem] resize-y text-xs"
+        onChange={(event) => actions.onSetFields(event.target.value)}
+        placeholder="Fields (optional): date, patient_id, lab_name, value, unit"
+        value={value.fields}
+      />
     </>
   );
 }

@@ -455,16 +455,14 @@ async def assistant_chat_stream(
             )
         finally:
             if session_id:
-                try:
-                    session_service.append_stream_replay(
-                        owner_user_id=authenticated.user.user_id,
-                        session_id=session_id,
-                        stream_id=stream_id,
-                        events=stream_events,
-                        status=status,
-                    )
-                except Exception:  # pragma: no cover - replay persistence is best-effort.
-                    logger.exception("Assistant stream replay persistence failed")
+                _persist_stream_replay_in_background(
+                    session_service=session_service,
+                    owner_user_id=authenticated.user.user_id,
+                    session_id=session_id,
+                    stream_id=stream_id,
+                    events=stream_events,
+                    status=status,
+                )
 
     return StreamingResponse(
         events(),
@@ -483,3 +481,30 @@ def _sse(event: dict) -> str:
         f"event: {event.get('type', 'message')}\n"
         f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
     )
+
+
+def _persist_stream_replay_in_background(
+    *,
+    session_service: AssistantSessionService,
+    owner_user_id: str,
+    session_id: str,
+    stream_id: str,
+    events: list[dict],
+    status: str,
+) -> None:
+    event_snapshot = [dict(event) for event in events]
+
+    async def persist() -> None:
+        try:
+            await asyncio.to_thread(
+                session_service.append_stream_replay,
+                owner_user_id=owner_user_id,
+                session_id=session_id,
+                stream_id=stream_id,
+                events=event_snapshot,
+                status=status,
+            )
+        except Exception:  # pragma: no cover - replay persistence is best-effort.
+            logger.exception("Assistant stream replay persistence failed")
+
+    asyncio.create_task(persist())

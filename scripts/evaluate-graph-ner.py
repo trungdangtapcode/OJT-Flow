@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run deterministic Graph-NER evaluation fixtures."""
+"""Run rule-based Graph-NER evaluation fixtures."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from ojtflow.application.graph_ner_service import GraphNERService  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Evaluate deterministic Graph-NER extraction quality.",
+        description="Evaluate rule-based Graph-NER extraction quality.",
     )
     parser.add_argument(
         "--cases",

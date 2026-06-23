@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/button";
 
 export function AssistantInlineGuide() {
   return (
-    <details className="rounded-md border border-border bg-muted/25 px-4 py-3">
+    <details className="rounded-lg border border-border/60 bg-muted/25 px-4 py-3">
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 text-sm font-black">
         <HelpCircle className="h-4 w-4 text-primary" />
         How to use Assistant
@@ -38,7 +38,7 @@ export function AssistantInlineGuide() {
 
 function InlineGuideItem({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <div className="rounded-md border border-border bg-card px-3 py-2">
+    <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
       <div className="font-black">{title}</div>
       <div className="mt-1 text-muted-foreground">{children}</div>
     </div>

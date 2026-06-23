@@ -147,6 +147,27 @@
     "nextAction": "Open lab_result_v1 before validating laboratory CSV data."
   },
   {
+    "id": "files",
+    "path": "/files",
+    "title": "What can I do with Files?",
+    "summary": "Inspect uploaded PDFs, images, spreadsheets, clipboard captures, and assistant attachments in the workspace.",
+    "items": [
+      {
+        "title": "Find source artifacts",
+        "text": "Search by filename and filter by upload source to confirm what users attached or uploaded."
+      },
+      {
+        "title": "Check storage and hashes",
+        "text": "Review MIME type, byte size, SHA-256, workspace ownership, and whether the object is in MinIO or legacy local storage."
+      },
+      {
+        "title": "Inspect extraction history",
+        "text": "Open a file to see OCR/parse traces and access events before using the artifact in a workflow decision."
+      }
+    ],
+    "nextAction": "Open the newest uploaded artifact after a Workbench or Assistant file parse."
+  },
+  {
     "id": "settings",
     "path": "/settings",
     "title": "What can I do in Settings?",

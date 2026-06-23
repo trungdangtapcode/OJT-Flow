@@ -11,7 +11,7 @@ export function RunComparisonRulePacks({
   const changedCount = rulePackChanges.filter((change) => change.status !== "stable").length;
   if (!rulePackChanges.length) {
     return (
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
         <span className="text-xs font-bold text-muted-foreground">Rule packs</span>
         <Badge variant="muted">not reported</Badge>
       </div>
@@ -28,7 +28,7 @@ export function RunComparisonRulePacks({
       <div className="grid gap-1">
         {rulePackChanges.slice(0, 4).map((change) => (
           <div
-            className="grid min-w-0 gap-1 rounded-md border border-border bg-card px-3 py-2 text-xs"
+            className="grid min-w-0 gap-1 rounded-lg border border-border/60 bg-card px-3 py-2 text-xs"
             key={change.name}
           >
             <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">

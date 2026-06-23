@@ -17,8 +17,8 @@ export function QueryBuilderScopeFields({
 }) {
   const fields = [
     {
-      help: "Narrows evidence to a clinical data area such as laboratory, medication, or observation.",
-      helpLabel: "Clinical domain help",
+      help: "Filter by clinical area",
+      helpLabel: "Domain help",
       label: "Domain",
       onChange: actions.onSetClinicalDomain,
       options: options.domainOptions.map((domain) => ({
@@ -29,8 +29,8 @@ export function QueryBuilderScopeFields({
       value: value.clinicalDomain,
     },
     {
-      help: "Narrows evidence to a terminology or data standard such as UCUM, LOINC, SNOMED, or FHIR when available.",
-      helpLabel: "Standard filter help",
+      help: "Filter by standard (UCUM, LOINC, etc.)",
+      helpLabel: "Standard help",
       label: "Standard",
       onChange: actions.onSetStandardSystem,
       options: options.standardOptions.map((standard) => ({
@@ -41,8 +41,8 @@ export function QueryBuilderScopeFields({
       value: value.standardSystem,
     },
     {
-      help: "Controls source trust level. Approved is safer for governed workflows; broader trust may help exploration.",
-      helpLabel: "Trust filter help",
+      help: "Filter by source trust level",
+      helpLabel: "Trust help",
       label: "Trust",
       onChange: actions.onSetTrustLevel,
       options: options.trustOptions.map((trust) => ({
@@ -53,8 +53,8 @@ export function QueryBuilderScopeFields({
       value: value.trustLevel,
     },
     {
-      help: "Narrows evidence by source class, such as schema, terminology, policy, corpus document, or locator.",
-      helpLabel: "Source type filter help",
+      help: "Filter by source type",
+      helpLabel: "Source type help",
       label: "Source type",
       onChange: actions.onSetSourceType,
       options: options.sourceTypeOptions.map((type) => ({

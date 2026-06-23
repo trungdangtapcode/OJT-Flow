@@ -1,9 +1,10 @@
-"""Deterministic parsers."""
+"""Rule-based parsers."""
 
 from __future__ import annotations
 
 import csv
 import json
+import re
 from io import StringIO
 from typing import Any
 
@@ -66,17 +67,25 @@ def _parse_markdown(text: str, source_ref: str | None) -> ParsedData:
     if records:
         content: Any = {"tables": records, "raw": text}
     else:
-        # No tables found — represent as a single document record
-        word_count = len(text.split())
-        line_count = len(text.splitlines())
-        content = {"raw": text, "word_count": word_count, "line_count": line_count}
-        if text.strip():
-            records = [{"_text": text, "_word_count": word_count, "_source_row": 1}]
+        records = _extract_fixed_width_lab_results(text)
+        if records:
+            content = {"lab_results": records, "raw": text}
             warnings.append(
-                "No structured table found in markdown; treating document as a single record."
+                f"Extracted {len(records)} lab result record"
+                f"{'' if len(records) == 1 else 's'} from fixed-width OCR text."
             )
         else:
-            warnings.append("Extracted text is empty.")
+            # No tables found — represent as a single document record
+            word_count = len(text.split())
+            line_count = len(text.splitlines())
+            content = {"raw": text, "word_count": word_count, "line_count": line_count}
+            if text.strip():
+                records = [{"_text": text, "_word_count": word_count, "_source_row": 1}]
+                warnings.append(
+                    "No structured table found in markdown; treating document as a single record."
+                )
+            else:
+                warnings.append("Extracted text is empty.")
 
     return ParsedData(
         format=DataFormat.MARKDOWN,
@@ -124,6 +133,208 @@ def _extract_markdown_tables(text: str) -> list[dict[str, Any]]:
             row_index += 1
 
     return records
+
+
+def _extract_fixed_width_lab_results(text: str) -> list[dict[str, Any]]:
+    """Extract lab_result_v1-style rows from OCR text tables.
+
+    This handles fixed-width OCR output such as:
+        TEST VALUE UNIT FLAG
+        HBA1C 7.4 % HIGH
+        GLUCOSE 182 MG/DL HIGH
+
+    It is intentionally narrow: the parser only activates inside a lab-results
+    section or after a TEST/VALUE/UNIT header, and it does not fabricate missing
+    patient IDs or dates.
+    """
+
+    lines = [line.strip() for line in text.splitlines()]
+    start_index = _lab_results_start_index(lines)
+    if start_index is None:
+        return []
+
+    visit_date = _extract_lab_visit_date(text)
+    patient_id = _extract_lab_patient_id(text)
+    records: list[dict[str, Any]] = []
+    seen_data = False
+    miss_count = 0
+
+    for offset, line in enumerate(lines[start_index:], start=start_index + 1):
+        if not line:
+            if seen_data:
+                miss_count += 1
+            continue
+        if _is_lab_section_boundary(line):
+            if seen_data:
+                break
+            continue
+        if _is_lab_table_header(line):
+            continue
+
+        record = _parse_fixed_width_lab_line(line)
+        if record is None:
+            if seen_data:
+                miss_count += 1
+                if miss_count >= 2:
+                    break
+            continue
+
+        seen_data = True
+        miss_count = 0
+        record["date"] = visit_date
+        record["patient_id"] = patient_id
+        record["_source_row"] = offset
+        records.append(record)
+
+    return records
+
+
+def _lab_results_start_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        normalized = _ocr_normalize_upper(line)
+        if "LAB RESULTS" in normalized or "LABORATORY RESULTS" in normalized:
+            return index + 1
+        if _is_lab_table_header(line):
+            return index + 1
+    return None
+
+
+def _is_lab_table_header(line: str) -> bool:
+    normalized = _ocr_normalize_upper(line)
+    return (
+        "TEST" in normalized
+        and "VALUE" in normalized
+        and ("UNIT" in normalized or "UNITS" in normalized)
+    )
+
+
+def _is_lab_section_boundary(line: str) -> bool:
+    normalized = _ocr_normalize_upper(line)
+    boundaries = (
+        "MEDICATION",
+        "ASSESSMENT",
+        "PLAN",
+        "PROBLEM LIST",
+        "DIAGNOSIS",
+        "FOLLOW UP",
+        "SIGNED",
+        "PROVIDER",
+        "VISIT INFORMATION",
+        "PATIENT INFORMATION",
+    )
+    return any(normalized.startswith(boundary) for boundary in boundaries)
+
+
+def _parse_fixed_width_lab_line(line: str) -> dict[str, Any] | None:
+    tokens = line.replace("|", " ").split()
+    if len(tokens) < 3:
+        return None
+
+    value_index = next(
+        (index for index, token in enumerate(tokens[1:], start=1) if _is_numeric_token(token)),
+        None,
+    )
+    if value_index is None or value_index == 0 or value_index + 1 >= len(tokens):
+        return None
+
+    lab_name = " ".join(tokens[:value_index]).strip(" :-")
+    value = _normalize_number_token(tokens[value_index])
+    unit, consumed = _parse_lab_unit(tokens[value_index + 1 :])
+    if not lab_name or unit is None:
+        return None
+
+    flag_tokens = tokens[value_index + 1 + consumed :]
+    record: dict[str, Any] = {
+        "lab_name": _normalize_lab_name(lab_name),
+        "value": value,
+        "unit": unit,
+    }
+    if flag_tokens:
+        record["flag"] = " ".join(flag_tokens)
+    return record
+
+
+def _parse_lab_unit(tokens: list[str]) -> tuple[str | None, int]:
+    if not tokens:
+        return None, 0
+    first = tokens[0].strip()
+    if first == "%" or _looks_like_unit(first):
+        return first.upper(), 1
+    if len(tokens) >= 3 and _looks_like_unit(tokens[0]) and tokens[1] == "/" and _looks_like_unit(tokens[2]):
+        return f"{tokens[0]}/{tokens[2]}".upper(), 3
+    return None, 0
+
+
+def _looks_like_unit(value: str) -> bool:
+    normalized = value.strip().upper()
+    if not normalized:
+        return False
+    known_units = {
+        "%",
+        "MG/DL",
+        "MMOL/L",
+        "G/DL",
+        "MG/L",
+        "UG/ML",
+        "NG/ML",
+        "U/L",
+        "IU/L",
+        "MEQ/L",
+        "FL",
+        "PG",
+        "K/UL",
+        "10^3/UL",
+    }
+    return normalized in known_units or bool(re.fullmatch(r"[A-Z%][A-Z0-9^/%.\-]*", normalized))
+
+
+def _is_numeric_token(value: str) -> bool:
+    return bool(re.fullmatch(r"[<>]?\d+(?:[.,]\d+)?", value.strip()))
+
+
+def _normalize_number_token(value: str) -> str:
+    return value.strip().replace(",", ".")
+
+
+def _normalize_lab_name(value: str) -> str:
+    aliases = {
+        "HBAIC": "HBA1C",
+        "HBALC": "HBA1C",
+        "HBAI C": "HBA1C",
+    }
+    normalized = " ".join(value.strip().upper().split())
+    return aliases.get(normalized, normalized)
+
+
+def _extract_lab_visit_date(text: str) -> str:
+    patterns = (
+        r"\bVISIT\s+DATE[:\s]+(\d{4}-\d{2}-\d{2})\b",
+        r"\bCOLLECT(?:ED|ION)?\s+DATE[:\s]+(\d{4}-\d{2}-\d{2})\b",
+        r"\bOBSERVATION\s+DATE[:\s]+(\d{4}-\d{2}-\d{2})\b",
+        r"\bDATE[:\s]+(\d{4}-\d{2}-\d{2})\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _extract_lab_patient_id(text: str) -> str:
+    patterns = (
+        r"\bMRN[:\s]+([A-Z0-9][A-Z0-9\-]{2,})\b",
+        r"\bPATIENT\s+ID[:\s]+([A-Z0-9][A-Z0-9\-]{2,})\b",
+        r"\bPATIENT_ID[:\s]+([A-Z0-9][A-Z0-9\-]{2,})\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    return ""
+
+
+def _ocr_normalize_upper(value: str) -> str:
+    return " ".join(value.upper().replace(":", " ").replace("|", " ").split())
 
 
 def _parse_csv(text: str, source_ref: str | None) -> ParsedData:

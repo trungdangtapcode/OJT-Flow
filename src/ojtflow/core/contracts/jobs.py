@@ -16,6 +16,7 @@ JobType = Literal[
     "file_parse",
     "ocr_extract",
     "embedding_reindex",
+    "medsiglip_classification",
     "external_ingest",
     "export_package",
 ]
@@ -55,4 +56,3 @@ class BackgroundJob(ContractModel):
     updated_at: str = Field(default_factory=lambda: utc_now().isoformat())
     started_at: str | None = None
     completed_at: str | None = None
-

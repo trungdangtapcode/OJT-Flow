@@ -9,7 +9,7 @@ export function SearchHintMetadata({ metadata }: { metadata: Record<string, unkn
   const view = searchHintMetadataView(metadata);
   if (!hasSearchHintMetadataDetails(view)) return null;
   return (
-    <details className="rounded-md border border-border bg-muted/20">
+    <details className="rounded-lg border border-border/60 bg-muted/20">
       <SearchHintMetadataSummary view={view} />
       <SearchHintMetadataSectionList view={view} />
     </details>

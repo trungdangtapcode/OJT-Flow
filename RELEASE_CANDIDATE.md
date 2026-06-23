@@ -62,7 +62,7 @@ complete all steps successfully:
 
 ## Healthcare Workflow Scope
 
-- [x] Parser/converter/validation support deterministic CSV, JSON, and YAML.
+- [x] Parser/converter/validation support rule-based CSV, JSON, and YAML.
 - [x] CSV reports malformed rows, missing cells, extra cells, and source rows.
 - [x] Conversion metadata includes source/target formats, row counts, output hash,
       lossiness, warnings, and applied actions.
@@ -80,7 +80,7 @@ complete all steps successfully:
 ## Retrieval Readiness
 
 - [x] Retrieval uses trusted healthcare knowledge inventory.
-- [x] Postgres mode uses full-text search, deterministic vector scoring, fusion,
+- [x] Postgres mode uses full-text search, rule-based vector scoring, fusion,
       and reranking where seeded data is available.
 - [x] Retrieval traces expose strategy, query variants, filters, selected IDs,
       candidate counts, safety flags, and warnings.

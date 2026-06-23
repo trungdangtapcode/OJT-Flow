@@ -19,7 +19,7 @@ export function StandardSearchStepCard({
 }: StandardSearchStepCardProps) {
   const filterAction = getSuggestedFilterAction(step.suggested_filters);
   return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+    <div className="grid min-w-0 gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <div className="min-w-0">
           <div className="break-words font-black">{step.label}</div>
@@ -48,7 +48,7 @@ export function StandardSearchStepCard({
         {step.rationale}
       </div>
       <StandardSearchMatchReasons metadata={step.metadata} />
-      <div className="break-words rounded-md border border-border bg-card px-3 py-2 font-mono text-xs leading-5 text-foreground">
+      <div className="break-words rounded-lg border border-border/60 bg-card px-3 py-2 font-mono text-xs leading-5 text-foreground">
         {step.query}
       </div>
       <StandardSearchGovernanceNotes notes={step.governance_notes} />

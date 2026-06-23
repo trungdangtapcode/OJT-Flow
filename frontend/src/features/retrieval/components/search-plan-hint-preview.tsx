@@ -10,7 +10,7 @@ import type { SearchHintStack } from "./search-plan-detail-types";
 export function SearchPlanHintPreview({ hints }: { hints: SearchHintStack[] }) {
   if (!hints.length) {
     return (
-      <div className="rounded-md border border-border bg-card p-3">
+      <div className="rounded-lg border border-border/60 bg-card p-3">
         <div className="text-xs font-black uppercase text-muted-foreground">
           Medical search hints
         </div>
@@ -22,7 +22,7 @@ export function SearchPlanHintPreview({ hints }: { hints: SearchHintStack[] }) {
   }
 
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-card p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-card p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-black uppercase text-muted-foreground">
           Medical search hints

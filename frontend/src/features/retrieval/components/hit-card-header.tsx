@@ -2,7 +2,6 @@ import { CheckCircle2, Clipboard } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
-import { HelpTooltip } from "../../../components/ui/help-tooltip";
 import { humanize } from "../../../lib/utils";
 import type { RetrievalHit } from "../../../types";
 
@@ -24,15 +23,15 @@ export function HitCardHeader({
   score: number;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
       <div className="min-w-0">
-        <div className="text-xs font-bold uppercase text-muted-foreground">
-          Rank {index + 1}
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10px] font-bold uppercase text-muted-foreground">#{index + 1}</span>
+          <h3 className="break-words text-sm font-bold leading-5">
+            {evidence.source_id}
+          </h3>
         </div>
-        <h3 className="mt-1 break-words text-base font-extrabold leading-5">
-          {evidence.source_id}
-        </h3>
-        <div className="mt-1 flex flex-wrap gap-1.5 text-xs font-bold text-muted-foreground">
+        <div className="mt-0.5 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
           <span>{humanize(evidence.source_type)}</span>
           <span>/</span>
           <span>{humanize(evidence.trust_level)}</span>
@@ -44,26 +43,22 @@ export function HitCardHeader({
           ) : null}
         </div>
       </div>
-      <div className="flex flex-wrap justify-end gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-1">
         <Badge variant="success">{formatConfidence(evidence.confidence)}</Badge>
-        <Badge variant="muted">score {formatScore(score)}</Badge>
+        <Badge variant="muted">{formatScore(score)}</Badge>
         <Button
-          aria-label={`Copy evidence report for ${evidence.source_id}`}
+          aria-label={`Copy evidence for ${evidence.source_id}`}
           onClick={onCopyEvidenceReport}
           size="sm"
           type="button"
-          variant="outline"
+          variant="ghost"
         >
           {evidenceCopied ? (
-            <CheckCircle2 className="h-4 w-4" />
+            <CheckCircle2 className="h-3.5 w-3.5" />
           ) : (
-            <Clipboard className="h-4 w-4" />
+            <Clipboard className="h-3.5 w-3.5" />
           )}
-          {evidenceCopied ? "Copied" : "Copy evidence JSON"}
         </Button>
-        <HelpTooltip label="Evidence JSON report help">
-          Copies this evidence hit with identity, score details, provenance, match explanation, bucket support, locators, and snippet context.
-        </HelpTooltip>
       </div>
     </div>
   );

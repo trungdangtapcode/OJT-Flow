@@ -18,7 +18,7 @@ export function SourceInventorySourceList({
         <SourceCard key={source.source_id} onUseSource={onUseSource} source={source} />
       ))}
       {!sources.length ? (
-        <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-border/60 p-3 text-sm text-muted-foreground">
           {isLoading
             ? "Loading sources."
             : hasSourceFilters

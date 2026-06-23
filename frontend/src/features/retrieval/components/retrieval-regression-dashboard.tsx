@@ -73,12 +73,12 @@ export function RetrievalRegressionDashboard({
   const latestRun = searchRuns[0] ?? null;
 
   return (
-    <section className="grid gap-3 rounded-md border border-border bg-card p-4">
+    <section className="grid gap-4 rounded-xl border border-border/50 bg-card p-5">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="inline-flex min-w-0 items-center gap-2">
             <BarChart3 className="h-4 w-4 shrink-0 text-primary" />
-            <h2 className="break-words text-sm font-black">Regression dashboard</h2>
+            <h2 className="break-words text-sm font-semibold">Regression dashboard</h2>
           </div>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Track relevance labels and active-run quality before tuning retrieval.
@@ -138,14 +138,14 @@ export function RetrievalRegressionDashboard({
           formatPercent={formatPercent}
         />
       ) : (
-        <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-border/50 bg-muted/20 p-4 text-sm text-muted-foreground">
           Run a retrieval search and label evidence to see Precision@k, MRR, MAP, and nDCG.
         </div>
       )}
 
       <div className="grid gap-2">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
             <Activity className="h-3.5 w-3.5" />
             Recent labeled queries
           </div>
@@ -167,7 +167,7 @@ export function RetrievalRegressionDashboard({
             ))}
           </div>
         ) : (
-          <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border/50 p-4 text-sm text-muted-foreground">
             No persisted relevance labels yet.
           </div>
         )}
@@ -194,7 +194,7 @@ function ActiveLearningQueue({
   return (
     <div className="grid gap-2 border-t border-border pt-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-muted-foreground">
+        <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
           <Inbox className="h-3.5 w-3.5" />
           Active-learning queue
         </div>
@@ -220,7 +220,7 @@ function ActiveLearningQueue({
           ))}
         </div>
       ) : (
-        <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border/50 p-4 text-sm text-muted-foreground">
           No open active-learning candidates.
         </div>
       )}
@@ -236,7 +236,7 @@ function ActiveLearningCandidateRow({
   onUpdateCandidate: (candidateId: string, status: RetrievalActiveLearningStatus) => void;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-background p-3">
+    <div className="grid gap-2 rounded-xl border border-border/50 bg-background p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -302,10 +302,10 @@ function ActiveRunRegression({
   const readiness = activeEvaluation.evaluation_readiness;
   const ready = readiness.status === "ready";
   return (
-    <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-3 rounded-xl border border-border/50 bg-muted/20 p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-sm font-black">Active-run evaluation</div>
+          <div className="text-sm font-semibold">Active-run evaluation</div>
           <div className="mt-1 line-clamp-2 break-words text-xs text-muted-foreground">
             {activeRunQuery ?? activeEvaluation.query}
           </div>
@@ -323,7 +323,7 @@ function ActiveRunRegression({
           value={formatCount(activeEvaluation.unjudged_count, "hit")}
         />
       </div>
-      <div className="flex items-start gap-2 rounded-md border border-border bg-card p-2 text-xs leading-5 text-muted-foreground">
+      <div className="flex items-start gap-2 rounded-xl border border-border/50 bg-card p-2 text-xs leading-5 text-muted-foreground">
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
         <span>
           {readiness.message} Minimum coverage is{" "}
@@ -345,7 +345,7 @@ function QueryRegressionRowView({
   row: QueryRegressionRow;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-xl border border-border/50 bg-muted/20 p-3">
       <div className="line-clamp-2 break-words text-sm font-bold">{row.query}</div>
       <div className="flex min-w-0 flex-wrap gap-1.5">
         <Badge variant="muted">{formatCount(row.total, "label")}</Badge>
@@ -363,9 +363,9 @@ function QueryRegressionRowView({
 
 function RegressionMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-card/80 px-3 py-2">
+    <div className="min-w-0 rounded-xl border border-border/50 bg-card/80 px-3 py-2">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-black tabular-nums">{value}</div>
+      <div className="mt-1 break-words text-sm font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

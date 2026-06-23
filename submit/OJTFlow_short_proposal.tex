@@ -75,7 +75,7 @@
   \begin{tikzpicture}
     \node[draw=sfblue, ultra thick, rounded corners=6pt, fill=sfgray, inner sep=15pt, text width=0.82\textwidth, align=center] {
       \large \textbf{Executive Snapshot}\\[4pt]
-      \normalsize \projectname{} is a governed, Japan-focus medical AI platform that converts, validates, retrieves, explains, and audits healthcare data across structured files, FHIR/OMOP workflows, scanned clinical documents, DICOM images, and medical video. It combines deterministic validation, OCR, Graph-NER, self-supervised embedding adaptation, advanced RAG, SAM/MedSAM-style segmentation, object detection/tracking, clinician review, GCP-based MLOps, and full observability.
+      \normalsize \projectname{} is a governed, Japan-focus medical AI platform that converts, validates, retrieves, explains, and audits healthcare data across structured files, FHIR/OMOP workflows, scanned clinical documents, DICOM images, and medical video. It combines rule-based validation, OCR, Graph-NER, self-supervised embedding adaptation, advanced RAG, SAM/MedSAM-style segmentation, object detection/tracking, clinician review, GCP-based MLOps, and full observability.
     };
   \end{tikzpicture}
 
@@ -120,7 +120,7 @@ Real application & Uses FHIR/OMOP/Synthea-style data, synthetic Japanese forms, 
 \midrule
 Healthcare data is fragmented across files, APIs, EHR exports, FHIR resources, OMOP tables, and spreadsheets. & Provide one governed workflow layer for parsing, validating, converting, retrieving, and explaining healthcare data. \\
 Medical knowledge is also locked in paper/scanned forms, referral letters, image reports, DICOM studies, and video workflows. & Add OCR/layout extraction, source bounding boxes, DICOM metadata, segmentation masks, detection boxes, tracking traces, and visual evidence review. \\
-Manual data conversion is error-prone and difficult to audit. & Use deterministic tools, schema validators, FHIR/OMOP constraints, versioned workflows, and audit logs. \\
+Manual data conversion is error-prone and difficult to audit. & Use rule-based tools, schema validators, FHIR/OMOP constraints, versioned workflows, and audit logs. \\
 Foundation models can hallucinate or produce invalid structured output. & Use LLMs for intent and explanation, but require validators, evidence retrieval, human review, and tool-based execution. \\
 Medical AI needs interpretability, privacy, monitoring, and accountability. & Add evidence-grounded explanations, OCR boxes, visual overlays, PHI protection, clinician review, model/retrieval/vision monitoring, and GCP auditability. \\
 Japanese healthcare adoption requires trust, localization, and compliance readiness. & Include APPI/MHLW/PMDA-aware governance, JP Core/FHIR mapping, Japanese terminology aliases, approval logs, and data-residency/tenant-isolation design. \\
@@ -150,7 +150,7 @@ Clinical datasets contain sensitive, biased, incomplete, or site-specific data. 
 \midrule
 Phase 1 & Week 1 & Finalize Japan-market medical scope, synthetic datasets, FHIR/OMOP/JP Core schema targets, OCR/DICOM/vision boundaries, architecture, security rules, and evaluation criteria. Build core parser/converter API skeleton. & Approved plan + API skeleton. \\
 \addlinespace
-Phase 2 & Week 2 & Implement deterministic parsing, JSON/YAML/CSV conversion, schema validation, workflow state, MCP tool contracts, basic agent orchestration, and unit tests. & Core workflow MVP. \\
+Phase 2 & Week 2 & Implement rule-based parsing, JSON/YAML/CSV conversion, schema validation, workflow state, MCP tool contracts, basic agent orchestration, and unit tests. & Core workflow MVP. \\
 \addlinespace
 Phase 3 & Week 3 & Build retrieval prototype, medical knowledge base, Graph-NER prototype, self-supervised embedding adaptation, OCR field extraction design, entity normalization, graph context, explanation report, and retrieval/entity metrics. & AI + Graph-NER + SSL + OCR demo. \\
 \addlinespace
@@ -169,7 +169,7 @@ The recommended demo uses synthetic healthcare data from Synthea/FHIR examples p
 \begin{figure}[H]
   \centering
   \resizebox{\textwidth}{!}{\input{figures/architecture}}
-  \caption{Architecture overview for OJTFlow. The model reasons and explains, while MCP-backed deterministic services parse, validate, transform, retrieve, review, and audit.}
+  \caption{Architecture overview for OJTFlow. The model reasons and explains, while MCP-backed rule-based services parse, validate, transform, retrieve, review, and audit.}
 \end{figure}
 
 \subsection{Advanced Retrieval Workflow}
@@ -189,7 +189,7 @@ The recommended demo uses synthetic healthcare data from Synthea/FHIR examples p
   \item Graph-NER Agent extracts medical entities, normalizes codes, and builds graph relations.
   \item Retrieval Agent searches schemas, clinical dictionaries, examples, rules, and graph context.
   \item Multimodal AI Agent links OCR boxes and stores segmentation, detection, tracking, and visual evidence artifacts.
-  \item Transformation Agent performs deterministic conversion or cleaning.
+  \item Transformation Agent performs rule-based conversion or cleaning.
   \item Explanation Agent produces evidence-grounded summary with uncertainty and limitations.
   \item Human/Clinician Review Agent asks for approval when risk, ambiguity, PHI/APPI-sensitive data, visual overclaim, or medical consequence is detected.
   \item Monitoring and audit services record workflow, metrics, sources, decisions, and output hashes.
@@ -253,7 +253,7 @@ Graph-NER Module & Extracts entities, normalizes to medical codes and schemas, e
 Self-Supervised Representation Module & Builds positive/negative pairs from schemas, entities, validation issues, code mappings, and retrieved evidence; adapts embedding models using contrastive or denoising objectives. & Versioned embedding model, representation report, retrieval/entity-linking gains. \\
 Advanced Retrieval Module & Performs hybrid retrieval, HyDE, reranking, hierarchical retrieval, GraphRAG, and source attribution. & Evidence package and source IDs. \\
 Multimodal Medical AI Module & Applies OCR/layout extraction, SAM/MedSAM-style segmentation design, detection/tracking evaluation plan, masks/boxes/frame IDs, and visual uncertainty handling. & OCR fields, visual evidence artifacts, mask/box/track report. \\
-Transformation Module & Converts and cleans data through deterministic tools, never uncontrolled model generation. & Converted output, diff, metadata. \\
+Transformation Module & Converts and cleans data through rule-based tools, never uncontrolled model generation. & Converted output, diff, metadata. \\
 Foundation AI Module & Interprets intent, proposes plans, summarizes evidence, explains validation and transformation results. & Natural language explanation and structured plan. \\
 Explainability Module & Produces supported-claim map, uncertainty, limitations, evidence trace, OCR boxes, image overlays, and clinician review prompts. & Medical explanation report. \\
 Human Review Module & Requires approval for PHI/APPI-sensitive data, low confidence, destructive cleaning, visual overclaim, medical consequence, or external calls. & Approval/edit/reject decision. \\

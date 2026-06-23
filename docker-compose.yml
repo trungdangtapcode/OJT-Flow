@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ${OJT_POSTGRES_USER:-ojtflow}
       POSTGRES_PASSWORD: ${OJT_POSTGRES_PASSWORD:-ojtflow}
     ports:
-      - "${OJT_POSTGRES_PORT:-5432}:5432"
+      - "${OJT_POSTGRES_PORT:-15432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,20 +18,97 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${OJT_REDIS_PORT:-6379}:6379"
+      - "${OJT_REDIS_PORT:-16379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${OJT_RABBITMQ_USER:-ojtflow}
+      RABBITMQ_DEFAULT_PASS: ${OJT_RABBITMQ_PASSWORD:-ojtflow}
+    ports:
+      - "${OJT_RABBITMQ_AMQP_PORT:-15673}:5672"
+      - "${OJT_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      MINIO_ROOT_PASSWORD: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      MINIO_REGION_NAME: ${OJT_MINIO_REGION:-us-east-1}
+    ports:
+      - "${OJT_MINIO_API_PORT:-19000}:9000"
+      - "${OJT_MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname-strict=false
+    environment:
+      KC_HEALTH_ENABLED: "true"
+      # Pin a single public issuer so tokens minted via the browser
+      # (localhost:18080) still validate when the API calls /token and /userinfo
+      # over the internal network (keycloak:8080). Backchannel-dynamic lets those
+      # internal calls in while keeping the issuer fixed to the public URL.
+      KC_HOSTNAME: ${OJT_KEYCLOAK_BASE_URL:-http://localhost:18080}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KEYCLOAK_ADMIN: ${OJT_KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${OJT_KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${OJT_KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${OJT_KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Surfaced to the realm import for the brokered Google identity provider.
+      OJT_GOOGLE_CLIENT_ID: ${OJT_GOOGLE_CLIENT_ID:-}
+      OJT_GOOGLE_CLIENT_SECRET: ${OJT_GOOGLE_CLIENT_SECRET:-}
+    ports:
+      - "${OJT_KEYCLOAK_PORT:-18080}:8080"
+    volumes:
+      # H2 dev database stays on the container's writable layer to avoid host
+      # volume ownership issues; the realm is re-imported on each start.
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9000; printf \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+
   api:
     build:
       context: .
       args:
-        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing,graph}
     environment:
       OJT_STORAGE_BACKEND: postgres
+      OJT_OBJECT_STORAGE_BACKEND: ${OJT_OBJECT_STORAGE_BACKEND:-minio}
+      OJT_MINIO_ENDPOINT: ${OJT_MINIO_ENDPOINT:-minio:9000}
+      OJT_MINIO_ACCESS_KEY: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      OJT_MINIO_SECRET_KEY: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      OJT_MINIO_BUCKET: ${OJT_MINIO_BUCKET:-ojtflow-artifacts}
+      OJT_MINIO_REGION: ${OJT_MINIO_REGION:-us-east-1}
+      OJT_MINIO_SECURE: ${OJT_MINIO_SECURE:-false}
       OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
       OJT_NO_MOCK_DATA: ${OJT_NO_MOCK_DATA:-false}
       OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
@@ -40,10 +117,25 @@ services:
       OJT_RUNTIME_SETTINGS_PATH: ${OJT_RUNTIME_SETTINGS_PATH:-/app/var/runtime_settings.json}
       OJT_KNOWLEDGE_DIR: /app/knowledge
       OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+      OJT_QUEUE_BACKEND: ${OJT_QUEUE_BACKEND:-rabbitmq}
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_CELERY_TASK_TIME_LIMIT_SECONDS: ${OJT_CELERY_TASK_TIME_LIMIT_SECONDS:-900}
+      OJT_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS: ${OJT_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS:-840}
+      OJT_SENTRY_DSN: ${OJT_SENTRY_DSN:-}
+      OJT_LOKI_ENABLED: ${OJT_LOKI_ENABLED:-true}
+      OJT_AUTH_PROVIDER: ${OJT_AUTH_PROVIDER:-keycloak}
+      OJT_KEYCLOAK_BASE_URL: ${OJT_DOCKER_KEYCLOAK_BASE_URL:-http://keycloak:8080}
+      OJT_KEYCLOAK_PUBLIC_BASE_URL: ${OJT_KEYCLOAK_BASE_URL:-http://localhost:18080}
+      OJT_KEYCLOAK_REALM: ${OJT_KEYCLOAK_REALM:-ojtflow}
+      OJT_KEYCLOAK_CLIENT_ID: ${OJT_KEYCLOAK_CLIENT_ID:-ojtflow-api}
+      OJT_KEYCLOAK_CLIENT_SECRET: ${OJT_KEYCLOAK_CLIENT_SECRET:-ojtflow-local-secret}
+      OJT_KEYCLOAK_REDIRECT_URI: ${OJT_KEYCLOAK_REDIRECT_URI:-http://localhost:15173/auth/callback}
+      OJT_FRONTEND_BASE_URL: ${OJT_FRONTEND_BASE_URL:-http://localhost:15173}
+      OJT_INVITATION_TTL_SECONDS: ${OJT_INVITATION_TTL_SECONDS:-604800}
       OJT_GOOGLE_CLIENT_ID: ${OJT_GOOGLE_CLIENT_ID:-}
       OJT_GOOGLE_CLIENT_SECRET: ${OJT_GOOGLE_CLIENT_SECRET:-}
-      OJT_GOOGLE_REDIRECT_URI: ${OJT_GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/auth/google/callback}
-      OJT_GOOGLE_FRONTEND_REDIRECT_URI: ${OJT_GOOGLE_FRONTEND_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      OJT_GOOGLE_REDIRECT_URI: ${OJT_GOOGLE_REDIRECT_URI:-http://localhost:18000/api/v1/auth/google/callback}
+      OJT_GOOGLE_FRONTEND_REDIRECT_URI: ${OJT_GOOGLE_FRONTEND_REDIRECT_URI:-http://localhost:15173/auth/callback}
       OJT_ALLOWED_AUTH_REDIRECT_URIS: ${OJT_ALLOWED_AUTH_REDIRECT_URIS:-}
       OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS: ${OJT_ALLOWED_GOOGLE_HOSTED_DOMAINS:-}
       OJT_GOOGLE_OAUTH_TIMEOUT_SECONDS: ${OJT_GOOGLE_OAUTH_TIMEOUT_SECONDS:-10.0}
@@ -57,9 +149,9 @@ services:
       OJT_MAX_INLINE_DATA_BYTES: ${OJT_MAX_INLINE_DATA_BYTES:-1048576}
       OJT_UPLOAD_READ_CHUNK_BYTES: ${OJT_UPLOAD_READ_CHUNK_BYTES:-1048576}
       OJT_ALLOWED_UPLOAD_EXTENSIONS: ${OJT_ALLOWED_UPLOAD_EXTENSIONS:-.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml}
-      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-deterministic}
-      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-deterministic-hash-v0}
-      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-64}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-openai}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-text-embedding-3-small}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-384}
       OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
       OJT_OPENAI_EMBEDDING_BASE_URL: ${OJT_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
       OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS: ${OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS:-20.0}
@@ -83,19 +175,52 @@ services:
       OJT_RETRIEVAL_DIVERSITY_ENABLED: ${OJT_RETRIEVAL_DIVERSITY_ENABLED:-true}
       OJT_RETRIEVAL_DIVERSITY_LAMBDA: ${OJT_RETRIEVAL_DIVERSITY_LAMBDA:-0.72}
       OJT_RETRIEVAL_HNSW_EF_SEARCH: ${OJT_RETRIEVAL_HNSW_EF_SEARCH:-100}
+      OJT_RETRIEVAL_MODE: ${OJT_RETRIEVAL_MODE:-semantic_vector}
       OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}
       OJT_RETRIEVAL_CANDIDATE_MULTIPLIER: ${OJT_RETRIEVAL_CANDIDATE_MULTIPLIER:-4}
       OJT_RETRIEVAL_MIN_CANDIDATES: ${OJT_RETRIEVAL_MIN_CANDIDATES:-12}
       OJT_RETRIEVAL_VECTOR_WEIGHT: ${OJT_RETRIEVAL_VECTOR_WEIGHT:-0.62}
       OJT_RETRIEVAL_BM25_WEIGHT: ${OJT_RETRIEVAL_BM25_WEIGHT:-0.38}
+      OJT_KNOWLEDGE_GRAPH_BACKEND: ${OJT_KNOWLEDGE_GRAPH_BACKEND:-neo4j}
+      OJT_NEO4J_URI: ${OJT_NEO4J_URI:-bolt://host.docker.internal:7688}
+      OJT_NEO4J_USER: ${OJT_NEO4J_USER:-neo4j}
+      OJT_NEO4J_PASSWORD: ${OJT_NEO4J_PASSWORD:-testpassword123}
+      OJT_NEO4J_DATABASE: ${OJT_NEO4J_DATABASE:-neo4j}
+      OJT_GRAPH_MED_ANNOTATION_ENABLED: ${OJT_GRAPH_MED_ANNOTATION_ENABLED:-true}
+      OJT_GRAPH_MED_SERVICE_BASE_URL: ${OJT_GRAPH_MED_SERVICE_BASE_URL:-http://graph-med-service:8010}
+      OJT_GRAPH_MED_EMBEDDING_BASE_URL: ${OJT_GRAPH_MED_EMBEDDING_BASE_URL:-}
+      OJT_GRAPH_MED_LLM_BASE_URL: ${OJT_GRAPH_MED_LLM_BASE_URL:-}
+      OJT_GRAPH_MED_LLM_MODEL: ${OJT_GRAPH_MED_LLM_MODEL:-}
+      OJT_GRAPH_MED_EMBEDDING_MODEL: ${OJT_GRAPH_MED_EMBEDDING_MODEL:-}
+      OJT_GRAPH_MED_GNN_BASE_URL: ${OJT_GRAPH_MED_GNN_BASE_URL:-}
+      OJT_GRAPH_MED_DEVICE: ${OJT_GRAPH_MED_DEVICE:-cuda}
+      OJT_GRAPH_MED_REQUIRE_GPU: ${OJT_GRAPH_MED_REQUIRE_GPU:-true}
+      OJT_GRAPH_MED_ICD_VECTOR_INDEX: ${OJT_GRAPH_MED_ICD_VECTOR_INDEX:-icd_disease_embedding}
+      OJT_GRAPH_MED_CANDIDATE_K: ${OJT_GRAPH_MED_CANDIDATE_K:-10}
+      OJT_GRAPH_MED_TIMEOUT_SECONDS: ${OJT_GRAPH_MED_TIMEOUT_SECONDS:-90.0}
+      OJT_MEDSIGLIP_ENABLED: ${OJT_MEDSIGLIP_ENABLED:-true}
+      OJT_MEDSIGLIP_BASE_URL: ${OJT_MEDSIGLIP_DOCKER_BASE_URL:-http://medsiglip:8000}
+      OJT_MEDSIGLIP_MODEL: ${OJT_MEDSIGLIP_MODEL:-google/medsiglip-448}
+      OJT_MEDSIGLIP_TIMEOUT_SECONDS: ${OJT_MEDSIGLIP_TIMEOUT_SECONDS:-90.0}
+      OJT_MEDSIGLIP_QUEUE: ${OJT_MEDSIGLIP_QUEUE:-medsiglip}
     ports:
-      - "${OJT_API_PORT:-8000}:8000"
+      - "${OJT_API_PORT:-18000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - app_data:/app/var
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      graph-med-service:
         condition: service_healthy
     healthcheck:
       test:
@@ -110,13 +235,607 @@ services:
       retries: 12
       start_period: 10s
 
+  medsiglip:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: medsiglip-service
+    profiles: ["medsiglip"]
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: >
+      python -m uvicorn ojtflow.interfaces.medsiglip.app:app
+      --host 0.0.0.0
+      --port 8000
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-${HF_TOKEN:-}}
+      HF_HOME: /root/.cache/huggingface
+      NVIDIA_VISIBLE_DEVICES: ${OJT_MEDSIGLIP_GPU:-0}
+      OJT_MEDSIGLIP_MODEL: ${OJT_MEDSIGLIP_MODEL:-google/medsiglip-448}
+      OJT_MEDSIGLIP_DEVICE: ${OJT_MEDSIGLIP_DEVICE:-cuda}
+      OJT_MEDSIGLIP_REQUIRE_GPU: ${OJT_MEDSIGLIP_REQUIRE_GPU:-true}
+      OJT_MEDSIGLIP_PRELOAD: ${OJT_MEDSIGLIP_PRELOAD:-true}
+      OJT_MEDSIGLIP_CACHE_DIR: /root/.cache/huggingface
+    ports:
+      - "${OJT_MEDSIGLIP_PORT:-18103}:8000"
+    volumes:
+      - ${OJT_HF_CACHE_DIR:-/home/vund/.cache/huggingface}:/root/.cache/huggingface
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 180s
+
+  graph-med-service:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_GRAPH_MED_PYTHON_EXTRAS:-graph-med-service}
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: >
+      python -m uvicorn ojtflow.interfaces.graph_med.app:app
+      --host 0.0.0.0
+      --port 8010
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_OBJECT_STORAGE_BACKEND: ${OJT_OBJECT_STORAGE_BACKEND:-minio}
+      OJT_MINIO_ENDPOINT: ${OJT_MINIO_ENDPOINT:-minio:9000}
+      OJT_MINIO_ACCESS_KEY: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      OJT_MINIO_SECRET_KEY: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      OJT_MINIO_BUCKET: ${OJT_MINIO_BUCKET:-ojtflow-artifacts}
+      OJT_MINIO_REGION: ${OJT_MINIO_REGION:-us-east-1}
+      OJT_MINIO_SECURE: ${OJT_MINIO_SECURE:-false}
+      OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
+      OJT_NO_MOCK_DATA: ${OJT_NO_MOCK_DATA:-false}
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_DATA_DIR: /app/var
+      OJT_RUNTIME_SETTINGS_PATH: ${OJT_RUNTIME_SETTINGS_PATH:-/app/var/runtime_settings.json}
+      OJT_QUEUE_BACKEND: ${OJT_QUEUE_BACKEND:-rabbitmq}
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_KNOWLEDGE_GRAPH_BACKEND: neo4j
+      OJT_NEO4J_URI: ${OJT_NEO4J_URI:-bolt://host.docker.internal:7688}
+      OJT_NEO4J_USER: ${OJT_NEO4J_USER:-neo4j}
+      OJT_NEO4J_PASSWORD: ${OJT_NEO4J_PASSWORD:-testpassword123}
+      OJT_NEO4J_DATABASE: ${OJT_NEO4J_DATABASE:-neo4j}
+      OJT_GRAPH_MED_ANNOTATION_ENABLED: ${OJT_GRAPH_MED_ANNOTATION_ENABLED:-true}
+      OJT_GRAPH_MED_EMBEDDING_BASE_URL: ${OJT_GRAPH_MED_EMBEDDING_BASE_URL:-}
+      OJT_GRAPH_MED_LLM_BASE_URL: ${OJT_GRAPH_MED_LLM_BASE_URL:-}
+      OJT_GRAPH_MED_LLM_MODEL: ${OJT_GRAPH_MED_LLM_MODEL:-}
+      OJT_GRAPH_MED_EMBEDDING_MODEL: ${OJT_GRAPH_MED_EMBEDDING_MODEL:-}
+      OJT_GRAPH_MED_GNN_BASE_URL: ${OJT_GRAPH_MED_GNN_BASE_URL:-}
+      OJT_GRAPH_MED_DEVICE: ${OJT_GRAPH_MED_DEVICE:-cuda}
+      OJT_GRAPH_MED_REQUIRE_GPU: ${OJT_GRAPH_MED_REQUIRE_GPU:-true}
+      NVIDIA_VISIBLE_DEVICES: ${OJT_GRAPH_MED_GPU:-all}
+      HF_TOKEN: ${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-${HF_TOKEN:-}}
+      HF_HOME: /root/.cache/huggingface
+      OJT_GRAPH_MED_ICD_VECTOR_INDEX: ${OJT_GRAPH_MED_ICD_VECTOR_INDEX:-icd_disease_embedding}
+      OJT_GRAPH_MED_CANDIDATE_K: ${OJT_GRAPH_MED_CANDIDATE_K:-10}
+      OJT_GRAPH_MED_TIMEOUT_SECONDS: ${OJT_GRAPH_MED_TIMEOUT_SECONDS:-90.0}
+      OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-openai}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-text-embedding-3-small}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-384}
+      OJT_OPENAI_EMBEDDING_BASE_URL: ${OJT_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-openai}
+      OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}
+      OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}
+      OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-90.0}
+      OJT_RETRIEVAL_MODE: ${OJT_RETRIEVAL_MODE:-semantic_vector}
+      OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}
+    ports:
+      - "${OJT_GRAPH_MED_SERVICE_PORT:-18102}:8010"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - app_data:/app/var
+      - ${OJT_HF_CACHE_DIR:-/home/vund/.cache/huggingface}:/root/.cache/huggingface
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  worker-ocr:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
+    command: >
+      sh -c "celery -A ojtflow.infrastructure.queue.celery_app:celery_app
+      worker -Q ${OJT_OCR_QUEUE:-ocr}
+      -n worker-ocr@%h
+      --concurrency=${OJT_OCR_WORKER_CONCURRENCY:-2}
+      --loglevel=${OJT_CELERY_LOG_LEVEL:-INFO}"
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_REDIS_URL: redis://redis:6379/0
+      OJT_DATA_DIR: /app/var
+      OJT_RUNTIME_SETTINGS_PATH: ${OJT_RUNTIME_SETTINGS_PATH:-/app/var/runtime_settings.json}
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+      OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+      OJT_QUEUE_BACKEND: rabbitmq
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-openai}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-text-embedding-3-small}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-384}
+      OJT_OPENAI_EMBEDDING_BASE_URL: ${OJT_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS: ${OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS:-20.0}
+      OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-disabled}
+      OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}
+      OJT_LLM_PLANNING_MODEL: ${OJT_LLM_PLANNING_MODEL:-}
+      OJT_LLM_SYNTHESIS_MODEL: ${OJT_LLM_SYNTHESIS_MODEL:-}
+      OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}
+      OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-90.0}
+      OJT_LLM_MAX_TOOL_CALLS: ${OJT_LLM_MAX_TOOL_CALLS:-4}
+      OJT_LLM_VISION_MODEL: ${OJT_LLM_VISION_MODEL:-${OJT_OPENAI_VISION_MODEL:-}}
+      OJT_EXTERNAL_OPENAI_LLM_ENABLED: ${OJT_EXTERNAL_OPENAI_LLM_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI:-false}
+      OJT_EXTERNAL_OPENAI_OCR_ENABLED: ${OJT_EXTERNAL_OPENAI_OCR_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI:-false}
+      OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN: ${OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN:-true}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI:-false}
+      OJT_MARKITDOWN_OCR_ENABLED: ${OJT_MARKITDOWN_OCR_ENABLED:-true}
+      OJT_MAX_UPLOAD_BYTES: ${OJT_MAX_UPLOAD_BYTES:-26214400}
+      OJT_ALLOWED_UPLOAD_EXTENSIONS: ${OJT_ALLOWED_UPLOAD_EXTENSIONS:-.pdf,.docx,.xlsx,.xls,.pptx,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.webp,.html,.htm,.md,.txt,.csv,.json,.yaml,.yml}
+      OJT_RETRIEVAL_MODE: ${OJT_RETRIEVAL_MODE:-semantic_vector}
+      OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}
+      OJT_SENTRY_DSN: ${OJT_SENTRY_DSN:-}
+      OJT_LOKI_ENABLED: ${OJT_LOKI_ENABLED:-true}
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker-rag:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
+    command: >
+      sh -c "celery -A ojtflow.infrastructure.queue.celery_app:celery_app
+      worker -Q ${OJT_RAG_QUEUE:-rag}
+      -n worker-rag@%h
+      --concurrency=${OJT_RAG_WORKER_CONCURRENCY:-2}
+      --loglevel=${OJT_CELERY_LOG_LEVEL:-INFO}"
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_OBJECT_STORAGE_BACKEND: ${OJT_OBJECT_STORAGE_BACKEND:-minio}
+      OJT_MINIO_ENDPOINT: ${OJT_MINIO_ENDPOINT:-minio:9000}
+      OJT_MINIO_ACCESS_KEY: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      OJT_MINIO_SECRET_KEY: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      OJT_MINIO_BUCKET: ${OJT_MINIO_BUCKET:-ojtflow-artifacts}
+      OJT_MINIO_REGION: ${OJT_MINIO_REGION:-us-east-1}
+      OJT_MINIO_SECURE: ${OJT_MINIO_SECURE:-false}
+      OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_REDIS_URL: redis://redis:6379/0
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+      OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+      OJT_QUEUE_BACKEND: rabbitmq
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-openai}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-text-embedding-3-small}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-384}
+      OJT_OPENAI_EMBEDDING_BASE_URL: ${OJT_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS: ${OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS:-20.0}
+      OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-openai}
+      OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}
+      OJT_LLM_PLANNING_MODEL: ${OJT_LLM_PLANNING_MODEL:-}
+      OJT_LLM_SYNTHESIS_MODEL: ${OJT_LLM_SYNTHESIS_MODEL:-}
+      OJT_LLM_VISION_MODEL: ${OJT_LLM_VISION_MODEL:-${OJT_OPENAI_VISION_MODEL:-}}
+      OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}
+      OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-90.0}
+      OJT_LLM_MAX_TOOL_CALLS: ${OJT_LLM_MAX_TOOL_CALLS:-4}
+      OJT_EXTERNAL_OPENAI_LLM_ENABLED: ${OJT_EXTERNAL_OPENAI_LLM_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI:-false}
+      OJT_EXTERNAL_OPENAI_OCR_ENABLED: ${OJT_EXTERNAL_OPENAI_OCR_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_OCR_ALLOW_PHI:-false}
+      OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN: ${OJT_EXTERNAL_OPENAI_OCR_ALLOW_UNKNOWN:-true}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI:-false}
+      OJT_RETRIEVAL_MODE: ${OJT_RETRIEVAL_MODE:-semantic_vector}
+      OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}
+      OJT_SENTRY_DSN: ${OJT_SENTRY_DSN:-}
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker-embedding:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
+    command: >
+      sh -c "celery -A ojtflow.infrastructure.queue.celery_app:celery_app
+      worker -Q ${OJT_EMBEDDING_QUEUE:-embedding}
+      -n worker-embedding@%h
+      --concurrency=${OJT_EMBEDDING_WORKER_CONCURRENCY:-1}
+      --loglevel=${OJT_CELERY_LOG_LEVEL:-INFO}"
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_OBJECT_STORAGE_BACKEND: ${OJT_OBJECT_STORAGE_BACKEND:-minio}
+      OJT_MINIO_ENDPOINT: ${OJT_MINIO_ENDPOINT:-minio:9000}
+      OJT_MINIO_ACCESS_KEY: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      OJT_MINIO_SECRET_KEY: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      OJT_MINIO_BUCKET: ${OJT_MINIO_BUCKET:-ojtflow-artifacts}
+      OJT_MINIO_REGION: ${OJT_MINIO_REGION:-us-east-1}
+      OJT_MINIO_SECURE: ${OJT_MINIO_SECURE:-false}
+      OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_REDIS_URL: redis://redis:6379/0
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+      OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+      OJT_QUEUE_BACKEND: rabbitmq
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-openai}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-text-embedding-3-small}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-384}
+      OJT_OPENAI_EMBEDDING_BASE_URL: ${OJT_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS: ${OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS:-20.0}
+      OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-openai}
+      OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}
+      OJT_LLM_PLANNING_MODEL: ${OJT_LLM_PLANNING_MODEL:-}
+      OJT_LLM_SYNTHESIS_MODEL: ${OJT_LLM_SYNTHESIS_MODEL:-}
+      OJT_LLM_VISION_MODEL: ${OJT_LLM_VISION_MODEL:-${OJT_OPENAI_VISION_MODEL:-}}
+      OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}
+      OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-90.0}
+      OJT_LLM_MAX_TOOL_CALLS: ${OJT_LLM_MAX_TOOL_CALLS:-4}
+      OJT_EXTERNAL_OPENAI_LLM_ENABLED: ${OJT_EXTERNAL_OPENAI_LLM_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI:-false}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI:-false}
+      OJT_RETRIEVAL_MODE: ${OJT_RETRIEVAL_MODE:-semantic_vector}
+      OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}
+      OJT_SENTRY_DSN: ${OJT_SENTRY_DSN:-}
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker-medsiglip:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
+    profiles: ["medsiglip"]
+    command: >
+      sh -c "celery -A ojtflow.infrastructure.queue.celery_app:celery_app
+      worker -Q ${OJT_MEDSIGLIP_QUEUE:-medsiglip}
+      -n worker-medsiglip@%h
+      --concurrency=${OJT_MEDSIGLIP_WORKER_CONCURRENCY:-1}
+      --loglevel=${OJT_CELERY_LOG_LEVEL:-INFO}"
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_OBJECT_STORAGE_BACKEND: ${OJT_OBJECT_STORAGE_BACKEND:-minio}
+      OJT_MINIO_ENDPOINT: ${OJT_MINIO_ENDPOINT:-minio:9000}
+      OJT_MINIO_ACCESS_KEY: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      OJT_MINIO_SECRET_KEY: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      OJT_MINIO_BUCKET: ${OJT_MINIO_BUCKET:-ojtflow-artifacts}
+      OJT_MINIO_REGION: ${OJT_MINIO_REGION:-us-east-1}
+      OJT_MINIO_SECURE: ${OJT_MINIO_SECURE:-false}
+      OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_REDIS_URL: redis://redis:6379/0
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+      OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+      OJT_QUEUE_BACKEND: rabbitmq
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_MEDSIGLIP_ENABLED: ${OJT_MEDSIGLIP_ENABLED:-true}
+      OJT_MEDSIGLIP_BASE_URL: ${OJT_MEDSIGLIP_DOCKER_BASE_URL:-http://medsiglip:8000}
+      OJT_MEDSIGLIP_MODEL: ${OJT_MEDSIGLIP_MODEL:-google/medsiglip-448}
+      OJT_MEDSIGLIP_TIMEOUT_SECONDS: ${OJT_MEDSIGLIP_TIMEOUT_SECONDS:-90.0}
+      OJT_MEDSIGLIP_QUEUE: ${OJT_MEDSIGLIP_QUEUE:-medsiglip}
+      OJT_SENTRY_DSN: ${OJT_SENTRY_DSN:-}
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      medsiglip:
+        condition: service_healthy
+
+  worker-ingestion:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
+    command: >
+      sh -c "celery -A ojtflow.infrastructure.queue.celery_app:celery_app
+      worker -Q ${OJT_INGESTION_QUEUE:-ingestion}
+      -n worker-ingestion@%h
+      --concurrency=${OJT_INGESTION_WORKER_CONCURRENCY:-2}
+      --loglevel=${OJT_CELERY_LOG_LEVEL:-INFO}"
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_OBJECT_STORAGE_BACKEND: ${OJT_OBJECT_STORAGE_BACKEND:-minio}
+      OJT_MINIO_ENDPOINT: ${OJT_MINIO_ENDPOINT:-minio:9000}
+      OJT_MINIO_ACCESS_KEY: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      OJT_MINIO_SECRET_KEY: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      OJT_MINIO_BUCKET: ${OJT_MINIO_BUCKET:-ojtflow-artifacts}
+      OJT_MINIO_REGION: ${OJT_MINIO_REGION:-us-east-1}
+      OJT_MINIO_SECURE: ${OJT_MINIO_SECURE:-false}
+      OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_REDIS_URL: redis://redis:6379/0
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+      OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+      OJT_QUEUE_BACKEND: rabbitmq
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-openai}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-text-embedding-3-small}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-384}
+      OJT_OPENAI_EMBEDDING_BASE_URL: ${OJT_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS: ${OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS:-20.0}
+      OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-openai}
+      OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}
+      OJT_LLM_PLANNING_MODEL: ${OJT_LLM_PLANNING_MODEL:-}
+      OJT_LLM_SYNTHESIS_MODEL: ${OJT_LLM_SYNTHESIS_MODEL:-}
+      OJT_LLM_VISION_MODEL: ${OJT_LLM_VISION_MODEL:-${OJT_OPENAI_VISION_MODEL:-}}
+      OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}
+      OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-90.0}
+      OJT_LLM_MAX_TOOL_CALLS: ${OJT_LLM_MAX_TOOL_CALLS:-4}
+      OJT_EXTERNAL_OPENAI_LLM_ENABLED: ${OJT_EXTERNAL_OPENAI_LLM_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI:-false}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI:-false}
+      OJT_RETRIEVAL_MODE: ${OJT_RETRIEVAL_MODE:-semantic_vector}
+      OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}
+      OJT_SENTRY_DSN: ${OJT_SENTRY_DSN:-}
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker-export:
+    build:
+      context: .
+      args:
+        OJT_PYTHON_EXTRAS: ${OJT_PYTHON_EXTRAS:-parsing}
+    command: >
+      sh -c "celery -A ojtflow.infrastructure.queue.celery_app:celery_app
+      worker -Q ${OJT_EXPORT_QUEUE:-export}
+      -n worker-export@%h
+      --concurrency=${OJT_EXPORT_WORKER_CONCURRENCY:-1}
+      --loglevel=${OJT_CELERY_LOG_LEVEL:-INFO}"
+    environment:
+      OJT_STORAGE_BACKEND: postgres
+      OJT_OBJECT_STORAGE_BACKEND: ${OJT_OBJECT_STORAGE_BACKEND:-minio}
+      OJT_MINIO_ENDPOINT: ${OJT_MINIO_ENDPOINT:-minio:9000}
+      OJT_MINIO_ACCESS_KEY: ${OJT_MINIO_ACCESS_KEY:-ojtflow}
+      OJT_MINIO_SECRET_KEY: ${OJT_MINIO_SECRET_KEY:-ojtflow-minio-secret}
+      OJT_MINIO_BUCKET: ${OJT_MINIO_BUCKET:-ojtflow-artifacts}
+      OJT_MINIO_REGION: ${OJT_MINIO_REGION:-us-east-1}
+      OJT_MINIO_SECURE: ${OJT_MINIO_SECURE:-false}
+      OJT_PRODUCT_MODE: ${OJT_PRODUCT_MODE:-local_dev}
+      OJT_DATABASE_URL: postgresql://${OJT_POSTGRES_USER:-ojtflow}:${OJT_POSTGRES_PASSWORD:-ojtflow}@postgres:5432/${OJT_POSTGRES_DB:-ojtflow}
+      OJT_REDIS_URL: redis://redis:6379/0
+      OJT_DATA_DIR: /app/var
+      OJT_KNOWLEDGE_DIR: /app/knowledge
+      OJT_MIGRATIONS_DIR: /app/sql/postgres/migrations
+      OJT_QUEUE_BACKEND: rabbitmq
+      OJT_RABBITMQ_URL: amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+      OJT_OPENAI_API_KEY: ${OJT_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      OJT_EMBEDDING_PROVIDER: ${OJT_EMBEDDING_PROVIDER:-openai}
+      OJT_EMBEDDING_MODEL: ${OJT_EMBEDDING_MODEL:-text-embedding-3-small}
+      OJT_EMBEDDING_DIMENSIONS: ${OJT_EMBEDDING_DIMENSIONS:-384}
+      OJT_OPENAI_EMBEDDING_BASE_URL: ${OJT_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS: ${OJT_OPENAI_EMBEDDING_TIMEOUT_SECONDS:-20.0}
+      OJT_LLM_PROVIDER: ${OJT_LLM_PROVIDER:-openai}
+      OJT_LLM_MODEL: ${OJT_LLM_MODEL:-chat-latest}
+      OJT_LLM_PLANNING_MODEL: ${OJT_LLM_PLANNING_MODEL:-}
+      OJT_LLM_SYNTHESIS_MODEL: ${OJT_LLM_SYNTHESIS_MODEL:-}
+      OJT_LLM_VISION_MODEL: ${OJT_LLM_VISION_MODEL:-${OJT_OPENAI_VISION_MODEL:-}}
+      OJT_LLM_BASE_URL: ${OJT_LLM_BASE_URL:-https://api.openai.com/v1}
+      OJT_LLM_TIMEOUT_SECONDS: ${OJT_LLM_TIMEOUT_SECONDS:-90.0}
+      OJT_LLM_MAX_TOOL_CALLS: ${OJT_LLM_MAX_TOOL_CALLS:-4}
+      OJT_EXTERNAL_OPENAI_LLM_ENABLED: ${OJT_EXTERNAL_OPENAI_LLM_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_LLM_ALLOW_PHI:-false}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ENABLED:-true}
+      OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI: ${OJT_EXTERNAL_OPENAI_EMBEDDINGS_ALLOW_PHI:-false}
+      OJT_RETRIEVAL_MODE: ${OJT_RETRIEVAL_MODE:-semantic_vector}
+      OJT_RETRIEVAL_FRAMEWORK: ${OJT_RETRIEVAL_FRAMEWORK:-custom}
+      OJT_SENTRY_DSN: ${OJT_SENTRY_DSN:-}
+    volumes:
+      - app_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  flower:
+    image: mher/flower:2.0
+    command: >
+      celery --broker=amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672// flower
+      --port=5555
+    environment:
+      FLOWER_UNAUTHENTICATED_API: ${OJT_FLOWER_UNAUTHENTICATED_API:-true}
+    ports:
+      - "${OJT_FLOWER_PORT:-15555}:5555"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq-exporter:
+    image: kbudde/rabbitmq-exporter:latest
+    environment:
+      RABBIT_URL: http://rabbitmq:15672
+      RABBIT_USER: ${OJT_RABBITMQ_USER:-ojtflow}
+      RABBIT_PASSWORD: ${OJT_RABBITMQ_PASSWORD:-ojtflow}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  celery-exporter:
+    image: danihodovic/celery-exporter:0.10.12
+    command:
+      - --broker-url=amqp://${OJT_RABBITMQ_USER:-ojtflow}:${OJT_RABBITMQ_PASSWORD:-ojtflow}@rabbitmq:5672//
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "${OJT_PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+      rabbitmq-exporter:
+        condition: service_started
+      celery-exporter:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${OJT_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${OJT_GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${OJT_GRAFANA_PORT:-13000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.rootfs=/host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+    profiles: ["medsiglip"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "${OJT_DCGM_EXPORTER_PORT:-19400}:9400"
+
+  loki:
+    image: grafana/loki:3.3.2
+    command: -config.file=/etc/loki/local-config.yml
+    ports:
+      - "${OJT_LOKI_PORT:-13100}:3100"
+    volumes:
+      - ./infra/loki/loki-config.yml:/etc/loki/local-config.yml:ro
+      - loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./infra/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      loki:
+        condition: service_started
+
   frontend:
     build:
       context: ./frontend
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     ports:
-      - "${OJT_FRONTEND_PORT:-5173}:5173"
+      - "${OJT_FRONTEND_PORT:-15173}:5173"
     depends_on:
       api:
         condition: service_healthy
@@ -138,3 +857,7 @@ services:
 volumes:
   postgres_data:
   app_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:

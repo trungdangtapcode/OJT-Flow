@@ -54,7 +54,7 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
 
   if (workflowId) {
     return (
-      <div className="grid gap-5">
+      <div className="grid gap-6">
         <PageHeader
           action={
             <div className="flex flex-wrap gap-2">
@@ -81,17 +81,15 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-6">
       <PageHeader
         action={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild>
-              <Link to="/workbench">
-                <Plus className="h-4 w-4" />
-                New workflow
-              </Link>
-            </Button>
-          </div>
+          <Button asChild>
+            <Link to="/workbench">
+              <Plus className="h-4 w-4" />
+              New workflow
+            </Link>
+          </Button>
         }
         title="Workflow operations"
         description="Command center for governed healthcare data workflows, review gates, evidence, and audit state."
@@ -122,14 +120,14 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
       ) : null}
       <div
         className={cn(
-          "grid items-start gap-4",
+          "grid items-start gap-5",
           selectedId
             ? "xl:grid-cols-[minmax(320px,390px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(340px,410px)_minmax(0,1fr)]"
             : "xl:grid-cols-1",
         )}
       >
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70 p-4">
+          <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
             <div className="grid gap-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -141,12 +139,12 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
                     </HelpTooltip>
                   </p>
                 </div>
-                <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground">
+                <span className="rounded-full border border-border/80 bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground">
                   {summariesQuery.isLoading ? "loading queue" : `${total} queued`}
                 </span>
               </div>
-              <div className="grid min-w-0 gap-2 md:grid-cols-2">
-                <div className="relative max-sm:w-full">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="relative min-w-0 flex-1 max-sm:w-full">
                   <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     aria-label="Search workflows"
@@ -161,7 +159,7 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
                 </div>
                 <Select
                   aria-label="Workflow status"
-                  className="w-full"
+                  className="w-auto min-w-[9rem]"
                   onChange={(event) => {
                     setPage(1);
                     setStatus(event.target.value);
@@ -174,48 +172,34 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
                   <option value="failed">Failed</option>
                   <option value="running">Running</option>
                 </Select>
-                <Label className="gap-1 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    Sort
-                    <HelpTooltip label="Workflow sort help">
-                      Sort by updated time for active work, created time for chronology, issues for risk triage, or evidence for grounding coverage.
-                    </HelpTooltip>
-                  </span>
-                  <Select
-                    className="w-full"
-                    onChange={(event) => {
-                      setPage(1);
-                      setSort(event.target.value);
-                    }}
-                    value={sort}
-                  >
-                    <option value="updated_at">Updated</option>
-                    <option value="created_at">Created</option>
-                    <option value="workflow_id">Workflow ID</option>
-                    <option value="issue_count">Issues</option>
-                    <option value="evidence_count">Evidence</option>
-                    <option value="status">Status</option>
-                  </Select>
-                </Label>
-                <Label className="gap-1 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    Direction
-                    <HelpTooltip label="Workflow direction help">
-                      Desc shows newest or highest values first. Asc shows oldest or lowest values first.
-                    </HelpTooltip>
-                  </span>
-                  <Select
-                    className="w-full"
-                    onChange={(event) => {
-                      setPage(1);
-                      setDirection(event.target.value);
-                    }}
-                    value={direction}
-                  >
-                    <option value="desc">Desc</option>
-                    <option value="asc">Asc</option>
-                  </Select>
-                </Label>
+                <Select
+                  aria-label="Sort by"
+                  className="w-auto min-w-[7rem]"
+                  onChange={(event) => {
+                    setPage(1);
+                    setSort(event.target.value);
+                  }}
+                  value={sort}
+                >
+                  <option value="updated_at">Updated</option>
+                  <option value="created_at">Created</option>
+                  <option value="workflow_id">ID</option>
+                  <option value="issue_count">Issues</option>
+                  <option value="evidence_count">Evidence</option>
+                  <option value="status">Status</option>
+                </Select>
+                <Select
+                  aria-label="Sort direction"
+                  className="w-auto min-w-[5.5rem]"
+                  onChange={(event) => {
+                    setPage(1);
+                    setDirection(event.target.value);
+                  }}
+                  value={direction}
+                >
+                  <option value="desc">Desc</option>
+                  <option value="asc">Asc</option>
+                </Select>
               </div>
             </div>
           </CardHeader>
@@ -248,7 +232,7 @@ export function WorkflowsPage({ workflowId }: { workflowId?: string }) {
               </Notice>
             ) : (
               <>
-                <div className="grid auto-rows-max divide-y divide-border">
+                <div className="grid auto-rows-max gap-1">
                   {items.map((item) => (
                     <WorkflowQueueItem
                       active={item.workflow_id === selectedId}
@@ -344,11 +328,11 @@ function formatRunCount(count: number) {
 
 function WorkflowQueueSkeleton() {
   return (
-    <div aria-label="Loading workflow queue" className="grid gap-2" role="status">
+    <div aria-label="Loading workflow queue" className="grid gap-1" role="status">
       {Array.from({ length: 6 }).map((_, index) => (
         <div
           aria-hidden="true"
-          className="grid gap-2 rounded-md border border-border bg-card p-2.5"
+          className="grid gap-2 rounded-lg border border-border/60 bg-card p-3"
           data-testid="workflow-queue-skeleton-row"
           key={index}
         >
@@ -384,8 +368,8 @@ function WorkflowQueueItem({
   return (
     <button
       className={cn(
-        "grid w-full gap-2 rounded-md border border-transparent bg-card p-2.5 text-left transition hover:border-primary/25 hover:bg-slate-50 focus-ring",
-        active && "border-primary/35 bg-teal-50/75 shadow-[inset_3px_0_0_#087f7a]",
+        "grid w-full gap-2 rounded-lg border border-transparent bg-card p-3 text-left transition-all duration-150 list-item-hover focus-ring",
+        active && "list-item-active",
       )}
       onClick={onClick}
       type="button"
@@ -393,11 +377,11 @@ function WorkflowQueueItem({
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3">
         <div className="min-w-0">
           <div className="break-all font-mono text-[13px] font-extrabold leading-tight">{item.workflow_id}</div>
-          <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+          <div className="mt-1.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
             {item.instruction}
           </div>
         </div>
-        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <ChevronRight className={cn("mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-colors", active && "text-primary")} />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <StatusBadge className="max-w-full whitespace-normal px-2 py-0.5 text-[11px] leading-tight" status={item.status} />
@@ -408,7 +392,7 @@ function WorkflowQueueItem({
           {item.evidence_count} evidence
         </span>
       </div>
-      <div className="text-[10px] font-bold uppercase text-muted-foreground">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
         Updated {formatCompactDate(item.updated_at)}
       </div>
     </button>

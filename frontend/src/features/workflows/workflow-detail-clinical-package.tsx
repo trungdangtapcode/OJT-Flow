@@ -60,7 +60,7 @@ export function ClinicalPackagePanel({ workflow }: { workflow: WorkflowState }) 
 
       {clinicalPackage.warnings.length ? (
         <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="border-b border-border bg-card/70 p-4">
+          <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
             <CardTitle>Package warnings</CardTitle>
             <CardDescription>Limitations carried with the package export.</CardDescription>
           </CardHeader>
@@ -92,7 +92,7 @@ function SemanticNormalizationGatePanel({
   }, {});
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <div className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
             <ShieldCheck className="h-4 w-4" />
@@ -132,7 +132,7 @@ function SemanticNormalizationGatePanel({
             </TBody>
           </Table>
         ) : (
-          <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border/60 p-3 text-sm text-muted-foreground">
             No semantic normalization changes were proposed for this package.
           </div>
         )}
@@ -194,7 +194,7 @@ function SemanticNormalizationGateRow({
 
 function ClinicalMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-border bg-card p-3">
+    <div className="rounded-lg border border-border/60 bg-card p-3">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-black tabular-nums">{value}</div>
     </div>
@@ -210,7 +210,7 @@ function TerminologyEvidencePanel({
   const unitValidations = clinicalPackage.unit_validations;
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <div className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
             <Tags className="h-4 w-4" />
@@ -229,7 +229,7 @@ function TerminologyEvidencePanel({
             <TerminologyCandidateCard candidate={candidate} key={candidate.candidate_id} />
           ))}
           {!candidates.length ? (
-            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-border/60 p-3 text-sm text-muted-foreground">
               No terminology candidates generated.
             </div>
           ) : null}
@@ -241,7 +241,7 @@ function TerminologyEvidencePanel({
             <UnitValidationCard key={unit.validation_id} unit={unit} />
           ))}
           {!unitValidations.length ? (
-            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-border/60 p-3 text-sm text-muted-foreground">
               No unit validations recorded.
             </div>
           ) : null}
@@ -253,7 +253,7 @@ function TerminologyEvidencePanel({
 
 function TerminologyCandidateCard({ candidate }: { candidate: TerminologyCandidate }) {
   return (
-    <article className="grid gap-3 rounded-md border border-border bg-muted/20 p-3">
+    <article className="grid gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="break-words font-extrabold">{candidate.source_value}</div>
@@ -283,7 +283,7 @@ function TerminologyCandidateCard({ candidate }: { candidate: TerminologyCandida
 
 function UnitValidationCard({ unit }: { unit: UnitValidationResult }) {
   return (
-    <article className="grid gap-2 rounded-md border border-border bg-card p-3 text-sm">
+    <article className="grid gap-2 rounded-lg border border-border/60 bg-card p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 font-extrabold">
           {unit.source_field}: {unit.source_unit || "missing"}
@@ -318,7 +318,7 @@ function PackageResourceSummary({
   );
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <div className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
             <Stethoscope className="h-4 w-4" />
@@ -330,7 +330,7 @@ function PackageResourceSummary({
         </div>
       </CardHeader>
       <CardContent className="grid gap-4 pt-4">
-        <div className="grid gap-2 rounded-md border border-border p-3 text-sm">
+        <div className="grid gap-2 rounded-lg border border-border/60 p-3 text-sm">
           <Row label="Schema" value={clinicalPackage.schema_version} />
           <Row label="Detected input" value={clinicalPackage.raw_input.detected_format} />
           <Row label="Review" value={clinicalPackage.review?.status ?? "not required"} />
@@ -350,7 +350,7 @@ function PackageResourceSummary({
           <div className="grid gap-2">
             <div className="text-sm font-extrabold">OperationOutcome-like issues</div>
             {clinicalPackage.operation_outcome.issue.slice(0, 5).map((issue) => (
-              <div className="rounded-md border border-border bg-muted/20 p-2 text-sm" key={issue.issue_id ?? issue.diagnostics}>
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-2 text-sm" key={issue.issue_id ?? issue.diagnostics}>
                 <div className="flex flex-wrap items-center gap-2">
                   <SeverityBadge severity={issue.severity} />
                   <span className="font-bold">{issue.code}</span>
@@ -369,7 +369,7 @@ function PackageResourceSummary({
 function ClinicalPackageDiff({ resources }: { resources: ClinicalResourceRecord[] }) {
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="border-b border-border bg-card/70 p-4">
+      <CardHeader className="border-b border-border/60 bg-muted/30 p-4">
         <div className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
             <GitCompare className="h-4 w-4" />
@@ -385,7 +385,7 @@ function ClinicalPackageDiff({ resources }: { resources: ClinicalResourceRecord[
           <ResourceDiffCard key={`${resource.resource_type}-${resource.resource_id}`} resource={resource} />
         ))}
         {!resources.length ? (
-          <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border/60 p-3 text-sm text-muted-foreground">
             No resources generated.
           </div>
         ) : null}
@@ -396,7 +396,7 @@ function ClinicalPackageDiff({ resources }: { resources: ClinicalResourceRecord[
 
 function ResourceDiffCard({ resource }: { resource: ClinicalResourceRecord }) {
   return (
-    <article className="min-w-0 overflow-hidden rounded-md border border-border bg-card">
+    <article className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-muted/20 px-3 py-2">
         <div className="min-w-0">
           <div className="break-words font-extrabold">
@@ -453,7 +453,7 @@ function ResourceDiffCard({ resource }: { resource: ClinicalResourceRecord }) {
 
 function ClinicalFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2">
+    <div className="grid gap-1 rounded-lg border border-border/60 bg-card px-3 py-2">
       <span className="text-xs font-bold uppercase text-muted-foreground">{label}</span>
       <span className="min-w-0 break-words font-semibold">{value}</span>
     </div>

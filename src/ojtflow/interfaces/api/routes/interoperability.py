@@ -107,7 +107,7 @@ async def external_api_cache_metadata(
     request: ExternalApiCacheMetadataRequest,
     settings: Settings = Depends(get_api_settings),
 ) -> dict:
-    """Build deterministic metadata for an external API cache entry."""
+    """Build rule-based metadata for an external API cache entry."""
 
     return ok(
         build_external_api_cache_metadata(

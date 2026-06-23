@@ -20,7 +20,7 @@
     {
       "rule_id": "boost_approved_trust_level",
       "weight": 0.025,
-      "reason": "Prefer approved trusted sources during deterministic retrieval.",
+      "reason": "Prefer approved trusted sources during rule-based retrieval.",
       "match": {
         "chunk_trust_levels": ["approved"]
       }
@@ -54,7 +54,7 @@
     },
     {
       "rule_id": "boost_fhir_observation_concept",
-      "weight": 0.09,
+      "weight": 0.25,
       "reason": "Prefer FHIR evidence when FHIR Observation profile concepts are detected.",
       "match": {
         "chunk_standard_systems": ["FHIR"],

@@ -7,7 +7,7 @@ from ojtflow.core.contracts.enums import AgentStatus
 
 
 class Agent:
-    """Small role wrapper around deterministic services."""
+    """Small role wrapper around rule-based services."""
 
     agent_id: str = "agent"
 

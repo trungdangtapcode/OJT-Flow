@@ -122,7 +122,7 @@ def test_compose_frontend_healthcheck_does_not_depend_on_node_runtime() -> None:
     frontend_section = compose.split("  frontend:", 1)[1]
 
     assert "VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}" in frontend_section
-    assert '"${OJT_FRONTEND_PORT:-5173}:5173"' in frontend_section
+    assert '"${OJT_FRONTEND_PORT:-15173}:5173"' in frontend_section
     assert "wget" in frontend_section
     assert "node" not in frontend_section
     assert "VITE_API_PROXY_TARGET" not in frontend_section
@@ -169,7 +169,7 @@ def test_compose_runtime_uses_postgres_redis_and_persistent_app_data() -> None:
     assert "OJT_RETRIEVAL_MIN_CANDIDATES: ${OJT_RETRIEVAL_MIN_CANDIDATES:-12}" in api_section
     assert "OJT_RETRIEVAL_VECTOR_WEIGHT: ${OJT_RETRIEVAL_VECTOR_WEIGHT:-0.62}" in api_section
     assert "OJT_RETRIEVAL_BM25_WEIGHT: ${OJT_RETRIEVAL_BM25_WEIGHT:-0.38}" in api_section
-    assert '"${OJT_API_PORT:-8000}:8000"' in api_section
+    assert '"${OJT_API_PORT:-18000}:8000"' in api_section
     assert "- app_data:/app/var" in api_section
     assert "postgres:" in api_section
     assert "redis:" in api_section
@@ -202,8 +202,8 @@ def test_env_example_exposes_compose_and_upload_runtime_knobs() -> None:
         "OJT_POSTGRES_PASSWORD=ojtflow",
         "OJT_POSTGRES_PORT=5432",
         "OJT_REDIS_PORT=6379",
-        "OJT_API_PORT=8000",
-        "OJT_FRONTEND_PORT=5173",
+        "OJT_API_PORT=18000",
+        "OJT_FRONTEND_PORT=15173",
         "VITE_API_BASE_URL=/api/v1",
         "OJT_PYTHON_EXTRAS=parsing",
         "OJT_KNOWLEDGE_DIR=knowledge",

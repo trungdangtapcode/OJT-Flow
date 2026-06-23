@@ -10,19 +10,16 @@ OJTFlow auth follows the same clean-architecture boundary as workflows:
   details, validates token-response shape, and verifies ID tokens with Google's
   verifier.
 - `infrastructure.storage.auth_postgres.PostgresAuthRepository` stores
-  production users, service accounts, and sessions.
-- `infrastructure.storage.auth_sqlite.SQLiteAuthRepository` keeps local
-  fallback users, service accounts, and sessions restart-safe.
+  runtime users, service accounts, and sessions.
 - `infrastructure.storage.auth_memory.InMemoryAuthRepository` and
-  `InMemorySessionCache` are for tests and ephemeral runs.
+  `InMemorySessionCache` are for isolated tests and ephemeral in-process runs.
 
 ## Storage Matrix
 
 | `OJT_STORAGE_BACKEND` | User/session repository | Session cache |
 | --- | --- | --- |
 | `postgres` | Postgres tables under `ojtflow.users` and `ojtflow.sessions` | Redis required for ready multi-instance auth; process-local fallback is development-only and reports not-ready |
-| `sqlite` | SQLite `users` and `sessions` tables in `OJT_DATABASE_PATH` | Process-local cache |
-| `memory` | Process-local repository | Process-local cache |
+| `memory` | Process-local repository for isolated tests only | Process-local cache |
 
 Session tokens are generated once, returned to API clients, stored as SHA-256
 hashes, and never persisted as raw tokens.
@@ -40,6 +37,9 @@ raw-token prefix. Service accounts are represented by normal user rows with
 `google_sub = service-account:{account_id}` and are attached to an organization
 membership with an explicit RBAC role before the token is returned. See
 `docs/service_accounts_v0.md`.
+Valid service-account tokens can issue successor tokens for the same
+`account_id` through the governed token endpoint, which allows CI rotation
+without a browser login while the existing token is still active.
 
 ## Browser Session Transport
 
@@ -129,7 +129,7 @@ Relevant coverage:
 - missing/invalid auth returns the standard API envelope
 - OAuth state is single-use
 - redirect URI allow-list is enforced
-- SQLite auth sessions persist across repository re-creation
+- Postgres auth sessions persist across repository re-creation
 - workflow and review endpoints are scoped to the authenticated owner
 - browser logout and revoked-session flows clear protected UI and cached server
   state

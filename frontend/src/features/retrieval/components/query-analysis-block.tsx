@@ -27,7 +27,7 @@ export function QueryAnalysisBlock({
     return <TraceFact label="Query analysis" value="unavailable" />;
   }
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3">
+    <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
       <QueryAnalysisHeader
         conceptCount={analysis.detectedConcepts.length}
         ruleCount={analysis.ruleIds.length}

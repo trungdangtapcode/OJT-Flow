@@ -33,16 +33,27 @@ class InMemoryAuthRepository:
         now = _now()
         with self._lock:
             user_id = self._users_by_google_sub.get(profile.google_sub)
+            if user_id is None:
+                # Link an account created under a different subject but same email
+                # (e.g. legacy direct-Google account migrated to Keycloak).
+                for candidate in self._users_by_id.values():
+                    if candidate.email.lower() == profile.email.lower():
+                        user_id = candidate.user_id
+                        self._users_by_google_sub.pop(candidate.google_sub, None)
+                        self._users_by_google_sub[profile.google_sub] = user_id
+                        break
             if user_id:
                 existing = self._users_by_id[user_id]
                 user = replace(
                     existing,
+                    google_sub=profile.google_sub,
                     email=profile.email,
                     email_verified=profile.email_verified,
                     display_name=profile.display_name,
                     avatar_url=profile.avatar_url,
                     updated_at=now,
                     last_login_at=now,
+                    identity_provider=profile.identity_provider or existing.identity_provider,
                 )
             else:
                 user = UserRecord(
@@ -55,6 +66,7 @@ class InMemoryAuthRepository:
                     created_at=now,
                     updated_at=now,
                     last_login_at=now,
+                    identity_provider=profile.identity_provider,
                 )
                 self._users_by_google_sub[profile.google_sub] = user.user_id
             self._users_by_id[user.user_id] = user
