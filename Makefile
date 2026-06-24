@@ -2,6 +2,7 @@
 .PHONY: api-local
 .PHONY: worker-ocr-local
 .PHONY: queue-stack
+.PHONY: queue-stack-down
 .PHONY: migrate-artifacts-to-minio
 
 -include .env.example
@@ -21,6 +22,9 @@ worker-ocr-local:
 
 queue-stack:
 	docker compose up -d rabbitmq worker-ocr worker-rag worker-embedding worker-ingestion worker-export flower prometheus grafana rabbitmq-exporter celery-exporter node-exporter loki promtail
+
+queue-stack-down:
+	docker compose down --remove-orphans
 
 migrate-artifacts-to-minio:
 	scripts/migrate-local-artifacts-to-minio $(EXECUTE)
